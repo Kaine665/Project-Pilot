@@ -1,0 +1,130 @@
+'use client';
+
+import { useState } from 'react';
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
+import type { AIPlan, AIPlanStep, PlanStatus } from '@/types';
+import { ChevronDown, ChevronRight, CheckCircle2, Circle, Loader2, XCircle, SkipForward } from 'lucide-react';
+
+const statusBadge: Record<PlanStatus, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }> = {
+  planning: { label: '规划中', variant: 'secondary' },
+  pending_approval: { label: '待审批', variant: 'outline' },
+  approved: { label: '已批准', variant: 'default' },
+  rejected: { label: '已拒绝', variant: 'destructive' },
+  completed: { label: '已完成', variant: 'default' },
+  failed: { label: '失败', variant: 'destructive' },
+  archived: { label: '已归档', variant: 'secondary' },
+};
+
+const stepStatusIcons: Record<AIPlanStep['status'], React.ReactNode> = {
+  pending: <Circle className="h-3.5 w-3.5 text-zinc-400" />,
+  running: <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />,
+  completed: <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />,
+  failed: <XCircle className="h-3.5 w-3.5 text-red-500" />,
+  skipped: <SkipForward className="h-3.5 w-3.5 text-zinc-400" />,
+};
+
+interface PlanCardProps {
+  plan: AIPlan;
+  onApprove?: (planId: string) => void;
+  onReject?: (planId: string) => void;
+  onExecute?: (planId: string) => void;
+}
+
+export function PlanCard({ plan, onApprove, onReject, onExecute }: PlanCardProps) {
+  const [expanded, setExpanded] = useState(false);
+
+  const badge = statusBadge[plan.status];
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-sm">计划 v{plan.version}</CardTitle>
+            <Badge variant={badge.variant}>{badge.label}</Badge>
+          </div>
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+          >
+            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </button>
+        </div>
+      </CardHeader>
+
+      <CardContent>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400 line-clamp-3">{plan.analysis}</p>
+        <div className="mt-2 flex items-center gap-3 text-xs text-zinc-400">
+          <span>{plan.step_count} 个步骤</span>
+          <span>{plan.steps_completed} 已完成</span>
+          {plan.execution_count > 0 && <span>执行 {plan.execution_count} 次</span>}
+        </div>
+      </CardContent>
+
+      {/* Expanded step list */}
+      {expanded && plan.steps.length > 0 && (
+        <CardContent className="border-t border-zinc-100 pt-3 dark:border-zinc-800">
+          <div className="flex flex-col gap-2">
+            {plan.steps.map((step) => (
+              <div
+                key={step.id}
+                className={cn(
+                  'flex items-start gap-2 rounded-md p-2 text-xs',
+                  step.status === 'running' && 'bg-blue-50 dark:bg-blue-950/20',
+                  step.status === 'failed' && 'bg-red-50 dark:bg-red-950/20',
+                )}
+              >
+                <span className="mt-0.5 shrink-0">{stepStatusIcons[step.status]}</span>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                      #{step.id} {step.action}
+                    </span>
+                    {step.risk_level && step.risk_level !== 'low' && (
+                      <Badge
+                        variant={step.risk_level === 'high' ? 'destructive' : 'outline'}
+                        className="text-[10px]"
+                      >
+                        {step.risk_level === 'high' ? '高风险' : '中风险'}
+                      </Badge>
+                    )}
+                  </div>
+                  {step.description && (
+                    <p className="mt-0.5 text-zinc-500 dark:text-zinc-400">{step.description}</p>
+                  )}
+                  {step.error && (
+                    <p className="mt-0.5 text-red-500">{step.error}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      )}
+
+      {/* Actions based on status */}
+      {(plan.status === 'pending_approval' || plan.status === 'approved') && (
+        <CardFooter className="gap-2">
+          {plan.status === 'pending_approval' && (
+            <>
+              <Button size="sm" onClick={() => onApprove?.(plan.plan_id)}>
+                批准
+              </Button>
+              <Button size="sm" variant="destructive" onClick={() => onReject?.(plan.plan_id)}>
+                拒绝
+              </Button>
+            </>
+          )}
+          {plan.status === 'approved' && (
+            <Button size="sm" onClick={() => onExecute?.(plan.plan_id)}>
+              执行
+            </Button>
+          )}
+        </CardFooter>
+      )}
+    </Card>
+  );
+}
