@@ -9,6 +9,7 @@ import {
   Plus,
   X,
 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
 import type {
   Section,
@@ -27,7 +28,7 @@ import type {
 export const statusConfig: Record<
   Status,
   {
-    label: string;
+    labelKey: string; // Changed from label to labelKey
     color: string;
     border: string;
     dot: string;
@@ -35,21 +36,21 @@ export const statusConfig: Record<
   }
 > = {
   done: {
-    label: '已完成',
+    labelKey: 'status.done',
     color: 'text-emerald-600',
     border: 'border-emerald-300',
     dot: 'bg-emerald-500',
     icon: Check,
   },
   doing: {
-    label: '进行中',
+    labelKey: 'status.doing',
     color: 'text-amber-600',
     border: 'border-amber-300',
     dot: 'bg-amber-500',
     icon: Clock,
   },
   todo: {
-    label: '计划中',
+    labelKey: 'status.todo',
     color: 'text-zinc-400',
     border: 'border-zinc-200',
     dot: 'bg-zinc-300',
@@ -152,6 +153,7 @@ export function StatusIcon({ status }: { status: Status }) {
 }
 
 export function AIStatusBadge({ status }: { status?: 'running' | 'waiting' | 'confirm' }) {
+  const t = useTranslations();
   if (!status) return null;
   if (status === 'running') {
     return (
@@ -162,11 +164,11 @@ export function AIStatusBadge({ status }: { status?: 'running' | 'waiting' | 'co
   }
   if (status === 'confirm') {
     return (
-      <span className="inline-block h-2 w-2 shrink-0 rounded-full animate-blink-confirm" title="AI 已完成，待确认" />
+      <span className="inline-block h-2 w-2 shrink-0 rounded-full animate-blink-confirm" title={t('status.aiComplete')} />
     );
   }
   return (
-    <span className="inline-block h-2 w-2 shrink-0 rounded-full animate-blink-waiting" title="等待回复" />
+    <span className="inline-block h-2 w-2 shrink-0 rounded-full animate-blink-waiting" title={t('status.waiting')} />
   );
 }
 
@@ -321,7 +323,7 @@ export function DeleteButton({ onClick }: { onClick: () => void }) {
 export function AddItemInput({
   onAdd,
   onCancel,
-  placeholder = '添加条目...',
+  placeholder,
   autoFocus = false,
 }: {
   onAdd: (content: string) => void;
@@ -329,14 +331,16 @@ export function AddItemInput({
   placeholder?: string;
   autoFocus?: boolean;
 }) {
+  const t = useTranslations();
   const [value, setValue] = useState('');
+  const defaultPlaceholder = t('flows.addItem');
 
   return (
     <div className="flex items-center gap-2 mt-1">
       <Plus className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
       <input
         autoFocus={autoFocus}
-        placeholder={placeholder}
+        placeholder={placeholder || defaultPlaceholder}
         className="text-sm bg-transparent outline-none placeholder:text-muted-foreground/50 w-full"
         value={value}
         onChange={e => setValue(e.target.value)}
@@ -362,6 +366,7 @@ export function StatusBadge({
   status: Status;
   onClick: () => void;
 }) {
+  const t = useTranslations();
   const config = statusConfig[status];
   return (
     <Badge
@@ -371,9 +376,9 @@ export function StatusBadge({
         e.stopPropagation();
         onClick();
       }}
-      title="点击切换状态"
+      title={t('actions.clickToToggle')}
     >
-      {config.label}
+      {t(config.labelKey)}
     </Badge>
   );
 }

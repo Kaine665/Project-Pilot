@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Send, Loader2, Trash2, Square, Sparkles, ChevronDown, Plus, MessageSquare } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { ChatBubble } from '@/components/chat-bubble';
 import { SuggestionCard } from '@/components/suggestion-card';
@@ -50,6 +51,7 @@ interface SessionListItem {
 }
 
 export function PlannerChatPanel({ projectKey }: PlannerChatPanelProps) {
+  const t = useTranslations();
   const [messages, setMessages] = useState<PlannerMessage[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -60,7 +62,7 @@ export function PlannerChatPanel({ projectKey }: PlannerChatPanelProps) {
   // Session management
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionList, setSessionList] = useState<SessionListItem[]>([]);
-  const [sessionTitle, setSessionTitle] = useState('新会话');
+  const [sessionTitle, setSessionTitle] = useState(t('chat.newSession'));
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -138,7 +140,7 @@ export function PlannerChatPanel({ projectKey }: PlannerChatPanelProps) {
     setIsStreaming(false);
     setStreamingBlocks([]);
     setSessionId(null);
-    setSessionTitle('新会话');
+    setSessionTitle(t('chat.newSession'));
     setSessionList([]);
     blocksRef.current = [];
     fullTextRef.current = '';
@@ -422,7 +424,7 @@ export function PlannerChatPanel({ projectKey }: PlannerChatPanelProps) {
       // New session created — capture the sessionId
       if (!sessionId && data.sessionId) {
         setSessionId(data.sessionId);
-        setSessionTitle('新会话');
+        setSessionTitle(t('chat.newSession'));
       }
 
       connectToStream(data.sessionId, 0);
@@ -472,7 +474,7 @@ export function PlannerChatPanel({ projectKey }: PlannerChatPanelProps) {
       streamAbortRef.current = null;
     }
     setSessionId(null);
-    setSessionTitle('新会话');
+    setSessionTitle(t('chat.newSession'));
     setMessages([]);
     blocksRef.current = [];
     fullTextRef.current = '';
@@ -525,7 +527,7 @@ export function PlannerChatPanel({ projectKey }: PlannerChatPanelProps) {
   if (!projectKey) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-center">
-        <p className="text-xs text-zinc-400">先选择一个项目</p>
+        <p className="text-xs text-zinc-400">{t('projects.selectFirst')}</p>
       </div>
     );
   }
@@ -552,7 +554,7 @@ export function PlannerChatPanel({ projectKey }: PlannerChatPanelProps) {
                 className="flex w-full items-center gap-2 px-3 py-2 text-xs text-blue-600 hover:bg-zinc-50 dark:text-blue-400 dark:hover:bg-zinc-800"
               >
                 <Plus className="h-3 w-3" />
-                新建会话
+                {t('chat.createConversation')}
               </button>
               {sessionList.length > 0 && (
                 <>
@@ -584,7 +586,7 @@ export function PlannerChatPanel({ projectKey }: PlannerChatPanelProps) {
           className="h-6 px-1.5 text-xs text-zinc-400 hover:text-red-500"
           onClick={handleDelete}
           disabled={isStreaming || (!sessionId && messages.length === 0)}
-          title="删除会话"
+          title={t('chat.deleteConversation')}
         >
           <Trash2 className="h-3 w-3" />
         </Button>
@@ -595,7 +597,7 @@ export function PlannerChatPanel({ projectKey }: PlannerChatPanelProps) {
         {messages.length === 0 && !isStreaming ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
             <Sparkles className="h-8 w-8 stroke-1" />
-            <p className="text-xs">描述你想做什么，AI 帮你规划任务结构</p>
+            <p className="text-xs">{t('chat.plannerHint')}</p>
           </div>
         ) : (
           <>
@@ -631,7 +633,7 @@ export function PlannerChatPanel({ projectKey }: PlannerChatPanelProps) {
             {isStreaming && streamingBlocks.length === 0 && (
               <div className="flex items-center gap-2 text-xs text-zinc-400">
                 <Loader2 className="h-3 w-3 animate-spin" />
-                思考中...
+                {t('chat.thinking')}
               </div>
             )}
           </>
@@ -646,7 +648,7 @@ export function PlannerChatPanel({ projectKey }: PlannerChatPanelProps) {
             value={input}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder="描述你想做什么..."
+            placeholder={t('chat.plannerPlaceholder')}
             rows={1}
             className="flex-1 resize-none rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs outline-none transition-colors focus:border-zinc-400 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-500"
           />
@@ -656,7 +658,7 @@ export function PlannerChatPanel({ projectKey }: PlannerChatPanelProps) {
               variant="destructive"
               onClick={handleAbort}
               className="h-7 px-2"
-              title="停止"
+              title={t('actions.stopGenerating')}
             >
               <Square className="h-3 w-3 fill-current" />
             </Button>

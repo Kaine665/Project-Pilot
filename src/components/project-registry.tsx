@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslations } from 'next-intl';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,19 +10,21 @@ import { Badge } from '@/components/ui/badge';
 import type { ProjectConfig } from '@/types';
 import { Settings, Plus, Trash2, X, FolderOpen } from 'lucide-react';
 
-const projectTypes = [
-  { value: 'react-native', label: 'React Native' },
-  { value: 'nextjs', label: 'Next.js' },
-  { value: 'node', label: 'Node.js' },
-  { value: 'python', label: 'Python' },
-  { value: 'other', label: '其他' },
-];
-
 export function ProjectRegistry() {
+  const t = useTranslations('projects');
+  const tActions = useTranslations('actions');
   const [open, setOpen] = useState(false);
   const [projects, setProjects] = useState<Record<string, ProjectConfig>>({});
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
+
+  const projectTypes = [
+    { value: 'react-native', label: 'React Native' },
+    { value: 'nextjs', label: 'Next.js' },
+    { value: 'node', label: 'Node.js' },
+    { value: 'python', label: 'Python' },
+    { value: 'other', label: t('other') },
+  ];
 
   // Form state
   const [formKey, setFormKey] = useState('');
@@ -112,7 +115,7 @@ export function ProjectRegistry() {
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Trigger asChild>
-        <Button variant="ghost" size="sm" title="项目管理">
+        <Button variant="ghost" size="sm" title={t('title')}>
           <Settings className="h-4 w-4" />
         </Button>
       </Dialog.Trigger>
@@ -121,7 +124,7 @@ export function ProjectRegistry() {
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50" />
         <Dialog.Content className="fixed top-1/2 left-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-lg border border-zinc-200 bg-white p-6 shadow-lg dark:border-zinc-800 dark:bg-zinc-950">
           <div className="flex items-center justify-between mb-4">
-            <Dialog.Title className="text-lg font-semibold">项目管理</Dialog.Title>
+            <Dialog.Title className="text-lg font-semibold">{t('title')}</Dialog.Title>
             <Dialog.Close asChild>
               <button className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800">
                 <X className="h-4 w-4" />
@@ -132,9 +135,9 @@ export function ProjectRegistry() {
           {/* Project list */}
           <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto">
             {loading ? (
-              <p className="text-sm text-zinc-400 text-center py-4">加载中...</p>
+              <p className="text-sm text-zinc-400 text-center py-4">{t('loading')}</p>
             ) : Object.keys(projects).length === 0 ? (
-              <p className="text-sm text-zinc-400 text-center py-4">暂无注册项目</p>
+              <p className="text-sm text-zinc-400 text-center py-4">{t('noProjects')}</p>
             ) : (
               Object.entries(projects).map(([key, config]) => (
                 <div
@@ -176,28 +179,28 @@ export function ProjectRegistry() {
           {showForm ? (
             <div className="mt-4 flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
               <div className="grid grid-cols-2 gap-2">
-                <Input placeholder="项目 Key" value={formKey} onChange={(e) => setFormKey(e.target.value)} />
-                <Input placeholder="项目名称" value={formName} onChange={(e) => setFormName(e.target.value)} />
+                <Input placeholder={t('projectKey')} value={formKey} onChange={(e) => setFormKey(e.target.value)} />
+                <Input placeholder={t('projectName')} value={formName} onChange={(e) => setFormName(e.target.value)} />
               </div>
-              <Input placeholder="项目路径" value={formPath} onChange={(e) => setFormPath(e.target.value)} />
-              <Input placeholder="项目描述 (可选)" value={formDescription} onChange={(e) => setFormDescription(e.target.value)} />
-              <Select options={projectTypes} placeholder="项目类型" value={formType} onChange={setFormType} />
-              <Input placeholder="默认分支 (可选, 如 main)" value={formDefaultBranch} onChange={(e) => setFormDefaultBranch(e.target.value)} />
-              <Input placeholder="Web 命令 (可选)" value={formWebCommand} onChange={(e) => setFormWebCommand(e.target.value)} />
-              <Input placeholder="Web URL (可选)" value={formWebUrl} onChange={(e) => setFormWebUrl(e.target.value)} />
+              <Input placeholder={t('projectPath')} value={formPath} onChange={(e) => setFormPath(e.target.value)} />
+              <Input placeholder={t('projectDescription')} value={formDescription} onChange={(e) => setFormDescription(e.target.value)} />
+              <Select options={projectTypes} placeholder={t('projectType')} value={formType} onChange={setFormType} />
+              <Input placeholder={t('defaultBranch')} value={formDefaultBranch} onChange={(e) => setFormDefaultBranch(e.target.value)} />
+              <Input placeholder={t('webCommand')} value={formWebCommand} onChange={(e) => setFormWebCommand(e.target.value)} />
+              <Input placeholder={t('webUrl')} value={formWebUrl} onChange={(e) => setFormWebUrl(e.target.value)} />
               <div className="flex gap-2">
                 <Button size="sm" onClick={handleAdd} disabled={!formKey.trim() || !formName.trim() || !formPath.trim() || !formType}>
-                  添加
+                  {tActions('add')}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={resetForm}>
-                  取消
+                  {tActions('cancel')}
                 </Button>
               </div>
             </div>
           ) : (
             <Button variant="outline" size="sm" className="mt-4 w-full" onClick={() => setShowForm(true)}>
               <Plus className="h-3.5 w-3.5" />
-              添加项目
+              {t('addProject')}
             </Button>
           )}
         </Dialog.Content>

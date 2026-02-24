@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import type { Task, TaskUnderstanding, TaskResult, AIPlan } from '@/types';
 
 interface ArtifactPanelProps {
@@ -30,11 +31,7 @@ interface ArtifactPanelProps {
   mergeLoading?: boolean;
 }
 
-const statusLabels: Record<string, string> = {
-  todo: '待办',
-  doing: '进行中',
-  done: '已完成',
-};
+// Status labels are now retrieved via t() in component
 
 export function ArtifactPanel({
   task,
@@ -48,6 +45,7 @@ export function ArtifactPanel({
   onDiscardBranch,
   mergeLoading,
 }: ArtifactPanelProps) {
+  const t = useTranslations();
   const hasArtifacts = understanding || plan || result;
 
   return (
@@ -82,7 +80,7 @@ export function ArtifactPanel({
                           : 'bg-white text-zinc-500 hover:bg-zinc-50 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800'
                     }`}
                   >
-                    {statusLabels[s]}
+                    {t(`status.${s}`)}
                   </button>
                 );
               })}
@@ -97,7 +95,7 @@ export function ArtifactPanel({
         <div className="flex items-center gap-2 rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 dark:border-cyan-900/40 dark:bg-cyan-950/20">
           <GitBranch className="h-3.5 w-3.5 shrink-0 text-cyan-600 dark:text-cyan-400" />
           <span className="text-xs text-cyan-700 dark:text-cyan-300">
-            当前分支：<code className="font-semibold">{gitBranch}</code>
+            {t('artifacts.currentBranch', { branch: gitBranch })}
           </span>
         </div>
       )}
@@ -107,9 +105,9 @@ export function ArtifactPanel({
         <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-center text-zinc-400">
           <MessageSquare className="h-8 w-8 stroke-1" />
           <p className="text-xs leading-relaxed">
-            发送消息开始任务流程
+            {t('taskAgent.startHint')}
             <br />
-            AI 会自动理解任务、制定计划、执行并报告结果
+            {t('taskAgent.autoHint')}
           </p>
         </div>
       )}
@@ -117,19 +115,19 @@ export function ArtifactPanel({
       {understanding && (
         <ArtifactCard
           icon={<ClipboardList className="h-4 w-4" />}
-          title="任务理解"
+          title={t('taskAgent.understanding')}
           collapsible
         >
           <div className="space-y-1.5 text-xs">
-            <Field label="项目" value={understanding.project} />
-            <Field label="做什么" value={understanding.action} />
-            <Field label="为什么" value={understanding.goal} />
-            <Field label="交付物" value={understanding.deliverable} />
+            <Field label={t('taskAgent.project')} value={understanding.project} />
+            <Field label={t('taskAgent.whatToDo')} value={understanding.action} />
+            <Field label={t('taskAgent.whyDoIt')} value={understanding.goal} />
+            <Field label={t('taskAgent.deliverables')} value={understanding.deliverable} />
           </div>
           <CardActions>
             <SmallButton
               icon={<RotateCcw className="h-3 w-3" />}
-              label="重新理解"
+              label={t('taskAgent.reunderstand')}
               onClick={() => onSendMessage('请重新分析这个任务，重新确认四要素。')}
             />
           </CardActions>
@@ -140,8 +138,8 @@ export function ArtifactPanel({
       {plan && (
         <ArtifactCard
           icon={<FileText className="h-4 w-4" />}
-          title={`执行计划 v${plan.version}`}
-          badge={plan.status === 'pending_approval' ? '待确认' : undefined}
+          title={t('taskAgent.executionPlan', { version: plan.version })}
+          badge={plan.status === 'pending_approval' ? t('taskAgent.pendingConfirm') : undefined}
           collapsible
         >
           <div className="space-y-1 text-xs">
@@ -160,13 +158,13 @@ export function ArtifactPanel({
           </div>
           {plan.risks && (
             <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
-              风险：{plan.risks}
+              {t('taskAgent.risk', { risk: plan.risks })}
             </p>
           )}
           <CardActions>
             <SmallButton
               icon={<RotateCcw className="h-3 w-3" />}
-              label="重新规划"
+              label={t('plans.replan')}
               onClick={() => onSendMessage('请重新制定执行计划。')}
             />
           </CardActions>
@@ -177,20 +175,20 @@ export function ArtifactPanel({
       {result ? (
         <ArtifactCard
           icon={<Package className="h-4 w-4" />}
-          title={result.status === 'completed' ? '执行完成' : result.status === 'failed' ? '执行失败' : '部分完成'}
+          title={result.status === 'completed' ? t('taskAgent.executionComplete') : result.status === 'failed' ? t('taskAgent.executionFailed') : t('taskAgent.partialComplete')}
           variant={result.status === 'completed' ? 'success' : result.status === 'failed' ? 'error' : 'warning'}
           collapsible
         >
           {gitBranch && (
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              分支：<code className="text-green-600 dark:text-green-400">{gitBranch}</code>
+              {t('artifacts.branch', { branch: gitBranch })}
             </p>
           )}
           <p className="text-xs">{result.summary}</p>
           {result.files_changed && result.files_changed.length > 0 && (
             <div className="mt-2 space-y-0.5 text-xs text-zinc-500 dark:text-zinc-400">
               <p className="font-medium text-zinc-700 dark:text-zinc-300">
-                改动文件（{result.files_changed.length}）：
+                {t('artifacts.changedFiles', { count: result.files_changed.length })}
               </p>
               {result.files_changed.map((f, i) => (
                 <div key={i} className="flex items-center gap-1 font-mono">
@@ -204,14 +202,14 @@ export function ArtifactPanel({
             <CardActions>
               <SmallButton
                 icon={mergeLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitMerge className="h-3 w-3" />}
-                label="合并分支"
+                label={t('artifacts.mergeBranch')}
                 onClick={onMerge}
                 variant="success"
                 disabled={mergeLoading}
               />
               <SmallButton
                 icon={<Trash2 className="h-3 w-3" />}
-                label="放弃分支"
+                label={t('artifacts.discardBranch')}
                 onClick={onDiscardBranch}
                 variant="danger"
                 disabled={mergeLoading}
@@ -222,13 +220,13 @@ export function ArtifactPanel({
       ) : gitBranch ? (
         <ArtifactCard
           icon={<Package className="h-4 w-4" />}
-          title="执行中"
+          title={t('taskAgent.executing')}
           variant="active"
           collapsible
         >
           <div className="text-xs text-zinc-500 dark:text-zinc-400">
             <p>
-              分支：<code className="text-green-600 dark:text-green-400">{gitBranch}</code>
+              {t('artifacts.branch', { branch: gitBranch })}
             </p>
             {plan && (
               <div className="mt-2 space-y-0.5">
@@ -303,7 +301,6 @@ function ArtifactCard({
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
             className="ml-auto rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-            aria-label={isCollapsed ? '展开' : '折叠'}
           >
             {isCollapsed ? (
               <ChevronDown className="h-4 w-4" />

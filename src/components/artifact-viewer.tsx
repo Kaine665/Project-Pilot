@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import type { ArtifactSummary, ArtifactItem, AIPlan } from '@/types';
@@ -9,13 +10,6 @@ import { Image, FileCode, FileText, X } from 'lucide-react';
 interface ArtifactViewerProps {
   taskId: string;
 }
-
-const changeTypeLabels: Record<string, string> = {
-  frontend: '前端变更',
-  backend: '后端变更',
-  both: '前后端变更',
-  unknown: '未知变更',
-};
 
 function ArtifactIcon({ type }: { type: ArtifactItem['type'] }) {
   switch (type) {
@@ -48,6 +42,7 @@ function DiffViewer({ content }: { content: string }) {
 }
 
 export function ArtifactViewer({ taskId }: ArtifactViewerProps) {
+  const t = useTranslations('artifacts');
   const [summary, setSummary] = useState<ArtifactSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
@@ -109,13 +104,13 @@ export function ArtifactViewer({ taskId }: ArtifactViewerProps) {
   }, [fetchArtifacts]);
 
   if (loading) {
-    return <div className="p-4 text-center text-sm text-zinc-400">加载中...</div>;
+    return <div className="p-4 text-center text-sm text-zinc-400">{t('loading')}</div>;
   }
 
   if (!summary) {
     return (
       <div className="flex flex-col items-center gap-2 p-8 text-center">
-        <p className="text-sm text-zinc-400">执行完成后将在此显示验证结果</p>
+        <p className="text-sm text-zinc-400">{t('completionHint')}</p>
       </div>
     );
   }
@@ -124,7 +119,9 @@ export function ArtifactViewer({ taskId }: ArtifactViewerProps) {
     <div className="flex flex-col gap-4">
       {/* Summary header */}
       <div className="flex items-center gap-3">
-        <Badge variant="secondary">{changeTypeLabels[summary.changeType] ?? summary.changeType}</Badge>
+        <Badge variant="secondary">
+          {t(`changeTypes.${summary.changeType}`, { defaultValue: summary.changeType })}
+        </Badge>
         <span className="text-xs text-zinc-400">
           {new Date(summary.timestamp).toLocaleString('zh-CN')}
         </span>
@@ -134,7 +131,7 @@ export function ArtifactViewer({ taskId }: ArtifactViewerProps) {
       {summary.filesChanged.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">变更文件 ({summary.filesChanged.length})</CardTitle>
+            <CardTitle className="text-sm">{t('changeFilesCount', { count: summary.filesChanged.length })}</CardTitle>
           </CardHeader>
           <CardContent>
             <ul className="flex flex-col gap-1">
@@ -175,7 +172,7 @@ export function ArtifactViewer({ taskId }: ArtifactViewerProps) {
               diffContents[artifact.path] ? (
                 <DiffViewer content={diffContents[artifact.path]} />
               ) : (
-                <p className="text-xs text-zinc-400">加载 diff 内容中...</p>
+                <p className="text-xs text-zinc-400">{t('loadingDiff')}</p>
               )
             )}
             {artifact.type === 'log' && (
@@ -186,7 +183,7 @@ export function ArtifactViewer({ taskId }: ArtifactViewerProps) {
                   rel="noopener noreferrer"
                   className="text-blue-500 hover:underline"
                 >
-                  查看日志文件
+                  {t('viewLogFile')}
                 </a>
               </pre>
             )}

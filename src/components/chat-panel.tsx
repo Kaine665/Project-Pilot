@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { Send, Loader2, Trash2, Square } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { ChatBubble } from '@/components/chat-bubble';
 import type { ChatMessage, ChatToolCall, ChatSSEEvent, ContentBlock, TaskUnderstanding, TaskResult, SessionPhase } from '@/types';
@@ -27,12 +28,15 @@ interface ChatPanelProps {
   onBranch?: (messageId: string) => void;
 }
 
-const PHASE_LABELS: Record<SessionPhase, { text: string; color: string }> = {
-  branching: { text: '创建分支', color: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400' },
-  understanding: { text: '理解中', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-  planning: { text: '规划中', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-  executing: { text: '执行中', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
-  summarizing: { text: '总结中', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
+const getPhaseLabel = (phase: SessionPhase, t: (key: string) => string): { text: string; color: string } => {
+  const labels = {
+    branching: { text: t('chat.createBranch'), color: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400' },
+    understanding: { text: t('chat.phases.understanding'), color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+    planning: { text: t('chat.phases.planning'), color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+    executing: { text: t('chat.phases.executing'), color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+    summarizing: { text: t('chat.phases.summarizing'), color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
+  };
+  return labels[phase];
 };
 
 // Module-level draft storage: survives component unmount/remount across task switches
@@ -51,6 +55,7 @@ type IndexedSSEEvent = ChatSSEEvent & { _idx: number };
 
 export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
   function ChatPanel({ taskId, taskTitle, conversationId, isFirstConversation, phase, onPlanExtracted, onUnderstandingExtracted, onResultExtracted, onPhaseChanged, onBranchCreated, onBranchMerged, onClearAll, onStreamDone, onBranch }, ref) {
+    const t = useTranslations();
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const draftKey = conversationId ? `${taskId}:${conversationId}` : taskId;
     const [input, setInput] = useState(() => draftMap.get(draftKey) ?? '');
@@ -576,10 +581,10 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
         {/* Header */}
         <div className="flex items-center justify-between border-b border-zinc-100 px-3 py-1.5 dark:border-zinc-800">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-zinc-400">AI 对话</span>
+            <span className="text-xs text-zinc-400">{t('chat.title')}</span>
             {phase && (
-              <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${PHASE_LABELS[phase].color}`}>
-                {PHASE_LABELS[phase].text}
+              <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${getPhaseLabel(phase, t).color}`}>
+                {getPhaseLabel(phase, t).text}
               </span>
             )}
           </div>
@@ -589,7 +594,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
             className="h-6 px-1.5 text-xs text-zinc-400 hover:text-red-500"
             onClick={handleClear}
             disabled={isStreaming || messages.length === 0}
-            title="清除对话"
+            title={t('chat.clearConversation')}
           >
             <Trash2 className="h-3 w-3" />
           </Button>
@@ -599,12 +604,12 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
         <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-3">
           {loadingHistory ? (
             <div className="flex h-full items-center justify-center text-sm text-zinc-400">
-              加载中...
+              {t('tasks.loading')}
             </div>
           ) : messages.length === 0 && !isStreaming ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
-              <p className="text-sm">开始和 AI 对话</p>
-              <p className="text-xs">输入消息，AI 会自动理解任务并推进流程</p>
+              <p className="text-sm">{t('chat.startChatting')}</p>
+              <p className="text-xs">{t('chat.inputHint')}</p>
             </div>
           ) : (
             <>
@@ -625,7 +630,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
               {isStreaming && streamingBlocks.length === 0 && (
                 <div className="flex items-center gap-2 text-xs text-zinc-400">
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  等待 AI 回复...
+                  {t('chat.waiting')}
                 </div>
               )}
             </>
@@ -640,7 +645,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
+              placeholder={t('chat.placeholder')}
               rows={1}
               className="flex-1 resize-none rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-500"
             />
@@ -650,7 +655,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                 variant="destructive"
                 onClick={handleAbort}
                 className="h-9 px-3"
-                title="停止生成"
+                title={t('actions.stopGenerating')}
               >
                 <Square className="h-3 w-3 fill-current" />
               </Button>

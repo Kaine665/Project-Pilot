@@ -29,6 +29,7 @@ interface PlanCardProps {
 
 export function PlanCard({ plan, onApprove, onReject, onExecute, onDelete }: PlanCardProps) {
   const t = useTranslations('plans');
+  const tActions = useTranslations('actions');
   const [expanded, setExpanded] = useState(false);
 
   const statusVariant: Record<PlanStatus, 'default' | 'secondary' | 'outline' | 'destructive'> = {
@@ -144,7 +145,7 @@ export function PlanCard({ plan, onApprove, onReject, onExecute, onDelete }: Pla
           {/* Expected results */}
           {plan.expected_results && (
             <CardContent className="border-t border-zinc-100 pt-3 dark:border-zinc-800">
-              <h4 className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-2">预期结果</h4>
+              <h4 className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-2">{t('expectedResult')}</h4>
               <FormattedText
                 text={plan.expected_results}
                 className="text-zinc-600 dark:text-zinc-400 space-y-1"
@@ -155,7 +156,7 @@ export function PlanCard({ plan, onApprove, onReject, onExecute, onDelete }: Pla
           {/* Risks */}
           {plan.risks && (
             <CardContent className="border-t border-zinc-100 pt-3 dark:border-zinc-800">
-              <h4 className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-2">风险评估</h4>
+              <h4 className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-2">{t('riskAssessment')}</h4>
               <FormattedText
                 text={plan.risks}
                 className="text-zinc-600 dark:text-zinc-400 space-y-1"
@@ -171,16 +172,16 @@ export function PlanCard({ plan, onApprove, onReject, onExecute, onDelete }: Pla
           {plan.status === 'pending_approval' && (
             <>
               <Button size="sm" onClick={() => onApprove?.(plan.plan_id)}>
-                批准
+                {tActions('approve')}
               </Button>
               <Button size="sm" variant="destructive" onClick={() => onReject?.(plan.plan_id)}>
-                拒绝
+                {tActions('reject')}
               </Button>
             </>
           )}
           {plan.status === 'approved' && (
             <Button size="sm" onClick={() => onExecute?.(plan.plan_id)}>
-              执行
+              {tActions('execute')}
             </Button>
           )}
         </CardFooter>

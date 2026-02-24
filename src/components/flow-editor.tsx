@@ -8,6 +8,7 @@ import {
   useRef,
   useEffect,
 } from 'react';
+import { useTranslations } from 'next-intl';
 import type {
   FlowData,
   Section,
@@ -120,6 +121,7 @@ function CycleDeadline({
   deadline?: string;
   onChange: (d: string | undefined) => void;
 }) {
+  const t = useTranslations();
   const [editing, setEditing] = useState(false);
 
   if (!deadline && !editing) {
@@ -128,7 +130,7 @@ function CycleDeadline({
         className="text-xs text-muted-foreground hover:text-foreground transition-colors"
         onClick={() => setEditing(true)}
       >
-        + 设置截止日期
+        + {t('flows.setDeadline')}
       </button>
     );
   }
@@ -172,10 +174,10 @@ function CycleDeadline({
 
   const label =
     diffDays < 0
-      ? `已超期 ${-diffDays} 天`
+      ? t('flows.overdueByDays', { days: -diffDays })
       : diffDays === 0
-      ? '今天截止'
-      : `还有 ${diffDays} 天`;
+      ? t('flows.dueToday')
+      : t('flows.daysRemaining', { days: diffDays });
 
   return (
     <div className="flex items-center gap-2">
@@ -189,7 +191,7 @@ function CycleDeadline({
       <button
         className="text-xs text-muted-foreground hover:text-red-500 transition-colors"
         onClick={() => onChange(undefined)}
-        title="清除截止日期"
+        title={t('flows.clearDeadline')}
       >
         ×
       </button>
@@ -208,6 +210,7 @@ interface FlowEditorProps {
 const EMPTY_DATA: FlowData = { sections: [] };
 
 export function FlowEditor({ projectKey, projectName, initialHighlight }: FlowEditorProps) {
+  const t = useTranslations();
   const [data, setData] = useState<FlowData>(EMPTY_DATA);
   const [loading, setLoading] = useState(true);
   const [showDeferred, setShowDeferred] = useState(true);
@@ -308,7 +311,7 @@ export function FlowEditor({ projectKey, projectName, initialHighlight }: FlowEd
       persist({
         ...data,
         sections: [
-          { id: genId(), name: name ?? '新板块', items: [] },
+          { id: genId(), name: name ?? t('flows.newSection'), items: [] },
           ...data.sections,
         ],
       });
@@ -391,7 +394,7 @@ export function FlowEditor({ projectKey, projectName, initialHighlight }: FlowEd
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
-        加载中...
+        {t('tasks.loading')}
       </div>
     );
   }
@@ -422,19 +425,19 @@ export function FlowEditor({ projectKey, projectName, initialHighlight }: FlowEd
               <div className="flex items-center gap-1.5">
                 <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500" />
                 <span className="text-sm text-muted-foreground">
-                  已完成 ({stats.done})
+                  {t('flows.completed', { count: stats.done })}
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500" />
                 <span className="text-sm text-muted-foreground">
-                  进行中 ({stats.doing})
+                  {t('flows.inProgress', { count: stats.doing })}
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="inline-block w-2.5 h-2.5 rounded-full bg-zinc-300" />
                 <span className="text-sm text-muted-foreground">
-                  计划中 ({stats.todo})
+                  {t('flows.planned', { count: stats.todo })}
                 </span>
               </div>
 
@@ -451,13 +454,13 @@ export function FlowEditor({ projectKey, projectName, initialHighlight }: FlowEd
                   }`}
                   onClick={() => setShowDeferred(v => !v)}
                 >
-                  {showDeferred ? '显示全部' : '只看本周期'}
+                  {showDeferred ? t('flows.showAll') : t('flows.onlyThisCycle')}
                 </button>
                 <button
                   className="text-xs px-3 py-1 rounded-full border border-dashed border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
                   onClick={() => actions.addSection()}
                 >
-                  + 添加板块
+                  + {t('flows.addSection')}
                 </button>
               </div>
             </div>

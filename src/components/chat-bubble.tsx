@@ -2,6 +2,7 @@
 
 import { memo } from 'react';
 import { Bot, User, GitBranch } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { ToolCallCard } from '@/components/tool-call-card';
 import { FormattedText } from '@/components/formatted-text';
 import type { ChatMessage, ContentBlock } from '@/types';
@@ -24,6 +25,7 @@ export const ChatBubble = memo(function ChatBubble({
   onBranch,
   showActions,
 }: ChatBubbleProps) {
+  const t = useTranslations();
   const isUser = message.role === 'user';
 
   // Determine which blocks to render:
@@ -120,14 +122,14 @@ export const ChatBubble = memo(function ChatBubble({
           {/* Interrupted indicator */}
           {message.interrupted && (
             <div className="mt-1.5 text-xs text-zinc-400 dark:text-zinc-500">
-              (已中断)
+              {t('chat.interrupted')}
             </div>
           )}
 
           {/* Extracted plan indicator */}
           {message.extractedPlanId && (
             <div className="mt-1.5 rounded border border-green-200 bg-green-50 px-2 py-1 text-xs text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
-              计划已提取 → 查看"计划"标签页
+              {t('chat.planExtracted')}
             </div>
           )}
         </div>
@@ -138,10 +140,10 @@ export const ChatBubble = memo(function ChatBubble({
             <button
               onClick={(e) => { e.stopPropagation(); onBranch(message.id); }}
               className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
-              title="从此处创建对话分支"
+              title={t('chat.createBranchFrom')}
             >
               <GitBranch className="h-2.5 w-2.5" />
-              <span>分支</span>
+              <span>{t('chat.branch')}</span>
             </button>
           </div>
         )}

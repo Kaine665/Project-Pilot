@@ -1,4 +1,7 @@
+'use client';
+
 import React from 'react';
+import { useTranslations } from 'next-intl';
 import { FormattedText } from '@/components/formatted-text';
 import { CheckCircle2, Circle, AlertTriangle } from 'lucide-react';
 
@@ -26,6 +29,7 @@ interface PlanRendererProps {
  * 将 JSON 格式的计划渲染为友好的文本格式
  */
 export function PlanRenderer({ planJson }: PlanRendererProps) {
+  const t = useTranslations('plans');
   let plan: PlanData;
 
   try {
@@ -33,7 +37,7 @@ export function PlanRenderer({ planJson }: PlanRendererProps) {
   } catch (e) {
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-        计划格式错误
+        {t('invalidFormat')}
       </div>
     );
   }
@@ -48,19 +52,19 @@ export function PlanRenderer({ planJson }: PlanRendererProps) {
             : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
         }`}
       >
-        {level === 'high' ? '高风险' : '中风险'}
+        {level === 'high' ? t('highRisk') : t('mediumRisk')}
       </span>
     );
   };
 
   const typeIcon = (type: string) => {
     if (type === 'manual') {
-      return <span className="text-blue-600 dark:text-blue-400 text-xs">👤 手动</span>;
+      return <span className="text-blue-600 dark:text-blue-400 text-xs">{t('stepTypes.manual')}</span>;
     }
     if (type === 'confirm') {
-      return <span className="text-purple-600 dark:text-purple-400 text-xs">❓ 确认</span>;
+      return <span className="text-purple-600 dark:text-purple-400 text-xs">{t('stepTypes.confirm')}</span>;
     }
-    return <span className="text-green-600 dark:text-green-400 text-xs">⚡ 自动</span>;
+    return <span className="text-green-600 dark:text-green-400 text-xs">{t('stepTypes.auto')}</span>;
   };
 
   return (
@@ -69,7 +73,7 @@ export function PlanRenderer({ planJson }: PlanRendererProps) {
       {plan.analysis && (
         <div>
           <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            📋 任务分析
+            {t('sections.taskAnalysis')}
           </h3>
           <FormattedText text={plan.analysis} className="space-y-1.5 text-zinc-700 dark:text-zinc-300" />
         </div>
@@ -79,7 +83,7 @@ export function PlanRenderer({ planJson }: PlanRendererProps) {
       {plan.steps && plan.steps.length > 0 && (
         <div>
           <h3 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            🔧 执行步骤 ({plan.steps.length} 步)
+            {t('sections.executionSteps', { count: plan.steps.length })}
           </h3>
           <div className="space-y-3">
             {plan.steps.map((step) => (
@@ -119,7 +123,7 @@ export function PlanRenderer({ planJson }: PlanRendererProps) {
       {plan.expected_results && (
         <div>
           <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            ✅ 预期结果
+            {t('sections.expectedResult')}
           </h3>
           <FormattedText
             text={plan.expected_results}
@@ -132,7 +136,7 @@ export function PlanRenderer({ planJson }: PlanRendererProps) {
       {plan.risks && (
         <div>
           <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            ⚠️ 风险评估
+            {t('sections.riskAssessment')}
           </h3>
           <FormattedText text={plan.risks} className="space-y-1.5 text-zinc-700 dark:text-zinc-300" />
         </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useTranslations } from 'next-intl';
 import { Loader2, Terminal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -11,6 +12,8 @@ interface LogViewerProps {
 }
 
 export function LogViewer({ planId, active }: LogViewerProps) {
+  const t = useTranslations('logs');
+  const tActions = useTranslations('actions');
   const [logs, setLogs] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [done, setDone] = useState(false);
@@ -78,7 +81,7 @@ export function LogViewer({ planId, active }: LogViewerProps) {
     return (
       <div className="flex flex-col items-center gap-2 p-8 text-center">
         <Terminal className="h-8 w-8 text-zinc-300 dark:text-zinc-600" />
-        <p className="text-sm text-zinc-400">选择一个计划查看 AI 输出日志</p>
+        <p className="text-sm text-zinc-400">{t('selectPlanHint')}</p>
       </div>
     );
   }
@@ -89,15 +92,15 @@ export function LogViewer({ planId, active }: LogViewerProps) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-xs text-zinc-400">
           <Terminal className="h-3.5 w-3.5" />
-          <span>AI 输出日志</span>
+          <span>{t('title')}</span>
           {streaming && (
             <span className="flex items-center gap-1 text-blue-500">
               <Loader2 className="h-3 w-3 animate-spin" />
-              实时更新中
+              {t('liveUpdating')}
             </span>
           )}
           {done && logs && (
-            <span className="text-zinc-300 dark:text-zinc-600">已结束</span>
+            <span className="text-zinc-300 dark:text-zinc-600">{t('ended')}</span>
           )}
         </div>
         <div className="flex items-center gap-1">
@@ -113,7 +116,7 @@ export function LogViewer({ planId, active }: LogViewerProps) {
                 }
               }}
             >
-              滚动到底部
+              {tActions('scrollToBottom')}
             </Button>
           )}
         </div>
@@ -132,10 +135,10 @@ export function LogViewer({ planId, active }: LogViewerProps) {
             {active || streaming ? (
               <span className="flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                等待 AI 输出...
+                {t('waiting')}
               </span>
             ) : (
-              '暂无日志'
+              t('noLogs')
             )}
           </div>
         )}

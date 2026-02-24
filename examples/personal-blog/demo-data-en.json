@@ -1,0 +1,303 @@
+{
+  "flow": {
+    "id": "demo-blog-en",
+    "name": "Personal Tech Blog Development",
+    "description": "Build a personal tech blog from scratch with Next.js",
+    "createdAt": "2025-02-20T10:00:00Z",
+    "updatedAt": "2025-02-24T15:30:00Z",
+    "nodes": [
+      {
+        "id": "node-1",
+        "name": "Project Setup",
+        "description": "Initialize project infrastructure",
+        "tasks": [
+          {
+            "id": "task-1-1",
+            "content": "Create Next.js project with TypeScript and basic configuration",
+            "status": "completed",
+            "sessionId": "session-demo-en-1"
+          },
+          {
+            "id": "task-1-2",
+            "content": "Configure Tailwind CSS and design system",
+            "status": "completed",
+            "sessionId": "session-demo-en-2"
+          },
+          {
+            "id": "task-1-3",
+            "content": "Set up project structure and routing",
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "id": "node-2",
+        "name": "Core Features",
+        "description": "Implement blog reading functionality",
+        "tasks": [
+          {
+            "id": "task-2-1",
+            "content": "Build article list page with pagination and search",
+            "status": "in_progress",
+            "sessionId": "session-demo-en-3"
+          },
+          {
+            "id": "task-2-2",
+            "content": "Build article detail page with Markdown rendering",
+            "status": "pending"
+          },
+          {
+            "id": "task-2-3",
+            "content": "Add tag system and category filtering",
+            "status": "pending"
+          },
+          {
+            "id": "task-2-4",
+            "content": "Implement search and related article recommendations",
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "node-3",
+        "name": "Polish & Optimize",
+        "description": "Enhance UX and performance",
+        "tasks": [
+          {
+            "id": "task-3-1",
+            "content": "Design responsive layout for mobile devices",
+            "status": "pending"
+          },
+          {
+            "id": "task-3-2",
+            "content": "Add dark mode toggle feature",
+            "status": "pending"
+          },
+          {
+            "id": "task-3-3",
+            "content": "Optimize SEO with meta tags and sitemap",
+            "status": "pending"
+          },
+          {
+            "id": "task-3-4",
+            "content": "Performance optimization: lazy loading and code splitting",
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "node-4",
+        "name": "Deploy",
+        "description": "Deploy blog to production",
+        "tasks": [
+          {
+            "id": "task-4-1",
+            "content": "Configure Vercel auto-deployment",
+            "status": "pending"
+          },
+          {
+            "id": "task-4-2",
+            "content": "Set up custom domain and SSL",
+            "status": "pending"
+          },
+          {
+            "id": "task-4-3",
+            "content": "Add Google Analytics and monitoring",
+            "status": "pending"
+          }
+        ]
+      }
+    ]
+  },
+  "sessions": [
+    {
+      "id": "session-demo-en-1",
+      "taskId": "task-1-1",
+      "flowContext": {
+        "flowId": "demo-blog-en",
+        "flowName": "Personal Tech Blog Development",
+        "nodeName": "Project Setup",
+        "taskContent": "Create Next.js project with TypeScript and basic configuration"
+      },
+      "phase": "completed",
+      "understanding": {
+        "projectContext": "Building a personal tech blog to share programming knowledge and technical articles",
+        "whatToDo": "Initialize Next.js project with TypeScript, ESLint, and basic page structure",
+        "whyDoIt": "Establish a solid technical foundation for the blog. Next.js is chosen for its SSG, SEO optimization, and other essential blog features",
+        "deliverables": {
+          "type": "code",
+          "description": "A fully configured Next.js project with homepage, layout components, and TypeScript setup"
+        }
+      },
+      "plan": {
+        "title": "Next.js Blog Project Initialization Plan",
+        "steps": [
+          {
+            "step": 1,
+            "description": "Create project using create-next-app",
+            "status": "completed"
+          },
+          {
+            "step": 2,
+            "description": "Configure TypeScript and type checking",
+            "status": "completed"
+          },
+          {
+            "step": 3,
+            "description": "Set up ESLint and code formatting rules",
+            "status": "completed"
+          },
+          {
+            "step": 4,
+            "description": "Create basic layout components and page structure",
+            "status": "completed"
+          },
+          {
+            "step": 5,
+            "description": "Configure environment variables and project metadata",
+            "status": "completed"
+          }
+        ]
+      },
+      "result": {
+        "summary": "Successfully created Next.js project with TypeScript and ESLint, built basic page structure",
+        "filesChanged": [
+          "package.json",
+          "tsconfig.json",
+          ".eslintrc.json",
+          "src/app/layout.tsx",
+          "src/app/page.tsx",
+          "next.config.js"
+        ],
+        "achievements": [
+          "Project infrastructure completed",
+          "TypeScript type checking enabled",
+          "Code standards configured",
+          "Ready to develop features"
+        ]
+      },
+      "createdAt": "2025-02-20T10:30:00Z",
+      "completedAt": "2025-02-20T11:15:00Z"
+    },
+    {
+      "id": "session-demo-en-2",
+      "taskId": "task-1-2",
+      "flowContext": {
+        "flowId": "demo-blog-en",
+        "flowName": "Personal Tech Blog Development",
+        "nodeName": "Project Setup",
+        "taskContent": "Configure Tailwind CSS and design system"
+      },
+      "phase": "completed",
+      "understanding": {
+        "projectContext": "Establish a unified visual design system for the blog",
+        "whatToDo": "Configure Tailwind CSS, define design standards like colors, fonts, spacing, and create reusable style components",
+        "whyDoIt": "A design system ensures UI consistency, speeds up development, and improves user experience",
+        "deliverables": {
+          "type": "configuration",
+          "description": "Tailwind config file, design documentation, and basic style components"
+        }
+      },
+      "plan": {
+        "title": "Design System Configuration Plan",
+        "steps": [
+          {
+            "step": 1,
+            "description": "Install Tailwind CSS and dependencies",
+            "status": "completed"
+          },
+          {
+            "step": 2,
+            "description": "Configure tailwind.config.js with theme colors, fonts, etc.",
+            "status": "completed"
+          },
+          {
+            "step": 3,
+            "description": "Create global styles and CSS variables",
+            "status": "completed"
+          },
+          {
+            "step": 4,
+            "description": "Create basic UI components (Button, Card, Badge, etc.)",
+            "status": "completed"
+          }
+        ]
+      },
+      "result": {
+        "summary": "Successfully configured Tailwind CSS design system and created reusable base components",
+        "filesChanged": [
+          "tailwind.config.js",
+          "src/app/globals.css",
+          "src/components/ui/button.tsx",
+          "src/components/ui/card.tsx",
+          "src/components/ui/badge.tsx"
+        ],
+        "achievements": [
+          "Design system established",
+          "Dark/light theme support",
+          "Created 5 base UI components",
+          "Improved styling efficiency"
+        ]
+      },
+      "createdAt": "2025-02-21T09:00:00Z",
+      "completedAt": "2025-02-21T10:30:00Z"
+    },
+    {
+      "id": "session-demo-en-3",
+      "taskId": "task-2-1",
+      "flowContext": {
+        "flowId": "demo-blog-en",
+        "flowName": "Personal Tech Blog Development",
+        "nodeName": "Core Features",
+        "taskContent": "Build article list page with pagination and search"
+      },
+      "phase": "executing",
+      "understanding": {
+        "projectContext": "Implement core blog feature - article list display",
+        "whatToDo": "Create article list page with article cards, pagination navigation, and search filtering",
+        "whyDoIt": "Article list is the main entry point of the blog. Users need to browse, search, and discover interesting articles",
+        "deliverables": {
+          "type": "code",
+          "description": "Complete article list page component with pagination and search functionality"
+        }
+      },
+      "plan": {
+        "title": "Article List Page Development Plan",
+        "steps": [
+          {
+            "step": 1,
+            "description": "Create article data model and type definitions",
+            "status": "completed"
+          },
+          {
+            "step": 2,
+            "description": "Implement article list API endpoint (with pagination)",
+            "status": "completed"
+          },
+          {
+            "step": 3,
+            "description": "Create article card component (ArticleCard)",
+            "status": "in_progress"
+          },
+          {
+            "step": 4,
+            "description": "Implement article list page component",
+            "status": "pending"
+          },
+          {
+            "step": 5,
+            "description": "Add search and filter functionality",
+            "status": "pending"
+          },
+          {
+            "step": 6,
+            "description": "Implement pagination component and navigation",
+            "status": "pending"
+          }
+        ]
+      },
+      "createdAt": "2025-02-24T14:00:00Z",
+      "currentStep": 3
+    }
+  ]
+}

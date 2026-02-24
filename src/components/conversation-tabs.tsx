@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Plus, MessageSquare, X, Trash2, RotateCcw, Trash, GitBranch } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import type { ConversationMeta } from '@/types';
 
@@ -73,6 +74,7 @@ export function ConversationTabs({
   onRename,
   disabled,
 }: ConversationTabsProps) {
+  const t = useTranslations();
   const [showTrash, setShowTrash] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -136,19 +138,19 @@ export function ConversationTabs({
                     onClick={() => onSelect(conv.conversationId)}
                     onDoubleClick={() => {
                       setEditingId(conv.conversationId);
-                      setEditValue(conv.title || `对话 ${i + 1}`);
+                      setEditValue(conv.title || t('chat.conversationNumber', { number: i + 1 }));
                     }}
                     disabled={disabled}
                     className="flex items-center gap-1"
                     title={conv.parentConversationId
-                      ? `${conv.title}（分支 @ #${(conv.branchFromMessageIndex ?? 0) + 1}，双击重命名）`
-                      : `${conv.title}（双击重命名）`}
+                      ? `${conv.title}（${t('chat.branch')} @ #${(conv.branchFromMessageIndex ?? 0) + 1}，${t('chat.doubleClickToRename')}）`
+                      : `${conv.title}（${t('chat.doubleClickToRename')}）`}
                   >
                     {conv.parentConversationId && (
                       <GitBranch className="h-2.5 w-2.5 shrink-0 text-zinc-300 dark:text-zinc-600" />
                     )}
                     <span className="max-w-[100px] truncate">
-                      {conv.title || `对话 ${i + 1}`}
+                      {conv.title || t('chat.conversationNumber', { number: i + 1 })}
                     </span>
                     <span className="text-[10px] text-zinc-300 dark:text-zinc-600">
                       {formatTime(conv.updatedAt)}
@@ -164,7 +166,7 @@ export function ConversationTabs({
                     }}
                     disabled={disabled}
                     className="ml-0.5 hidden rounded p-0.5 text-zinc-300 transition-colors hover:bg-zinc-200 hover:text-zinc-500 group-hover:block dark:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-400"
-                    title="删除对话"
+                    title={t('chat.deleteConversation')}
                   >
                     <X className="h-2.5 w-2.5" />
                   </button>
@@ -184,7 +186,7 @@ export function ConversationTabs({
                   ? 'bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300'
                   : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300',
               )}
-              title={`回收站 (${archivedConvs.length})`}
+              title={t('chat.trashCount', { count: archivedConvs.length })}
             >
               <Trash2 className="h-3 w-3" />
               <span className="ml-0.5 text-[10px]">{archivedConvs.length}</span>
@@ -198,7 +200,7 @@ export function ConversationTabs({
               'flex items-center rounded p-0.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300',
               disabled && 'opacity-50',
             )}
-            title="新对话"
+            title={t('chat.newConversation')}
           >
             <Plus className="h-3.5 w-3.5" />
           </button>
@@ -210,7 +212,7 @@ export function ConversationTabs({
         <div className="border-t border-zinc-100 bg-zinc-100/50 px-2 py-1.5 dark:border-zinc-800 dark:bg-zinc-900/80">
           <div className="mb-1 flex items-center gap-1 text-[10px] font-medium text-zinc-400">
             <Trash2 className="h-2.5 w-2.5" />
-            回收站
+            {t('chat.trash')}
           </div>
           <div className="flex flex-col gap-0.5">
             {archivedConvs.map((conv) => (
@@ -228,14 +230,14 @@ export function ConversationTabs({
                   <button
                     onClick={() => onRestore(conv.conversationId)}
                     className="rounded p-0.5 text-zinc-400 transition-colors hover:bg-zinc-200 hover:text-blue-500 dark:hover:bg-zinc-700 dark:hover:text-blue-400"
-                    title="恢复"
+                    title={t('actions.restore')}
                   >
                     <RotateCcw className="h-2.5 w-2.5" />
                   </button>
                   <button
                     onClick={() => onPermanentDelete(conv.conversationId)}
                     className="rounded p-0.5 text-zinc-400 transition-colors hover:bg-zinc-200 hover:text-red-500 dark:hover:bg-zinc-700 dark:hover:text-red-400"
-                    title="永久删除"
+                    title={t('actions.permanentDelete')}
                   >
                     <Trash className="h-2.5 w-2.5" />
                   </button>

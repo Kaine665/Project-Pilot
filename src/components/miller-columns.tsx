@@ -16,6 +16,7 @@ import {
   TextCursorInput,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { useFlowData } from './flow-editor';
 import {
   nextStatus,
@@ -94,6 +95,7 @@ function MillerColumnItem({
   depth: number;
   sectionItems: TreeItem[];
 }) {
+  const t = useTranslations();
   const ctx = useContext(ItemActionsContext);
   const { selectionPath, onSelect, setAddingToItemId } = useContext(MillerSelectionContext);
   const { showDeferred, highlightTarget, aiStatusMap } = useFlowData();
@@ -152,7 +154,7 @@ function MillerColumnItem({
           e.stopPropagation();
           if (!hasChildren) ctx.onToggleStatus(item.id);
         }}
-        title={hasChildren ? '状态由子项决定' : '点击切换状态'}
+        title={hasChildren ? t('status.decidedByChildren') : t('actions.clickToToggle')}
       >
         <StatusIcon status={effectiveStatus} />
       </button>
@@ -209,7 +211,7 @@ function MillerColumnItem({
               setAddingDesc(false);
             }}
             className="text-xs text-muted-foreground mt-0.5 block"
-            placeholder="输入描述..."
+            placeholder={t('flows.descriptionPlaceholder')}
             autoEdit
             multiline
             maxLength={500}
@@ -233,7 +235,7 @@ function MillerColumnItem({
               e.stopPropagation();
               setAddingDesc(true);
             }}
-            title="添加描述"
+            title={t('flows.addDescription')}
           >
             <TextCursorInput className="w-3.5 h-3.5" />
           </button>
@@ -244,7 +246,7 @@ function MillerColumnItem({
             e.stopPropagation();
             handleLaunchAI();
           }}
-          title="发起 AI 协作"
+          title={t('flows.startAICollaboration')}
         >
           <Sparkles className="w-3.5 h-3.5" />
         </button>
@@ -258,7 +260,7 @@ function MillerColumnItem({
             e.stopPropagation();
             ctx.onToggleDefer(item.id, !!item.deferred);
           }}
-          title={isDeferred ? '移入本周期' : '推到以后'}
+          title={isDeferred ? t('flows.moveToThisCycle') : t('flows.pushToLater')}
         >
           <ChevronsRight className="w-3.5 h-3.5" />
         </button>
@@ -273,7 +275,7 @@ function MillerColumnItem({
             }
             setAddingToItemId(item.id);
           }}
-          title="添加子项"
+          title={t('flows.addSubItem')}
         >
           <Plus className="w-3.5 h-3.5" />
         </button>
@@ -340,7 +342,7 @@ function MillerColumn({
             }
           }}
           onCancel={() => setAddingToItemId(null)}
-          placeholder="添加子项..."
+          placeholder={t('flows.addSubItem')}
           autoFocus={isAddingHere}
         />
       </div>
@@ -387,7 +389,7 @@ function RootColumn({
               actions.addItem(ctx.sectionId, content);
             }
           }}
-          placeholder="添加条目..."
+          placeholder={t('flows.addItem')}
         />
       </div>
     </div>
