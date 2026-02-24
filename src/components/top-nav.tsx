@@ -1,17 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
 import { useTranslations, useLocale } from 'next-intl';
 import { Bot, GitBranch, Settings, Sparkles } from 'lucide-react';
+import { Link, usePathname, useRouter } from '@/i18n/routing';
 import { cn } from '@/lib/utils';
 import { LanguageSwitcher } from './language-switcher';
 
-const getNavItems = (t: ReturnType<typeof useTranslations>, locale: string) => [
-  { href: `/${locale}/flows`, label: t('nav.projects'), icon: GitBranch },
-  { href: `/${locale}/tasks`, label: t('nav.taskAgent'), icon: Bot },
-  { href: `/${locale}/settings`, label: t('nav.settings'), icon: Settings },
+const getNavItems = (t: ReturnType<typeof useTranslations>) => [
+  { href: '/flows' as const, label: t('nav.projects'), icon: GitBranch },
+  { href: '/tasks' as const, label: t('nav.taskAgent'), icon: Bot },
+  { href: '/settings' as const, label: t('nav.settings'), icon: Settings },
 ];
 
 export function TopNav({ children, plannerOpen }: { children?: React.ReactNode; plannerOpen?: boolean }) {
@@ -23,14 +22,13 @@ export function TopNav({ children, plannerOpen }: { children?: React.ReactNode; 
   const router = useRouter();
   const t = useTranslations();
   const locale = useLocale();
-  const navItems = getNavItems(t, locale);
+  const navItems = getNavItems(t);
 
   const handleOpenPlanner = () => {
-    const onFlowsPage = pathname.startsWith(`/${locale}/flows`);
-    if (onFlowsPage) {
+    if (pathname.startsWith('/flows')) {
       window.dispatchEvent(new CustomEvent('pp:toggle-planner'));
     } else {
-      router.push(`/${locale}/flows`);
+      router.push('/flows');
       // Dispatch after navigation settles
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent('pp:open-planner'));

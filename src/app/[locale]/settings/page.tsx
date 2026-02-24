@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname } from '@/i18n/routing';
 import { TopNav } from '@/components/top-nav';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -203,8 +203,7 @@ export default function SettingsPage() {
 
   // ── Language switch ──
   const switchLocale = (newLocale: string) => {
-    const pathnameWithoutLocale = pathname.replace(/^\/(zh|en)/, '');
-    router.push(`/${newLocale}${pathnameWithoutLocale || '/'}`);
+    router.push(pathname, { locale: newLocale });
   };
 
   // ── Data management handlers ──

@@ -11,7 +11,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from '@/i18n/routing';
 import { Badge } from '@/components/ui/badge';
 import { useFlowData } from './flow-editor';
 import type {
@@ -41,22 +41,22 @@ const statusConfig: Record<
   done: {
     label: '已完成',
     color: 'text-emerald-600',
-    border: 'border-emerald-300',
+    border: 'border-emerald-300 dark:border-emerald-700',
     dot: 'bg-emerald-500',
     icon: Check,
   },
   doing: {
     label: '进行中',
     color: 'text-amber-600',
-    border: 'border-amber-300',
+    border: 'border-amber-300 dark:border-amber-700',
     dot: 'bg-amber-500',
     icon: Clock,
   },
   todo: {
     label: '计划中',
     color: 'text-zinc-400',
-    border: 'border-zinc-200',
-    dot: 'bg-zinc-300',
+    border: 'border-zinc-200 dark:border-zinc-600',
+    dot: 'bg-zinc-300 dark:bg-zinc-600',
     icon: Circle,
   },
 };
@@ -83,7 +83,7 @@ function getDepthStyles(depth: number): DepthStyles {
     case 0:
       return {
         wrapper: 'border-b border-border',
-        row: 'py-3 px-4 bg-zinc-50/50 hover:bg-zinc-100/60 transition-colors',
+        row: 'py-3 px-4 bg-zinc-50/50 dark:bg-zinc-800/30 hover:bg-zinc-100/60 dark:hover:bg-zinc-800/60 transition-colors',
         textClass: 'font-semibold text-sm',
         childrenIndent: 'pl-6',
         showDescription: true,
@@ -92,7 +92,7 @@ function getDepthStyles(depth: number): DepthStyles {
     case 1:
       return {
         wrapper: 'border-b border-border/50',
-        row: 'py-2.5 px-4 hover:bg-zinc-50/50 transition-colors',
+        row: 'py-2.5 px-4 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors',
         textClass: 'font-medium text-sm',
         childrenIndent: 'pl-5',
         showDescription: true,
@@ -242,7 +242,7 @@ function ProgressBar({
       : 'bg-zinc-300';
   return (
     <div className="flex items-center gap-2 mt-1.5">
-      <div className="h-1 bg-zinc-100 rounded-full overflow-hidden flex-1">
+      <div className="h-1 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden flex-1">
         <div
           className={`h-full rounded-full ${barColor}`}
           style={{ width: `${total > 0 ? (done / total) * 100 : 0}%` }}
@@ -280,7 +280,7 @@ function EditableText({
   if (!editing) {
     return (
       <span
-        className={`cursor-text hover:bg-zinc-100 rounded px-1 -mx-1 transition-colors ${className}`}
+        className={`cursor-text hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded px-1 -mx-1 transition-colors ${className}`}
         onClick={e => {
           e.stopPropagation();
           setEditing(true);
@@ -295,7 +295,7 @@ function EditableText({
   return (
     <input
       autoFocus
-      className={`bg-white border border-border rounded px-1 -mx-1 outline-none focus:ring-1 focus:ring-ring w-full ${className}`}
+      className={`bg-white dark:bg-zinc-900 border border-border rounded px-1 -mx-1 outline-none focus:ring-1 focus:ring-ring w-full ${className}`}
       value={draft}
       onClick={e => e.stopPropagation()}
       onChange={e => setDraft(e.target.value)}
@@ -317,7 +317,7 @@ function EditableText({
 function DeleteButton({ onClick }: { onClick: () => void }) {
   return (
     <button
-      className="opacity-0 group-hover/item:opacity-100 p-0.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-500 transition-all shrink-0"
+      className="opacity-0 group-hover/item:opacity-100 p-0.5 rounded hover:bg-red-50 dark:hover:bg-red-950/30 text-muted-foreground hover:text-red-500 transition-all shrink-0"
       onClick={e => {
         e.stopPropagation();
         onClick();
@@ -458,8 +458,7 @@ function TreeItemRow({
     <div className={`${styles.wrapper} ${isDeferred ? 'opacity-40' : ''}`}>
       <div
         ref={rowRef}
-        className={`flex items-start gap-2 group/item ${styles.row}`}
-        style={isHighlighted ? { backgroundColor: 'rgb(254 240 138)' } : undefined}
+        className={`flex items-start gap-2 group/item ${styles.row} ${isHighlighted ? 'bg-yellow-200! dark:bg-yellow-500/20!' : ''}`}
       >
         {/* Collapse toggle */}
         <button
@@ -517,7 +516,7 @@ function TreeItemRow({
 
         {/* Hover actions */}
         <button
-          className="opacity-0 group-hover/item:opacity-100 p-0.5 rounded hover:bg-violet-50 text-muted-foreground hover:text-violet-500 transition-all shrink-0"
+          className="opacity-0 group-hover/item:opacity-100 p-0.5 rounded hover:bg-violet-50 dark:hover:bg-violet-950/30 text-muted-foreground hover:text-violet-500 transition-all shrink-0"
           onClick={e => {
             e.stopPropagation();
             ctx.onLaunchAI(item, ancestors);
@@ -530,7 +529,7 @@ function TreeItemRow({
           className={`p-0.5 rounded transition-all shrink-0 ${
             isDeferred
               ? 'text-blue-400 hover:text-blue-600 opacity-100'
-              : 'opacity-0 group-hover/item:opacity-100 text-muted-foreground hover:text-blue-500 hover:bg-blue-50'
+              : 'opacity-0 group-hover/item:opacity-100 text-muted-foreground hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/30'
           }`}
           onClick={e => {
             e.stopPropagation();
@@ -541,7 +540,7 @@ function TreeItemRow({
           <ChevronsRight className="w-3.5 h-3.5" />
         </button>
         <button
-          className="opacity-0 group-hover/item:opacity-100 p-0.5 rounded hover:bg-zinc-100 text-muted-foreground hover:text-foreground transition-all shrink-0"
+          className="opacity-0 group-hover/item:opacity-100 p-0.5 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground transition-all shrink-0"
           onClick={e => {
             e.stopPropagation();
             setIsOpen(true);
@@ -584,7 +583,7 @@ function TreeItemRow({
       {/* Collapsed children summary */}
       {!isOpen && hasChildren && (
         <div
-          className={`${styles.childrenIndent} flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 cursor-pointer hover:bg-zinc-50/50 rounded transition-colors`}
+          className={`${styles.childrenIndent} flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 cursor-pointer hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 rounded transition-colors`}
           onClick={() => setIsOpen(true)}
         >
           {item.children!
@@ -703,12 +702,11 @@ export function SectionBlock({ section }: { section: Section }) {
 
   return (
     <section
-      className="mb-8"
-      style={isSectionHighlighted ? { backgroundColor: 'rgb(254 240 138)' } : undefined}
+      className={`mb-8 ${isSectionHighlighted ? 'bg-yellow-200 dark:bg-yellow-500/20' : ''}`}
     >
       {/* Section header */}
       <div
-        className="flex items-center gap-3 py-3 px-4 bg-zinc-100/60 border border-border rounded-t-lg cursor-pointer hover:bg-zinc-100 transition-colors group/item"
+        className="flex items-center gap-3 py-3 px-4 bg-zinc-100/60 dark:bg-zinc-800/60 border border-border rounded-t-lg cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors group/item"
         onClick={() => toggleOpen(!isOpen)}
       >
         <CollapseIcon open={isOpen} />

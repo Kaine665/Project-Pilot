@@ -1,7 +1,7 @@
 'use client';
 
 import { useLocale } from 'next-intl';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter } from '@/i18n/routing';
 import { Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -12,12 +12,7 @@ export function LanguageSwitcher() {
 
   const switchLocale = () => {
     const newLocale = locale === 'zh' ? 'en' : 'zh';
-
-    // Remove the current locale from the pathname
-    const pathnameWithoutLocale = pathname.replace(/^\/(zh|en)/, '');
-
-    // Navigate to the new locale path
-    router.push(`/${newLocale}${pathnameWithoutLocale || '/'}`);
+    router.push(pathname, { locale: newLocale });
   };
 
   return (

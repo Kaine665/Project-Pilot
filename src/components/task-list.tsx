@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter, useParams } from 'next/navigation';
-import { useTranslations, useLocale } from 'next-intl';
+import { useParams } from 'next/navigation';
+import { useRouter } from '@/i18n/routing';
+import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -22,7 +23,6 @@ export function TaskList() {
   const params = useParams<{ id?: string }>();
   const selectedTaskId = params.id ?? null;
   const t = useTranslations('tasks');
-  const locale = useLocale();
   const [tasks, setTasks] = useState<TaskWithAI[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -84,7 +84,7 @@ export function TaskList() {
         setNewTitle('');
         setShowForm(false);
         fetchTasks();
-        router.push(`/${locale}/tasks/${task.id}`);
+        router.push(`/tasks/${task.id}`);
       }
     } catch (err) {
       console.error('Failed to create task:', err);
@@ -149,7 +149,7 @@ export function TaskList() {
         fetchTasks();
         // If the deleted task was currently selected, redirect to tasks list
         if (selectedTaskId === taskId) {
-          router.push(`/${locale}/tasks`);
+          router.push('/tasks');
         }
       }
     } catch (err) {
@@ -247,7 +247,7 @@ export function TaskList() {
                     !isEditing && 'cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-900',
                     selectedTaskId === task.id && 'bg-zinc-100 dark:bg-zinc-800/70',
                   )}
-                  onClick={() => !isEditing && router.push(`/${locale}/tasks/${task.id}`)}
+                  onClick={() => !isEditing && router.push(`/tasks/${task.id}`)}
                 >
                   <span className={cn(
                     'h-2 w-2 shrink-0 rounded-full',
@@ -289,7 +289,7 @@ export function TaskList() {
                         className="shrink-0 rounded p-1 opacity-0 transition-opacity hover:bg-blue-50 group-hover:opacity-100 dark:hover:bg-blue-950/30"
                         title={t('edit')}
                       >
-                        <Pencil className="h-3.5 w-3.5 text-zinc-400 hover:text-blue-500" />
+                        <Pencil className="h-3.5 w-3.5 text-zinc-400 hover:text-blue-500 dark:hover:text-blue-400" />
                       </span>
                       {task.archived && (
                         <span
@@ -299,7 +299,7 @@ export function TaskList() {
                           className="shrink-0 rounded p-1 opacity-0 transition-opacity hover:bg-red-50 group-hover:opacity-100 dark:hover:bg-red-950/30"
                           title={t('delete')}
                         >
-                          <Trash2 className="h-3.5 w-3.5 text-zinc-400 hover:text-red-500" />
+                          <Trash2 className="h-3.5 w-3.5 text-zinc-400 hover:text-red-500 dark:hover:text-red-400" />
                         </span>
                       )}
                       <span

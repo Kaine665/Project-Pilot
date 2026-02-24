@@ -38,22 +38,22 @@ export const statusConfig: Record<
   done: {
     labelKey: 'status.done',
     color: 'text-emerald-600',
-    border: 'border-emerald-300',
+    border: 'border-emerald-300 dark:border-emerald-700',
     dot: 'bg-emerald-500',
     icon: Check,
   },
   doing: {
     labelKey: 'status.doing',
     color: 'text-amber-600',
-    border: 'border-amber-300',
+    border: 'border-amber-300 dark:border-amber-700',
     dot: 'bg-amber-500',
     icon: Clock,
   },
   todo: {
     labelKey: 'status.todo',
     color: 'text-zinc-400',
-    border: 'border-zinc-200',
-    dot: 'bg-zinc-300',
+    border: 'border-zinc-200 dark:border-zinc-600',
+    dot: 'bg-zinc-300 dark:bg-zinc-600',
     icon: Circle,
   },
 };
@@ -189,7 +189,7 @@ export function ProgressBar({
       : 'bg-zinc-300';
   return (
     <div className="flex items-center gap-2 mt-1.5">
-      <div className="h-1 bg-zinc-100 rounded-full overflow-hidden flex-1">
+      <div className="h-1 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden flex-1">
         <div
           className={`h-full rounded-full ${barColor}`}
           style={{ width: `${total > 0 ? (done / total) * 100 : 0}%` }}
@@ -251,7 +251,7 @@ export function EditableText({
     }
     return (
       <span
-        className={`cursor-text hover:bg-zinc-100 rounded px-1 -mx-1 transition-colors ${className}`}
+        className={`cursor-text hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded px-1 -mx-1 transition-colors ${className}`}
         onClick={e => {
           e.stopPropagation();
           setEditing(true);
@@ -275,7 +275,7 @@ export function EditableText({
         placeholder={placeholder}
         maxLength={maxLength}
         rows={3}
-        className={`bg-white border border-border rounded px-1 -mx-1 outline-none focus:ring-1 focus:ring-ring w-full resize-y ${className}`}
+        className={`bg-white dark:bg-zinc-900 border border-border rounded px-1 -mx-1 outline-none focus:ring-1 focus:ring-ring w-full resize-y ${className}`}
         value={draft}
         onClick={e => e.stopPropagation()}
         onChange={e => setDraft(e.target.value)}
@@ -293,7 +293,7 @@ export function EditableText({
       autoFocus
       placeholder={placeholder}
       maxLength={maxLength}
-      className={`bg-white border border-border rounded px-1 -mx-1 outline-none focus:ring-1 focus:ring-ring w-full ${className}`}
+      className={`bg-white dark:bg-zinc-900 border border-border rounded px-1 -mx-1 outline-none focus:ring-1 focus:ring-ring w-full ${className}`}
       value={draft}
       onClick={e => e.stopPropagation()}
       onChange={e => setDraft(e.target.value)}
@@ -309,7 +309,7 @@ export function EditableText({
 export function DeleteButton({ onClick }: { onClick: () => void }) {
   return (
     <button
-      className="opacity-0 group-hover/item:opacity-100 p-0.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-500 transition-all shrink-0"
+      className="opacity-0 group-hover/item:opacity-100 p-0.5 rounded hover:bg-red-50 dark:hover:bg-red-950/30 text-muted-foreground hover:text-red-500 transition-all shrink-0"
       onClick={e => {
         e.stopPropagation();
         onClick();

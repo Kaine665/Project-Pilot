@@ -141,7 +141,7 @@ export function ProjectRegistry() {
           <div className="flex items-center justify-between mb-4">
             <Dialog.Title className="text-lg font-semibold">{t('title')}</Dialog.Title>
             <Dialog.Close asChild>
-              <button className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800">
+              <button className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
                 <X className="h-4 w-4" />
               </button>
             </Dialog.Close>

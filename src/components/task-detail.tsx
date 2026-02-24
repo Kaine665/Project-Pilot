@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import { useTranslations, useLocale } from 'next-intl';
+import { useRouter } from '@/i18n/routing';
+import { useTranslations } from 'next-intl';
 import { ArrowLeft, ChevronRight, Trash2, Pencil } from 'lucide-react';
 import { ChatPanel } from '@/components/chat-panel';
 import { ArtifactPanel } from '@/components/artifact-panel';
@@ -20,7 +20,6 @@ interface TaskDetailProps {
 export function TaskDetail({ taskId, artifactOpen = true }: TaskDetailProps) {
   const t = useTranslations('tasks');
   const tArtifacts = useTranslations('artifacts');
-  const locale = useLocale();
   const router = useRouter();
   const [task, setTask] = useState<Task | null>(null);
   const [loading, setLoading] = useState(false);
@@ -340,7 +339,7 @@ export function TaskDetail({ taskId, artifactOpen = true }: TaskDetailProps) {
         method: 'DELETE',
       });
       if (res.ok) {
-        router.push(`/${locale}/tasks`);
+        router.push('/tasks');
       }
     } catch (err) {
       console.error('Failed to delete task:', err);
@@ -545,14 +544,14 @@ export function TaskDetail({ taskId, artifactOpen = true }: TaskDetailProps) {
             <>
               <button
                 onClick={handleStartEditTitle}
-                className="rounded p-1 text-zinc-400 hover:bg-blue-50 hover:text-blue-500 dark:hover:bg-blue-950/30"
+                className="rounded p-1 text-zinc-400 hover:bg-blue-50 hover:text-blue-500 dark:hover:bg-blue-950/30 dark:hover:text-blue-400"
                 title={t('edit')}
               >
                 <Pencil className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={handleDeleteTask}
-                className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30"
+                className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30 dark:hover:text-red-400"
                 title={t('delete')}
               >
                 <Trash2 className="h-3.5 w-3.5" />

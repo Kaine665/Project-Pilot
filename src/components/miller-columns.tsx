@@ -16,7 +16,7 @@ import {
   TextCursorInput,
   GripVertical,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from '@/i18n/routing';
 import { useTranslations } from 'next-intl';
 import {
   DndContext,
@@ -159,13 +159,14 @@ function MillerColumnItem({
     <div
       ref={rowRef}
       className={`group/item flex items-start gap-2 px-3 py-2 cursor-pointer transition-colors relative ${
-        batchMode && isItemSelected
+        isHighlighted
+          ? 'bg-yellow-200! dark:bg-yellow-500/20!'
+          : batchMode && isItemSelected
           ? 'bg-purple-50 dark:bg-purple-950/30'
           : isSelected
           ? 'bg-blue-50 dark:bg-blue-950/30'
           : 'hover:bg-zinc-50/80 dark:hover:bg-zinc-800/30'
       } ${isDeferred ? 'opacity-40' : ''}`}
-      style={isHighlighted ? { backgroundColor: 'rgb(254 240 138)' } : undefined}
       onClick={() => {
         if (batchMode) {
           toggleItemSelection(item.id);
@@ -205,6 +206,7 @@ function MillerColumnItem({
           <EditableText
             value={item.content}
             onChange={v => ctx.onUpdate(item.id, { content: v })}
+            placeholder={t('flows.unnamed')}
             className={`text-sm font-medium ${
               effectiveStatus === 'done' ? 'text-muted-foreground' : 'text-foreground'
             }`}
@@ -226,7 +228,7 @@ function MillerColumnItem({
                     ? 'bg-blue-500 animate-pulse'
                     : cs === 'done' ? 'bg-emerald-500'
                     : cs === 'doing' ? 'bg-blue-500'
-                    : 'bg-zinc-300';
+                    : 'bg-zinc-300 dark:bg-zinc-600';
                   return (
                     <span key={c.id} className={`inline-block w-1.5 h-1.5 rounded-full ${dotClass}`} title={c.content} />
                   );
@@ -270,7 +272,7 @@ function MillerColumnItem({
       <div className="opacity-0 group-hover/item:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
         {!item.description && !addingDesc && (
           <button
-            className="p-0.5 rounded hover:bg-zinc-100 text-muted-foreground hover:text-foreground transition-colors"
+            className="p-0.5 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground transition-colors"
             onClick={e => {
               e.stopPropagation();
               setAddingDesc(true);
@@ -281,7 +283,7 @@ function MillerColumnItem({
           </button>
         )}
         <button
-          className="p-0.5 rounded hover:bg-violet-50 text-muted-foreground hover:text-violet-500 transition-colors"
+          className="p-0.5 rounded hover:bg-violet-50 dark:hover:bg-violet-950/30 text-muted-foreground hover:text-violet-500 transition-colors"
           onClick={e => {
             e.stopPropagation();
             handleLaunchAI();
@@ -294,7 +296,7 @@ function MillerColumnItem({
           className={`p-0.5 rounded transition-colors ${
             isDeferred
               ? 'text-blue-400 hover:text-blue-600 !opacity-100'
-              : 'text-muted-foreground hover:text-blue-500 hover:bg-blue-50'
+              : 'text-muted-foreground hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/30'
           }`}
           onClick={e => {
             e.stopPropagation();
@@ -305,7 +307,7 @@ function MillerColumnItem({
           <ChevronsRight className="w-3.5 h-3.5" />
         </button>
         <button
-          className="p-0.5 rounded hover:bg-zinc-100 text-muted-foreground hover:text-foreground transition-colors"
+          className="p-0.5 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground transition-colors"
           onClick={e => {
             e.stopPropagation();
             // Only select if not already selected — avoid deselecting (toggle)
@@ -714,12 +716,11 @@ export function MillerSectionBlock({ section }: { section: Section }) {
   return (
     <section
       ref={sectionRef}
-      className="mb-8"
-      style={isSectionHighlighted ? { backgroundColor: 'rgb(254 240 138)' } : undefined}
+      className={`mb-8 ${isSectionHighlighted ? 'bg-yellow-200 dark:bg-yellow-500/20' : ''}`}
     >
       {/* Section header */}
       <div
-        className="flex items-center gap-3 py-3 px-4 bg-zinc-100/60 border border-border rounded-t-lg cursor-pointer hover:bg-zinc-100 transition-colors group/item"
+        className="flex items-center gap-3 py-3 px-4 bg-zinc-100/60 dark:bg-zinc-800/60 border border-border rounded-t-lg cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors group/item"
         onClick={() => toggleOpen(!isOpen)}
       >
         <CollapseIcon open={isOpen} />
@@ -789,7 +790,7 @@ export function MillerSectionBlock({ section }: { section: Section }) {
             {t('flows.batchMarkTodo')}
           </button>
           <button
-            className="ml-auto text-xs px-2 py-1 rounded border border-zinc-300 hover:bg-zinc-100 transition-colors"
+            className="ml-auto text-xs px-2 py-1 rounded border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
             onClick={clearSelection}
           >
             {t('flows.clearSelection')}
@@ -821,7 +822,7 @@ export function MillerSectionBlock({ section }: { section: Section }) {
                 <div key={item.id} className={`flex items-center gap-1.5 ${item.deferred ? 'opacity-40' : ''}`}>
                   <StatusIcon status={s} />
                   <span className={`text-xs ${s === 'done' ? 'text-muted-foreground' : 'text-foreground'}`}>
-                    {item.content}
+                    {item.content || t('flows.unnamed')}
                     {ai && <>{' '}<AIStatusBadge status={ai} /></>}
                   </span>
                 </div>
