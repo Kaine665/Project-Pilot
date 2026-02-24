@@ -33,14 +33,33 @@ export function PlanList({ taskId }: PlanListProps) {
 
   const handleAction = async (action: 'approve' | 'reject' | 'execute', planId: string) => {
     try {
-      const res = await fetch(`/api/ai-plans/${planId}/${action}`, {
-        method: 'POST',
-      });
-      if (res.ok) {
-        fetchPlans();
+      if (action === 'execute') {
+        const res = await fetch('/api/ai-execute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskId, planId }),
+        });
+        if (res.ok) fetchPlans();
+      } else {
+        const status = action === 'approve' ? 'approved' : 'rejected';
+        const res = await fetch('/api/ai-plans', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ planId, status }),
+        });
+        if (res.ok) fetchPlans();
       }
     } catch (err) {
       console.error(`Failed to ${action} plan:`, err);
+    }
+  };
+
+  const handleDelete = async (planId: string) => {
+    try {
+      const res = await fetch(`/api/ai-plans?planId=${planId}`, { method: 'DELETE' });
+      if (res.ok) fetchPlans();
+    } catch (err) {
+      console.error('Failed to delete plan:', err);
     }
   };
 
@@ -66,6 +85,7 @@ export function PlanList({ taskId }: PlanListProps) {
           onApprove={(id) => handleAction('approve', id)}
           onReject={(id) => handleAction('reject', id)}
           onExecute={(id) => handleAction('execute', id)}
+          onDelete={(id) => handleDelete(id)}
         />
       ))}
     </div>

@@ -1,20 +1,15 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter, useParams } from 'next/navigation';
+import { useTranslations, useLocale } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Select } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import type { Task, ProjectConfig } from '@/types';
-import { Plus, RefreshCw } from 'lucide-react';
+import type { Session } from '@/types';
+import { Plus, Archive, ArchiveRestore } from 'lucide-react';
 
-interface TaskListProps {
-  selectedTaskId: string | null;
-  onSelect: (taskId: string) => void;
-}
-
-const statusOrder: Record<string, number> = { doing: 0, todo: 1, done: 2 };
+type TaskWithAI = Session & { aiStatus?: 'running' | 'waiting' | 'confirm' | null };
 
 const statusColors: Record<string, string> = {
   doing: 'bg-blue-500',
@@ -22,19 +17,17 @@ const statusColors: Record<string, string> = {
   done: 'bg-green-500',
 };
 
-const statusLabels: Record<string, string> = {
-  doing: '进行中',
-  todo: '待办',
-  done: '已完成',
-};
-
-export function TaskList({ selectedTaskId, onSelect }: TaskListProps) {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [projects, setProjects] = useState<Record<string, ProjectConfig>>({});
+export function TaskList() {
+  const router = useRouter();
+  const params = useParams<{ id?: string }>();
+  const selectedTaskId = params.id ?? null;
+  const t = useTranslations('tasks');
+  const locale = useLocale();
+  const [tasks, setTasks] = useState<TaskWithAI[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [newTitle, setNewTitle] = useState('');
-  const [newProject, setNewProject] = useState('');
+  const [filter, setFilter] = useState<'all' | 'active' | 'done' | 'archived'>('active');
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -51,119 +44,154 @@ export function TaskList({ selectedTaskId, onSelect }: TaskListProps) {
     }
   }, []);
 
-  const fetchProjects = useCallback(async () => {
-    try {
-      const res = await fetch('/api/projects');
-      if (res.ok) {
-        const data = await res.json();
-        setProjects(data.projects ?? {});
-      }
-    } catch (err) {
-      console.error('Failed to fetch projects:', err);
-    }
-  }, []);
-
   useEffect(() => {
     fetchTasks();
-    fetchProjects();
-  }, [fetchTasks, fetchProjects]);
+    const onTaskUpdated = () => fetchTasks();
+    window.addEventListener('task-updated', onTaskUpdated);
+    return () => window.removeEventListener('task-updated', onTaskUpdated);
+  }, [fetchTasks]);
 
-  const sortedTasks = [...tasks].sort(
-    (a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9),
-  );
+  const statusOrder: Record<string, number> = { doing: 0, todo: 1, done: 2 };
+
+  const visibleTasks = tasks
+    .filter((t) => {
+      if (filter === 'archived') return !!t.archived;
+      if (filter === 'all') return true;
+      if (filter === 'active') return !t.archived && (t.status === 'todo' || t.status === 'doing');
+      return !t.archived && t.status === filter;
+    })
+    .sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9));
 
   const handleCreate = async () => {
-    if (!newTitle.trim() || !newProject) return;
+    if (!newTitle.trim()) return;
     try {
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: newTitle.trim(), projectKey: newProject }),
+        body: JSON.stringify({ title: newTitle.trim() }),
       });
       if (res.ok) {
+        const task = await res.json();
         setNewTitle('');
-        setNewProject('');
         setShowForm(false);
         fetchTasks();
+        router.push(`/${locale}/tasks/${task.id}`);
       }
     } catch (err) {
       console.error('Failed to create task:', err);
     }
   };
 
-  const projectOptions = Object.entries(projects).map(([key, cfg]) => ({
-    value: key,
-    label: cfg.name,
-  }));
+  const handleToggleArchive = async (e: React.MouseEvent, taskId: string, currentlyArchived: boolean) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ archived: !currentlyArchived }),
+      });
+      if (res.ok) {
+        fetchTasks();
+      }
+    } catch (err) {
+      console.error('Failed to toggle archive:', err);
+    }
+  };
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-zinc-200 p-4 dark:border-zinc-800">
-        <h2 className="text-sm font-semibold">任务列表</h2>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={fetchTasks} title="刷新">
-            <RefreshCw className="h-3.5 w-3.5" />
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => setShowForm(!showForm)} title="新建任务">
-            <Plus className="h-3.5 w-3.5" />
-          </Button>
-        </div>
+      {/* New task button */}
+      <div className="p-3">
+        <Button
+          variant="outline"
+          className="w-full justify-start gap-2 text-sm font-normal text-zinc-500 dark:text-zinc-400"
+          onClick={() => setShowForm(!showForm)}
+        >
+          <Plus className="h-4 w-4" />
+          {t('newTask')}
+        </Button>
       </div>
 
       {/* New task form */}
       {showForm && (
-        <div className="flex flex-col gap-2 border-b border-zinc-200 p-3 dark:border-zinc-800">
+        <div className="flex flex-col gap-2 border-b border-zinc-200 px-3 pb-3 dark:border-zinc-800">
           <Input
-            placeholder="任务标题"
+            placeholder={t('placeholder')}
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-          />
-          <Select
-            options={projectOptions}
-            placeholder="选择项目"
-            value={newProject}
-            onChange={setNewProject}
+            autoFocus
           />
           <div className="flex gap-2">
-            <Button size="sm" onClick={handleCreate} disabled={!newTitle.trim() || !newProject}>
-              创建
+            <Button size="sm" onClick={handleCreate} disabled={!newTitle.trim()}>
+              {t('create')}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setShowForm(false)}>
-              取消
+              {t('cancel')}
             </Button>
           </div>
         </div>
       )}
 
+      {/* Section label + filter */}
+      <div className="flex items-center gap-2 px-4 pb-1 pt-2">
+        <span className="text-sm font-medium text-zinc-400 dark:text-zinc-500">{t('title')}</span>
+        <select
+          value={filter}
+          onChange={(e) => setFilter(e.target.value as typeof filter)}
+          className="h-7 rounded border border-zinc-200 bg-transparent px-1.5 text-sm text-zinc-400 outline-none dark:border-zinc-700 dark:text-zinc-500"
+        >
+          <option value="active">{t('filters.active')}</option>
+          <option value="done">{t('filters.done')}</option>
+          <option value="archived">{t('filters.archived')}</option>
+          <option value="all">{t('filters.all')}</option>
+        </select>
+      </div>
+
       {/* Task list */}
       <div className="flex-1 overflow-y-auto">
         {loading ? (
-          <div className="p-4 text-center text-sm text-zinc-400">加载中...</div>
-        ) : sortedTasks.length === 0 ? (
-          <div className="p-4 text-center text-sm text-zinc-400">暂无任务</div>
+          <div className="p-4 text-center text-sm text-zinc-400">{t('loading')}</div>
+        ) : visibleTasks.length === 0 ? (
+          <div className="p-4 text-center text-sm text-zinc-400">{t('noTasks')}</div>
         ) : (
           <div className="flex flex-col">
-            {sortedTasks.map((task) => (
+            {visibleTasks.map((task) => (
               <button
                 key={task.id}
-                onClick={() => onSelect(task.id)}
+                onClick={() => router.push(`/${locale}/tasks/${task.id}`)}
                 className={cn(
-                  'flex flex-col gap-1 border-b border-zinc-100 px-4 py-3 text-left transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900',
+                  'group flex items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-900',
                   selectedTaskId === task.id && 'bg-zinc-100 dark:bg-zinc-800/70',
                 )}
               >
-                <div className="flex items-center gap-2">
-                  <span className={cn('h-2 w-2 shrink-0 rounded-full', statusColors[task.status])} />
-                  <span className="truncate text-sm font-medium">{task.title}</span>
-                </div>
-                <div className="flex items-center gap-2 pl-4">
-                  <Badge variant="secondary" className="text-[10px]">
-                    {projects[task.projectKey]?.name ?? task.projectKey}
-                  </Badge>
-                  <span className="text-[10px] text-zinc-400">{statusLabels[task.status]}</span>
-                </div>
+                <span className={cn(
+                  'h-2 w-2 shrink-0 rounded-full',
+                  task.aiStatus === 'confirm' ? 'animate-blink-confirm'
+                    : task.aiStatus === 'waiting' ? 'animate-blink-waiting'
+                    : statusColors[task.status],
+                )} />
+                <span className="flex-1 truncate text-sm">
+                  {task.title}
+                  {task.aiStatus === 'running' && (
+                    <span className="ml-1.5 inline-flex items-center rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium leading-none text-emerald-500">
+                      {t('status.running')}
+                    </span>
+                  )}
+                </span>
+                <span
+                  role="button"
+                  tabIndex={-1}
+                  onClick={(e) => handleToggleArchive(e, task.id, !!task.archived)}
+                  className="shrink-0 rounded p-1 opacity-0 transition-opacity hover:bg-zinc-200 group-hover:opacity-100 dark:hover:bg-zinc-700"
+                  title={task.archived ? t('unarchive') : t('archive')}
+                >
+                  {task.archived ? (
+                    <ArchiveRestore className="h-3.5 w-3.5 text-zinc-400" />
+                  ) : (
+                    <Archive className="h-3.5 w-3.5 text-zinc-400" />
+                  )}
+                </span>
               </button>
             ))}
           </div>

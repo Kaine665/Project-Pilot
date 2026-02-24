@@ -28,6 +28,8 @@ export function ProjectRegistry() {
   const [formName, setFormName] = useState('');
   const [formPath, setFormPath] = useState('');
   const [formType, setFormType] = useState('');
+  const [formDescription, setFormDescription] = useState('');
+  const [formDefaultBranch, setFormDefaultBranch] = useState('');
   const [formWebCommand, setFormWebCommand] = useState('');
   const [formWebUrl, setFormWebUrl] = useState('');
 
@@ -57,6 +59,8 @@ export function ProjectRegistry() {
     setFormName('');
     setFormPath('');
     setFormType('');
+    setFormDescription('');
+    setFormDefaultBranch('');
     setFormWebCommand('');
     setFormWebUrl('');
     setShowForm(false);
@@ -70,6 +74,8 @@ export function ProjectRegistry() {
       path: formPath.trim(),
       type: formType as ProjectConfig['type'],
     };
+    if (formDescription.trim()) project.description = formDescription.trim();
+    if (formDefaultBranch.trim()) project.defaultBranch = formDefaultBranch.trim();
     if (formWebCommand.trim()) project.webCommand = formWebCommand.trim();
     if (formWebUrl.trim()) project.webUrl = formWebUrl.trim();
 
@@ -90,7 +96,11 @@ export function ProjectRegistry() {
 
   const handleDelete = async (key: string) => {
     try {
-      const res = await fetch(`/api/projects/${key}`, { method: 'DELETE' });
+      const res = await fetch('/api/projects', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key }),
+      });
       if (res.ok) {
         fetchProjects();
       }
@@ -138,6 +148,16 @@ export function ProjectRegistry() {
                       <Badge variant="secondary" className="text-[10px]">{config.type}</Badge>
                     </div>
                     <span className="text-xs text-zinc-400 font-mono pl-5.5">{config.path}</span>
+                    {(config.description || config.defaultBranch) && (
+                      <div className="flex items-center gap-3 pl-5.5">
+                        {config.description && (
+                          <span className="text-[10px] text-zinc-400">{config.description}</span>
+                        )}
+                        {config.defaultBranch && (
+                          <span className="text-[10px] text-zinc-400">branch: {config.defaultBranch}</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <Button
                     variant="ghost"
@@ -160,7 +180,9 @@ export function ProjectRegistry() {
                 <Input placeholder="项目名称" value={formName} onChange={(e) => setFormName(e.target.value)} />
               </div>
               <Input placeholder="项目路径" value={formPath} onChange={(e) => setFormPath(e.target.value)} />
+              <Input placeholder="项目描述 (可选)" value={formDescription} onChange={(e) => setFormDescription(e.target.value)} />
               <Select options={projectTypes} placeholder="项目类型" value={formType} onChange={setFormType} />
+              <Input placeholder="默认分支 (可选, 如 main)" value={formDefaultBranch} onChange={(e) => setFormDefaultBranch(e.target.value)} />
               <Input placeholder="Web 命令 (可选)" value={formWebCommand} onChange={(e) => setFormWebCommand(e.target.value)} />
               <Input placeholder="Web URL (可选)" value={formWebUrl} onChange={(e) => setFormWebUrl(e.target.value)} />
               <div className="flex gap-2">

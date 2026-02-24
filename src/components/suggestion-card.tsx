@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { Check, Loader2 } from 'lucide-react';
 import type { PlannerSuggestion } from '@/types/planner';
 import { SUGGESTION_TYPE_LABELS } from '@/types/planner';
@@ -79,6 +80,7 @@ export function applyMutation(data: FlowData, suggestion: PlannerSuggestion): Fl
 }
 
 export function SuggestionCard({ suggestion, projectKey, onApplied }: SuggestionCardProps) {
+  const t = useTranslations('suggestions');
   const [applying, setApplying] = useState(false);
 
   const handleApply = async () => {
