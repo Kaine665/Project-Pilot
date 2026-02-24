@@ -1,0 +1,149 @@
+/**
+ * SettingsManager — 全局设置读写 + Claude CLI 环境构建。
+ *
+ * 缓存策略：30s TTL 内存缓存，saveSettings 后立即失效。
+ * 优先级：系统环境变量 > App 设置 > 默认值。
+ */
+
+import { getSettingsPath, readJsonFile, writeJsonFile } from '@/lib/file-store';
+import { getProviderPreset } from '@/lib/provider-registry';
+import type { AppSettings, SessionPhase } from '@/types';
+import { DEFAULT_APP_SETTINGS } from '@/types';
+
+const CACHE_TTL_MS = 30_000;
+
+let cachedSettings: AppSettings | null = null;
+let cacheTimestamp = 0;
+
+export async function getSettings(): Promise<AppSettings> {
+  const now = Date.now();
+  if (cachedSettings && now - cacheTimestamp < CACHE_TTL_MS) {
+    return cachedSettings;
+  }
+  cachedSettings = await readJsonFile<AppSettings>(getSettingsPath(), DEFAULT_APP_SETTINGS);
+  cacheTimestamp = now;
+  return cachedSettings;
+}
+
+export async function saveSettings(settings: AppSettings): Promise<void> {
+  await writeJsonFile(getSettingsPath(), settings);
+  invalidateCache();
+}
+
+export function invalidateCache(): void {
+  cachedSettings = null;
+  cacheTimestamp = 0;
+}
+
+/**
+ * 构造 Claude CLI 的 env 对象。
+ *
+ * 注入逻辑（按供应商区分）：
+ *
+ * anthropic（官方）:
+ *   - ANTHROPIC_API_KEY: authMode=api_key 时注入
+ *   - ANTHROPIC_BASE_URL: 仅当用户填了自定义 URL 时注入
+ *
+ * 第三方供应商（deepseek/qwen/zhipu/minimax/openrouter/ollama/custom）:
+ *   - ANTHROPIC_BASE_URL: 从 preset 或用户自定义中取
+ *   - ANTHROPIC_AUTH_TOKEN: 用 apiKey 注入（第三方用 auth token 而非 api key）
+ *   - ANTHROPIC_API_KEY: 设为空字符串，防止 Claude CLI 回落到 Anthropic
+ *   - 额外 env: 从 preset.extraEnv 注入（如 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC）
+ *
+ * 所有供应商共同：
+ *   - FORCE_COLOR / CLAUDECODE: 始终覆盖
+ *   - CLAUDE_CODE_EFFORT_LEVEL: 非 high 时注入
+ */
+export async function buildClaudeEnv(): Promise<NodeJS.ProcessEnv> {
+  const settings = await getSettings();
+  const claude = settings.claude;
+  const provider = claude.provider ?? 'anthropic';
+  const preset = getProviderPreset(provider);
+
+  const env: NodeJS.ProcessEnv = { ...process.env };
+
+  if (provider === 'anthropic') {
+    // 官方模式：API Key 或 OAuth
+    if (claude.authMode === 'api_key' && claude.apiKey && !process.env.ANTHROPIC_API_KEY) {
+      env.ANTHROPIC_API_KEY = claude.apiKey;
+    }
+    if (claude.baseUrl && !process.env.ANTHROPIC_BASE_URL) {
+      env.ANTHROPIC_BASE_URL = claude.baseUrl;
+    }
+  } else {
+    // 第三方供应商
+    const baseUrl = claude.baseUrl || preset.baseUrl;
+    if (baseUrl && !process.env.ANTHROPIC_BASE_URL) {
+      env.ANTHROPIC_BASE_URL = baseUrl;
+    }
+
+    // 第三方用 AUTH_TOKEN 认证，同时把 API_KEY 设为空字符串
+    if (claude.apiKey && !process.env.ANTHROPIC_AUTH_TOKEN) {
+      env.ANTHROPIC_AUTH_TOKEN = claude.apiKey;
+    }
+    if (!process.env.ANTHROPIC_API_KEY) {
+      env.ANTHROPIC_API_KEY = '';
+    }
+
+    // 供应商额外环境变量
+    if (preset.extraEnv) {
+      for (const [key, val] of Object.entries(preset.extraEnv)) {
+        if (!process.env[key]) {
+          env[key] = val;
+        }
+      }
+    }
+  }
+
+  // 推理努力等级
+  if (claude.effortLevel && claude.effortLevel !== 'high' && !process.env.CLAUDE_CODE_EFFORT_LEVEL) {
+    env.CLAUDE_CODE_EFFORT_LEVEL = claude.effortLevel;
+  }
+
+  env.FORCE_COLOR = '0';
+  env.CLAUDECODE = '';
+
+  return env;
+}
+
+/**
+ * 构造 --model CLI 参数。
+ * 返回 ['--model', modelId] 或 []。
+ */
+export async function buildClaudeModelArgs(): Promise<string[]> {
+  const settings = await getSettings();
+  const model = settings.claude.model;
+  if (!model) return [];
+  return ['--model', model];
+}
+
+/**
+ * 构造 --max-turns CLI 参数。
+ * 返回 ['--max-turns', 'N'] 或 []。
+ */
+export async function buildClaudeMaxTurnsArgs(): Promise<string[]> {
+  const settings = await getSettings();
+  const maxTurns = settings.claude.maxTurns;
+  if (!maxTurns || maxTurns <= 0) return [];
+  return ['--max-turns', String(maxTurns)];
+}
+
+/**
+ * 根据 phase + 全局设置构造权限参数。
+ *
+ * - skipPermissions=true（默认）：有工具权限的阶段返回 ['--dangerously-skip-permissions']
+ * - skipPermissions=false：始终返回 []，所有工具调用需用户审批
+ *
+ * understanding/branching 阶段始终不传该参数（无论设置如何）。
+ */
+export async function buildClaudePermissionArgs(phase: SessionPhase | undefined): Promise<string[]> {
+  const effective = phase ?? 'understanding';
+
+  if (effective === 'branching' || effective === 'understanding') {
+    return [];
+  }
+
+  const settings = await getSettings();
+  const skip = settings.claude.skipPermissions !== false;
+  return skip ? ['--dangerously-skip-permissions'] : [];
+}
