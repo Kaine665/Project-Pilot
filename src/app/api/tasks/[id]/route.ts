@@ -133,7 +133,7 @@ export async function PATCH(
 
 /**
  * DELETE /api/tasks/[id]
- * Remove a task.
+ * Permanently remove a task.
  */
 export async function DELETE(
   _request: NextRequest,

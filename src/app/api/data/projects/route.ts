@@ -6,15 +6,7 @@ import {
   getFlowDataPath,
   ensureFlowsMigrated,
 } from '@/lib/file-store';
-
-interface ProjectEntry {
-  key: string;
-  name: string;
-}
-
-interface ProjectIndex {
-  projects: ProjectEntry[];
-}
+import type { ProjectEntry, ProjectIndex } from '@/types';
 
 async function readIndex(): Promise<ProjectIndex> {
   await ensureFlowsMigrated();
@@ -31,9 +23,11 @@ async function writeIndex(index: ProjectIndex): Promise<void> {
   await fs.writeFile(getFlowIndexPath(), JSON.stringify(index, null, 2), 'utf-8');
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const index = await readIndex();
-  return NextResponse.json(index);
+  const includeArchived = request.nextUrl.searchParams.get('includeArchived') === 'true';
+  const projects = includeArchived ? index.projects : index.projects.filter(p => !p.archived);
+  return NextResponse.json({ projects });
 }
 
 export async function POST(request: NextRequest) {
@@ -89,7 +83,7 @@ export async function PATCH(request: NextRequest) {
 
 /**
  * DELETE /api/data/projects
- * Remove a project and its flow data. Body: { key }
+ * Soft-delete a project (move to recycle bin). Body: { key }
  */
 export async function DELETE(request: NextRequest) {
   const { key } = await request.json();
@@ -98,21 +92,14 @@ export async function DELETE(request: NextRequest) {
   }
 
   const index = await readIndex();
-  const idx = index.projects.findIndex(p => p.key === key);
-  if (idx === -1) {
+  const project = index.projects.find(p => p.key === key);
+  if (!project) {
     return NextResponse.json({ error: 'project not found' }, { status: 404 });
   }
 
-  // Remove from index
-  index.projects.splice(idx, 1);
+  project.archived = true;
+  project.archivedAt = new Date().toISOString();
   await writeIndex(index);
-
-  // Delete flow data file
-  const safe = (key as string).replace(/[^a-zA-Z0-9_-]/g, '');
-  if (safe) {
-    const flowPath = getFlowDataPath(safe);
-    await fs.unlink(flowPath).catch(() => {});
-  }
 
   return NextResponse.json({ ok: true });
 }
