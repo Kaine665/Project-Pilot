@@ -51,14 +51,14 @@ export function PlanCard({ plan, onApprove, onReject, onExecute, onDelete }: Pla
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <CardTitle className="text-sm">计划 v{version}</CardTitle>
-            <Badge variant={badge.variant}>{badge.label}</Badge>
+            <CardTitle className="text-sm">{t('planVersion', { version })}</CardTitle>
+            <Badge variant={statusVariant[plan.status] ?? 'secondary'}>{t(`status.${plan.status}`)}</Badge>
           </div>
           <div className="flex items-center gap-1">
             <button
               onClick={() => onDelete?.(plan.plan_id)}
               className="rounded p-1 text-zinc-300 hover:bg-red-50 hover:text-red-500 dark:text-zinc-600 dark:hover:bg-red-950/30 dark:hover:text-red-400"
-              title="删除计划"
+              title={t('deletePlan')}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
@@ -81,9 +81,9 @@ export function PlanCard({ plan, onApprove, onReject, onExecute, onDelete }: Pla
           )}
         />
         <div className="mt-3 flex items-center gap-3 text-xs text-zinc-400">
-          <span>{stepCount} 个步骤</span>
-          <span>{stepsCompleted} 已完成</span>
-          {executionCount > 0 && <span>执行 {executionCount} 次</span>}
+          <span>{t('steps', { count: stepCount })}</span>
+          <span>{stepsCompleted} {t('status.completed')}</span>
+          {executionCount > 0 && <span>{t('executedTimes', { count: executionCount })}</span>}
         </div>
       </CardContent>
 
@@ -111,7 +111,7 @@ export function PlanCard({ plan, onApprove, onReject, onExecute, onDelete }: Pla
                         </span>
                         {step.type === 'manual' && (
                           <Badge variant="outline" className="text-[10px]">
-                            手动
+                            {t('manual')}
                           </Badge>
                         )}
                         {step.risk_level && step.risk_level !== 'low' && (
@@ -119,7 +119,7 @@ export function PlanCard({ plan, onApprove, onReject, onExecute, onDelete }: Pla
                             variant={step.risk_level === 'high' ? 'destructive' : 'outline'}
                             className="text-[10px]"
                           >
-                            {step.risk_level === 'high' ? '高风险' : '中风险'}
+                            {step.risk_level === 'high' ? t('highRisk') : t('mediumRisk')}
                           </Badge>
                         )}
                       </div>
