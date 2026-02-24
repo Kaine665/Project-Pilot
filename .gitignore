@@ -36,6 +36,19 @@ yarn-error.log*
 # runtime data
 /data/*.json
 /data/artifacts/
+/data/conversations/
+/data/logs/
+/data/prompts/
+/data/task-artifacts/
+
+# Claude Code settings
+/.claude/
+
+# messages and debug
+/messages/
+
+# external projects
+/elapp/
 
 # vercel
 .vercel
