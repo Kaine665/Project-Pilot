@@ -1,0 +1,405 @@
+{
+  "flows": [
+    {
+      "id": "reading",
+      "name": "阅读学习流程",
+      "description": "从选择文章到掌握词汇的完整链路",
+      "nodes": [
+        {
+          "id": "select-material",
+          "name": "选文章",
+          "status": "doing",
+          "description": "用户选择要阅读的英语文章",
+          "tasks": [
+            {
+              "id": "t1",
+              "content": "官方(sql添加)",
+              "status": "done"
+            },
+            {
+              "id": "t2",
+              "content": "个人上传",
+              "status": "doing",
+              "children": [
+                {
+                  "id": "olffy5",
+                  "content": "epub",
+                  "status": "done"
+                },
+                {
+                  "id": "khnrxq",
+                  "content": "txt",
+                  "status": "done"
+                },
+                {
+                  "id": "q98bz5",
+                  "content": "书籍上传",
+                  "status": "todo",
+                  "deferred": true
+                },
+                {
+                  "id": "jyi43z",
+                  "content": "了解用户想要的上传格式",
+                  "status": "todo",
+                  "deferred": true
+                },
+                {
+                  "id": "spie56",
+                  "content": "个人上传展示到公共区域的功能",
+                  "status": "todo",
+                  "deferred": true
+                }
+              ]
+            },
+            {
+              "id": "t3",
+              "content": "AI 根据水平生成",
+              "status": "doing",
+              "children": [
+                {
+                  "id": "cue7kz",
+                  "content": "根据通用英语水平范围生成",
+                  "status": "done"
+                },
+                {
+                  "id": "k486b5",
+                  "content": "根据用户当前水平生成",
+                  "status": "todo",
+                  "deferred": true
+                },
+                {
+                  "id": "qvfyxs",
+                  "content": "AI生成上传到公共区域的功能",
+                  "status": "todo",
+                  "deferred": true
+                }
+              ],
+              "deferred": false
+            }
+          ]
+        },
+        {
+          "id": "read",
+          "name": "阅读文章",
+          "status": "done",
+          "description": "WebView 阅读器，多种交互模式",
+          "tasks": [
+            {
+              "id": "t4",
+              "content": "WebView 阅读器",
+              "status": "done"
+            },
+            {
+              "id": "t5",
+              "content": "难度标注",
+              "status": "done"
+            },
+            {
+              "id": "t4a",
+              "content": "阅读模式（选择性/严格）",
+              "status": "done"
+            },
+            {
+              "id": "t4b",
+              "content": "眼睛开关（快速标记/弹窗释义）",
+              "status": "done"
+            },
+            {
+              "id": "t4c",
+              "content": "拖选片段保存",
+              "status": "done"
+            },
+            {
+              "id": "t4d",
+              "content": "已学词高亮",
+              "status": "done"
+            },
+            {
+              "id": "t4e",
+              "content": "词库覆盖率显示",
+              "status": "done"
+            }
+          ]
+        },
+        {
+          "id": "highlight",
+          "name": "划词看义",
+          "status": "done",
+          "description": "选中词/短语，查看释义",
+          "tasks": [
+            {
+              "id": "t6",
+              "content": "选词交互",
+              "status": "done"
+            },
+            {
+              "id": "t7",
+              "content": "词义展示（ECDICT + AI）",
+              "status": "done"
+            },
+            {
+              "id": "t8",
+              "content": "短语片段选择",
+              "status": "done"
+            }
+          ]
+        },
+        {
+          "id": "save-words",
+          "name": "存词到词库",
+          "status": "done",
+          "description": "划到的词保存到个人词库",
+          "tasks": [
+            {
+              "id": "t9",
+              "content": "单词保存接口",
+              "status": "done"
+            },
+            {
+              "id": "t10",
+              "content": "关联阅读来源",
+              "status": "done"
+            }
+          ]
+        },
+        {
+          "id": "review",
+          "name": "复习",
+          "status": "doing",
+          "description": "SRS 间隔重复复习",
+          "tasks": [
+            {
+              "id": "t11",
+              "content": "间隔重复算法",
+              "status": "todo"
+            },
+            {
+              "id": "t12",
+              "content": "复习卡片界面",
+              "status": "done"
+            },
+            {
+              "id": "t13",
+              "content": "复习数据记录",
+              "status": "todo"
+            }
+          ]
+        },
+        {
+          "id": "mastery-view",
+          "name": "掌握情况可视化",
+          "status": "doing",
+          "description": "在词库中直观查看掌握进度",
+          "tasks": [
+            {
+              "id": "t14",
+              "content": "词汇量统计面板",
+              "status": "doing"
+            },
+            {
+              "id": "t15",
+              "content": "掌握程度分布图",
+              "status": "todo"
+            },
+            {
+              "id": "t16",
+              "content": "学习趋势曲线",
+              "status": "todo"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dbcroo",
+      "name": "学习新知识流程",
+      "description": "描述",
+      "nodes": []
+    },
+    {
+      "id": "nlpsxt",
+      "name": "复习流程",
+      "description": "描述",
+      "nodes": []
+    },
+    {
+      "id": "i5q0nq",
+      "name": "登录流程",
+      "description": "描述",
+      "nodes": []
+    },
+    {
+      "id": "pljtrq",
+      "name": "反馈流程",
+      "description": "用户从首页提交反馈的完整链路",
+      "nodes": [
+        {
+          "id": "fb-entry",
+          "name": "入口触达",
+          "status": "done",
+          "description": "用户在首页右上角看到并点击反馈按钮",
+          "tasks": [
+            {
+              "id": "fb-t1",
+              "content": "首页右上角「反馈」按钮",
+              "status": "done"
+            }
+          ]
+        },
+        {
+          "id": "fb-select",
+          "name": "选择类型",
+          "status": "done",
+          "description": "选择反馈分类：问题反馈/功能建议/其他",
+          "tasks": [
+            {
+              "id": "fb-t2a",
+              "content": "bug — 问题反馈",
+              "status": "done"
+            },
+            {
+              "id": "fb-t2b",
+              "content": "feature — 功能建议",
+              "status": "done"
+            },
+            {
+              "id": "fb-t2c",
+              "content": "general — 其他反馈",
+              "status": "done"
+            }
+          ]
+        },
+        {
+          "id": "fb-write",
+          "name": "填写内容",
+          "status": "doing",
+          "description": "用户描述反馈详情",
+          "tasks": [
+            {
+              "id": "fb-t3",
+              "content": "文本输入框（最多 1000 字）",
+              "status": "done"
+            },
+            {
+              "id": "fb-t4",
+              "content": "截图/附件上传",
+              "status": "todo"
+            },
+            {
+              "id": "fb-t5",
+              "content": "自动附带设备信息和应用版本",
+              "status": "todo"
+            },
+            {
+              "id": "alukjv",
+              "content": "填写联系信息",
+              "status": "todo"
+            }
+          ]
+        },
+        {
+          "id": "fb-submit",
+          "name": "提交",
+          "status": "doing",
+          "description": "提交到 Supabase feedback 表",
+          "tasks": [
+            {
+              "id": "fb-t6",
+              "content": "写入 Supabase（user_id + category + content）",
+              "status": "todo",
+              "children": [
+                {
+                  "id": "vesc10",
+                  "content": "（user_id + category + content）",
+                  "status": "todo"
+                },
+                {
+                  "id": "xnxtmf",
+                  "content": "根据填写内容与类型，可能有新字段的增加",
+                  "status": "todo"
+                }
+              ]
+            },
+            {
+              "id": "fb-t7",
+              "content": "提交成功 Alert 提示并返回",
+              "status": "done"
+            }
+          ]
+        },
+        {
+          "id": "fb-after",
+          "name": "提交后",
+          "status": "todo",
+          "description": "提交后的跟进和闭环",
+          "tasks": [
+            {
+              "id": "fb-t8",
+              "content": "查看历史反馈记录",
+              "status": "todo"
+            },
+            {
+              "id": "fb-t9",
+              "content": "反馈状态追踪（已读/处理中/已解决）",
+              "status": "todo"
+            },
+            {
+              "id": "fb-t10",
+              "content": "开发者回复通知",
+              "status": "todo"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "crossCutting": [
+    {
+      "id": "performance",
+      "name": "性能",
+      "status": "doing",
+      "tasks": [
+        {
+          "id": "c1",
+          "content": "划词响应速度优化",
+          "status": "doing"
+        },
+        {
+          "id": "c2",
+          "content": "词库加载性能",
+          "status": "todo"
+        }
+      ]
+    },
+    {
+      "id": "deployment",
+      "name": "部署与环境",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "c3",
+          "content": "dev/prod 环境分离",
+          "status": "done"
+        },
+        {
+          "id": "c4",
+          "content": "Supabase 自部署",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "id": "auth",
+      "name": "登录认证",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "c5",
+          "content": "手机号验证码登录",
+          "status": "done"
+        }
+      ]
+    }
+  ],
+  "cycleDeadline": "2026-02-13"
+}
