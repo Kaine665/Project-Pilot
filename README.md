@@ -46,6 +46,25 @@ npm run dev
 
 访问 http://localhost:4000
 
+#### 数据存储
+
+ProjectPilot 的数据默认存储在用户目录：
+- **Windows**: `C:\Users\<用户名>\.project-pilot\data\`
+- **macOS**: `/Users/<用户名>/.project-pilot/data/`
+- **Linux**: `/home/<用户名>/.project-pilot/data/`
+
+如需自定义位置，创建 `.env` 文件：
+```bash
+PROJECT_PILOT_DATA_DIR=/path/to/custom/data
+```
+
+从旧版本迁移数据（如果数据在项目 `data/` 目录）：
+```bash
+npm run migrate:data
+```
+
+详见 [数据存储文档](docs/data-storage.md)
+
 ### 💡 使用场景
 
 1. **软件开发项目** - 让 AI 帮你写代码、修 bug、重构
@@ -147,6 +166,25 @@ npm run dev
 ```
 
 Visit http://localhost:4000
+
+#### Data Storage
+
+ProjectPilot data is stored in your user directory by default:
+- **Windows**: `C:\Users\<username>\.project-pilot\data\`
+- **macOS**: `/Users/<username>/.project-pilot/data/`
+- **Linux**: `/home/<username>/.project-pilot/data/`
+
+To customize the location, create a `.env` file:
+```bash
+PROJECT_PILOT_DATA_DIR=/path/to/custom/data
+```
+
+Migrate data from old versions (if data is in project `data/` directory):
+```bash
+npm run migrate:data
+```
+
+See [Data Storage Documentation](docs/data-storage.md) for details.
 
 ### 💡 Use Cases
 
