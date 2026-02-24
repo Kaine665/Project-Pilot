@@ -20,7 +20,7 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { key, name, path: projectPath, type, webCommand, webUrl } = body;
+  const { key, name, path: projectPath, type, description, defaultBranch, webCommand, webUrl } = body;
 
   if (!key || !name || !projectPath || !type) {
     return NextResponse.json(
@@ -37,9 +37,12 @@ export async function POST(request: NextRequest) {
       projects: {
         ...data.projects,
         [key]: {
+          ...data.projects[key],
           name,
           path: projectPath,
           type,
+          ...(description !== undefined && { description: description || undefined }),
+          ...(defaultBranch !== undefined && { defaultBranch: defaultBranch || undefined }),
           ...(webCommand !== undefined && { webCommand }),
           ...(webUrl !== undefined && { webUrl }),
         },

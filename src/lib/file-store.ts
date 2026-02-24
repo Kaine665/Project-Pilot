@@ -1,6 +1,6 @@
 /**
  * JSON 文件读写工具（简化版，无文件锁）
- * task-agent 项目数据存储在项目内 data/ 目录
+ * ProjectPilot 项目数据存储在项目内 data/ 目录
  */
 
 import { promises as fs } from 'fs';
@@ -31,6 +31,39 @@ export function getArtifactsDir(planId?: string): string {
   return path.join(DATA_DIR, 'artifacts');
 }
 
+/** 旧格式：单个对话文件（向后兼容 / 懒迁移源） */
+export function getConversationPath(taskId: string): string {
+  return path.join(DATA_DIR, 'conversations', `${taskId}.json`);
+}
+
+/** 新格式：每个 task 一个对话目录 */
+export function getConversationDir(taskId: string): string {
+  return path.join(DATA_DIR, 'conversations', taskId);
+}
+
+/** 对话索引文件 */
+export function getConversationIndexPath(taskId: string): string {
+  return path.join(DATA_DIR, 'conversations', taskId, '_index.json');
+}
+
+/** 单个对话文件 */
+export function getConversationFilePath(taskId: string, conversationId: string): string {
+  return path.join(DATA_DIR, 'conversations', taskId, `${conversationId}.json`);
+}
+
+export function getTaskArtifactsPath(taskId: string): string {
+  return path.join(DATA_DIR, 'task-artifacts', `${taskId}.json`);
+}
+
+export function getFlowDataPath(projectKey: string): string {
+  const safe = projectKey.replace(/[^a-zA-Z0-9_-]/g, '');
+  return path.join(process.cwd(), 'src', 'data', 'flows', `${safe}.json`);
+}
+
+export function getPlannerSessionsPath(): string {
+  return path.join(DATA_DIR, 'planner-sessions.json');
+}
+
 export function getArtifactSummaryPath(planId: string): string {
   return path.join(DATA_DIR, 'artifacts', planId, 'summary.json');
 }
@@ -43,7 +76,9 @@ export async function readJsonFile<T>(filePath: string, defaultValue: T): Promis
     const content = await fs.readFile(filePath, 'utf-8');
     return JSON.parse(content);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+    const code = (error as NodeJS.ErrnoException).code;
+    // File not found or empty/corrupt JSON → return default
+    if (code === 'ENOENT' || error instanceof SyntaxError) {
       return defaultValue;
     }
     throw error;
@@ -81,4 +116,12 @@ export async function modifyJsonFile<T>(
   const modified = modifier(data);
   await fs.writeFile(filePath, JSON.stringify(modified, null, 2), 'utf-8');
   return modified;
+}
+
+/**
+ * 通知数据已变更（供 MCP Server 写入后触发 UI 刷新）
+ */
+export async function notifyDataChanged(): Promise<void> {
+  const notifyPath = path.join(DATA_DIR, '.notify');
+  await fs.writeFile(notifyPath, Date.now().toString(), 'utf-8');
 }

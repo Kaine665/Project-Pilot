@@ -15,12 +15,19 @@ export async function GET(request: NextRequest) {
 
   const data = await readJsonFile<PlansData>(getAiPlansPath(), DEFAULT_PLANS_DATA);
 
+  // Enrich plans with version number extracted from plan_id (e.g. "plan-xxx-v4-123" → 4)
+  const enriched = data.plans.map((p) => {
+    if (p.version) return p;
+    const match = p.plan_id.match(/-v(\d+)-/);
+    return { ...p, version: match ? parseInt(match[1], 10) : 1 };
+  });
+
   if (taskId) {
-    const filtered = data.plans.filter((p) => p.task_id === taskId);
+    const filtered = enriched.filter((p) => p.task_id === taskId);
     return NextResponse.json({ plans: filtered });
   }
 
-  return NextResponse.json(data);
+  return NextResponse.json({ plans: enriched });
 }
 
 /**
@@ -60,4 +67,32 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json(updatedPlan);
+}
+
+/**
+ * DELETE /api/ai-plans
+ * Remove a plan by planId.
+ * Query: ?planId=xxx
+ */
+export async function DELETE(request: NextRequest) {
+  const planId = request.nextUrl.searchParams.get('planId');
+
+  if (!planId) {
+    return NextResponse.json({ error: 'planId is required' }, { status: 400 });
+  }
+
+  let found = false;
+
+  await modifyJsonFile<PlansData>(getAiPlansPath(), DEFAULT_PLANS_DATA, (data) => {
+    const before = data.plans.length;
+    const plans = data.plans.filter((p) => p.plan_id !== planId);
+    found = plans.length < before;
+    return { ...data, plans };
+  });
+
+  if (!found) {
+    return NextResponse.json({ error: 'Plan not found' }, { status: 404 });
+  }
+
+  return NextResponse.json({ ok: true });
 }

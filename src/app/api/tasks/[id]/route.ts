@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getTasksPath, readJsonFile, modifyJsonFile } from '@/lib/file-store';
+import { getTasksPath, getFlowDataPath, readJsonFile, modifyJsonFile } from '@/lib/file-store';
 import type { Task, TasksData } from '@/types';
+import type { FlowData, TreeItem, Status } from '@/types/flow';
+import type { FlowTaskContext } from '@/types/flow-context';
+import { isLegacyFormat, migrateLegacyToSections } from '@/lib/flow-migration';
 
 const DEFAULT_TASKS_DATA: TasksData = { tasks: [] };
 
@@ -50,6 +53,9 @@ export async function PATCH(
       ...(body.status !== undefined && { status: body.status }),
       ...(body.projectKey !== undefined && { projectKey: body.projectKey }),
       ...(body.ai_execution !== undefined && { ai_execution: body.ai_execution }),
+      ...(body.archived !== undefined && { archived: body.archived }),
+      ...(body.phase !== undefined && { phase: body.phase }),
+      ...(body.gitBranch !== undefined && { gitBranch: body.gitBranch }),
       updatedAt: now,
       ...(body.status === 'done' && !task.completedAt && { completedAt: now }),
     };
@@ -60,11 +66,18 @@ export async function PATCH(
     return { ...data, tasks };
   });
 
-  if (!updatedTask) {
+  // updatedTask is assigned inside modifyJsonFile callback; TypeScript can't track closure mutations
+  const finalTask = updatedTask as Task | null;
+  if (!finalTask) {
     return NextResponse.json({ error: 'Task not found' }, { status: 404 });
   }
 
-  return NextResponse.json(updatedTask);
+  // Sync status back to flow data if task originated from a flow
+  if (body.status !== undefined && finalTask.flowContext) {
+    await syncFlowTaskStatus(finalTask.flowContext, body.status as Status);
+  }
+
+  return NextResponse.json(finalTask);
 }
 
 /**
@@ -91,4 +104,43 @@ export async function DELETE(
   }
 
   return NextResponse.json({ success: true });
+}
+
+// ── Flow task status sync ──────────────────────────────────
+
+function updateItemInList(items: TreeItem[], taskId: string, newStatus: Status): boolean {
+  for (const item of items) {
+    if (item.id === taskId) {
+      item.status = newStatus;
+      return true;
+    }
+    if (item.children?.length && updateItemInList(item.children, taskId, newStatus)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function syncFlowTaskStatus(flowContext: FlowTaskContext, newStatus: Status): Promise<void> {
+  try {
+    await modifyJsonFile<FlowData>(
+      getFlowDataPath(flowContext.projectKey),
+      { sections: [] },
+      (rawData) => {
+        // 兼容旧格式
+        const data: FlowData = isLegacyFormat(rawData)
+          ? migrateLegacyToSections(rawData)
+          : rawData as FlowData;
+
+        for (const section of data.sections) {
+          if (updateItemInList(section.items, flowContext.flowTaskId, newStatus)) {
+            return data;
+          }
+        }
+        return data;
+      },
+    );
+  } catch (err) {
+    console.error(`Failed to sync flow task status to ${newStatus}:`, err);
+  }
 }

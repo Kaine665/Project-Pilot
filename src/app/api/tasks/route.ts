@@ -1,30 +1,57 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTasksPath, readJsonFile, modifyJsonFile } from '@/lib/file-store';
-import type { Task, TasksData } from '@/types';
+import { processManager } from '@/lib/process-manager';
+import type { Task, TasksData, SessionPhase } from '@/types';
 
 const DEFAULT_TASKS_DATA: TasksData = { tasks: [] };
 
 /**
  * GET /api/tasks
- * Return all tasks.
+ * Return all tasks, each enriched with `aiStatus`.
+ * Optional query: ?flowTaskId=xxx — find a session originating from this flow task.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   const data = await readJsonFile<TasksData>(getTasksPath(), DEFAULT_TASKS_DATA);
-  return NextResponse.json(data);
+
+  const flowTaskId = request.nextUrl.searchParams.get('flowTaskId');
+  if (flowTaskId) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tasks: Task[] = (data as any).tasks ?? [];
+    const match = tasks.find(
+      s => s.flowContext?.flowTaskId === flowTaskId && !s.archived,
+    );
+    return NextResponse.json({ session: match ?? null });
+  }
+
+  // Enrich each task with AI process status
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tasks: Task[] = (data as any).tasks ?? [];
+  const enriched = tasks.map((t) => {
+    const pm = processManager.getStatus(t.id);
+    let aiStatus: 'running' | 'waiting' | 'confirm' | null = null;
+    if (pm.status === 'running') {
+      aiStatus = 'running';
+    } else if (t.status === 'doing' && t.claudeSessionId) {
+      aiStatus = t.phase === 'summarizing' ? 'confirm' : 'waiting';
+    }
+    return { ...t, aiStatus };
+  });
+
+  return NextResponse.json({ tasks: enriched });
 }
 
 /**
  * POST /api/tasks
  * Create a new task.
- * Body: { title, content?, projectKey }
+ * Body: { title, content?, projectKey? }
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { title, content, projectKey } = body;
+  const { title, content, projectKey, flowContext } = body;
 
-  if (!title || !projectKey) {
+  if (!title) {
     return NextResponse.json(
-      { error: 'title and projectKey are required' },
+      { error: 'title is required' },
       { status: 400 },
     );
   }
@@ -34,8 +61,10 @@ export async function POST(request: NextRequest) {
     id: `task-${Date.now()}`,
     title,
     content: content ?? undefined,
-    projectKey,
+    ...(projectKey && { projectKey }),
+    ...(flowContext && { flowContext }),
     status: 'todo',
+    phase: (projectKey ? 'branching' : 'understanding') as SessionPhase,
     createdAt: now,
     updatedAt: now,
   };

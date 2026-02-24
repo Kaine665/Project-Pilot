@@ -27,10 +27,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Task not found' }, { status: 404 });
   }
 
-  // 2. Determine version number from existing plans
+  // 2. Determine version number from existing plans (use max version, not count, to avoid regression after cleanup)
   const plansData = await readJsonFile<PlansData>(getAiPlansPath(), DEFAULT_PLANS_DATA);
   const existingPlans = plansData.plans.filter((p) => p.task_id === taskId);
-  const version = existingPlans.length + 1;
+  const maxVersion = existingPlans.reduce((max, p) => {
+    const match = p.plan_id.match(/-v(\d+)-/);
+    return match ? Math.max(max, parseInt(match[1], 10)) : max;
+  }, 0);
+  const version = maxVersion + 1;
 
   // 3. Generate planId
   const planId = `plan-${taskId}-v${version}-${Date.now()}`;
