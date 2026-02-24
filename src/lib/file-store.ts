@@ -1,12 +1,22 @@
 /**
  * JSON 文件读写工具（简化版，无文件锁）
- * ProjectPilot 项目数据存储在项目内 data/ 目录
+ * ProjectPilot 数据存储在用户目录：
+ * - Windows: C:\Users\<username>\.project-pilot\data\
+ * - macOS: /Users/<username>/.project-pilot/data/
+ * - Linux: /home/<username>/.project-pilot/data/
+ *
+ * 可通过环境变量 PROJECT_PILOT_DATA_DIR 自定义位置
  */
 
 import { promises as fs } from 'fs';
 import path from 'path';
+import os from 'os';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+// 默认存到用户目录的隐藏文件夹
+const DEFAULT_DATA_DIR = path.join(os.homedir(), '.project-pilot', 'data');
+
+// 支持环境变量自定义（用于测试或特殊部署场景）
+const DATA_DIR = process.env.PROJECT_PILOT_DATA_DIR || DEFAULT_DATA_DIR;
 
 export function getDataDir(): string {
   return DATA_DIR;
@@ -55,9 +65,69 @@ export function getTaskArtifactsPath(taskId: string): string {
   return path.join(DATA_DIR, 'task-artifacts', `${taskId}.json`);
 }
 
+export function getFlowsDir(): string {
+  return path.join(DATA_DIR, 'flows');
+}
+
+export function getFlowIndexPath(): string {
+  return path.join(DATA_DIR, 'flows', '_index.json');
+}
+
 export function getFlowDataPath(projectKey: string): string {
   const safe = projectKey.replace(/[^a-zA-Z0-9_-]/g, '');
-  return path.join(process.cwd(), 'src', 'data', 'flows', `${safe}.json`);
+
+  // 🔒 Security: prevent empty filename or invalid project keys
+  if (!safe || safe.length < 1 || safe.length > 100) {
+    throw new Error(`Invalid project key: ${projectKey}`);
+  }
+
+  return path.join(DATA_DIR, 'flows', `${safe}.json`);
+}
+
+/** 旧版 flow 数据目录（源码内） */
+const LEGACY_FLOWS_DIR = path.join(process.cwd(), 'src', 'data', 'flows');
+
+let _flowsMigrated = false;
+
+/**
+ * 懒迁移：如果用户目录没有 flows 数据但源码目录有，自动复制过去。
+ * 仅在首次调用时执行，后续调用直接返回。
+ */
+export async function ensureFlowsMigrated(): Promise<void> {
+  if (_flowsMigrated) return;
+  _flowsMigrated = true;
+
+  const destDir = getFlowsDir();
+  const destIndex = getFlowIndexPath();
+
+  try {
+    await fs.stat(destIndex);
+    // 目标已存在，无需迁移
+    return;
+  } catch {
+    // 目标不存在，继续迁移
+  }
+
+  const srcIndex = path.join(LEGACY_FLOWS_DIR, '_index.json');
+  try {
+    await fs.stat(srcIndex);
+  } catch {
+    // 源也不存在，首次使用，创建空索引
+    await fs.mkdir(destDir, { recursive: true });
+    await fs.writeFile(destIndex, JSON.stringify({ projects: [] }, null, 2), 'utf-8');
+    return;
+  }
+
+  // 复制所有 flow 文件
+  await fs.mkdir(destDir, { recursive: true });
+  const files = await fs.readdir(LEGACY_FLOWS_DIR);
+  for (const file of files) {
+    if (file.endsWith('.json')) {
+      const src = path.join(LEGACY_FLOWS_DIR, file);
+      const dest = path.join(destDir, file);
+      await fs.copyFile(src, dest);
+    }
+  }
 }
 
 export function getPlannerSessionsPath(): string {
@@ -68,11 +138,32 @@ export function getArtifactSummaryPath(planId: string): string {
   return path.join(DATA_DIR, 'artifacts', planId, 'summary.json');
 }
 
+export function getSettingsPath(): string {
+  return path.join(DATA_DIR, 'settings.json');
+}
+
+export function getAgentsPath(): string {
+  return path.join(DATA_DIR, 'agents.json');
+}
+
+// 🔒 Security: Maximum JSON file size to prevent DoS attacks
+const MAX_JSON_SIZE = 50 * 1024 * 1024; // 50MB
+
 /**
  * 读取 JSON 文件，文件不存在时返回 defaultValue
+ *
+ * 🔒 安全特性：
+ * - 文件大小限制（50MB）防止内存耗尽攻击
+ * - 自动处理文件不存在和 JSON 解析错误
  */
 export async function readJsonFile<T>(filePath: string, defaultValue: T): Promise<T> {
   try {
+    // 🔒 Security: check file size before reading to prevent DoS
+    const stats = await fs.stat(filePath);
+    if (stats.size > MAX_JSON_SIZE) {
+      throw new Error(`File too large: ${stats.size} bytes (max ${MAX_JSON_SIZE})`);
+    }
+
     const content = await fs.readFile(filePath, 'utf-8');
     return JSON.parse(content);
   } catch (error) {
@@ -96,6 +187,10 @@ export async function writeJsonFile(filePath: string, data: unknown): Promise<vo
 
 /**
  * 原子读-改-写操作
+ *
+ * 🔒 安全特性：
+ * - 读取时检查文件大小限制（50MB）
+ * - 写入前验证序列化后的大小
  */
 export async function modifyJsonFile<T>(
   filePath: string,
@@ -107,14 +202,35 @@ export async function modifyJsonFile<T>(
 
   let data: T;
   try {
+    // 🔒 Security: check file size before reading
+    const stats = await fs.stat(filePath);
+    if (stats.size > MAX_JSON_SIZE) {
+      throw new Error(`File too large: ${stats.size} bytes (max ${MAX_JSON_SIZE})`);
+    }
+
     const content = await fs.readFile(filePath, 'utf-8');
     data = JSON.parse(content);
-  } catch {
-    data = defaultValue;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    // File not found → use default, but re-throw size errors
+    if (code === 'ENOENT') {
+      data = defaultValue;
+    } else if (error instanceof Error && error.message.includes('too large')) {
+      throw error;
+    } else {
+      data = defaultValue;
+    }
   }
 
   const modified = modifier(data);
-  await fs.writeFile(filePath, JSON.stringify(modified, null, 2), 'utf-8');
+
+  // 🔒 Security: check serialized size before writing
+  const serialized = JSON.stringify(modified, null, 2);
+  if (Buffer.byteLength(serialized, 'utf-8') > MAX_JSON_SIZE) {
+    throw new Error(`Output JSON too large (max ${MAX_JSON_SIZE} bytes)`);
+  }
+
+  await fs.writeFile(filePath, serialized, 'utf-8');
   return modified;
 }
 
