@@ -1,22 +1,42 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useTranslations, useLocale } from 'next-intl';
-import { Bot, GitBranch } from 'lucide-react';
+import { Bot, GitBranch, Settings, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LanguageSwitcher } from './language-switcher';
 
 const getNavItems = (t: ReturnType<typeof useTranslations>, locale: string) => [
   { href: `/${locale}/flows`, label: t('nav.projects'), icon: GitBranch },
   { href: `/${locale}/tasks`, label: t('nav.taskAgent'), icon: Bot },
+  { href: `/${locale}/settings`, label: t('nav.settings'), icon: Settings },
 ];
 
-export function TopNav({ children }: { children?: React.ReactNode }) {
+export function TopNav({ children, plannerOpen }: { children?: React.ReactNode; plannerOpen?: boolean }) {
   const pathname = usePathname();
+  // Defer plannerOpen styling to avoid hydration mismatch
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const isOpen = mounted && plannerOpen;
+  const router = useRouter();
   const t = useTranslations();
   const locale = useLocale();
   const navItems = getNavItems(t, locale);
+
+  const handleOpenPlanner = () => {
+    const onFlowsPage = pathname.startsWith(`/${locale}/flows`);
+    if (onFlowsPage) {
+      window.dispatchEvent(new CustomEvent('pp:toggle-planner'));
+    } else {
+      router.push(`/${locale}/flows`);
+      // Dispatch after navigation settles
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('pp:open-planner'));
+      }, 300);
+    }
+  };
 
   return (
     <header className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
@@ -42,7 +62,20 @@ export function TopNav({ children }: { children?: React.ReactNode }) {
           })}
         </nav>
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleOpenPlanner}
+          className={cn(
+            'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
+            isOpen
+              ? 'bg-violet-100 text-violet-700 dark:bg-violet-800/50 dark:text-violet-300'
+              : 'bg-violet-50 text-violet-600 hover:bg-violet-100 dark:bg-violet-900/30 dark:text-violet-400 dark:hover:bg-violet-900/50',
+          )}
+          title={t('nav.aiAssistant')}
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          <span>{t('nav.aiAssistant')}</span>
+        </button>
         <LanguageSwitcher />
         {children}
       </div>

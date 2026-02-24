@@ -1,7 +1,26 @@
 'use client';
 
 import { useState, memo } from 'react';
-import { ChevronDown, ChevronRight, Terminal, FileText, Pencil, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  Terminal,
+  FileText,
+  Pencil,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  Search,
+  Globe,
+  MessageCircleQuestion,
+  ListTodo,
+  ClipboardList,
+  Blocks,
+  Plug,
+} from 'lucide-react';
+import { AskUserQuestionCard } from '@/components/ask-user-question-card';
+import { TodoListCard } from '@/components/todo-list-card';
+import { SubagentCard } from '@/components/subagent-card';
 import type { ChatToolCall } from '@/types';
 
 const toolIcons: Record<string, React.ReactNode> = {
@@ -9,8 +28,16 @@ const toolIcons: Record<string, React.ReactNode> = {
   Read: <FileText className="h-3 w-3" />,
   Edit: <Pencil className="h-3 w-3" />,
   Write: <Pencil className="h-3 w-3" />,
-  Glob: <FileText className="h-3 w-3" />,
-  Grep: <FileText className="h-3 w-3" />,
+  Glob: <Search className="h-3 w-3" />,
+  Grep: <Search className="h-3 w-3" />,
+  WebFetch: <Globe className="h-3 w-3" />,
+  WebSearch: <Globe className="h-3 w-3" />,
+  NotebookEdit: <FileText className="h-3 w-3" />,
+  Task: <Blocks className="h-3 w-3" />,
+  AskUserQuestion: <MessageCircleQuestion className="h-3 w-3" />,
+  TodoWrite: <ListTodo className="h-3 w-3" />,
+  EnterPlanMode: <ClipboardList className="h-3 w-3" />,
+  ExitPlanMode: <ClipboardList className="h-3 w-3" />,
 };
 
 const statusIcons: Record<ChatToolCall['status'], React.ReactNode> = {
@@ -23,10 +50,46 @@ interface ToolCallCardProps {
   toolCall: ChatToolCall;
 }
 
+/**
+ * Get a human-readable display name for the tool.
+ * MCP tools have format: mcp__serverName__toolName
+ */
+function getToolDisplayName(toolName: string): { name: string; isMcp: boolean } {
+  const mcpMatch = toolName.match(/^mcp__([^_]+)__(.+)$/);
+  if (mcpMatch) {
+    return { name: `${mcpMatch[1]}/${mcpMatch[2]}`, isMcp: true };
+  }
+  return { name: toolName, isMcp: false };
+}
+
+/**
+ * Get an icon for the tool, with fallback for MCP and unknown tools.
+ */
+function getToolIcon(toolName: string): React.ReactNode {
+  if (toolIcons[toolName]) return toolIcons[toolName];
+  // MCP tools get a plug icon
+  if (toolName.startsWith('mcp__')) return <Plug className="h-3 w-3" />;
+  return <Terminal className="h-3 w-3" />;
+}
+
 export const ToolCallCard = memo(function ToolCallCard({ toolCall }: ToolCallCardProps) {
   const [expanded, setExpanded] = useState(false);
 
-  const icon = toolIcons[toolCall.toolName] ?? <Terminal className="h-3 w-3" />;
+  // Specialized rendering for interactive tools
+  if (toolCall.toolName === 'AskUserQuestion') {
+    return <AskUserQuestionCard toolCall={toolCall} />;
+  }
+
+  if (toolCall.toolName === 'TodoWrite') {
+    return <TodoListCard toolCall={toolCall} />;
+  }
+
+  if (toolCall.toolName === 'Task') {
+    return <SubagentCard toolCall={toolCall} />;
+  }
+
+  const { name: displayName, isMcp } = getToolDisplayName(toolCall.toolName);
+  const icon = getToolIcon(toolCall.toolName);
 
   // Truncate long input for display
   const displayInput = toolCall.input.length > 120
@@ -42,11 +105,14 @@ export const ToolCallCard = memo(function ToolCallCard({ toolCall }: ToolCallCar
         {statusIcons[toolCall.status]}
         <span className="text-zinc-400">{icon}</span>
         <span className="font-medium text-zinc-600 dark:text-zinc-300">
-          {toolCall.toolName}
+          {displayName}
         </span>
-        <span className="flex-1 truncate text-zinc-400">
-          {displayInput}
-        </span>
+        {isMcp && (
+          <span className="rounded bg-violet-100 px-1 py-0.5 text-[9px] text-violet-600 dark:bg-violet-900/30 dark:text-violet-400">
+            MCP
+          </span>
+        )}
+        <span className="flex-1 truncate text-zinc-400">{displayInput}</span>
         {expanded
           ? <ChevronDown className="h-3 w-3 shrink-0 text-zinc-400" />
           : <ChevronRight className="h-3 w-3 shrink-0 text-zinc-400" />}

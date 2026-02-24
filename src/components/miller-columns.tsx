@@ -14,10 +14,27 @@ import {
   Sparkles,
   ChevronsRight,
   TextCursorInput,
+  GripVertical,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { useFlowData } from './flow-editor';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { useFlowData, filterTreeItems } from './flow-editor';
 import {
   nextStatus,
   getEffectiveStatus,
@@ -98,7 +115,7 @@ function MillerColumnItem({
   const t = useTranslations();
   const ctx = useContext(ItemActionsContext);
   const { selectionPath, onSelect, setAddingToItemId } = useContext(MillerSelectionContext);
-  const { showDeferred, highlightTarget, aiStatusMap } = useFlowData();
+  const { showDeferred, highlightTarget, aiStatusMap, batchMode, selectedItems, toggleItemSelection } = useFlowData();
 
   if (!ctx) return null;
   if (!showDeferred && item.deferred) return null;
@@ -136,28 +153,51 @@ function MillerColumnItem({
     }
   }, [isHighlighted]);
 
+  const isItemSelected = selectedItems.has(item.id);
+
   return (
     <div
       ref={rowRef}
       className={`group/item flex items-start gap-2 px-3 py-2 cursor-pointer transition-colors relative ${
-        isSelected
+        batchMode && isItemSelected
+          ? 'bg-purple-50 dark:bg-purple-950/30'
+          : isSelected
           ? 'bg-blue-50 dark:bg-blue-950/30'
           : 'hover:bg-zinc-50/80 dark:hover:bg-zinc-800/30'
       } ${isDeferred ? 'opacity-40' : ''}`}
       style={isHighlighted ? { backgroundColor: 'rgb(254 240 138)' } : undefined}
-      onClick={() => onSelect(item.id, depth)}
+      onClick={() => {
+        if (batchMode) {
+          toggleItemSelection(item.id);
+        } else {
+          onSelect(item.id, depth);
+        }
+      }}
     >
+      {/* Batch mode checkbox */}
+      {batchMode && (
+        <input
+          type="checkbox"
+          checked={isItemSelected}
+          onChange={() => toggleItemSelection(item.id)}
+          onClick={e => e.stopPropagation()}
+          className="shrink-0 mt-1 w-4 h-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+        />
+      )}
+
       {/* Status icon */}
-      <button
-        className="shrink-0 mt-0.5"
-        onClick={e => {
-          e.stopPropagation();
-          if (!hasChildren) ctx.onToggleStatus(item.id);
-        }}
-        title={hasChildren ? t('status.decidedByChildren') : t('actions.clickToToggle')}
-      >
-        <StatusIcon status={effectiveStatus} />
-      </button>
+      {!batchMode && (
+        <button
+          className="shrink-0 mt-0.5"
+          onClick={e => {
+            e.stopPropagation();
+            if (!hasChildren) ctx.onToggleStatus(item.id);
+          }}
+          title={hasChildren ? t('status.decidedByChildren') : t('actions.clickToToggle')}
+        >
+          <StatusIcon status={effectiveStatus} />
+        </button>
+      )}
 
       {/* Content area */}
       <div className="flex-1 min-w-0">
@@ -285,6 +325,42 @@ function MillerColumnItem({
   );
 }
 
+// --- SortableMillerColumnItem ---
+
+function SortableMillerColumnItem({
+  item,
+  depth,
+  sectionItems,
+}: {
+  item: TreeItem;
+  depth: number;
+  sectionItems: TreeItem[];
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    position: 'relative' as const,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} className="flex items-stretch">
+      <button
+        className="flex items-center px-0.5 cursor-grab active:cursor-grabbing text-zinc-300 hover:text-zinc-500 opacity-0 group-hover/col:opacity-100 transition-opacity shrink-0"
+        {...listeners}
+      >
+        <GripVertical className="w-3 h-3" />
+      </button>
+      <div className="flex-1 min-w-0">
+        <MillerColumnItem item={item} depth={depth} sectionItems={sectionItems} />
+      </div>
+    </div>
+  );
+}
+
 // --- MillerColumn ---
 
 function MillerColumn({
@@ -300,7 +376,8 @@ function MillerColumn({
 }) {
   const ctx = useContext(ItemActionsContext);
   const { addingToItemId, setAddingToItemId } = useContext(MillerSelectionContext);
-  const { showDeferred } = useFlowData();
+  const { showDeferred, actions } = useFlowData();
+  const t = useTranslations();
   const columnRef = useRef<HTMLDivElement>(null);
 
   const visibleItems = showDeferred
@@ -308,6 +385,22 @@ function MillerColumn({
     : items.filter(i => !i.deferred);
 
   const isAddingHere = parentItemId !== null && addingToItemId === parentItemId;
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id && parentItemId && ctx) {
+      const oldIndex = visibleItems.findIndex(i => i.id === active.id);
+      const newIndex = visibleItems.findIndex(i => i.id === over.id);
+      if (oldIndex !== -1 && newIndex !== -1) {
+        actions.reorderItems(ctx.sectionId, parentItemId, oldIndex, newIndex);
+      }
+    }
+  }, [visibleItems, parentItemId, ctx, actions]);
 
   // Auto-scroll this column into view when it appears
   useEffect(() => {
@@ -319,18 +412,22 @@ function MillerColumn({
   return (
     <div
       ref={columnRef}
-      className="flex flex-col min-w-[240px] max-w-[320px] w-[280px] shrink-0 border-r border-border/50 last:border-r-0"
+      className="group/col flex flex-col min-w-[240px] max-w-[320px] w-[280px] shrink-0 border-r border-border/50 last:border-r-0"
     >
       {/* Items */}
       <div className="flex-1 overflow-y-auto">
-        {visibleItems.map(item => (
-          <MillerColumnItem
-            key={item.id}
-            item={item}
-            depth={depth}
-            sectionItems={sectionItems}
-          />
-        ))}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={visibleItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
+            {visibleItems.map(item => (
+              <SortableMillerColumnItem
+                key={item.id}
+                item={item}
+                depth={depth}
+                sectionItems={sectionItems}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
       </div>
 
       {/* Add item input at column bottom */}
@@ -359,6 +456,7 @@ function RootColumn({
   items: TreeItem[];
   sectionItems: TreeItem[];
 }) {
+  const t = useTranslations();
   const { showDeferred, actions } = useFlowData();
   const ctx = useContext(ItemActionsContext);
 
@@ -366,18 +464,38 @@ function RootColumn({
     ? items
     : items.filter(i => !i.deferred);
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id && ctx) {
+      const oldIndex = visibleItems.findIndex(i => i.id === active.id);
+      const newIndex = visibleItems.findIndex(i => i.id === over.id);
+      if (oldIndex !== -1 && newIndex !== -1) {
+        actions.reorderItems(ctx.sectionId, null, oldIndex, newIndex);
+      }
+    }
+  }, [visibleItems, ctx, actions]);
+
   return (
-    <div className="flex flex-col min-w-[240px] max-w-[320px] w-[280px] shrink-0 border-r border-border/50">
+    <div className="group/col flex flex-col min-w-[240px] max-w-[320px] w-[280px] shrink-0 border-r border-border/50">
       {/* Items */}
       <div className="flex-1 overflow-y-auto">
-        {visibleItems.map(item => (
-          <MillerColumnItem
-            key={item.id}
-            item={item}
-            depth={0}
-            sectionItems={sectionItems}
-          />
-        ))}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={visibleItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
+            {visibleItems.map(item => (
+              <SortableMillerColumnItem
+                key={item.id}
+                item={item}
+                depth={0}
+                sectionItems={sectionItems}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
       </div>
 
       {/* Add root item */}
@@ -400,8 +518,10 @@ function RootColumn({
 
 function MillerColumnsContainer({
   items,
+  allItems,
 }: {
   items: TreeItem[];
+  allItems: TreeItem[];
 }) {
   const { selectionPath, addingToItemId } = useContext(MillerSelectionContext);
 
@@ -430,7 +550,7 @@ function MillerColumnsContainer({
   return (
     <div className="flex overflow-x-auto miller-scroll">
       {/* Root column (depth 0) */}
-      <RootColumn items={items} sectionItems={items} />
+      <RootColumn items={items} sectionItems={allItems} />
 
       {/* Child columns */}
       {columns.map((col, idx) => (
@@ -439,7 +559,7 @@ function MillerColumnsContainer({
           items={col.items}
           depth={idx + 1}
           parentItemId={col.parentItemId}
-          sectionItems={items}
+          sectionItems={allItems}
         />
       ))}
     </div>
@@ -449,12 +569,20 @@ function MillerColumnsContainer({
 // --- MillerSectionBlock ---
 
 export function MillerSectionBlock({ section }: { section: Section }) {
-  const { projectKey, projectName, data, actions, showDeferred, highlightTarget, aiStatusMap } = useFlowData();
+  const t = useTranslations();
+  const { projectKey, projectName, data, actions, showDeferred, highlightTarget, aiStatusMap, batchMode, selectedItems, clearSelection, batchDelete, batchDefer, batchUpdateStatus, searchText, statusFilter } = useFlowData();
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(true);
   const [selectionPath, setSelectionPath] = useState<string[]>([]);
   const [addingToItemId, setAddingToItemId] = useState<string | null>(null);
+  const sectionRef = useRef<HTMLElement>(null);
   const filterDeferred = !showDeferred;
+
+  // Filtered items for search/status
+  const filteredItems = useMemo(
+    () => filterTreeItems(section.items, searchText, statusFilter, showDeferred),
+    [section.items, searchText, statusFilter, showDeferred],
+  );
 
   // Restore open state from sessionStorage
   useEffect(() => {
@@ -468,6 +596,11 @@ export function MillerSectionBlock({ section }: { section: Section }) {
     if (highlightTarget.sectionId === section.id) {
       setIsOpen(true);
       sessionStorage.setItem(`section-open:${section.id}`, '1');
+
+      // Scroll into view
+      requestAnimationFrame(() => {
+        sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
 
       // Auto-set selection path to navigate to highlighted item
       if (highlightTarget.itemId) {
@@ -580,6 +713,7 @@ export function MillerSectionBlock({ section }: { section: Section }) {
 
   return (
     <section
+      ref={sectionRef}
       className="mb-8"
       style={isSectionHighlighted ? { backgroundColor: 'rgb(254 240 138)' } : undefined}
     >
@@ -612,24 +746,74 @@ export function MillerSectionBlock({ section }: { section: Section }) {
         </div>
       </div>
 
+      {/* Batch operation toolbar */}
+      {isOpen && batchMode && selectedItems.size > 0 && (
+        <div className="border-x border-border bg-purple-50/50 px-4 py-2 flex items-center gap-2 dark:bg-purple-950/20">
+          <span className="text-sm text-purple-700 dark:text-purple-300">
+            {t('flows.selectedItems', { count: selectedItems.size })}
+          </span>
+          <button
+            className="text-xs px-2 py-1 rounded bg-red-500 text-white hover:bg-red-600 transition-colors"
+            onClick={() => batchDelete(section.id)}
+          >
+            {t('flows.batchDelete')}
+          </button>
+          <button
+            className="text-xs px-2 py-1 rounded bg-blue-500 text-white hover:bg-blue-600 transition-colors"
+            onClick={() => batchDefer(section.id, true)}
+          >
+            {t('flows.batchDefer')}
+          </button>
+          <button
+            className="text-xs px-2 py-1 rounded bg-green-500 text-white hover:bg-green-600 transition-colors"
+            onClick={() => batchDefer(section.id, false)}
+          >
+            {t('flows.batchUndefer')}
+          </button>
+          <button
+            className="text-xs px-2 py-1 rounded bg-emerald-500 text-white hover:bg-emerald-600 transition-colors"
+            onClick={() => batchUpdateStatus(section.id, 'done')}
+          >
+            {t('flows.batchMarkDone')}
+          </button>
+          <button
+            className="text-xs px-2 py-1 rounded bg-amber-500 text-white hover:bg-amber-600 transition-colors"
+            onClick={() => batchUpdateStatus(section.id, 'doing')}
+          >
+            {t('flows.batchMarkDoing')}
+          </button>
+          <button
+            className="text-xs px-2 py-1 rounded bg-zinc-400 text-white hover:bg-zinc-500 transition-colors"
+            onClick={() => batchUpdateStatus(section.id, 'todo')}
+          >
+            {t('flows.batchMarkTodo')}
+          </button>
+          <button
+            className="ml-auto text-xs px-2 py-1 rounded border border-zinc-300 hover:bg-zinc-100 transition-colors"
+            onClick={clearSelection}
+          >
+            {t('flows.clearSelection')}
+          </button>
+        </div>
+      )}
+
       {/* Section body — Miller Columns */}
       {isOpen && (
-        <div className="border-x border-b border-border rounded-b-lg overflow-hidden">
+        <div className={`border-x border-b border-border rounded-b-lg overflow-hidden ${batchMode && selectedItems.size > 0 ? '' : ''}`}>
           <ItemActionsContext.Provider value={itemActions}>
             <MillerSelectionContext.Provider
               value={{ selectionPath, onSelect: handleSelect, addingToItemId, setAddingToItemId }}
             >
-              <MillerColumnsContainer items={section.items} />
+              <MillerColumnsContainer items={filteredItems} allItems={section.items} />
             </MillerSelectionContext.Provider>
           </ItemActionsContext.Provider>
         </div>
       )}
 
       {/* Collapsed summary */}
-      {!isOpen && section.items.length > 0 && (
+      {!isOpen && filteredItems.length > 0 && (
         <div className="flex flex-wrap gap-3 py-2.5 px-4 border-x border-b border-border rounded-b-lg">
-          {section.items
-            .filter(item => showDeferred || !item.deferred)
+          {filteredItems
             .map(item => {
               const s = getEffectiveStatus(item, filterDeferred);
               const ai = aiStatusMap[item.id];

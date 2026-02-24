@@ -7,6 +7,7 @@ import {
   useCallback,
   useRef,
   useEffect,
+  useMemo,
 } from 'react';
 import { useTranslations } from 'next-intl';
 import type {
@@ -15,6 +16,7 @@ import type {
   TreeItem,
   Status,
 } from '@/types/flow';
+import { Search, X } from 'lucide-react';
 import { MillerSectionBlock as SectionBlock } from './miller-columns';
 import { getEffectiveStatus } from './flow-shared';
 
@@ -78,6 +80,82 @@ function deriveStatuses(items: TreeItem[]): TreeItem[] {
   });
 }
 
+// --- Tree filter for search/status ---
+
+function treeItemMatches(item: TreeItem, query: string): boolean {
+  if (item.content.toLowerCase().includes(query)) return true;
+  if (item.description?.toLowerCase().includes(query)) return true;
+  return false;
+}
+
+function treeItemMatchesDeep(item: TreeItem, query: string, showDeferred: boolean): boolean {
+  if (!showDeferred && item.deferred) return false;
+  if (treeItemMatches(item, query)) return true;
+  if (item.children?.length) {
+    return item.children.some(c => treeItemMatchesDeep(c, query, showDeferred));
+  }
+  return false;
+}
+
+export function filterTreeItems(
+  items: TreeItem[],
+  searchText: string,
+  statusFilter: Status | 'all',
+  showDeferred: boolean,
+): TreeItem[] {
+  const query = searchText.toLowerCase().trim();
+  return items.filter(item => {
+    if (!showDeferred && item.deferred) return false;
+
+    // Status filter
+    if (statusFilter !== 'all') {
+      const effectiveStatus = getEffectiveStatus(item, !showDeferred);
+      if (effectiveStatus !== statusFilter) return false;
+    }
+
+    // Text search — keep parent if any descendant matches
+    if (query) {
+      return treeItemMatchesDeep(item, query, showDeferred);
+    }
+
+    return true;
+  }).map(item => {
+    // Recursively filter children
+    if (item.children?.length) {
+      const filteredChildren = filterTreeItems(item.children, searchText, statusFilter, showDeferred);
+      return { ...item, children: filteredChildren };
+    }
+    return item;
+  });
+}
+
+// --- Reorder helpers ---
+
+function reorderArray<T>(arr: T[], oldIndex: number, newIndex: number): T[] {
+  const result = [...arr];
+  const [moved] = result.splice(oldIndex, 1);
+  result.splice(newIndex, 0, moved);
+  return result;
+}
+
+function reorderChildItems(
+  items: TreeItem[],
+  parentId: string,
+  oldIndex: number,
+  newIndex: number,
+): TreeItem[] {
+  return items.map(item => {
+    if (item.id === parentId) {
+      const children = reorderArray(item.children || [], oldIndex, newIndex);
+      return { ...item, children };
+    }
+    if (item.children?.length) {
+      return { ...item, children: reorderChildItems(item.children, parentId, oldIndex, newIndex) };
+    }
+    return item;
+  });
+}
+
 // --- Actions interface ---
 
 export interface FlowActions {
@@ -88,6 +166,8 @@ export interface FlowActions {
   updateItem: (sectionId: string, itemId: string, patch: Partial<Pick<TreeItem, 'content' | 'status' | 'description' | 'deferred'>>) => void;
   deleteItem: (sectionId: string, itemId: string) => void;
   setCycleDeadline: (date: string | undefined) => void;
+  reorderItems: (sectionId: string, parentItemId: string | null, oldIndex: number, newIndex: number) => void;
+  reorderSections: (oldIndex: number, newIndex: number) => void;
 }
 
 export type AIStatusMap = Record<string, 'running' | 'waiting' | 'confirm'>;
@@ -102,6 +182,18 @@ interface FlowContextValue {
   highlightTarget: HighlightTarget | null;
   clearHighlight: () => void;
   aiStatusMap: AIStatusMap;
+  batchMode: boolean;
+  selectedItems: Set<string>;
+  toggleBatchMode: () => void;
+  toggleItemSelection: (itemId: string) => void;
+  clearSelection: () => void;
+  batchDelete: (sectionId: string) => void;
+  batchDefer: (sectionId: string, deferred: boolean) => void;
+  batchUpdateStatus: (sectionId: string, status: Status) => void;
+  searchText: string;
+  setSearchText: (text: string) => void;
+  statusFilter: Status | 'all';
+  setStatusFilter: (filter: Status | 'all') => void;
 }
 
 const FlowDataContext = createContext<FlowContextValue | null>(null);
@@ -216,6 +308,10 @@ export function FlowEditor({ projectKey, projectName, initialHighlight }: FlowEd
   const [showDeferred, setShowDeferred] = useState(true);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [aiStatusMap, setAiStatusMap] = useState<AIStatusMap>({});
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [searchText, setSearchText] = useState('');
+  const [statusFilter, setStatusFilter] = useState<Status | 'all'>('all');
 
   const [highlightTarget, setHighlightTarget] = useState<HighlightTarget | null>(
     initialHighlight ?? null,
@@ -225,16 +321,31 @@ export function FlowEditor({ projectKey, projectName, initialHighlight }: FlowEd
     setHighlightTarget(initialHighlight ?? null);
   }, [initialHighlight]);
 
+  // Listen for sidebar branch click via CustomEvent (avoids useEffect timing race)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const sectionId = (e as CustomEvent).detail;
+      if (sectionId) setHighlightTarget({ sectionId });
+    };
+    window.addEventListener('pp:highlight-section', handler);
+    return () => window.removeEventListener('pp:highlight-section', handler);
+  }, []);
+
   const clearHighlight = useCallback(() => {
     setHighlightTarget(null);
   }, []);
 
   useEffect(() => {
     if (!highlightTarget) return;
-    const handler = () => setHighlightTarget(null);
+    const handler = (e: MouseEvent) => {
+      // Don't clear if clicking inside the sidebar
+      if ((e.target as HTMLElement)?.closest('[data-sidebar]')) return;
+      setHighlightTarget(null);
+    };
+    // Delay adding listener so the triggering click doesn't immediately clear
     const timer = setTimeout(() => {
-      window.addEventListener('click', handler, { once: true });
-    }, 500);
+      window.addEventListener('click', handler);
+    }, 300);
     return () => {
       clearTimeout(timer);
       window.removeEventListener('click', handler);
@@ -370,7 +481,97 @@ export function FlowEditor({ projectKey, projectName, initialHighlight }: FlowEd
     setCycleDeadline: date => {
       persist({ ...data, cycleDeadline: date });
     },
+    reorderItems: (sectionId, parentItemId, oldIndex, newIndex) => {
+      persist({
+        ...data,
+        sections: data.sections.map(s => {
+          if (s.id !== sectionId) return s;
+          if (parentItemId === null) {
+            return { ...s, items: reorderArray(s.items, oldIndex, newIndex) };
+          }
+          return { ...s, items: reorderChildItems(s.items, parentItemId, oldIndex, newIndex) };
+        }),
+      });
+    },
+    reorderSections: (oldIndex, newIndex) => {
+      persist({ ...data, sections: reorderArray(data.sections, oldIndex, newIndex) });
+    },
   };
+
+  // --- Batch Operations ---
+
+  const toggleBatchMode = useCallback(() => {
+    setBatchMode(v => !v);
+    setSelectedItems(new Set());
+  }, []);
+
+  const toggleItemSelection = useCallback((itemId: string) => {
+    setSelectedItems(prev => {
+      const next = new Set(prev);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedItems(new Set());
+  }, []);
+
+  const batchDelete = useCallback((sectionId: string) => {
+    if (selectedItems.size === 0) return;
+    if (!confirm(t('flows.confirmBatchDelete', { count: selectedItems.size }))) return;
+
+    persist({
+      ...data,
+      sections: data.sections.map(s => {
+        if (s.id !== sectionId) return s;
+        let items = s.items;
+        for (const itemId of selectedItems) {
+          items = deleteItemRecursive(items, itemId);
+        }
+        return { ...s, items: deriveStatuses(items) };
+      }),
+    });
+    clearSelection();
+  }, [selectedItems, data, persist, clearSelection, t]);
+
+  const batchDefer = useCallback((sectionId: string, deferred: boolean) => {
+    if (selectedItems.size === 0) return;
+
+    persist({
+      ...data,
+      sections: data.sections.map(s => {
+        if (s.id !== sectionId) return s;
+        let items = s.items;
+        for (const itemId of selectedItems) {
+          items = updateItemRecursive(items, itemId, { deferred });
+        }
+        return { ...s, items: deriveStatuses(items) };
+      }),
+    });
+    clearSelection();
+  }, [selectedItems, data, persist, clearSelection]);
+
+  const batchUpdateStatus = useCallback((sectionId: string, status: Status) => {
+    if (selectedItems.size === 0) return;
+
+    persist({
+      ...data,
+      sections: data.sections.map(s => {
+        if (s.id !== sectionId) return s;
+        let items = s.items;
+        for (const itemId of selectedItems) {
+          items = updateItemRecursive(items, itemId, { status });
+        }
+        return { ...s, items: deriveStatuses(items) };
+      }),
+    });
+    clearSelection();
+  }, [selectedItems, data, persist, clearSelection]);
 
   // --- Stats ---
 
@@ -411,6 +612,18 @@ export function FlowEditor({ projectKey, projectName, initialHighlight }: FlowEd
         highlightTarget,
         clearHighlight,
         aiStatusMap,
+        batchMode,
+        selectedItems,
+        toggleBatchMode,
+        toggleItemSelection,
+        clearSelection,
+        batchDelete,
+        batchDefer,
+        batchUpdateStatus,
+        searchText,
+        setSearchText,
+        statusFilter,
+        setStatusFilter,
       }}
     >
       <div className="min-h-screen bg-background">
@@ -441,6 +654,38 @@ export function FlowEditor({ projectKey, projectName, initialHighlight }: FlowEd
                 </span>
               </div>
 
+              {/* Search & filter */}
+              <div className="flex items-center gap-2 ml-4">
+                <div className="relative">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder={t('flows.searchPlaceholder')}
+                    value={searchText}
+                    onChange={e => setSearchText(e.target.value)}
+                    className="text-xs border border-border rounded-full pl-7 pr-7 py-1 w-44 outline-none focus:ring-1 focus:ring-ring bg-background"
+                  />
+                  {searchText && (
+                    <button
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      onClick={() => setSearchText('')}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+                <select
+                  value={statusFilter}
+                  onChange={e => setStatusFilter(e.target.value as Status | 'all')}
+                  className="text-xs border border-border rounded-full px-2.5 py-1 outline-none bg-background text-muted-foreground"
+                >
+                  <option value="all">{t('flows.statusFilter.all')}</option>
+                  <option value="todo">{t('status.todo')}</option>
+                  <option value="doing">{t('status.doing')}</option>
+                  <option value="done">{t('status.done')}</option>
+                </select>
+              </div>
+
               <div className="ml-auto flex items-center gap-3">
                 <CycleDeadline
                   deadline={data.cycleDeadline}
@@ -455,6 +700,17 @@ export function FlowEditor({ projectKey, projectName, initialHighlight }: FlowEd
                   onClick={() => setShowDeferred(v => !v)}
                 >
                   {showDeferred ? t('flows.showAll') : t('flows.onlyThisCycle')}
+                </button>
+                <button
+                  className={`text-xs px-3 py-1 rounded-full border transition-colors ${
+                    batchMode
+                      ? 'border-purple-300 bg-purple-50 text-purple-600 dark:bg-purple-950/30'
+                      : 'border-border text-muted-foreground hover:text-foreground hover:border-foreground/30'
+                  }`}
+                  onClick={toggleBatchMode}
+                >
+                  {batchMode ? t('flows.exitBatchMode') : t('flows.batchMode')}
+                  {batchMode && selectedItems.size > 0 && ` (${selectedItems.size})`}
                 </button>
                 <button
                   className="text-xs px-3 py-1 rounded-full border border-dashed border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
@@ -476,3 +732,4 @@ export function FlowEditor({ projectKey, projectName, initialHighlight }: FlowEd
     </FlowDataContext.Provider>
   );
 }
+

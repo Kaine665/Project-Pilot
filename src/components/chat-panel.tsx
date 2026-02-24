@@ -5,7 +5,8 @@ import { Send, Loader2, Trash2, Square } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { ChatBubble } from '@/components/chat-bubble';
-import type { ChatMessage, ChatToolCall, ChatSSEEvent, ContentBlock, TaskUnderstanding, TaskResult, SessionPhase } from '@/types';
+import { DangerWarning } from '@/components/danger-warning';
+import type { ChatMessage, ChatToolCall, ChatSSEEvent, ContentBlock, TaskUnderstanding, TaskResult, SessionPhase, DangerLevel } from '@/types';
 
 export interface ChatPanelHandle {
   sendMessage: (text: string) => void;
@@ -62,6 +63,11 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
     const [isStreaming, setIsStreaming] = useState(false);
     const [streamingBlocks, setStreamingBlocks] = useState<ContentBlock[]>([]);
     const [loadingHistory, setLoadingHistory] = useState(true);
+    const [isInterrupted, setIsInterrupted] = useState(false);
+    const [isRecovering, setIsRecovering] = useState(false);
+    const [dangerWarnings, setDangerWarnings] = useState<Array<{
+      id: string; command: string; reason: string; level: DangerLevel;
+    }>>([]);
     const scrollRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -279,6 +285,15 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                 onBranchMerged?.(event.branch, event.targetBranch);
                 break;
 
+              case 'dangerous_tool_warning':
+                setDangerWarnings(prev => [...prev, {
+                  id: event.toolCallId,
+                  command: event.command,
+                  reason: event.reason,
+                  level: event.level,
+                }]);
+                break;
+
               case 'retry_needed':
                 pendingRetryRef.current = event.retryMessage;
                 break;
@@ -329,6 +344,9 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 
       setLoadingHistory(true);
       setMessages([]);
+      setIsInterrupted(false);
+      setDangerWarnings([]);
+      setIsRecovering(false);
 
       const historyAbort = new AbortController();
       let cancelled = false;
@@ -366,6 +384,21 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
               setIsStreaming(true);
               resetStreamingRefs();
               connectToStream(taskId);
+            }
+          } else if (!cancelled && statusData.status === 'none') {
+            // No active process — check if this session was interrupted
+            try {
+              const recoveryRes = await fetch('/api/recovery', {
+                signal: historyAbort.signal,
+                cache: 'no-store',
+              });
+              if (recoveryRes.ok) {
+                const { interrupted } = await recoveryRes.json();
+                const match = interrupted?.find((i: { taskId: string }) => i.taskId === taskId);
+                if (!cancelled) setIsInterrupted(!!match);
+              }
+            } catch {
+              // Ignore recovery check errors
             }
           }
         } catch (err) {
@@ -502,6 +535,18 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
       doSendRef.current = doSend;
     }, [doSend]);
 
+    // Listen for AskUserQuestion answers dispatched via custom event
+    useEffect(() => {
+      const handler = (e: Event) => {
+        const answer = (e as CustomEvent<{ answer: string }>).detail?.answer;
+        if (answer) {
+          doSendRef.current(answer);
+        }
+      };
+      window.addEventListener('ask-user-answer', handler);
+      return () => window.removeEventListener('ask-user-answer', handler);
+    }, []);
+
     // Auto-start: when history finishes loading with 0 messages, send task title
     // Only auto-start for the very first conversation of a task
     useEffect(() => {
@@ -599,6 +644,52 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
             <Trash2 className="h-3 w-3" />
           </Button>
         </div>
+
+        {/* Recovery banner */}
+        {isInterrupted && !isStreaming && (
+          <div className="mx-3 mt-2 flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-950/30">
+            <p className="flex-1 text-sm text-amber-800 dark:text-amber-200">
+              {t('chat.sessionInterrupted')}
+            </p>
+            <button
+              onClick={async () => {
+                setIsRecovering(true);
+                try {
+                  const res = await fetch('/api/recovery', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ taskId }),
+                  });
+                  if (res.ok) {
+                    setIsInterrupted(false);
+                    setIsStreaming(true);
+                    resetStreamingRefs();
+                    connectToStream(taskId);
+                  }
+                } catch {
+                  // ignore
+                } finally {
+                  setIsRecovering(false);
+                }
+              }}
+              disabled={isRecovering}
+              className="shrink-0 rounded-md bg-amber-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50 transition-colors"
+            >
+              {isRecovering ? t('chat.recovering') : t('chat.continueSession')}
+            </button>
+          </div>
+        )}
+
+        {/* Danger warnings */}
+        {dangerWarnings.map(w => (
+          <DangerWarning
+            key={w.id}
+            command={w.command}
+            reason={w.reason}
+            level={w.level}
+            onDismiss={() => setDangerWarnings(prev => prev.filter(x => x.id !== w.id))}
+          />
+        ))}
 
         {/* Messages */}
         <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-3">

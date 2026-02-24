@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import type { ProjectConfig } from '@/types';
-import { Settings, Plus, Trash2, X, FolderOpen } from 'lucide-react';
+import { Settings, Plus, Trash2, X, FolderOpen, Pencil } from 'lucide-react';
 
 export function ProjectRegistry() {
   const t = useTranslations('projects');
@@ -17,6 +17,7 @@ export function ProjectRegistry() {
   const [projects, setProjects] = useState<Record<string, ProjectConfig>>({});
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
 
   const projectTypes = [
     { value: 'react-native', label: 'React Native' },
@@ -67,9 +68,23 @@ export function ProjectRegistry() {
     setFormWebCommand('');
     setFormWebUrl('');
     setShowForm(false);
+    setEditingKey(null);
   };
 
-  const handleAdd = async () => {
+  const handleStartEdit = (key: string, config: ProjectConfig) => {
+    setFormKey(key);
+    setFormName(config.name);
+    setFormPath(config.path);
+    setFormType(config.type);
+    setFormDescription(config.description || '');
+    setFormDefaultBranch(config.defaultBranch || '');
+    setFormWebCommand(config.webCommand || '');
+    setFormWebUrl(config.webUrl || '');
+    setEditingKey(key);
+    setShowForm(true);
+  };
+
+  const handleSaveProject = async () => {
     if (!formKey.trim() || !formName.trim() || !formPath.trim() || !formType) return;
 
     const project: ProjectConfig = {
@@ -93,7 +108,7 @@ export function ProjectRegistry() {
         fetchProjects();
       }
     } catch (err) {
-      console.error('Failed to add project:', err);
+      console.error(editingKey ? 'Failed to update project:' : 'Failed to add project:', err);
     }
   };
 
@@ -162,24 +177,47 @@ export function ProjectRegistry() {
                       </div>
                     )}
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDelete(key)}
-                    className="text-zinc-400 hover:text-red-500"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleStartEdit(key, config)}
+                      className="text-zinc-400 hover:text-blue-500"
+                      title={tActions('edit')}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(key)}
+                      className="text-zinc-400 hover:text-red-500"
+                      title={tActions('delete')}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </div>
               ))
             )}
           </div>
 
-          {/* Add form */}
+          {/* Add/Edit form */}
           {showForm ? (
             <div className="mt-4 flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+              {editingKey && (
+                <div className="mb-1 text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                  {t('editProject')}: {formKey}
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-2">
-                <Input placeholder={t('projectKey')} value={formKey} onChange={(e) => setFormKey(e.target.value)} />
+                <Input
+                  placeholder={t('projectKey')}
+                  value={formKey}
+                  onChange={(e) => setFormKey(e.target.value)}
+                  disabled={!!editingKey}
+                  className={editingKey ? 'bg-zinc-100 dark:bg-zinc-800' : ''}
+                />
                 <Input placeholder={t('projectName')} value={formName} onChange={(e) => setFormName(e.target.value)} />
               </div>
               <Input placeholder={t('projectPath')} value={formPath} onChange={(e) => setFormPath(e.target.value)} />
@@ -189,8 +227,8 @@ export function ProjectRegistry() {
               <Input placeholder={t('webCommand')} value={formWebCommand} onChange={(e) => setFormWebCommand(e.target.value)} />
               <Input placeholder={t('webUrl')} value={formWebUrl} onChange={(e) => setFormWebUrl(e.target.value)} />
               <div className="flex gap-2">
-                <Button size="sm" onClick={handleAdd} disabled={!formKey.trim() || !formName.trim() || !formPath.trim() || !formType}>
-                  {tActions('add')}
+                <Button size="sm" onClick={handleSaveProject} disabled={!formKey.trim() || !formName.trim() || !formPath.trim() || !formType}>
+                  {editingKey ? tActions('save') : tActions('add')}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={resetForm}>
                   {tActions('cancel')}

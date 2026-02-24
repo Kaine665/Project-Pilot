@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
-import { ArrowLeft, ChevronRight } from 'lucide-react';
+import { useTranslations, useLocale } from 'next-intl';
+import { ArrowLeft, ChevronRight, Trash2, Pencil } from 'lucide-react';
 import { ChatPanel } from '@/components/chat-panel';
 import { ArtifactPanel } from '@/components/artifact-panel';
 import { ConversationTabs } from '@/components/conversation-tabs';
@@ -20,10 +20,14 @@ interface TaskDetailProps {
 export function TaskDetail({ taskId, artifactOpen = true }: TaskDetailProps) {
   const t = useTranslations('tasks');
   const tArtifacts = useTranslations('artifacts');
+  const locale = useLocale();
+  const router = useRouter();
   const [task, setTask] = useState<Task | null>(null);
   const [loading, setLoading] = useState(false);
   const chatRef = useRef<ChatPanelHandle>(null);
   const fetchCounterRef = useRef(0);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
 
   // Artifact panel state
   const [understanding, setUnderstanding] = useState<TaskUnderstanding | null>(null);
@@ -328,6 +332,47 @@ export function TaskDetail({ taskId, artifactOpen = true }: TaskDetailProps) {
     }
   };
 
+  // Delete task
+  const handleDeleteTask = async () => {
+    if (!confirm(t('confirmDelete'))) return;
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        router.push(`/${locale}/tasks`);
+      }
+    } catch (err) {
+      console.error('Failed to delete task:', err);
+      alert(t('deleteFailed'));
+    }
+  };
+
+  // Edit task title
+  const handleStartEditTitle = () => {
+    if (!task) return;
+    setTitleDraft(task.title);
+    setEditingTitle(true);
+  };
+
+  const handleSaveTitle = async () => {
+    if (!titleDraft.trim()) {
+      setEditingTitle(false);
+      return;
+    }
+    try {
+      await saveTask({ title: titleDraft.trim() });
+      setEditingTitle(false);
+    } catch (err) {
+      console.error('Failed to update task title:', err);
+    }
+  };
+
+  const handleCancelEditTitle = () => {
+    setEditingTitle(false);
+    setTitleDraft('');
+  };
+
   // SSE callbacks: update side panel in real-time
   const handlePlanExtracted = useCallback(() => {
     fetchArtifacts();
@@ -420,8 +465,6 @@ export function TaskDetail({ taskId, artifactOpen = true }: TaskDetailProps) {
     );
   }
 
-  const router = useRouter();
-
   // Source breadcrumb: show when task originated from a flow
   const flowCtx = task?.flowContext;
 
@@ -474,11 +517,59 @@ export function TaskDetail({ taskId, artifactOpen = true }: TaskDetailProps) {
     );
   }
 
+  // Task title bar (shown when not from flow)
+  let taskTitleBar: React.ReactNode = null;
+  if (task && !flowCtx) {
+    taskTitleBar = (
+      <div className="flex items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50/80 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/50">
+        {editingTitle ? (
+          <input
+            autoFocus
+            type="text"
+            value={titleDraft}
+            onChange={(e) => setTitleDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSaveTitle();
+              if (e.key === 'Escape') handleCancelEditTitle();
+            }}
+            onBlur={handleSaveTitle}
+            className="flex-1 rounded border border-zinc-300 px-2 py-1 text-sm outline-none focus:border-blue-500 dark:border-zinc-700 dark:bg-zinc-800"
+          />
+        ) : (
+          <h2 className="flex-1 truncate text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            {task.title}
+          </h2>
+        )}
+        <div className="flex items-center gap-1">
+          {!editingTitle && (
+            <>
+              <button
+                onClick={handleStartEditTitle}
+                className="rounded p-1 text-zinc-400 hover:bg-blue-50 hover:text-blue-500 dark:hover:bg-blue-950/30"
+                title={t('edit')}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={handleDeleteTask}
+                className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30"
+                title={t('delete')}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full">
       {/* Left: Chat Panel / Empty state */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {sourceBreadcrumb}
+        {taskTitleBar}
         <div className="flex-1 overflow-hidden">{leftContent}</div>
       </div>
 
