@@ -141,11 +141,11 @@ export function SuggestionCard({ suggestion, projectKey, onApplied }: Suggestion
           }`}
         >
           {suggestion.applied ? (
-            <span className="flex items-center gap-1"><Check className="h-3 w-3" />已应用</span>
+            <span className="flex items-center gap-1"><Check className="h-3 w-3" />{t('applied')}</span>
           ) : applying ? (
             <Loader2 className="h-3 w-3 animate-spin" />
           ) : (
-            '应用'
+            t('apply')
           )}
         </button>
       </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslations } from 'next-intl';
 import { PlanCard } from '@/components/plan-card';
 import type { AIPlan } from '@/types';
 
@@ -9,6 +10,7 @@ interface PlanListProps {
 }
 
 export function PlanList({ taskId }: PlanListProps) {
+  const t = useTranslations('plans');
   const [plans, setPlans] = useState<AIPlan[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -64,14 +66,14 @@ export function PlanList({ taskId }: PlanListProps) {
   };
 
   if (loading) {
-    return <div className="p-4 text-center text-sm text-zinc-400">加载中...</div>;
+    return <div className="p-4 text-center text-sm text-zinc-400">{t('loading')}</div>;
   }
 
   if (plans.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 p-8 text-center">
-        <p className="text-sm text-zinc-400">还没有执行计划</p>
-        <p className="text-xs text-zinc-300 dark:text-zinc-600">点击"生成计划"让 AI 创建执行计划</p>
+        <p className="text-sm text-zinc-400">{t('noPlans')}</p>
+        <p className="text-xs text-zinc-300 dark:text-zinc-600">{t('createPlanHint')}</p>
       </div>
     );
   }
