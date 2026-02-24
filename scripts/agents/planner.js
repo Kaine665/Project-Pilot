@@ -2,7 +2,6 @@ const { spawn } = require('child_process');
 const fs = require('fs').promises;
 const path = require('path');
 
-// 获取命令行参数
 const [, , taskId, planId] = process.argv;
 
 if (!taskId || !planId) {
@@ -17,108 +16,90 @@ const PROJECTS_PATH = path.join(DATA_DIR, 'projects.json');
 const LOGS_DIR = path.join(DATA_DIR, 'logs');
 const LOG_PATH = path.join(LOGS_DIR, `${planId}.log`);
 
-// 确保日志目录存在
-fs.mkdir(LOGS_DIR, { recursive: true }).catch(console.error);
-
-// task-agent 项目根目录
 const taskAgentDir = path.join(__dirname, '../..');
 
-// 从 projects.json 解析工作目录
-async function resolveWorkingDirectory(task) {
-  const projectsData = JSON.parse(await fs.readFile(PROJECTS_PATH, 'utf-8'));
-  const project = projectsData.projects[task.projectKey];
-  if (project) return project.path;
-  // fallback: search task title/content for project names
-  const content = `${task.title} ${task.content}`.toLowerCase();
-  for (const [key, proj] of Object.entries(projectsData.projects)) {
-    if (content.includes(key)) return proj.path;
+// ── helpers ──
+
+async function ensureDirs() {
+  await fs.mkdir(LOGS_DIR, { recursive: true });
+  await fs.mkdir(path.join(DATA_DIR, 'prompts'), { recursive: true });
+}
+
+async function log(message) {
+  const ts = new Date().toISOString();
+  const line = `[${ts}] ${message}\n`;
+  console.log(line.trim());
+  await fs.appendFile(LOG_PATH, line).catch(() => {});
+}
+
+async function readJson(p, fallback) {
+  try { return JSON.parse(await fs.readFile(p, 'utf-8')); } catch { return fallback; }
+}
+
+async function updateTaskStatus(updates) {
+  const data = await readJson(TASKS_PATH, { tasks: [] });
+  data.tasks = data.tasks.map((t) =>
+    t.id === taskId ? { ...t, ...updates, updatedAt: new Date().toISOString() } : t,
+  );
+  await fs.writeFile(TASKS_PATH, JSON.stringify(data, null, 2));
+}
+
+async function updatePlan(planData) {
+  const data = await readJson(PLANS_PATH, { plans: [] });
+  const idx = data.plans.findIndex((p) => p.plan_id === planId);
+  if (idx >= 0) data.plans[idx] = { ...data.plans[idx], ...planData };
+  else data.plans.push(planData);
+  await fs.writeFile(PLANS_PATH, JSON.stringify(data, null, 2));
+}
+
+async function cleanupFailedPlan() {
+  // Remove the failed plan entry entirely
+  const data = await readJson(PLANS_PATH, { plans: [] });
+  data.plans = data.plans.filter((p) => p.plan_id !== planId);
+  await fs.writeFile(PLANS_PATH, JSON.stringify(data, null, 2));
+
+  // Restore task to most recent valid plan, or clear ai_execution
+  const remaining = data.plans
+    .filter((p) => p.task_id === taskId)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  if (remaining.length > 0) {
+    const latest = remaining[0];
+    await updateTaskStatus({
+      ai_execution: {
+        status: latest.status,
+        current_plan_id: latest.plan_id,
+        plan_count: remaining.length,
+        execution_count: 0,
+        last_update: new Date().toISOString(),
+      },
+    });
+  } else {
+    await updateTaskStatus({ ai_execution: undefined });
   }
+}
+
+async function resolveWorkingDirectory(task) {
+  const proj = await readJson(PROJECTS_PATH, { projects: {} });
+  if (proj.projects[task.projectKey]) return proj.projects[task.projectKey].path;
   return taskAgentDir;
 }
 
-// 日志输出函数
-async function log(message) {
-  const timestamp = new Date().toISOString();
-  const logMessage = `[${timestamp}] ${message}\n`;
-  console.log(logMessage.trim());
-  try {
-    await fs.appendFile(LOG_PATH, logMessage);
-  } catch (error) {
-    console.error('Failed to write log:', error);
-  }
-}
-
-// 更新 task 状态
-async function updateTaskStatus(updates) {
-  const data = JSON.parse(await fs.readFile(TASKS_PATH, 'utf-8'));
-  data.tasks = data.tasks.map((t) =>
-    t.id === taskId
-      ? { ...t, ...updates, updatedAt: new Date().toISOString() }
-      : t
-  );
-  await fs.writeFile(TASKS_PATH, JSON.stringify(data, null, 2));
-}
-
-// 更新执行计划
-async function updatePlan(planData) {
-  let plansData;
-  try {
-    plansData = JSON.parse(await fs.readFile(PLANS_PATH, 'utf-8'));
-  } catch {
-    plansData = { plans: [] };
-  }
-
-  const existingIndex = plansData.plans.findIndex((p) => p.plan_id === planId);
-  if (existingIndex >= 0) {
-    plansData.plans[existingIndex] = { ...plansData.plans[existingIndex], ...planData };
-  } else {
-    plansData.plans.push(planData);
-  }
-
-  await fs.writeFile(PLANS_PATH, JSON.stringify(plansData, null, 2));
-}
-
-// 添加日志到 task
-async function addLog(logMessage) {
-  const data = JSON.parse(await fs.readFile(TASKS_PATH, 'utf-8'));
-  const task = data.tasks.find((t) => t.id === taskId);
-  if (!task) return;
-
-  const logs = task.logs || [];
-  logs.push({
-    date: new Date().toISOString(),
-    did: logMessage,
-  });
-
-  data.tasks = data.tasks.map((t) =>
-    t.id === taskId
-      ? { ...t, logs, updatedAt: new Date().toISOString() }
-      : t
-  );
-  await fs.writeFile(TASKS_PATH, JSON.stringify(data, null, 2));
-}
+// ── main ──
 
 async function main() {
-  try {
-    await log(`Starting plan generation for task: ${taskId}`);
+  await ensureDirs();
+  await log(`Starting plan generation for task: ${taskId}`);
 
-    // 读取 task 信息
-    const tasksData = JSON.parse(await fs.readFile(TASKS_PATH, 'utf-8'));
-    const task = tasksData.tasks.find((t) => t.id === taskId);
+  const tasksData = await readJson(TASKS_PATH, { tasks: [] });
+  const task = tasksData.tasks.find((t) => t.id === taskId);
+  if (!task) throw new Error(`Task ${taskId} not found`);
 
-    if (!task) {
-      throw new Error(`Task ${taskId} not found`);
-    }
+  const workingDir = await resolveWorkingDirectory(task);
+  await log(`Working directory: ${workingDir}`);
 
-    await log(`Task title: ${task.title}`);
-    await log(`Task content: ${task.content}`);
-
-    // 从 projects.json 解析项目目录
-    const workingDir = await resolveWorkingDirectory(task);
-    await log(`Detected working directory: ${workingDir}`);
-
-    // 构建 AI 提示词（Planning Mode）
-    const prompt = `你是 task-agent 系统的 AI 计划生成器。
+  // Build prompt
+  const prompt = `你是 ProjectPilot 系统的 AI 计划生成器。
 
 **当前任务**：
 - ID: ${task.id}
@@ -126,266 +107,142 @@ async function main() {
 - 描述: ${task.content || '(无详细描述)'}
 
 **你的职责**：
-\u26a0\ufe0f **重要：你现在处于计划模式（Planning Mode），只需生成执行计划，不要执行任何操作！**
+⚠️ **重要：你现在处于计划模式（Planning Mode），只需生成执行计划，不要执行任何代码修改操作！**
 
-1. **分析任务**
-   - 理解用户意图
-   - 评估任务复杂度
-   - 识别所需信息
+1. 分析任务：理解用户意图，评估复杂度，识别依赖
+2. 检查信息是否充足，如果不足在 plan 中添加 questions
+3. 生成详细的分步执行计划
 
-2. **检查信息是否充足**
-   - 如果信息不足，在 plan 中添加 questions 字段，列出需要用户回答的问题
-   - 如果信息充足，继续生成计划
-
-3. **生成执行计划**
-   - 创建详细的 steps 数组（每个步骤包含：id, type, action, description）
-   - 评估每个步骤的风险和依赖关系
-   - 预估执行结果
-
-4. **写入计划文件**
-   - 将计划写入 ${PLANS_PATH.replace(/\\/g, '/')}
-   - 设置 status 为 "pending_approval"（等待人类批准）
-
-**计划数据结构**：
-\`\`\`json
-{
-  "plan_id": "${planId}",
-  "task_id": "${taskId}",
-  "created_at": "ISO时间",
-  "status": "pending_approval",
-  "analysis": "任务分析：描述你对这个任务的理解...",
-  "questions": [
-    // 如果信息不足，在这里列出问题
-    {
-      "id": 1,
-      "question": "是否需要添加测试用例？",
-      "type": "yes_no",
-      "importance": "optional"
-    }
-  ],
-  "steps": [
-    {
-      "id": 1,
-      "type": "auto",
-      "action": "读取相关文件",
-      "description": "读取 src/... 了解现有结构",
-      "estimated_time": "1分钟",
-      "risk_level": "low"
-    },
-    {
-      "id": 2,
-      "type": "auto",
-      "action": "编写代码",
-      "description": "创建新的文件...",
-      "estimated_time": "5分钟",
-      "risk_level": "medium",
-      "dependencies": [1]
-    }
-  ],
-  "expected_results": "预期将创建以下文件：...",
-  "risks": "可能的风险：...",
-  "execution_notes": "执行时的注意事项：..."
-}
-\`\`\`
-
-**使用 Node.js 脚本写入计划**：
+4. **写入计划文件**：使用以下命令将计划写入 JSON：
 \`\`\`bash
 cd "${taskAgentDir.replace(/\\/g, '/')}" && node -e "
 const fs = require('fs');
-const path = 'data/ai-plans.json';
-let data;
-try {
-  data = JSON.parse(fs.readFileSync(path, 'utf8'));
-} catch {
-  data = { plans: [] };
-}
-
-// 创建新计划
-const newPlan = {
+const data = JSON.parse(fs.readFileSync('data/ai-plans.json', 'utf8'));
+const idx = data.plans.findIndex(p => p.plan_id === '${planId}');
+const plan = {
   plan_id: '${planId}',
   task_id: '${taskId}',
   created_at: new Date().toISOString(),
   status: 'pending_approval',
-  analysis: '你的分析...',
-  questions: [], // 或添加问题
+  analysis: '你的任务分析...',
+  questions: [],
   steps: [
-    // 你生成的步骤...
+    { id: 1, type: 'auto', action: '步骤名', description: '详细说明', status: 'pending', risk_level: 'low' }
   ],
-  expected_results: '...',
-  risks: '...',
-  execution_notes: '...'
+  expected_results: '预期结果...',
+  risks: '风险评估...',
+  execution_notes: '注意事项...'
 };
-
-// 检查是否已存在
-const existingIndex = data.plans.findIndex(p => p.plan_id === '${planId}');
-if (existingIndex >= 0) {
-  data.plans[existingIndex] = newPlan;
-} else {
-  data.plans.push(newPlan);
-}
-
-fs.writeFileSync(path, JSON.stringify(data, null, 2));
-console.log('Plan saved successfully');
+if (idx >= 0) data.plans[idx] = plan; else data.plans.push(plan);
+fs.writeFileSync('data/ai-plans.json', JSON.stringify(data, null, 2));
+console.log('Plan saved');
 "
 \`\`\`
 
-**完成后更新 task 状态**：
+5. **更新 task 状态**：
 \`\`\`bash
 cd "${taskAgentDir.replace(/\\/g, '/')}" && node -e "
 const fs = require('fs');
-const path = 'data/tasks.json';
-const data = JSON.parse(fs.readFileSync(path, 'utf8'));
-const task = data.tasks.find(t => t.id === '${taskId}');
-if (task && task.ai_execution) {
-  task.ai_execution.status = 'pending_approval';
-  task.ai_execution.current_action = '计划已生成，等待用户审批';
-  task.ai_execution.last_update = new Date().toISOString();
-}
-fs.writeFileSync(path, JSON.stringify(data, null, 2));
-console.log('Task status updated');
+const data = JSON.parse(fs.readFileSync('data/tasks.json', 'utf8'));
+const t = data.tasks.find(t => t.id === '${taskId}');
+if (t) { t.ai_execution = { ...t.ai_execution, status: 'pending_approval', last_update: new Date().toISOString() }; t.updatedAt = new Date().toISOString(); }
+fs.writeFileSync('data/tasks.json', JSON.stringify(data, null, 2));
+console.log('Task updated');
 "
 \`\`\`
 
-**重要提醒**：
-- \u274c 不要执行任何代码编写、文件修改等操作
-- \u274c 不要设置 task.completedAt
-- \u2705 只需生成计划并写入 ai-plans.json
-- \u2705 设置状态为 "pending_approval"
-- \u2705 如果信息不足，添加 questions 字段询问用户
+**重要**：
+- ❌ 不要修改项目源代码
+- ✅ 只生成计划并写入 ai-plans.json
+- ✅ 设置状态为 pending_approval
 
-现在开始生成计划！`;
+现在开始分析任务并生成计划！`;
 
-    // 创建初始计划
-    const initialPlan = {
-      plan_id: planId,
-      task_id: taskId,
-      created_at: new Date().toISOString(),
+  // Write prompt to file (for reference)
+  const promptFile = path.join(DATA_DIR, 'prompts', `${planId}_planning.txt`);
+  await fs.writeFile(promptFile, prompt, 'utf-8');
+
+  // Create initial plan record
+  await updatePlan({
+    plan_id: planId,
+    task_id: taskId,
+    created_at: new Date().toISOString(),
+    status: 'planning',
+    analysis: '正在分析任务并生成执行计划...',
+    steps: [],
+  });
+
+  // Update task status
+  await updateTaskStatus({
+    ai_execution: {
       status: 'planning',
-      analysis: '正在分析任务并生成执行计划...',
-      steps: [],
-      current_step: 0,
-      execution_history: [
-        {
-          timestamp: new Date().toISOString(),
-          event: 'planning_started',
-          details: 'AI 计划生成器已启动，等待 Claude Code 分析任务'
-        }
-      ]
-    };
-    await updatePlan(initialPlan);
-    await log('Initial planning record created');
+      current_plan_id: planId,
+      plan_count: 1,
+      execution_count: 0,
+      last_update: new Date().toISOString(),
+    },
+  });
 
-    // 将 prompt 写入临时文件
-    const promptFile = path.join(DATA_DIR, 'prompts', `${planId}_planning.txt`);
-    await fs.mkdir(path.dirname(promptFile), { recursive: true });
-    await fs.writeFile(promptFile, prompt, 'utf-8');
-    await log(`Prompt written to: ${promptFile}`);
+  await log('Spawning claude -p (non-interactive, stdin pipe)...');
 
-    // 创建 PowerShell 启动脚本
-    const psFile = path.join(DATA_DIR, 'prompts', `${planId}_planning.ps1`);
+  // Spawn claude -p non-interactively, pipe prompt via stdin to avoid Windows cmd length limit
+  const claude = spawn('claude', [
+    '-p',
+    '--dangerously-skip-permissions',
+  ], {
+    cwd: workingDir,
+    shell: true,
+    env: { ...process.env, FORCE_COLOR: '0', CLAUDECODE: '' },
+  });
 
-    // 创建简短的启动命令
-    const startCommand = `Read ${promptFile.replace(/\\/g, '/')} and execute the task`;
+  // Write prompt via stdin (avoids ~8191 char Windows command line limit)
+  claude.stdin.write(prompt);
+  claude.stdin.end();
 
-    await log(`Start command: ${startCommand}`);
+  // Stream stdout/stderr to log file in real-time
+  claude.stdout.on('data', async (chunk) => {
+    const text = chunk.toString('utf-8');
+    await fs.appendFile(LOG_PATH, text).catch(() => {});
+  });
 
-    // PowerShell 脚本内容
-    const psContent = `# Task Agent AI Planner
-# Set console encoding to UTF-8
-chcp 65001 | Out-Null
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-[Console]::InputEncoding = [System.Text.Encoding]::UTF8
+  claude.stderr.on('data', async (chunk) => {
+    const text = chunk.toString('utf-8');
+    await fs.appendFile(LOG_PATH, `[stderr] ${text}`).catch(() => {});
+  });
 
-Write-Host ""
-Write-Host "================================================" -ForegroundColor Cyan
-Write-Host "  Task Agent AI Planner (Planning Mode)" -ForegroundColor Cyan
-Write-Host "================================================" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "Task: ${task.title.replace(/"/g, '`"')}" -ForegroundColor Yellow
-Write-Host "Plan ID: ${planId}" -ForegroundColor Yellow
-Write-Host "Working Directory: ${workingDir}" -ForegroundColor Yellow
-Write-Host ""
-Write-Host "MODE: Planning Only (No Execution)" -ForegroundColor Magenta
-Write-Host ""
-Write-Host "================================================" -ForegroundColor Cyan
-Write-Host ""
+  claude.on('close', async (code) => {
+    await log(`Claude process exited with code ${code}`);
 
-# Copy command to clipboard
-$command = "${startCommand}"
-Set-Clipboard -Value $command
+    if (code === 0) {
+      // Check if plan was updated by Claude
+      const plans = await readJson(PLANS_PATH, { plans: [] });
+      const plan = plans.plans.find((p) => p.plan_id === planId);
+      if (plan && plan.status === 'pending_approval') {
+        await log('Plan successfully generated and saved.');
+      } else {
+        await log('Claude exited OK but plan may not have been written. Marking pending_approval anyway.');
+        await updatePlan({ status: 'pending_approval', analysis: plan?.analysis || '计划生成完成（请查看日志）' });
+        await updateTaskStatus({
+          ai_execution: {
+            status: 'pending_approval',
+            current_plan_id: planId,
+            last_update: new Date().toISOString(),
+          },
+        });
+      }
+    } else {
+      await log(`Claude failed with exit code ${code}. Cleaning up failed plan.`);
+      await cleanupFailedPlan();
+    }
+  });
 
-Write-Host "READY TO GENERATE PLAN!" -ForegroundColor Green
-Write-Host ""
-Write-Host "Command copied to clipboard:" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "  $command" -ForegroundColor Yellow
-Write-Host ""
-Write-Host "================================================" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "Press ANY KEY to start Claude Code..." -ForegroundColor White -BackgroundColor DarkGreen
-Write-Host "AI will ONLY generate a plan, NOT execute it" -ForegroundColor Gray
-Write-Host ""
-
-# Wait for user confirmation
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-
-Write-Host ""
-Write-Host "Starting Claude Code (Planning Mode)..." -ForegroundColor Green
-Write-Host ""
-
-# Change to working directory and start Claude Code
-Set-Location "${workingDir.replace(/\\/g, '/')}"
-& claude --dangerously-skip-permissions --add-dir "${taskAgentDir.replace(/\\/g, '/')}"
-`;
-
-    // 使用 UTF-8 with BOM 保存 PowerShell 脚本
-    const utf8WithBom = Buffer.concat([
-      Buffer.from([0xEF, 0xBB, 0xBF]), // UTF-8 BOM
-      Buffer.from(psContent, 'utf-8')
-    ]);
-    await fs.writeFile(psFile, utf8WithBom);
-    await log(`PowerShell script created: ${psFile}`);
-
-    // 在新窗口启动 PowerShell 脚本
-    await log('Launching Claude Code in planning mode...');
-
-    const launchProcess = spawn('powershell', [
-      '-NoProfile',
-      '-ExecutionPolicy', 'Bypass',
-      '-Command',
-      `Start-Process powershell -ArgumentList '-NoExit', '-ExecutionPolicy', 'Bypass', '-File', '"${psFile}"'`
-    ], {
-      detached: true,
-      stdio: 'ignore',
-      shell: true
-    });
-
-    launchProcess.unref();
-
-    await log('Claude Code launched in new terminal window (Planning Mode)');
-    await log(`Working directory: ${workingDir}`);
-    await log(`Task Agent directory: ${taskAgentDir}`);
-    await log(`Plan ID: ${planId}`);
-    await log(`Full prompt file: ${promptFile}`);
-
-    // 更新状态为计划生成中
-    await updateTaskStatus({
-      ai_execution: {
-        status: 'planning',
-        plan_id: planId,
-        current_step: 0,
-        current_action: 'Claude Code 已启动（计划模式），正在分析任务...',
-        started_at: task.ai_execution?.started_at || new Date().toISOString(),
-        last_update: new Date().toISOString(),
-      },
-    });
-
-    await addLog(`AI 计划生成已启动：Claude Code 已在新窗口打开（计划模式），正在为任务 "${task.title}" 生成执行计划`);
-  } catch (error) {
-    await log(`Fatal error: ${error.message}`);
-    await addLog(`AI 计划生成器错误：${error.message}`);
-    process.exit(1);
-  }
+  claude.on('error', async (err) => {
+    await log(`Failed to spawn claude: ${err.message}. Cleaning up failed plan.`);
+    await cleanupFailedPlan();
+  });
 }
 
-main();
+main().catch(async (err) => {
+  await log(`Fatal error: ${err.message}`);
+  process.exit(1);
+});

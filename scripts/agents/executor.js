@@ -20,7 +20,7 @@ const LOG_PATH = path.join(LOGS_DIR, `${planId}.log`);
 // 确保日志目录存在
 fs.mkdir(LOGS_DIR, { recursive: true }).catch(console.error);
 
-// task-agent 项目根目录
+// ProjectPilot 项目根目录
 const taskAgentDir = path.join(__dirname, '../..');
 
 // 验证产物目录
@@ -121,7 +121,7 @@ async function main() {
     await log(`Detected working directory: ${workingDir}`);
 
     // 构建 AI 提示词（Execution Mode）
-    const prompt = `你是 task-agent 系统的 AI 执行器。
+    const prompt = `你是 ProjectPilot 系统的 AI 执行器。
 
 **当前任务**：
 - ID: ${task.id}
@@ -322,7 +322,7 @@ cd "${workingDir.replace(/\\/g, '/')}" && git add -A && git commit -m "feat: <�
     await log(`Start command: ${startCommand}`);
 
     // PowerShell 脚本内容（执行模式）
-    const psContent = `# Task Agent AI Executor
+    const psContent = `# ProjectPilot AI Executor
 # Set console encoding to UTF-8
 chcp 65001 | Out-Null
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -330,7 +330,7 @@ chcp 65001 | Out-Null
 
 Write-Host ""
 Write-Host "================================================" -ForegroundColor Cyan
-Write-Host "  Task Agent AI Executor (Execution Mode)" -ForegroundColor Cyan
+Write-Host "  ProjectPilot AI Executor (Execution Mode)" -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Task: ${task.title.replace(/"/g, '`"')}" -ForegroundColor Yellow
@@ -396,7 +396,7 @@ Set-Location "${workingDir.replace(/\\/g, '/')}"
 
     await log('Claude Code launched in new terminal window');
     await log(`Working directory: ${workingDir}`);
-    await log(`Task Agent directory: ${taskAgentDir}`);
+    await log(`ProjectPilot directory: ${taskAgentDir}`);
     await log(`Plan ID: ${planId}`);
     await log(`Full prompt file: ${promptFile}`);
     await log(`Artifacts directory: ${artifactsDir}`);

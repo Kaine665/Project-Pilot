@@ -20,7 +20,7 @@ const LOG_PATH = path.join(LOGS_DIR, `discuss-${planId}.log`);
 // 确保日志目录存在
 fs.mkdir(LOGS_DIR, { recursive: true }).catch(console.error);
 
-// task-agent 项目根目录
+// ProjectPilot 项目根目录
 const taskAgentDir = path.join(__dirname, '../..');
 
 // 从 projects.json 解析工作目录
@@ -101,7 +101,7 @@ ${existingPlan.execution_history.slice(-5).map(h => `- ${h.event}: ${h.details}`
 `;
     }
 
-    const prompt = `你是 task-agent 系统的 AI 计划顾问。
+    const prompt = `你是 ProjectPilot 系统的 AI 计划顾问。
 
 **当前任务**：
 - ID: ${task.id}
@@ -244,7 +244,7 @@ console.log('Task updated successfully');
 
     // PowerShell 脚本内容
     const psFile = path.join(DATA_DIR, 'prompts', `discuss-${planId}.ps1`);
-    const psContent = `# Task Agent AI Plan Discussor
+    const psContent = `# ProjectPilot AI Plan Discussor
 # Set console encoding to UTF-8
 chcp 65001 | Out-Null
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -252,7 +252,7 @@ chcp 65001 | Out-Null
 
 Write-Host ""
 Write-Host "================================================" -ForegroundColor Cyan
-Write-Host "  Task Agent AI Plan Discussor" -ForegroundColor Cyan
+Write-Host "  ProjectPilot AI Plan Discussor" -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Task: ${task.title.replace(/"/g, '`"')}" -ForegroundColor Yellow
