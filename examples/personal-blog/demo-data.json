@@ -1,0 +1,303 @@
+{
+  "flow": {
+    "id": "demo-blog",
+    "name": "个人技术博客开发",
+    "description": "从零开始开发一个基于 Next.js 的个人技术博客网站",
+    "createdAt": "2025-02-20T10:00:00Z",
+    "updatedAt": "2025-02-24T15:30:00Z",
+    "nodes": [
+      {
+        "id": "node-1",
+        "name": "项目初始化",
+        "description": "搭建项目基础架构",
+        "tasks": [
+          {
+            "id": "task-1-1",
+            "content": "创建 Next.js 项目并配置基础设置",
+            "status": "completed",
+            "sessionId": "session-demo-1"
+          },
+          {
+            "id": "task-1-2",
+            "content": "配置 Tailwind CSS 和设计系统",
+            "status": "completed",
+            "sessionId": "session-demo-2"
+          },
+          {
+            "id": "task-1-3",
+            "content": "设置项目目录结构和路由",
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "id": "node-2",
+        "name": "核心功能开发",
+        "description": "实现博客的核心阅读功能",
+        "tasks": [
+          {
+            "id": "task-2-1",
+            "content": "实现文章列表页面，支持分页和搜索",
+            "status": "in_progress",
+            "sessionId": "session-demo-3"
+          },
+          {
+            "id": "task-2-2",
+            "content": "实现文章详情页，支持 Markdown 渲染",
+            "status": "pending"
+          },
+          {
+            "id": "task-2-3",
+            "content": "添加标签系统和分类筛选",
+            "status": "pending"
+          },
+          {
+            "id": "task-2-4",
+            "content": "实现文章搜索和相关推荐功能",
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "node-3",
+        "name": "美化和优化",
+        "description": "提升用户体验和性能",
+        "tasks": [
+          {
+            "id": "task-3-1",
+            "content": "设计响应式布局，适配移动端",
+            "status": "pending"
+          },
+          {
+            "id": "task-3-2",
+            "content": "添加暗色模式切换功能",
+            "status": "pending"
+          },
+          {
+            "id": "task-3-3",
+            "content": "优化 SEO，添加 meta 标签和 sitemap",
+            "status": "pending"
+          },
+          {
+            "id": "task-3-4",
+            "content": "性能优化：图片懒加载和代码分割",
+            "status": "pending"
+          }
+        ]
+      },
+      {
+        "id": "node-4",
+        "name": "部署上线",
+        "description": "将博客部署到生产环境",
+        "tasks": [
+          {
+            "id": "task-4-1",
+            "content": "配置 Vercel 自动部署",
+            "status": "pending"
+          },
+          {
+            "id": "task-4-2",
+            "content": "配置自定义域名和 SSL",
+            "status": "pending"
+          },
+          {
+            "id": "task-4-3",
+            "content": "设置 Google Analytics 和监控",
+            "status": "pending"
+          }
+        ]
+      }
+    ]
+  },
+  "sessions": [
+    {
+      "id": "session-demo-1",
+      "taskId": "task-1-1",
+      "flowContext": {
+        "flowId": "demo-blog",
+        "flowName": "个人技术博客开发",
+        "nodeName": "项目初始化",
+        "taskContent": "创建 Next.js 项目并配置基础设置"
+      },
+      "phase": "completed",
+      "understanding": {
+        "projectContext": "开发一个个人技术博客网站，用于分享编程经验和技术文章",
+        "whatToDo": "初始化 Next.js 项目，配置 TypeScript、ESLint、基础的页面结构",
+        "whyDoIt": "为博客网站搭建可靠的技术基础，选择 Next.js 是因为它提供了 SSG、SEO 优化等博客必需的功能",
+        "deliverables": {
+          "type": "code",
+          "description": "一个配置完整的 Next.js 项目，包含首页、布局组件、TypeScript 配置"
+        }
+      },
+      "plan": {
+        "title": "Next.js 博客项目初始化计划",
+        "steps": [
+          {
+            "step": 1,
+            "description": "使用 create-next-app 创建项目",
+            "status": "completed"
+          },
+          {
+            "step": 2,
+            "description": "配置 TypeScript 和类型检查",
+            "status": "completed"
+          },
+          {
+            "step": 3,
+            "description": "设置 ESLint 和代码格式化规则",
+            "status": "completed"
+          },
+          {
+            "step": 4,
+            "description": "创建基础布局组件和页面结构",
+            "status": "completed"
+          },
+          {
+            "step": 5,
+            "description": "配置环境变量和项目元信息",
+            "status": "completed"
+          }
+        ]
+      },
+      "result": {
+        "summary": "成功创建了 Next.js 项目，配置了 TypeScript、ESLint，创建了基础的页面结构",
+        "filesChanged": [
+          "package.json",
+          "tsconfig.json",
+          ".eslintrc.json",
+          "src/app/layout.tsx",
+          "src/app/page.tsx",
+          "next.config.js"
+        ],
+        "achievements": [
+          "项目基础架构搭建完成",
+          "TypeScript 类型检查已启用",
+          "代码规范已配置",
+          "可以开始开发功能模块"
+        ]
+      },
+      "createdAt": "2025-02-20T10:30:00Z",
+      "completedAt": "2025-02-20T11:15:00Z"
+    },
+    {
+      "id": "session-demo-2",
+      "taskId": "task-1-2",
+      "flowContext": {
+        "flowId": "demo-blog",
+        "flowName": "个人技术博客开发",
+        "nodeName": "项目初始化",
+        "taskContent": "配置 Tailwind CSS 和设计系统"
+      },
+      "phase": "completed",
+      "understanding": {
+        "projectContext": "为博客网站建立统一的视觉设计系统",
+        "whatToDo": "配置 Tailwind CSS，定义颜色、字体、间距等设计规范，创建可复用的样式组件",
+        "whyDoIt": "建立设计系统可以保证界面的一致性，加快后续开发速度，提升用户体验",
+        "deliverables": {
+          "type": "configuration",
+          "description": "Tailwind 配置文件、设计规范文档、基础样式组件"
+        }
+      },
+      "plan": {
+        "title": "设计系统配置计划",
+        "steps": [
+          {
+            "step": 1,
+            "description": "安装 Tailwind CSS 及相关依赖",
+            "status": "completed"
+          },
+          {
+            "step": 2,
+            "description": "配置 tailwind.config.js，定义主题色彩、字体等",
+            "status": "completed"
+          },
+          {
+            "step": 3,
+            "description": "创建全局样式文件和 CSS 变量",
+            "status": "completed"
+          },
+          {
+            "step": 4,
+            "description": "创建基础 UI 组件（Button, Card, Badge 等）",
+            "status": "completed"
+          }
+        ]
+      },
+      "result": {
+        "summary": "成功配置了 Tailwind CSS 设计系统，创建了可复用的基础组件",
+        "filesChanged": [
+          "tailwind.config.js",
+          "src/app/globals.css",
+          "src/components/ui/button.tsx",
+          "src/components/ui/card.tsx",
+          "src/components/ui/badge.tsx"
+        ],
+        "achievements": [
+          "设计系统已建立",
+          "支持明暗主题切换",
+          "创建了 5 个基础 UI 组件",
+          "样式开发效率提升"
+        ]
+      },
+      "createdAt": "2025-02-21T09:00:00Z",
+      "completedAt": "2025-02-21T10:30:00Z"
+    },
+    {
+      "id": "session-demo-3",
+      "taskId": "task-2-1",
+      "flowContext": {
+        "flowId": "demo-blog",
+        "flowName": "个人技术博客开发",
+        "nodeName": "核心功能开发",
+        "taskContent": "实现文章列表页面，支持分页和搜索"
+      },
+      "phase": "executing",
+      "understanding": {
+        "projectContext": "实现博客的核心功能 - 文章列表展示",
+        "whatToDo": "创建文章列表页面，实现文章卡片展示、分页导航、搜索过滤功能",
+        "whyDoIt": "文章列表是博客的核心入口，用户需要能够浏览、搜索和发现感兴趣的文章",
+        "deliverables": {
+          "type": "code",
+          "description": "完整的文章列表页面组件，包含分页和搜索功能"
+        }
+      },
+      "plan": {
+        "title": "文章列表页面开发计划",
+        "steps": [
+          {
+            "step": 1,
+            "description": "创建文章数据模型和类型定义",
+            "status": "completed"
+          },
+          {
+            "step": 2,
+            "description": "实现文章列表 API 端点（带分页参数）",
+            "status": "completed"
+          },
+          {
+            "step": 3,
+            "description": "创建文章卡片组件（ArticleCard）",
+            "status": "in_progress"
+          },
+          {
+            "step": 4,
+            "description": "实现文章列表页面组件",
+            "status": "pending"
+          },
+          {
+            "step": 5,
+            "description": "添加搜索功能和过滤器",
+            "status": "pending"
+          },
+          {
+            "step": 6,
+            "description": "实现分页组件和导航",
+            "status": "pending"
+          }
+        ]
+      },
+      "createdAt": "2025-02-24T14:00:00Z",
+      "currentStep": 3
+    }
+  ]
+}
