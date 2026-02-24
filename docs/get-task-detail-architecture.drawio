@@ -1,0 +1,138 @@
+<mxfile host="65bd71144e">
+    <diagram name="get_task_detail Architecture" id="arch">
+        <mxGraphModel dx="978" dy="756" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" background="#ffffff" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="ai" value="AI (Claude CLI)" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;size=20;fontSize=14;fontStyle=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="620" y="30" width="180" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="ai_call" value="调用 get_task_detail(sessionId)" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=11;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="580" y="95" width="260" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="ai_to_tool" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;strokeColor=#6c8ebf;" parent="1" source="ai" target="tool_box" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="tool_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;strokeWidth=2;arcSize=8;" parent="1" vertex="1">
+                    <mxGeometry x="440" y="140" width="540" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="tool_title" value="get_task_detail(sessionId)" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=16;fontStyle=1;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="540" y="145" width="340" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="tool_desc" value="聚合所有数据源 → 输出四要素的当前状态（已知 / 可推断 / 未知）" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=11;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="480" y="175" width="460" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="sources_label" value="数据源" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=13;fontStyle=5;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="160" y="260" width="80" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="src_session" value="&lt;b&gt;Session&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot; color=&quot;#444&quot;&gt;title, content,&lt;br&gt;projectKey, status&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=center;verticalAlign=middle;fontSize=11;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="300" width="140" height="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="src_flow" value="&lt;b&gt;FlowTaskContext&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot; color=&quot;#444&quot;&gt;taskContent, flowName,&lt;br&gt;nodeName, nodeDescription,&lt;br&gt;siblings, predecessors,&lt;br&gt;crossCutting, deadline&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=center;verticalAlign=middle;fontSize=11;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="295" width="170" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="src_flow_note" value="可选：仅从链路发起时有" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=9;fontColor=#2d7a2d;fontStyle=2;" parent="1" vertex="1">
+                    <mxGeometry x="205" y="375" width="160" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="src_project" value="&lt;b&gt;ProjectConfig&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot; color=&quot;#444&quot;&gt;name, type, path,&lt;br&gt;description, defaultBranch&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=center;verticalAlign=middle;fontSize=11;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="390" y="300" width="160" height="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="src_artifacts" value="&lt;b&gt;SessionArtifacts&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot; color=&quot;#444&quot;&gt;TaskUnderstanding,&lt;br&gt;AIPlan, TaskResult&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;align=center;verticalAlign=middle;fontSize=11;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="570" y="300" width="150" height="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="src_artifacts_note" value="可选：AI 之前产出的理解" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=9;fontColor=#b85450;fontStyle=2;" parent="1" vertex="1">
+                    <mxGeometry x="570" y="365" width="150" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_session" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=0;entryX=0.15;entryY=1;strokeColor=#d6b656;strokeWidth=1.5;" parent="1" source="src_session" target="tool_box" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_flow" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=0;entryX=0.35;entryY=1;strokeColor=#82b366;strokeWidth=1.5;dashed=1;" parent="1" source="src_flow" target="tool_box" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_project" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=0;entryX=0.55;entryY=1;strokeColor=#9673a6;strokeWidth=1.5;" parent="1" source="src_project" target="tool_box" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_artifacts" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=0;entryX=0.75;entryY=1;strokeColor=#b85450;strokeWidth=1.5;dashed=1;" parent="1" source="src_artifacts" target="tool_box" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="output_label" value="输出：四要素状态" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=13;fontStyle=5;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="830" y="260" width="140" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="out_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#cccccc;strokeWidth=1;arcSize=6;" parent="1" vertex="1">
+                    <mxGeometry x="790" y="290" width="230" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="el_project" value="&lt;b&gt;1. 哪个项目&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=12;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="810" y="298" width="100" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="el_project_v" value="&lt;font color=&quot;#2e7d32&quot;&gt;✓ ELApp&lt;/font&gt;&lt;font color=&quot;#555&quot;&gt; ← flowContext&lt;/font&gt;" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=10;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="820" y="318" width="190" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="el_action" value="&lt;b&gt;2. 做什么&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=12;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="810" y="345" width="100" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="el_action_v" value="&lt;font color=&quot;#e65100&quot;&gt;△ &quot;开发者回复通知&quot;&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#555&quot;&gt;   模糊，需 AI 展开&lt;/font&gt;" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=10;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="820" y="365" width="190" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="el_goal" value="&lt;b&gt;3. 为什么&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=12;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="810" y="402" width="100" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="el_goal_v" value="&lt;font color=&quot;#2e7d32&quot;&gt;✓ 反馈流程→提交后→跟进闭环&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#555&quot;&gt;   ← flowContext 推导&lt;/font&gt;" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=10;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="820" y="422" width="195" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="el_deliv" value="&lt;b&gt;4. 交付物&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=12;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="810" y="457" width="100" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="el_deliv_v" value="&lt;font color=&quot;#c62828&quot;&gt;✗ 未知&lt;/font&gt;&lt;font color=&quot;#555&quot;&gt; — 需 AI 推断&lt;/font&gt;" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=10;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="820" y="477" width="190" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_tool_out" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.5;entryX=0;entryY=0.25;strokeWidth=2;strokeColor=#333333;" parent="1" source="tool_box" target="out_box" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ctx_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#cccccc;strokeWidth=1;arcSize=6;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="790" y="510" width="230" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="ctx_label" value="&lt;b&gt;附带上下文（如有）&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;fontColor=#222222;" parent="1" vertex="1">
+                    <mxGeometry x="810" y="515" width="180" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="ctx_items" value="• 同级任务: 查看历史反馈 ✓, 状态追踪 ○&lt;br&gt;• 前置环节: 入口✓ 选类型✓ 填写⊙ 提交⊙&lt;br&gt;• 跨领域: 性能⊙, 部署✓, 认证✓&lt;br&gt;• 截止日期: 2026-02-13（已超期）" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=10;fontColor=#333333;" parent="1" vertex="1">
+                    <mxGeometry x="810" y="538" width="200" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_tool_ctx" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.75;entryX=0;entryY=0.3;strokeWidth=1.5;strokeColor=#999999;dashed=1;" parent="1" source="tool_box" target="ctx_box" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="980" y="205"/>
+                            <mxPoint x="1050" y="205"/>
+                            <mxPoint x="1050" y="648"/>
+                            <mxPoint x="760" y="648"/>
+                            <mxPoint x="760" y="543"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="scenario_label" value="两种创建方式，同一个工具接口" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=12;fontStyle=5;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="110" y="440" width="260" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="sc1" value="&lt;b&gt;从链路发起&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot; color=&quot;#444&quot;&gt;Session + flowContext + projectConfig&lt;br&gt;→ 三个半要素自动填充&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=center;verticalAlign=middle;fontSize=11;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="480" width="240" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="sc2" value="&lt;b&gt;手动创建&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot; color=&quot;#444&quot;&gt;Session + projectConfig（可选）&lt;br&gt;→ AI 需推断大部分信息&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=center;verticalAlign=middle;fontSize=11;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="300" y="480" width="240" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#dddddd;strokeWidth=1;arcSize=6;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="570" width="500" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend_title" value="&lt;b&gt;图例:&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=10;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="575" width="40" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend1" value="━ 必有数据源" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=10;fontColor=#222222;" parent="1" vertex="1">
+                    <mxGeometry x="100" y="575" width="100" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend2" value="╍ 可选数据源" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=10;fontColor=#222222;" parent="1" vertex="1">
+                    <mxGeometry x="210" y="575" width="100" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend3" value="&lt;font color=&quot;#2e7d32&quot;&gt;✓ 已知&lt;/font&gt;　&lt;font color=&quot;#e65100&quot;&gt;△ 模糊&lt;/font&gt;　&lt;font color=&quot;#c62828&quot;&gt;✗ 未知&lt;/font&gt;" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=10;fontColor=#111111;" parent="1" vertex="1">
+                    <mxGeometry x="100" y="597" width="280" height="20" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
