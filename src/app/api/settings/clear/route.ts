@@ -10,7 +10,10 @@ import {
   getAgentsPath,
   getPlannerSessionsPath,
   writeJsonFile,
+  readJsonFile,
 } from '@/lib/file-store';
+import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import type { AgentsData } from '@/types';
 
 type ClearTarget = 'sessions' | 'flows' | 'all';
 const VALID_TARGETS: ClearTarget[] = ['sessions', 'flows', 'all'];
@@ -94,9 +97,17 @@ export async function POST(request: NextRequest) {
     }
 
     if (target === 'all') {
-      // 也清除 agents
+      // 清除 agents，但保留内置 agent
       await backupFile(getAgentsPath());
-      await writeJsonFile(getAgentsPath(), { agents: [] });
+      const agentsData = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
+      const builtInAgents = agentsData.agents.filter(a => a.builtIn);
+      // Ensure all default built-in agents are present
+      for (const defaultAgent of DEFAULT_AGENTS) {
+        if (!builtInAgents.some(a => a.id === defaultAgent.id)) {
+          builtInAgents.unshift(defaultAgent);
+        }
+      }
+      await writeJsonFile(getAgentsPath(), { agents: builtInAgents });
     }
 
     return NextResponse.json({

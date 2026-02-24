@@ -12,6 +12,7 @@ import {
   getConversationIndexPath,
   getTasksPath,
   getProjectsPath,
+  getAgentsPath,
   getFlowDataPath,
   getTaskArtifactsPath,
   readJsonFile,
@@ -30,7 +31,7 @@ import {
 } from '@/lib/security';
 import { ensureConversationIndex, updateConversationMeta } from '@/lib/conversation-migration';
 import { buildPrompt, buildBranchingPrompt, type PromptContext } from '@/lib/prompt-builder';
-import { buildClaudeEnv, buildClaudeModelArgs, buildClaudeMaxTurnsArgs, buildClaudePermissionArgs } from '@/lib/settings-manager';
+import { buildClaudeEnv, buildClaudeModelArgs, buildClaudeMaxTurnsArgs, buildClaudePermissionArgs, buildAgentToolArgs, buildAgentPermissionArgs } from '@/lib/settings-manager';
 import { StreamParser, LineBuffer } from '@/lib/claude-stream-parser';
 import { extractPlanFromText, savePlan } from '@/lib/plan-extractor';
 import {
@@ -43,6 +44,7 @@ import {
 import type {
   Session,
   SessionPhase,
+  AgentsData,
   ChatSession,
   ChatMessage,
   ChatSSEEvent,
@@ -137,6 +139,14 @@ class ProcessManager {
     const projectsData = await readJsonFile<ProjectsData>(getProjectsPath(), { projects: {} });
     const project = task.projectKey ? projectsData.projects[task.projectKey] ?? null : null;
     const workingDir = project?.path ?? process.cwd();
+
+    // ── Load agent (if task has agentId) ──
+    const agentCaps = await (async () => {
+      if (!task.agentId) return undefined;
+      const agentsData = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
+      const agent = agentsData.agents.find(a => a.id === task.agentId);
+      return agent?.capabilities;
+    })();
 
     // ── Phase 0: branching — one-shot branch name generation ──
     if (task.phase === 'branching') {
@@ -235,7 +245,11 @@ class ProcessManager {
       throw new Error(`Invalid working directory: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    const permissionArgs = await buildClaudePermissionArgs(task.phase);
+    // Permission args: use agent-level if agentId is set, otherwise fall back to global
+    const permissionArgs = agentCaps
+      ? await buildAgentPermissionArgs(task.phase, agentCaps)
+      : await buildClaudePermissionArgs(task.phase);
+    const toolArgs = buildAgentToolArgs(agentCaps);
     const resumeArgs = isResume
       ? ['--resume', claudeSessionId!]
       : [];
@@ -249,6 +263,7 @@ class ProcessManager {
       ...modelArgs,
       ...maxTurnsArgs,
       ...permissionArgs,
+      ...toolArgs,
       ...resumeArgs,
     ], {
       cwd: workingDir,

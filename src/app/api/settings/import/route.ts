@@ -11,6 +11,8 @@ import {
   getFlowsDir,
   writeJsonFile,
 } from '@/lib/file-store';
+import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import type { Agent } from '@/types';
 
 /**
  * POST /api/settings/import
@@ -77,9 +79,16 @@ export async function POST(request: NextRequest) {
       stats.plans = Array.isArray(planList) ? planList.length : 0;
     }
     if (data.agents) {
-      await writeJsonFile(getAgentsPath(), data.agents);
-      const agentList = data.agents.agents;
-      stats.agents = Array.isArray(agentList) ? agentList.length : 0;
+      // Ensure built-in agents survive import
+      const imported = data.agents as { agents?: Agent[] };
+      const agents = Array.isArray(imported.agents) ? imported.agents : [];
+      for (const defaultAgent of DEFAULT_AGENTS) {
+        if (!agents.some((a: Agent) => a.id === defaultAgent.id)) {
+          agents.unshift(defaultAgent);
+        }
+      }
+      await writeJsonFile(getAgentsPath(), { agents });
+      stats.agents = agents.length;
     }
     if (data.plannerSessions) {
       await writeJsonFile(getPlannerSessionsPath(), data.plannerSessions);

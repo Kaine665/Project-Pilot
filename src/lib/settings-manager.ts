@@ -7,8 +7,8 @@
 
 import { getSettingsPath, readJsonFile, writeJsonFile } from '@/lib/file-store';
 import { getProviderPreset } from '@/lib/provider-registry';
-import type { AppSettings, SessionPhase } from '@/types';
-import { DEFAULT_APP_SETTINGS } from '@/types';
+import type { AgentCapabilities, AppSettings, SessionPhase } from '@/types';
+import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_APP_SETTINGS } from '@/types';
 
 const CACHE_TTL_MS = 30_000;
 
@@ -142,6 +142,65 @@ export async function buildClaudePermissionArgs(phase: SessionPhase | undefined)
   if (effective === 'branching' || effective === 'understanding') {
     return [];
   }
+
+  const settings = await getSettings();
+  const skip = settings.claude.skipPermissions !== false;
+  return skip ? ['--dangerously-skip-permissions'] : [];
+}
+
+// ── Agent capability → CLI args ──
+
+/** Maps capability keys to Claude Code tool names accepted by --allowedTools */
+const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
+  bash: ['Bash'],
+  fileAccess: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'NotebookEdit'],
+  web: ['WebFetch', 'WebSearch'],
+  subAgent: ['Task'],
+};
+
+/**
+ * 根据 Agent 能力配置构造 --allowedTools 参数。
+ *
+ * - 全部工具能力开启 → 返回 []（不限制）
+ * - 部分开启 → 返回 ['--allowedTools', 'Tool1,Tool2,...']
+ * - 全部关闭 → 返回 ['--allowedTools', '']（纯聊天模式）
+ */
+export function buildAgentToolArgs(capabilities: AgentCapabilities | undefined): string[] {
+  const caps = capabilities ?? DEFAULT_AGENT_CAPABILITIES;
+
+  const toolCapKeys = ['bash', 'fileAccess', 'web', 'subAgent'] as const;
+  const allEnabled = toolCapKeys.every(k => caps[k]);
+  if (allEnabled) return [];
+
+  const allowed: string[] = [];
+  for (const key of toolCapKeys) {
+    if (caps[key]) {
+      allowed.push(...CAPABILITY_TOOL_MAP[key]);
+    }
+  }
+
+  return ['--allowedTools', allowed.join(',')];
+}
+
+/**
+ * 根据 phase + Agent 能力配置构造权限参数。
+ *
+ * - understanding/branching 阶段始终不传
+ * - Agent skipReview=false → 不传（需审核）
+ * - Agent skipReview=true + 全局 skipPermissions=true → 传 --dangerously-skip-permissions
+ */
+export async function buildAgentPermissionArgs(
+  phase: SessionPhase | undefined,
+  capabilities: AgentCapabilities | undefined,
+): Promise<string[]> {
+  const effective = phase ?? 'understanding';
+
+  if (effective === 'branching' || effective === 'understanding') {
+    return [];
+  }
+
+  const caps = capabilities ?? DEFAULT_AGENT_CAPABILITIES;
+  if (!caps.skipReview) return [];
 
   const settings = await getSettings();
   const skip = settings.claude.skipPermissions !== false;
