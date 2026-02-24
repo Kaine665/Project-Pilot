@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTasksPath, readJsonFile, modifyJsonFile } from '@/lib/file-store';
 import { processManager } from '@/lib/process-manager';
+import { isValidProjectKey } from '@/lib/security';
 import type { Task, TasksData, SessionPhase } from '@/types';
 
 const DEFAULT_TASKS_DATA: TasksData = { tasks: [] };
@@ -15,6 +16,11 @@ export async function GET(request: NextRequest) {
 
   const flowTaskId = request.nextUrl.searchParams.get('flowTaskId');
   if (flowTaskId) {
+    // 🔒 Security: validate flowTaskId format
+    if (!/^[a-zA-Z0-9_-]+$/.test(flowTaskId) || flowTaskId.length > 100) {
+      return NextResponse.json({ error: 'Invalid flowTaskId' }, { status: 400 });
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const tasks: Task[] = (data as any).tasks ?? [];
     const match = tasks.find(
@@ -49,11 +55,44 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const { title, content, projectKey, flowContext } = body;
 
-  if (!title) {
+  // 🔒 Security: validate title
+  if (!title || typeof title !== 'string') {
     return NextResponse.json(
-      { error: 'title is required' },
+      { error: 'title is required and must be a string' },
       { status: 400 },
     );
+  }
+  if (title.length < 1 || title.length > 500) {
+    return NextResponse.json(
+      { error: 'title must be between 1 and 500 characters' },
+      { status: 400 },
+    );
+  }
+
+  // 🔒 Security: validate content length if provided
+  if (content !== undefined && content !== null) {
+    if (typeof content !== 'string') {
+      return NextResponse.json(
+        { error: 'content must be a string' },
+        { status: 400 },
+      );
+    }
+    if (content.length > 50000) {
+      return NextResponse.json(
+        { error: 'content must not exceed 50000 characters' },
+        { status: 400 },
+      );
+    }
+  }
+
+  // 🔒 Security: validate projectKey format if provided
+  if (projectKey !== undefined && projectKey !== null) {
+    if (!isValidProjectKey(projectKey)) {
+      return NextResponse.json(
+        { error: 'Invalid projectKey format' },
+        { status: 400 },
+      );
+    }
   }
 
   const now = new Date().toISOString();

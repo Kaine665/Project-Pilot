@@ -3,6 +3,9 @@ import { promises as fs } from 'fs';
 import pathModule from 'path';
 import { getArtifactsDir } from '@/lib/file-store';
 
+// 🔒 Security: Maximum file size for artifacts (10MB)
+const MAX_ARTIFACT_SIZE = 10 * 1024 * 1024;
+
 /**
  * GET /api/artifacts/[...path]
  * Serve artifact files (images, markdown, JSON).
@@ -29,6 +32,15 @@ export async function GET(
   }
 
   try {
+    // 🔒 Security: check file size before reading to prevent DoS
+    const stats = await fs.stat(filePath);
+    if (stats.size > MAX_ARTIFACT_SIZE) {
+      return NextResponse.json(
+        { error: `File too large: ${stats.size} bytes (max ${MAX_ARTIFACT_SIZE})` },
+        { status: 413 }
+      );
+    }
+
     const ext = pathModule.extname(filePath).toLowerCase();
 
     if (ext === '.png') {

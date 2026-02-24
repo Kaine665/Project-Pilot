@@ -5,7 +5,7 @@
  * 不与任何 HTTP 连接绑定。前端只是观察窗口。
  */
 
-import { spawn, execSync, type ChildProcess } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import {
   getConversationPath,
   getConversationFilePath,
@@ -18,9 +18,19 @@ import {
   writeJsonFile,
   modifyJsonFile,
 } from '@/lib/file-store';
+import {
+  validateWorkingDir,
+  validateBranchName,
+  safeGitCheckout,
+  safeGitCreateBranch,
+  safeGitMerge,
+  safeGitDeleteBranch,
+  safeGitCurrentBranch,
+  detectDefaultBranch as safeDetectDefaultBranch,
+} from '@/lib/security';
 import { ensureConversationIndex, updateConversationMeta } from '@/lib/conversation-migration';
 import { buildPrompt, buildBranchingPrompt, type PromptContext } from '@/lib/prompt-builder';
-import { getClaudeArgsForPhase } from '@/lib/phase-permissions';
+import { buildClaudeEnv, buildClaudeModelArgs, buildClaudeMaxTurnsArgs, buildClaudePermissionArgs } from '@/lib/settings-manager';
 import { StreamParser, LineBuffer } from '@/lib/claude-stream-parser';
 import { extractPlanFromText, savePlan } from '@/lib/plan-extractor';
 import {
@@ -44,6 +54,7 @@ import type {
 import type { FlowData, TreeItem, Status as FlowStatus } from '@/types/flow';
 import { isLegacyFormat, migrateLegacyToSections } from '@/lib/flow-migration';
 import type { FlowTaskContext } from '@/types/flow-context';
+import { detectDangerousCommand } from '@/lib/danger-detector';
 
 // ── Types ──
 
@@ -217,20 +228,32 @@ class ProcessManager {
     this.runs.set(taskId, run);
 
     // ── Spawn Claude (phase-based permissions + optional resume) ──
-    const permissionArgs = getClaudeArgsForPhase(task.phase);
+    // Validate working directory first
+    try {
+      validateWorkingDir(workingDir);
+    } catch (err) {
+      throw new Error(`Invalid working directory: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    const permissionArgs = await buildClaudePermissionArgs(task.phase);
     const resumeArgs = isResume
       ? ['--resume', claudeSessionId!]
       : [];
+    const claudeEnv = await buildClaudeEnv();
+    const modelArgs = await buildClaudeModelArgs();
+    const maxTurnsArgs = await buildClaudeMaxTurnsArgs();
     const claude = spawn('claude', [
       '-p',
       '--verbose',
       '--output-format', 'stream-json',
+      ...modelArgs,
+      ...maxTurnsArgs,
       ...permissionArgs,
       ...resumeArgs,
     ], {
       cwd: workingDir,
-      shell: true,
-      env: { ...process.env, FORCE_COLOR: '0', CLAUDECODE: '' },
+      shell: false,  // 🔒 Security: disable shell to prevent command injection
+      env: claudeEnv,
     });
     run.process = claude;
 
@@ -487,22 +510,33 @@ class ProcessManager {
     defaultBranch: string | undefined,
     run: ProcessRun,
   ): Promise<void> {
-    // Reload task to get latest gitBranch (may have been set during execution)
-    const tasksData = await readJsonFile<{ tasks: Session[] }>(getTasksPath(), { tasks: [] });
-    const task = tasksData.tasks.find((t) => t.id === taskId);
-    if (!task?.gitBranch) return;
-
-    const gitBranch = task.gitBranch;
-    const targetBranch = defaultBranch ?? this.detectDefaultBranch(workingDir);
     try {
-      execSync(`git checkout ${targetBranch}`, { cwd: workingDir, encoding: 'utf-8', stdio: 'pipe' });
-      execSync(`git merge ${gitBranch} --no-ff -m "Merge task branch ${gitBranch}"`, {
-        cwd: workingDir, encoding: 'utf-8', stdio: 'pipe',
-      });
+      // Validate working directory
+      validateWorkingDir(workingDir);
+
+      // Reload task to get latest gitBranch (may have been set during execution)
+      const tasksData = await readJsonFile<{ tasks: Session[] }>(getTasksPath(), { tasks: [] });
+      const task = tasksData.tasks.find((t) => t.id === taskId);
+      if (!task?.gitBranch) return;
+
+      const gitBranch = task.gitBranch;
+      const targetBranch = defaultBranch ?? this.detectDefaultBranch(workingDir);
+
+      // Validate branch names
+      validateBranchName(gitBranch);
+      validateBranchName(targetBranch);
+
+      // Checkout target branch
+      safeGitCheckout(targetBranch, workingDir);
+      // Merge task branch
+      safeGitMerge(gitBranch, workingDir, `Merge task branch ${gitBranch}`);
+
       // Delete merged branch (best-effort)
       try {
-        execSync(`git branch -d ${gitBranch}`, { cwd: workingDir, encoding: 'utf-8', stdio: 'pipe' });
-      } catch { /* ignore */ }
+        safeGitDeleteBranch(gitBranch, workingDir);
+      } catch {
+        // Ignore deletion failures
+      }
 
       console.log(`[PM] Auto-merged ${gitBranch} → ${targetBranch}`);
       this.trackAndEmit(run, {
@@ -522,10 +556,10 @@ class ProcessManager {
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[PM] Auto-merge failed for ${gitBranch}:`, msg);
+      console.error(`[PM] Auto-merge failed:`, msg);
       this.trackAndEmit(run, {
         type: 'error',
-        message: `自动合并失败（${gitBranch} → ${targetBranch}）：${msg}`,
+        message: `自动合并失败：${msg}`,
       });
     }
   }
@@ -541,16 +575,26 @@ class ProcessManager {
     defaultBranch?: string,
     branchSlug?: string,
   ): string | null {
-    const branch = generateBranchName(taskId, title, branchSlug);
-    const baseBranch = defaultBranch ?? this.detectDefaultBranch(workingDir);
     try {
+      // Validate working directory first
+      validateWorkingDir(workingDir);
+
+      const branch = generateBranchName(taskId, title, branchSlug);
+      const baseBranch = defaultBranch ?? this.detectDefaultBranch(workingDir);
+
+      // Validate branch names
+      validateBranchName(branch);
+      validateBranchName(baseBranch);
+
       // Ensure we're on the base branch first
-      execSync(`git checkout ${baseBranch}`, { cwd: workingDir, encoding: 'utf-8', stdio: 'pipe' });
-      execSync(`git checkout -b ${branch}`, { cwd: workingDir, encoding: 'utf-8', stdio: 'pipe' });
+      safeGitCheckout(baseBranch, workingDir);
+      // Create and checkout new branch
+      safeGitCreateBranch(branch, workingDir);
+
       console.log(`[PM] Created branch ${branch} from ${baseBranch}`);
       return branch;
     } catch (err) {
-      console.error(`[PM] Failed to create branch ${branch}:`, err);
+      console.error(`[PM] Failed to create branch:`, err);
       return null;
     }
   }
@@ -599,17 +643,27 @@ class ProcessManager {
     // Build minimal Phase 0 prompt
     const prompt = buildBranchingPrompt(task.title, task.content);
 
+    // Validate working directory first
+    try {
+      validateWorkingDir(workingDir);
+    } catch (err) {
+      throw new Error(`Invalid working directory: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
     // Spawn Claude with no tool permissions
-    const permissionArgs = getClaudeArgsForPhase('branching');
+    const permissionArgs = await buildClaudePermissionArgs('branching');
+    const branchEnv = await buildClaudeEnv();
+    const branchModelArgs = await buildClaudeModelArgs();
     const claude = spawn('claude', [
       '-p',
       '--verbose',
       '--output-format', 'stream-json',
+      ...branchModelArgs,
       ...permissionArgs,
     ], {
       cwd: workingDir,
-      shell: true,
-      env: { ...process.env, FORCE_COLOR: '0', CLAUDECODE: '' },
+      shell: false,  // 🔒 Security: disable shell to prevent command injection
+      env: branchEnv,
     });
     run.process = claude;
 
@@ -721,26 +775,13 @@ class ProcessManager {
   }
 
   private detectDefaultBranch(workingDir: string): string {
-    // Priority 1: remote HEAD (the actual default branch configured on the remote)
     try {
-      const ref = execSync('git symbolic-ref refs/remotes/origin/HEAD', {
-        cwd: workingDir, encoding: 'utf-8', stdio: 'pipe',
-      }).trim();
-      // "refs/remotes/origin/main" → "main"
-      const branch = ref.replace('refs/remotes/origin/', '');
-      if (branch) return branch;
-    } catch { /* no remote or HEAD not set */ }
-
-    // Priority 2: check common names
-    for (const name of ['main', 'master', 'develop']) {
-      try {
-        execSync(`git rev-parse --verify ${name}`, { cwd: workingDir, encoding: 'utf-8', stdio: 'pipe' });
-        return name;
-      } catch { /* not found, try next */ }
+      return safeDetectDefaultBranch(workingDir);
+    } catch (err) {
+      console.error('[PM] Failed to detect default branch:', err);
+      // Fallback to 'main' if detection fails
+      return 'main';
     }
-
-    // Priority 3: current branch
-    return execSync('git rev-parse --abbrev-ref HEAD', { cwd: workingDir, encoding: 'utf-8', stdio: 'pipe' }).trim();
   }
 
   /**
@@ -874,6 +915,35 @@ class ProcessManager {
       };
       run.toolCalls.push(tc);
       run.contentBlocks.push({ type: 'tool_call', toolCall: tc });
+
+      // Dangerous command detection for Bash tools
+      if (event.toolName === 'Bash') {
+        const danger = detectDangerousCommand(event.input);
+        if (danger) {
+          // Emit warning to frontend immediately (before the tool finishes)
+          const warningEvent: ChatSSEEvent = {
+            type: 'dangerous_tool_warning',
+            toolCallId: event.id,
+            toolName: event.toolName,
+            command: event.input,
+            reason: danger.reason,
+            level: danger.level,
+          };
+          // Use direct emit to avoid infinite recursion
+          const wIdx = run.events.length;
+          run.events.push(warningEvent);
+          for (const listener of run.listeners) {
+            try { listener(warningEvent, wIdx); } catch { /* */ }
+          }
+
+          // Critical level: auto-stop the process to prevent damage
+          if (danger.level === 'critical' && run.process) {
+            console.warn(`[PM] CRITICAL danger detected, auto-stopping: ${danger.reason}`);
+            run.status = 'stopped';
+            run.process.kill('SIGTERM');
+          }
+        }
+      }
     } else if (event.type === 'tool_use_end') {
       const tc = run.toolCalls.find((t) => t.id === event.id);
       if (tc) {
@@ -949,6 +1019,62 @@ class ProcessManager {
         message: '格式提取失败（已尝试 3 次），请手动指导 AI 用正确格式输出。',
       });
     }
+  }
+
+  /**
+   * Detect interrupted sessions: tasks with phase=executing/planning
+   * but no active process run. Returns list for recovery UI.
+   */
+  async detectInterruptedSessions(): Promise<Array<{
+    taskId: string;
+    phase: SessionPhase;
+    conversationId: string;
+    claudeSessionId?: string;
+  }>> {
+    const tasksData = await readJsonFile<{ tasks: Session[] }>(getTasksPath(), { tasks: [] });
+    const interrupted: Array<{
+      taskId: string;
+      phase: SessionPhase;
+      conversationId: string;
+      claudeSessionId?: string;
+    }> = [];
+
+    for (const task of tasksData.tasks) {
+      // Skip if there's an active run
+      const run = this.runs.get(task.id);
+      if (run && run.status === 'running') continue;
+
+      // Only detect tasks in execution-like phases
+      const phase = task.phase;
+      if (phase !== 'executing' && phase !== 'planning' && phase !== 'summarizing') continue;
+
+      // Find active conversation with claudeSessionId
+      try {
+        const convIndex = await ensureConversationIndex(task.id);
+        const activeConvId = task.activeConversationId || convIndex.activeConversationId;
+        if (!activeConvId) continue;
+
+        const session = await readJsonFile<ChatSession>(
+          getConversationFilePath(task.id, activeConvId),
+          DEFAULT_SESSION(task.id, activeConvId),
+        );
+
+        // Only add if there's a session ID to resume with
+        const csId = session.claudeSessionId ?? task.claudeSessionId;
+        if (csId) {
+          interrupted.push({
+            taskId: task.id,
+            phase: phase as SessionPhase,
+            conversationId: activeConvId,
+            claudeSessionId: csId,
+          });
+        }
+      } catch {
+        // Skip tasks with corrupted conversation data
+      }
+    }
+
+    return interrupted;
   }
 
   /**

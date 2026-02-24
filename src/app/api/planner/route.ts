@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { plannerManager, generateSessionId } from '@/lib/planner-manager';
-import { getFlowDataPath, readJsonFile } from '@/lib/file-store';
+import { getFlowDataPath, getFlowIndexPath, readJsonFile, ensureFlowsMigrated } from '@/lib/file-store';
+import { isValidProjectKey, isValidSessionId } from '@/lib/security';
 import type { FlowData } from '@/types/flow';
 import fs from 'fs/promises';
-import path from 'path';
 
-const FLOWS_DIR = path.join(process.cwd(), 'src/data/flows');
-const INDEX_PATH = path.join(FLOWS_DIR, '_index.json');
+// 🔒 Security: Maximum JSON file size (10MB)
+const MAX_JSON_SIZE = 10 * 1024 * 1024;
 
 interface ProjectIndex {
   projects: Array<{ key: string; name: string }>;
@@ -25,9 +25,34 @@ export async function POST(request: NextRequest) {
     sessionId?: string;
   };
 
+  // 🔒 Security: validate required fields
   if (!projectKey || !message) {
     return NextResponse.json(
       { error: 'projectKey and message are required' },
+      { status: 400 },
+    );
+  }
+
+  // 🔒 Security: validate projectKey format
+  if (!isValidProjectKey(projectKey)) {
+    return NextResponse.json(
+      { error: 'Invalid projectKey format' },
+      { status: 400 },
+    );
+  }
+
+  // 🔒 Security: validate message length
+  if (typeof message !== 'string' || message.length < 1 || message.length > 10000) {
+    return NextResponse.json(
+      { error: 'message must be a string between 1 and 10000 characters' },
+      { status: 400 },
+    );
+  }
+
+  // 🔒 Security: validate sessionId if provided
+  if (requestedSessionId && !isValidSessionId(requestedSessionId)) {
+    return NextResponse.json(
+      { error: 'Invalid sessionId format' },
       { status: 400 },
     );
   }
@@ -44,6 +69,8 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    await ensureFlowsMigrated();
+
     // Load flow data for the project
     const flowData = await readJsonFile<FlowData>(
       getFlowDataPath(projectKey),
@@ -53,10 +80,17 @@ export async function POST(request: NextRequest) {
     // Load project list
     let projectIndex: ProjectIndex = { projects: [] };
     try {
-      const raw = await fs.readFile(INDEX_PATH, 'utf-8');
+      const indexPath = getFlowIndexPath();
+      // 🔒 Security: check file size before reading
+      const stats = await fs.stat(indexPath);
+      if (stats.size > MAX_JSON_SIZE) {
+        throw new Error(`Index file too large: ${stats.size} bytes`);
+      }
+
+      const raw = await fs.readFile(indexPath, 'utf-8');
       projectIndex = JSON.parse(raw);
     } catch {
-      // ignore
+      // ignore - use empty project list
     }
 
     const runId = await plannerManager.start(

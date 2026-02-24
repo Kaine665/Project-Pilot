@@ -1,14 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs/promises';
-import path from 'path';
+import { getFlowDataPath, ensureFlowsMigrated } from '@/lib/file-store';
 import { isLegacyFormat, migrateLegacyToSections } from '@/lib/flow-migration';
-
-const FLOWS_DIR = path.join(process.cwd(), 'src/data/flows');
-
-function getProjectPath(project: string): string {
-  const safe = project.replace(/[^a-zA-Z0-9_-]/g, '');
-  return path.join(FLOWS_DIR, `${safe}.json`);
-}
 
 export async function GET(request: NextRequest) {
   const project = request.nextUrl.searchParams.get('project');
@@ -16,7 +9,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'project is required' }, { status: 400 });
   }
 
-  const filePath = getProjectPath(project);
+  await ensureFlowsMigrated();
+  const filePath = getFlowDataPath(project);
   try {
     const raw = await fs.readFile(filePath, 'utf-8');
     let data = JSON.parse(raw);
@@ -46,8 +40,9 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: 'project is required' }, { status: 400 });
   }
 
+  await ensureFlowsMigrated();
   const data = await request.json();
-  const filePath = getProjectPath(project);
+  const filePath = getFlowDataPath(project);
   await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
   return NextResponse.json({ ok: true });
 }

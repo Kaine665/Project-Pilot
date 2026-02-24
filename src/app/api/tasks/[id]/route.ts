@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTasksPath, getFlowDataPath, readJsonFile, modifyJsonFile } from '@/lib/file-store';
+import { isValidTaskId, isValidProjectKey } from '@/lib/security';
 import type { Task, TasksData } from '@/types';
 import type { FlowData, TreeItem, Status } from '@/types/flow';
 import type { FlowTaskContext } from '@/types/flow-context';
@@ -16,6 +17,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+
+  // 🔒 Security: validate task ID format
+  if (!isValidTaskId(id)) {
+    return NextResponse.json({ error: 'Invalid task ID format' }, { status: 400 });
+  }
+
   const data = await readJsonFile<TasksData>(getTasksPath(), DEFAULT_TASKS_DATA);
   const task = data.tasks.find((t) => t.id === id);
 
@@ -35,7 +42,51 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+
+  // 🔒 Security: validate task ID format
+  if (!isValidTaskId(id)) {
+    return NextResponse.json({ error: 'Invalid task ID format' }, { status: 400 });
+  }
+
   const body = await request.json();
+
+  // 🔒 Security: validate input fields
+  if (body.title !== undefined) {
+    if (typeof body.title !== 'string' || body.title.length < 1 || body.title.length > 500) {
+      return NextResponse.json(
+        { error: 'title must be a string between 1 and 500 characters' },
+        { status: 400 },
+      );
+    }
+  }
+
+  if (body.content !== undefined && body.content !== null) {
+    if (typeof body.content !== 'string' || body.content.length > 50000) {
+      return NextResponse.json(
+        { error: 'content must be a string not exceeding 50000 characters' },
+        { status: 400 },
+      );
+    }
+  }
+
+  if (body.projectKey !== undefined && body.projectKey !== null) {
+    if (!isValidProjectKey(body.projectKey)) {
+      return NextResponse.json(
+        { error: 'Invalid projectKey format' },
+        { status: 400 },
+      );
+    }
+  }
+
+  if (body.status !== undefined) {
+    const validStatuses = ['todo', 'doing', 'done'];
+    if (!validStatuses.includes(body.status)) {
+      return NextResponse.json(
+        { error: 'status must be one of: todo, doing, done' },
+        { status: 400 },
+      );
+    }
+  }
 
   let updatedTask: Task | null = null;
 

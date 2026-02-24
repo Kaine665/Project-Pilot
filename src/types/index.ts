@@ -65,6 +65,75 @@ export interface ProjectsData {
   projects: Record<string, ProjectConfig>;
 }
 
+// ==================== App Settings ====================
+
+/** Claude Code 认证方式 */
+export type ClaudeAuthMode = 'api_key' | 'oauth';
+
+/** Supported Claude model IDs */
+export type ClaudeModel = 'claude-opus-4-6' | 'claude-sonnet-4-5-20250929' | 'claude-haiku-4-5-20250929' | 'claude-haiku-4-5-20251001';
+
+/**
+ * AI 供应商 ID。
+ *
+ * - anthropic: Anthropic 官方（默认）
+ * - deepseek / qwen / zhipu / minimax: 中国厂商（原生 Anthropic 兼容端点）
+ * - openrouter: 聚合网关
+ * - ollama: 本地模型
+ * - custom: 用户自定义端点
+ */
+export type ProviderId =
+  | 'anthropic'
+  | 'deepseek'
+  | 'qwen'
+  | 'zhipu'
+  | 'minimax'
+  | 'openrouter'
+  | 'ollama'
+  | 'custom';
+
+/** 推理努力等级 */
+export type EffortLevel = 'low' | 'medium' | 'high';
+
+/** Claude Code 配置 */
+export interface ClaudeSettings {
+  /** AI 供应商 */
+  provider: ProviderId;
+  authMode: ClaudeAuthMode;
+  apiKey?: string;
+  /** 模型 ID（自由字符串，供应商不同格式不同） */
+  model: string;
+  baseUrl?: string;
+  /** 是否跳过工具权限审查（--dangerously-skip-permissions），默认 true */
+  skipPermissions?: boolean;
+  /** 推理努力等级（low/medium/high），默认 high */
+  effortLevel?: EffortLevel;
+  /** 每次对话最大 agentic 轮次，0 = 不限制 */
+  maxTurns?: number;
+}
+
+/** 通用设置 */
+export interface GeneralSettings {
+  /** 是否启用遥测（默认 false，当前版本无遥测） */
+  telemetry?: boolean;
+}
+
+/** 全局应用设置 */
+export interface AppSettings {
+  claude: ClaudeSettings;
+  general?: GeneralSettings;
+  version: number;
+}
+
+export const DEFAULT_APP_SETTINGS: AppSettings = {
+  claude: {
+    provider: 'anthropic',
+    authMode: 'api_key',
+    model: 'claude-sonnet-4-5-20250929',
+  },
+  version: 1,
+};
+
 // ==================== AI Execution ====================
 
 export interface AIExecution {
@@ -216,10 +285,13 @@ export interface ConversationIndex {
   conversations: ConversationMeta[];
 }
 
+export type DangerLevel = 'warning' | 'critical';
+
 export type ChatSSEEvent =
   | { type: 'text_delta'; text: string }
   | { type: 'tool_use_start'; id: string; toolName: string; input: string }
   | { type: 'tool_use_end'; id: string; output: string; status: 'completed' | 'failed' }
+  | { type: 'dangerous_tool_warning'; toolCallId: string; toolName: string; command: string; reason: string; level: DangerLevel }
   | { type: 'plan_extracted'; planId: string }
   | { type: 'understanding_extracted'; understanding: TaskUnderstanding }
   | { type: 'result_extracted'; result: TaskResult }
@@ -294,6 +366,24 @@ export interface TaskArtifacts {
   planId?: string;
   result?: TaskResult;
   updatedAt: string;
+}
+
+// ==================== Agent ====================
+
+export interface Agent {
+  id: string;
+  name: string;
+  description?: string;
+  /** System prompt / instructions for this agent */
+  systemPrompt?: string;
+  /** Icon identifier (lucide icon name) */
+  icon?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentsData {
+  agents: Agent[];
 }
 
 // ==================== Artifacts ====================

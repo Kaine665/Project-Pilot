@@ -15,6 +15,7 @@ import {
   readJsonFile,
   modifyJsonFile,
 } from '@/lib/file-store';
+import { buildClaudeEnv, buildClaudeModelArgs, buildClaudeMaxTurnsArgs, buildClaudePermissionArgs } from '@/lib/settings-manager';
 import type { ChatSSEEvent, ChatToolCall, ContentBlock } from '@/types';
 import type { FlowData } from '@/types/flow';
 import type { PlannerSession, PlannerSessionsData } from '@/types/planner';
@@ -174,16 +175,22 @@ class PlannerManager {
       ? ['--resume', existing!.claudeSessionId!]
       : [];
 
+    const plannerEnv = await buildClaudeEnv();
+    const plannerModelArgs = await buildClaudeModelArgs();
+    const plannerMaxTurnsArgs = await buildClaudeMaxTurnsArgs();
+    const plannerPermArgs = await buildClaudePermissionArgs('planning');
     const claude = spawn('claude', [
       '-p',
       '--verbose',
       '--output-format', 'stream-json',
-      '--dangerously-skip-permissions',
+      ...plannerPermArgs,
+      ...plannerModelArgs,
+      ...plannerMaxTurnsArgs,
       ...resumeArgs,
     ], {
       cwd: process.cwd(),
-      shell: true,
-      env: { ...process.env, FORCE_COLOR: '0', CLAUDECODE: '' },
+      shell: false,  // 🔒 Security: disable shell to prevent command injection
+      env: plannerEnv,
     });
     run.process = claude;
 

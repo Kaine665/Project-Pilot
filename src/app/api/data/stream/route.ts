@@ -1,8 +1,6 @@
 import { NextRequest } from 'next/server';
 import fs from 'fs';
-import path from 'path';
-
-const FLOWS_DIR = path.join(process.cwd(), 'src/data/flows');
+import { getFlowDataPath, ensureFlowsMigrated } from '@/lib/file-store';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,8 +10,8 @@ export async function GET(request: NextRequest) {
     return new Response('project is required', { status: 400 });
   }
 
-  const safe = project.replace(/[^a-zA-Z0-9_-]/g, '');
-  const filePath = path.join(FLOWS_DIR, `${safe}.json`);
+  await ensureFlowsMigrated();
+  const filePath = getFlowDataPath(project);
 
   const encoder = new TextEncoder();
 
