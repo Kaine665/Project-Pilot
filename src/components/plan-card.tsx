@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -9,15 +10,6 @@ import { cn } from '@/lib/utils';
 import type { AIPlan, AIPlanStep, PlanStatus } from '@/types';
 import { ChevronDown, ChevronRight, CheckCircle2, Circle, Loader2, XCircle, SkipForward, Trash2 } from 'lucide-react';
 
-const statusBadge: Record<PlanStatus, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }> = {
-  planning: { label: '规划中', variant: 'secondary' },
-  pending_approval: { label: '待审批', variant: 'outline' },
-  approved: { label: '已批准', variant: 'default' },
-  rejected: { label: '已拒绝', variant: 'destructive' },
-  completed: { label: '已完成', variant: 'default' },
-  failed: { label: '失败', variant: 'destructive' },
-  archived: { label: '已归档', variant: 'secondary' },
-};
 
 const stepStatusIcons: Record<AIPlanStep['status'], React.ReactNode> = {
   pending: <Circle className="h-3.5 w-3.5 text-zinc-400" />,
@@ -36,9 +28,19 @@ interface PlanCardProps {
 }
 
 export function PlanCard({ plan, onApprove, onReject, onExecute, onDelete }: PlanCardProps) {
+  const t = useTranslations('plans');
   const [expanded, setExpanded] = useState(false);
 
-  const badge = statusBadge[plan.status] ?? { label: plan.status, variant: 'secondary' as const };
+  const statusVariant: Record<PlanStatus, 'default' | 'secondary' | 'outline' | 'destructive'> = {
+    planning: 'secondary',
+    pending_approval: 'outline',
+    approved: 'default',
+    rejected: 'destructive',
+    completed: 'default',
+    failed: 'destructive',
+    archived: 'secondary',
+  };
+
   const version = plan.version ?? 1;
   const stepCount = plan.step_count ?? plan.steps?.length ?? 0;
   const stepsCompleted = plan.steps_completed ?? plan.steps?.filter((s) => s.status === 'completed').length ?? 0;
