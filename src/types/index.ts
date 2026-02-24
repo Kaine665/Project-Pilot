@@ -24,6 +24,7 @@ export interface Session {
   status: 'todo' | 'doing' | 'done';
   phase?: SessionPhase; // 当前工作流阶段，默认 'understanding'
   archived?: boolean;
+  archivedAt?: string;
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
@@ -33,6 +34,8 @@ export interface Session {
   activeConversationId?: string; // 当前活跃的对话 ID
   /** 从项目跟踪链路发起时附带的上下文（见 docs/types/flow-task-context.md） */
   flowContext?: FlowTaskContext;
+  /** Agent ID used for this session — determines tool capabilities */
+  agentId?: string;
 }
 
 export interface SessionsData {
@@ -370,20 +373,79 @@ export interface TaskArtifacts {
 
 // ==================== Agent ====================
 
+/** Per-agent tool capabilities — controls what Claude Code tools this agent can use */
+export interface AgentCapabilities {
+  /** Bash tool (command execution, including Git) */
+  bash: boolean;
+  /** Read, Write, Edit, Glob, Grep, NotebookEdit tools */
+  fileAccess: boolean;
+  /** WebFetch, WebSearch tools */
+  web: boolean;
+  /** Task tool (sub-agents) */
+  subAgent: boolean;
+  /** Maps to --dangerously-skip-permissions (auto-approve all tool calls) */
+  skipReview: boolean;
+}
+
+export const DEFAULT_AGENT_CAPABILITIES: AgentCapabilities = {
+  bash: true,
+  fileAccess: true,
+  web: true,
+  subAgent: true,
+  skipReview: false,
+};
+
 export interface Agent {
   id: string;
   name: string;
+  /** Stable identifier for built-in agents (e.g., "butler"). User-created agents have no slug. */
+  slug?: string;
+  /** True for system-provided agents that cannot be deleted */
+  builtIn?: boolean;
   description?: string;
   /** System prompt / instructions for this agent */
   systemPrompt?: string;
   /** Icon identifier (lucide icon name) */
   icon?: string;
+  /** Per-agent tool capabilities */
+  capabilities?: AgentCapabilities;
+  archived?: boolean;
+  archivedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface AgentsData {
   agents: Agent[];
+}
+
+// ==================== Dimension（信息角度） ====================
+
+export interface Dimension {
+  id: string;
+  name: string;
+  description?: string;
+  archived?: boolean;
+  archivedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DimensionsData {
+  dimensions: Dimension[];
+}
+
+// ==================== Flow Project ====================
+
+export interface ProjectEntry {
+  key: string;
+  name: string;
+  archived?: boolean;
+  archivedAt?: string;
+}
+
+export interface ProjectIndex {
+  projects: ProjectEntry[];
 }
 
 // ==================== Artifacts ====================

@@ -146,6 +146,10 @@ export function getAgentsPath(): string {
   return path.join(DATA_DIR, 'agents.json');
 }
 
+export function getDimensionsPath(): string {
+  return path.join(DATA_DIR, 'dimensions.json');
+}
+
 // 🔒 Security: Maximum JSON file size to prevent DoS attacks
 const MAX_JSON_SIZE = 50 * 1024 * 1024; // 50MB
 
