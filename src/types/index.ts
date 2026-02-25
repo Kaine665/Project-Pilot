@@ -409,6 +409,8 @@ export interface Agent {
   icon?: string;
   /** Per-agent tool capabilities */
   capabilities?: AgentCapabilities;
+  /** Parameter names this agent requires to run (template only, values filled at project/task level) */
+  requiredParams?: string[];
   archived?: boolean;
   archivedAt?: string;
   createdAt: string;
@@ -440,6 +442,7 @@ export interface DimensionsData {
 export interface ProjectEntry {
   key: string;
   name: string;
+  description?: string;
   archived?: boolean;
   archivedAt?: string;
 }

@@ -19,6 +19,7 @@ import type {
 import { Search, X } from 'lucide-react';
 import { MillerSectionBlock as SectionBlock } from './miller-columns';
 import { getEffectiveStatus } from './flow-shared';
+import { ProjectSettings } from './project-settings';
 
 /** Highlight target passed from URL params when navigating back from task agent */
 export interface HighlightTarget {
@@ -296,12 +297,15 @@ function CycleDeadline({
 interface FlowEditorProps {
   projectKey: string;
   projectName: string;
+  projectDescription?: string;
   initialHighlight?: HighlightTarget | null;
+  onProjectUpdated?: () => void;
+  onProjectDeleted?: () => void;
 }
 
 const EMPTY_DATA: FlowData = { sections: [] };
 
-export function FlowEditor({ projectKey, projectName, initialHighlight }: FlowEditorProps) {
+export function FlowEditor({ projectKey, projectName, projectDescription, initialHighlight, onProjectUpdated, onProjectDeleted }: FlowEditorProps) {
   const t = useTranslations();
   const [data, setData] = useState<FlowData>(EMPTY_DATA);
   const [loading, setLoading] = useState(true);
@@ -630,9 +634,18 @@ export function FlowEditor({ projectKey, projectName, initialHighlight }: FlowEd
         <div className="max-w-7xl mx-auto px-8 py-12">
           {/* Header */}
           <header className="mb-10">
-            <h1 className="text-3xl font-bold tracking-tight">
-              {projectName}
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-3xl font-bold tracking-tight">
+                {projectName}
+              </h1>
+              <ProjectSettings
+                projectKey={projectKey}
+                projectName={projectName}
+                projectDescription={projectDescription}
+                onUpdated={onProjectUpdated ?? (() => {})}
+                onDeleted={onProjectDeleted ?? (() => {})}
+              />
+            </div>
 
             <div className="flex items-center gap-6 mt-5">
               <div className="flex items-center gap-1.5">

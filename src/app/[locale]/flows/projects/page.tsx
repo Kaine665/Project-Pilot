@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useMemo } from 'react';
+import { Suspense, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { FlowEditor } from '@/components/flow-editor';
@@ -8,7 +8,7 @@ import type { HighlightTarget } from '@/components/flow-editor';
 import { useFlowsContext } from '../layout';
 
 function ProjectsPageInner() {
-  const { projects, activeKey } = useFlowsContext();
+  const { projects, activeKey, setActiveKey, fetchProjects } = useFlowsContext();
   const activeProject = projects.find(p => p.key === activeKey);
   const searchParams = useSearchParams();
   const t = useTranslations('flows');
@@ -23,6 +23,21 @@ function ProjectsPageInner() {
     return null;
   }, [searchParams]);
 
+  const handleProjectUpdated = useCallback(async () => {
+    await fetchProjects();
+  }, [fetchProjects]);
+
+  const handleProjectDeleted = useCallback(async () => {
+    const list = await fetchProjects();
+    // Switch to first remaining project, or null
+    const remaining = list.filter((p: { key: string; name: string; archived?: boolean }) => !p.archived);
+    if (remaining.length > 0) {
+      setActiveKey(remaining[0].key);
+    } else {
+      setActiveKey(remaining[0]?.key ?? '');
+    }
+  }, [fetchProjects, setActiveKey]);
+
   if (!activeProject) {
     return (
       <div className="flex h-full items-center justify-center text-zinc-400 text-sm">
@@ -36,7 +51,10 @@ function ProjectsPageInner() {
       key={activeProject.key}
       projectKey={activeProject.key}
       projectName={activeProject.name}
+      projectDescription={activeProject.description}
       initialHighlight={highlight}
+      onProjectUpdated={handleProjectUpdated}
+      onProjectDeleted={handleProjectDeleted}
     />
   );
 }

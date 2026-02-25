@@ -61,12 +61,40 @@ export async function POST(request: NextRequest) {
 
 /**
  * PATCH /api/data/projects
- * Rename a project. Body: { key, name }
+ *
+ * Two modes:
+ * 1. Update project metadata: { key, name?, description? }
+ * 2. Reorder projects: { order: string[] }  — array of project keys in desired order
  */
 export async function PATCH(request: NextRequest) {
-  const { key, name } = await request.json();
-  if (!key || !name) {
-    return NextResponse.json({ error: 'key and name are required' }, { status: 400 });
+  const body = await request.json();
+
+  // Mode 2: Reorder
+  if (Array.isArray(body.order)) {
+    const order: string[] = body.order;
+    const index = await readIndex();
+    const byKey = new Map(index.projects.map(p => [p.key, p]));
+    const reordered: ProjectEntry[] = [];
+    for (const k of order) {
+      const p = byKey.get(k);
+      if (p) {
+        reordered.push(p);
+        byKey.delete(k);
+      }
+    }
+    // Append any projects not in the order array (safety net)
+    for (const p of byKey.values()) {
+      reordered.push(p);
+    }
+    index.projects = reordered;
+    await writeIndex(index);
+    return NextResponse.json({ ok: true });
+  }
+
+  // Mode 1: Update metadata
+  const { key, name, description } = body;
+  if (!key) {
+    return NextResponse.json({ error: 'key is required' }, { status: 400 });
   }
 
   const index = await readIndex();
@@ -75,7 +103,8 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'project not found' }, { status: 404 });
   }
 
-  project.name = name;
+  if (name !== undefined) project.name = name;
+  if (description !== undefined) project.description = description || undefined;
   await writeIndex(index);
 
   return NextResponse.json({ ok: true });

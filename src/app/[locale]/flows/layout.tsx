@@ -25,6 +25,7 @@ import { CSS } from '@dnd-kit/utilities';
 interface ProjectEntry {
   key: string;
   name: string;
+  description?: string;
 }
 
 interface FlowsContextValue {
@@ -62,7 +63,8 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   const isAgentsPage = pathname.startsWith('/flows/agents');
   const isDimensionsPage = pathname.startsWith('/flows/dimensions');
   const isRecycleBinPage = pathname.startsWith('/flows/recycle-bin');
-  const isSubRoute = isAgentsPage || isDimensionsPage || isRecycleBinPage;
+  const isButlerPage = pathname.startsWith('/flows/butler');
+  const isSubRoute = isAgentsPage || isDimensionsPage || isRecycleBinPage || isButlerPage;
 
   // Auto-close expandable panel when on sub-route pages
   useEffect(() => {
@@ -176,6 +178,33 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   const handleNavigateDimensions = () => {
     router.push('/flows/dimensions');
   };
+
+  const projectSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
+
+  const handleProjectDragEnd = useCallback(async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = projects.findIndex(p => p.key === active.id);
+    const newIndex = projects.findIndex(p => p.key === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    // Optimistic UI update
+    const reordered = [...projects];
+    const [moved] = reordered.splice(oldIndex, 1);
+    reordered.splice(newIndex, 0, moved);
+    setProjects(reordered);
+
+    // Persist
+    try {
+      await fetch('/api/data/projects', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order: reordered.map(p => p.key) }),
+      });
+    } catch { /* ignore */ }
+  }, [projects]);
 
   const sectionSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -341,36 +370,22 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
 
                     {/* Project tree */}
                     <div className="flex-1 overflow-y-auto px-1.5 py-1">
-                      {projects.map(p => {
-                        const isActive = p.key === activeKey;
-                        return (
-                          <div key={p.key}>
-                            {/* Project row */}
-                            <div
-                              onClick={() => setActiveKey(p.key)}
-                              className={`flex w-full items-center gap-1 rounded-md px-1.5 py-1.5 text-sm cursor-pointer transition-colors ${
-                                isActive
-                                  ? 'text-zinc-900 font-medium dark:text-zinc-100'
-                                  : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-200'
-                              }`}
-                            >
-                              <ChevronRight className={`h-3 w-3 shrink-0 text-zinc-400 transition-transform duration-150 ${isActive ? 'rotate-90' : ''}`} />
-                              <FolderKanban className="h-3.5 w-3.5 shrink-0" />
-                              <span className="truncate">{p.name}</span>
-                            </div>
-                            {/* Sections under active project */}
-                            {isActive && sections.length > 0 && (
-                              <DndContext sensors={sectionSensors} collisionDetection={closestCenter} onDragEnd={handleSectionDragEnd}>
-                                <SortableContext items={sections.map(s => s.id)} strategy={verticalListSortingStrategy}>
-                                  {sections.map(s => (
-                                    <SortableSectionItem key={s.id} section={s} onHighlight={setHighlightSectionId} />
-                                  ))}
-                                </SortableContext>
-                              </DndContext>
-                            )}
-                          </div>
-                        );
-                      })}
+                      <DndContext sensors={projectSensors} collisionDetection={closestCenter} onDragEnd={handleProjectDragEnd}>
+                        <SortableContext items={projects.map(p => p.key)} strategy={verticalListSortingStrategy}>
+                          {projects.map(p => (
+                            <SortableProjectItem
+                              key={p.key}
+                              project={p}
+                              isActive={p.key === activeKey}
+                              onSelect={setActiveKey}
+                              sections={p.key === activeKey ? sections : []}
+                              sectionSensors={sectionSensors}
+                              onSectionDragEnd={handleSectionDragEnd}
+                              onHighlightSection={setHighlightSectionId}
+                            />
+                          ))}
+                        </SortableContext>
+                      </DndContext>
                     </div>
               </div>
             </div>
@@ -380,7 +395,8 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
           {/* Main content */}
           <main className="flex-1 overflow-auto">{children}</main>
 
-          {/* Right-side AI Planner panel */}
+          {/* Right-side AI Planner panel (hidden on butler page) */}
+          {!isButlerPage && (
           <div
             style={{ width: plannerOpen ? 360 : 0 }}
             className={`shrink-0 overflow-hidden bg-white transition-[width] duration-200 ease-in-out dark:bg-zinc-950 ${
@@ -391,9 +407,71 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
               <PlannerChatPanel projectKey={activeKey} />
             </div>
           </div>
+          )}
         </div>
       </div>
     </FlowsContext.Provider>
+  );
+}
+
+function SortableProjectItem({
+  project,
+  isActive,
+  onSelect,
+  sections,
+  sectionSensors,
+  onSectionDragEnd,
+  onHighlightSection,
+}: {
+  project: ProjectEntry;
+  isActive: boolean;
+  onSelect: (key: string) => void;
+  sections: { id: string; name: string }[];
+  sectionSensors: ReturnType<typeof useSensors>;
+  onSectionDragEnd: (event: DragEndEvent) => void;
+  onHighlightSection: (id: string | null) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.key });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}>
+      {/* Project row */}
+      <div
+        className={`group flex w-full items-center gap-1 rounded-md px-1.5 py-1.5 text-sm cursor-pointer transition-colors ${
+          isActive
+            ? 'text-zinc-900 font-medium dark:text-zinc-100'
+            : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-200'
+        }`}
+      >
+        <div className="flex flex-1 items-center gap-1 min-w-0" onClick={() => onSelect(project.key)}>
+          <ChevronRight className={`h-3 w-3 shrink-0 text-zinc-400 transition-transform duration-150 ${isActive ? 'rotate-90' : ''}`} />
+          <FolderKanban className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">{project.name}</span>
+        </div>
+        <button
+          className="shrink-0 cursor-grab active:cursor-grabbing text-zinc-300 hover:text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={e => e.stopPropagation()}
+          {...listeners}
+        >
+          <GripVertical className="h-3 w-3" />
+        </button>
+      </div>
+      {/* Sections under active project */}
+      {isActive && sections.length > 0 && (
+        <DndContext sensors={sectionSensors} collisionDetection={closestCenter} onDragEnd={onSectionDragEnd}>
+          <SortableContext items={sections.map(s => s.id)} strategy={verticalListSortingStrategy}>
+            {sections.map(s => (
+              <SortableSectionItem key={s.id} section={s} onHighlight={onHighlightSection} />
+            ))}
+          </SortableContext>
+        </DndContext>
+      )}
+    </div>
   );
 }
 
