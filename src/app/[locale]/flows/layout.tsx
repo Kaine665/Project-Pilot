@@ -179,11 +179,14 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
     router.push('/flows/dimensions');
   };
 
+  const [projectDragging, setProjectDragging] = useState(false);
+
   const projectSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
   const handleProjectDragEnd = useCallback(async (event: DragEndEvent) => {
+    setProjectDragging(false);
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const oldIndex = projects.findIndex(p => p.key === active.id);
@@ -370,7 +373,7 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
 
                     {/* Project tree */}
                     <div className="flex-1 overflow-y-auto px-1.5 py-1">
-                      <DndContext sensors={projectSensors} collisionDetection={closestCenter} onDragEnd={handleProjectDragEnd}>
+                      <DndContext sensors={projectSensors} collisionDetection={closestCenter} onDragStart={() => setProjectDragging(true)} onDragEnd={handleProjectDragEnd}>
                         <SortableContext items={projects.map(p => p.key)} strategy={verticalListSortingStrategy}>
                           {projects.map(p => (
                             <SortableProjectItem
@@ -382,6 +385,7 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
                               sectionSensors={sectionSensors}
                               onSectionDragEnd={handleSectionDragEnd}
                               onHighlightSection={setHighlightSectionId}
+                              hideSections={projectDragging}
                             />
                           ))}
                         </SortableContext>
@@ -422,6 +426,7 @@ function SortableProjectItem({
   sectionSensors,
   onSectionDragEnd,
   onHighlightSection,
+  hideSections,
 }: {
   project: ProjectEntry;
   isActive: boolean;
@@ -430,10 +435,12 @@ function SortableProjectItem({
   sectionSensors: ReturnType<typeof useSensors>;
   onSectionDragEnd: (event: DragEndEvent) => void;
   onHighlightSection: (id: string | null) => void;
+  hideSections: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.key });
+  const yOnlyTransform = transform ? { ...transform, x: 0 } : null;
   const style = {
-    transform: CSS.Transform.toString(transform),
+    transform: CSS.Transform.toString(yOnlyTransform),
     transition,
     opacity: isDragging ? 0.5 : 1,
   };
@@ -462,7 +469,7 @@ function SortableProjectItem({
         </button>
       </div>
       {/* Sections under active project */}
-      {isActive && sections.length > 0 && (
+      {isActive && sections.length > 0 && !hideSections && (
         <DndContext sensors={sectionSensors} collisionDetection={closestCenter} onDragEnd={onSectionDragEnd}>
           <SortableContext items={sections.map(s => s.id)} strategy={verticalListSortingStrategy}>
             {sections.map(s => (
