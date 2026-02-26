@@ -9,13 +9,18 @@ import {
   createContext,
   useContext,
 } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Plus,
   Sparkles,
   ChevronsRight,
   TextCursorInput,
   GripVertical,
+  BookOpen,
+  Bot,
 } from 'lucide-react';
+import * as Dialog from '@radix-ui/react-dialog';
+import { TaskContextDialog } from './task-context-dialog';
 import { useRouter } from '@/i18n/routing';
 import { useTranslations } from 'next-intl';
 import {
@@ -115,7 +120,7 @@ function MillerColumnItem({
   const t = useTranslations();
   const ctx = useContext(ItemActionsContext);
   const { selectionPath, onSelect, setAddingToItemId } = useContext(MillerSelectionContext);
-  const { showDeferred, highlightTarget, aiStatusMap, batchMode, selectedItems, toggleItemSelection } = useFlowData();
+  const { showDeferred, highlightTarget, aiStatusMap, batchMode, selectedItems, toggleItemSelection, data, agents } = useFlowData();
 
   if (!ctx) return null;
   if (!showDeferred && item.deferred) return null;
@@ -143,6 +148,55 @@ function MillerColumnItem({
 
   const rowRef = useRef<HTMLDivElement>(null);
   const [addingDesc, setAddingDesc] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const actionsPanelRef = useRef<HTMLDivElement>(null);
+  const [actionsPos, setActionsPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const actionsCloseTimer = useRef<ReturnType<typeof setTimeout>>(null);
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
+  const agentPickerRef = useRef<HTMLDivElement>(null);
+  const [agentPickerPos, setAgentPickerPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+
+  const boundAgent = item.agentId ? agents.find(a => a.id === item.agentId) : undefined;
+
+  useEffect(() => {
+    if (!agentPickerOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (agentPickerRef.current && !agentPickerRef.current.contains(e.target as Node)) {
+        setAgentPickerOpen(false);
+      }
+    };
+    const timer = setTimeout(() => document.addEventListener('mousedown', handler), 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handler);
+    };
+  }, [agentPickerOpen]);
+
+  const openActions = useCallback(() => {
+    if (actionsCloseTimer.current) { clearTimeout(actionsCloseTimer.current); actionsCloseTimer.current = null; }
+    if (!actionsOpen) {
+      const rect = rowRef.current?.getBoundingClientRect();
+      if (rect) {
+        setActionsPos({ top: rect.top + rect.height / 2, left: rect.right + 6 });
+        setActionsOpen(true);
+      }
+    }
+  }, [actionsOpen]);
+
+  const scheduleCloseActions = useCallback(() => {
+    if (actionsCloseTimer.current) clearTimeout(actionsCloseTimer.current);
+    actionsCloseTimer.current = setTimeout(() => setActionsOpen(false), 150);
+  }, []);
+
+  const cancelCloseActions = useCallback(() => {
+    if (actionsCloseTimer.current) { clearTimeout(actionsCloseTimer.current); actionsCloseTimer.current = null; }
+  }, []);
+
+  const contextAncestors = useMemo(
+    () => getAncestors(sectionItems, selectionPath.slice(0, depth)),
+    [sectionItems, selectionPath, depth],
+  );
 
   useEffect(() => {
     if (isHighlighted && rowRef.current) {
@@ -174,6 +228,8 @@ function MillerColumnItem({
           onSelect(item.id, depth);
         }
       }}
+      onMouseEnter={openActions}
+      onMouseLeave={scheduleCloseActions}
     >
       {/* Batch mode checkbox */}
       {batchMode && (
@@ -212,6 +268,18 @@ function MillerColumnItem({
             }`}
           />
           <AIStatusBadge status={aiStatusMap[item.id]} />
+          {boundAgent && (
+            <span
+              className="inline-flex items-center gap-0.5 rounded bg-blue-100 dark:bg-blue-900/30 px-1 text-[10px] text-blue-600 dark:text-blue-400 shrink-0 leading-[1.4]"
+              title={t('flows.agentBound', { agent: boundAgent.name })}
+            >
+              <Bot className="w-2.5 h-2.5" />
+              {boundAgent.name}
+            </span>
+          )}
+          {item.context?.items?.length ? (
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" title={t('flows.taskContext')} />
+          ) : null}
           {hasChildren && (
             <span className="flex items-center gap-0.5 ml-auto shrink-0 pl-2">
               {item.children!
@@ -268,61 +336,163 @@ function MillerColumnItem({
         </div>
       )}
 
-      {/* Hover action buttons */}
-      <div className="opacity-0 group-hover/item:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
-        {!item.description && !addingDesc && (
+      {/* Actions panel — rendered via portal to escape overflow clipping */}
+      {actionsOpen && createPortal(
+          <div
+            ref={actionsPanelRef}
+            className="fixed flex items-center gap-1.5 bg-white dark:bg-zinc-900 rounded-lg shadow-lg border border-zinc-200 dark:border-zinc-700 px-2.5 py-1.5 z-9999"
+            style={{ top: actionsPos.top, left: actionsPos.left, transform: 'translateY(-50%)' }}
+            onMouseEnter={cancelCloseActions}
+            onMouseLeave={scheduleCloseActions}
+          >
+            {!item.description && !addingDesc && (
+              <button
+                className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground transition-colors"
+                onClick={e => {
+                  e.stopPropagation();
+                  setActionsOpen(false);
+                  setAddingDesc(true);
+                }}
+                title={t('flows.addDescription')}
+              >
+                <TextCursorInput className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <button
+              className="p-1 rounded hover:bg-amber-50 dark:hover:bg-amber-950/30 text-muted-foreground hover:text-amber-600 transition-colors"
+              onClick={e => {
+                e.stopPropagation();
+                setActionsOpen(false);
+                setContextOpen(true);
+              }}
+              title={t('flows.taskContext')}
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+            </button>
+            <button
+              className={`p-1 rounded transition-colors ${
+                item.agentId
+                  ? 'text-blue-500 bg-blue-50 dark:bg-blue-950/30'
+                  : 'text-muted-foreground hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/30'
+              }`}
+              onClick={e => {
+                e.stopPropagation();
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                setAgentPickerPos({ top: rect.bottom + 4, left: rect.left });
+                setActionsOpen(false);
+                setAgentPickerOpen(v => !v);
+              }}
+              title={boundAgent ? t('flows.agentBound', { agent: boundAgent.name }) : t('flows.bindAgent')}
+            >
+              <Bot className="w-3.5 h-3.5" />
+            </button>
+            <button
+              className="p-1 rounded hover:bg-violet-50 dark:hover:bg-violet-950/30 text-muted-foreground hover:text-violet-500 transition-colors"
+              onClick={e => {
+                e.stopPropagation();
+                setActionsOpen(false);
+                handleLaunchAI();
+              }}
+              title={boundAgent ? t('flows.startAIWithAgent', { agent: boundAgent.name }) : t('flows.startAICollaboration')}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+            </button>
+            <button
+              className={`p-1 rounded transition-colors ${
+                isDeferred
+                  ? 'text-blue-400 hover:text-blue-600'
+                  : 'text-muted-foreground hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/30'
+              }`}
+              onClick={e => {
+                e.stopPropagation();
+                setActionsOpen(false);
+                ctx.onToggleDefer(item.id, !!item.deferred);
+              }}
+              title={isDeferred ? t('flows.moveToThisCycle') : t('flows.pushToLater')}
+            >
+              <ChevronsRight className="w-3.5 h-3.5" />
+            </button>
+            <button
+              className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground transition-colors"
+              onClick={e => {
+                e.stopPropagation();
+                setActionsOpen(false);
+                if (!isSelected) {
+                  onSelect(item.id, depth);
+                }
+                setAddingToItemId(item.id);
+              }}
+              title={t('flows.addSubItem')}
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+            <DeleteButton onClick={() => { setActionsOpen(false); ctx.onDelete(item.id); }} />
+          </div>,
+        document.body,
+      )}
+
+      {/* Agent picker panel */}
+      {agentPickerOpen && createPortal(
+        <div
+          ref={agentPickerRef}
+          className="fixed z-9999 bg-white dark:bg-zinc-900 rounded-lg shadow-lg border border-zinc-200 dark:border-zinc-700 w-48 py-1"
+          style={{ top: agentPickerPos.top, left: agentPickerPos.left }}
+          onMouseDown={e => e.stopPropagation()}
+        >
           <button
-            className="p-0.5 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground transition-colors"
+            className="w-full text-left px-3 py-1.5 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-2 text-muted-foreground"
             onClick={e => {
               e.stopPropagation();
-              setAddingDesc(true);
+              ctx.onAssignAgent(item.id, null);
+              setAgentPickerOpen(false);
             }}
-            title={t('flows.addDescription')}
           >
-            <TextCursorInput className="w-3.5 h-3.5" />
+            <span className="w-3.5 h-3.5 shrink-0 inline-block" />
+            <span>{t('flows.noAgent')}</span>
+            {!item.agentId && <span className="ml-auto text-[10px]">✓</span>}
           </button>
-        )}
-        <button
-          className="p-0.5 rounded hover:bg-violet-50 dark:hover:bg-violet-950/30 text-muted-foreground hover:text-violet-500 transition-colors"
-          onClick={e => {
-            e.stopPropagation();
+          {agents.length > 0 && <div className="my-1 border-t border-zinc-200 dark:border-zinc-700" />}
+          {agents.map(agent => (
+            <button
+              key={agent.id}
+              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-2 ${
+                item.agentId === agent.id ? 'text-blue-600 dark:text-blue-400' : 'text-foreground'
+              }`}
+              onClick={e => {
+                e.stopPropagation();
+                ctx.onAssignAgent(item.id, agent.id);
+                setAgentPickerOpen(false);
+              }}
+            >
+              <Bot className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{agent.name}</span>
+              {item.agentId === agent.id && <span className="ml-auto text-[10px]">✓</span>}
+            </button>
+          ))}
+          {agents.length === 0 && (
+            <div className="px-3 py-2 text-xs text-muted-foreground">{t('flows.noAgentsAvailable')}</div>
+          )}
+        </div>,
+        document.body,
+      )}
+
+      {/* Context dialog */}
+      <Dialog.Root open={contextOpen} onOpenChange={setContextOpen}>
+        <TaskContextDialog
+          open={contextOpen}
+          onOpenChange={setContextOpen}
+          item={item}
+          section={ctx.section}
+          ancestors={contextAncestors}
+          allSections={data.sections}
+          cycleDeadline={data.cycleDeadline}
+          onUpdateContext={newCtx => ctx.onUpdate(item.id, { context: newCtx })}
+          onLaunchAI={() => {
+            setContextOpen(false);
             handleLaunchAI();
           }}
-          title={t('flows.startAICollaboration')}
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-        </button>
-        <button
-          className={`p-0.5 rounded transition-colors ${
-            isDeferred
-              ? 'text-blue-400 hover:text-blue-600 !opacity-100'
-              : 'text-muted-foreground hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/30'
-          }`}
-          onClick={e => {
-            e.stopPropagation();
-            ctx.onToggleDefer(item.id, !!item.deferred);
-          }}
-          title={isDeferred ? t('flows.moveToThisCycle') : t('flows.pushToLater')}
-        >
-          <ChevronsRight className="w-3.5 h-3.5" />
-        </button>
-        <button
-          className="p-0.5 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground transition-colors"
-          onClick={e => {
-            e.stopPropagation();
-            // Only select if not already selected — avoid deselecting (toggle)
-            // which would collapse the child column instead of opening it
-            if (!isSelected) {
-              onSelect(item.id, depth);
-            }
-            setAddingToItemId(item.id);
-          }}
-          title={t('flows.addSubItem')}
-        >
-          <Plus className="w-3.5 h-3.5" />
-        </button>
-        <DeleteButton onClick={() => ctx.onDelete(item.id)} />
-      </div>
+        />
+      </Dialog.Root>
     </div>
   );
 }
@@ -572,7 +742,7 @@ function MillerColumnsContainer({
 
 export function MillerSectionBlock({ section }: { section: Section }) {
   const t = useTranslations();
-  const { projectKey, projectName, data, actions, showDeferred, highlightTarget, aiStatusMap, batchMode, selectedItems, clearSelection, batchDelete, batchDefer, batchUpdateStatus, searchText, statusFilter } = useFlowData();
+  const { projectKey, projectName, data, actions, agents, showDeferred, highlightTarget, aiStatusMap, batchMode, selectedItems, clearSelection, batchDelete, batchDefer, batchUpdateStatus, searchText, statusFilter } = useFlowData();
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(true);
   const [selectionPath, setSelectionPath] = useState<string[]>([]);
@@ -675,6 +845,9 @@ export function MillerSectionBlock({ section }: { section: Section }) {
       task: item,
       allSections: data.sections,
       cycleDeadline: data.cycleDeadline,
+      excludes: item.context?.excludes,
+      customItems: item.context?.items,
+      globalContextIds: item.context?.globalContextIds,
     });
 
     const res = await fetch('/api/tasks', {
@@ -684,6 +857,7 @@ export function MillerSectionBlock({ section }: { section: Section }) {
         title: item.content,
         projectKey,
         flowContext,
+        ...(item.agentId && { agentId: item.agentId }),
       }),
     });
 
@@ -708,6 +882,9 @@ export function MillerSectionBlock({ section }: { section: Section }) {
     onToggleDefer: (itemId, currentDeferred) =>
       actions.updateItem(section.id, itemId, { deferred: !currentDeferred }),
     onLaunchAI: handleLaunchAI,
+    agents,
+    onAssignAgent: (itemId, agentId) =>
+      actions.updateItem(section.id, itemId, { agentId: agentId ?? undefined }),
   };
 
   const isSectionHighlighted =
