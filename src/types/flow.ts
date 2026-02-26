@@ -2,6 +2,13 @@ export type Status = 'done' | 'doing' | 'todo';
 
 // ==================== 统一树形结构 ====================
 
+export interface ContextItem {
+  id: string;
+  type: 'text' | 'file';
+  label: string;
+  content: string;
+}
+
 export interface TreeItem {
   id: string;
   content: string;
@@ -9,6 +16,12 @@ export interface TreeItem {
   description?: string;
   children?: TreeItem[];
   deferred?: boolean;
+  agentId?: string;               // 预绑定的 Agent ID
+  context?: {
+    items?: ContextItem[];          // 用户手动添加的上下文
+    excludes?: string[];            // 关掉的自动采集类别 key
+    globalContextIds?: string[];    // 选中的全局上下文条目 ID（来自 /flows/context 页面的 ContextEntry.id）
+  };
 }
 
 export interface Section {

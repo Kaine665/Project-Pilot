@@ -6,7 +6,7 @@
  * 附带在创建 Session 的请求体中。
  */
 
-import type { Status } from './flow';
+import type { Status, ContextItem } from './flow';
 
 // ==================== 上下文主体 ====================
 
@@ -53,6 +53,16 @@ export interface FlowTaskContext {
   otherSections: SectionBrief[];
   /** 周期截止日期 */
   cycleDeadline?: string;
+
+  // ── 用户附加上下文 ──
+
+  /** 用户手动添加的上下文条目 */
+  customContext?: ContextItem[];
+
+  // ── 全局上下文 ──
+
+  /** 用户选中的全局上下文条目 ID（来自 /flows/context 页面） */
+  globalContextIds?: string[];
 }
 
 // ==================== 简要引用类型 ====================
