@@ -95,6 +95,11 @@
     "addDescription": "Add Description",
     "descriptionPlaceholder": "Enter description...",
     "startAICollaboration": "Start AI Collaboration",
+    "startAIWithAgent": "Start AI (using {agent})",
+    "bindAgent": "Bind Agent",
+    "agentBound": "Bound: {agent}",
+    "noAgent": "No Agent",
+    "noAgentsAvailable": "No agents available",
     "moveToThisCycle": "Move to This Cycle",
     "pushToLater": "Push to Later",
     "batchMode": "Batch Mode",
@@ -113,7 +118,28 @@
       "all": "All statuses"
     },
     "noResults": "No matching items",
-    "unnamed": "Unnamed"
+    "unnamed": "Unnamed",
+    "taskContext": "Task Context",
+    "taskContextTitle": "Task Context",
+    "autoContext": "Auto-collected Context",
+    "globalContext": "Global Context",
+    "globalContextEmpty": "No context entries yet. Manage in Context page.",
+    "customContext": "Custom Context",
+    "addContextItem": "Add Context",
+    "contextLabelPlaceholder": "e.g. Design doc reference",
+    "contextContentPlaceholder": "Enter context content...",
+    "contextTypeNote": "Note",
+    "contextTypeFile": "File Reference",
+    "launchAIWithContext": "Launch AI",
+    "contextCategories": {
+      "section": "Section Info",
+      "ancestors": "Ancestor Path",
+      "siblings": "Sibling Tasks",
+      "otherSections": "Other Sections",
+      "cycleDeadline": "Cycle Deadline"
+    },
+    "contextNoData": "None",
+    "contextItemCount": "{count} items"
   },
   "projects": {
     "title": "Project Management",
@@ -247,7 +273,20 @@
     },
     "sessionInterrupted": "This session was interrupted during the last server restart. Click Continue to resume.",
     "continueSession": "Continue Session",
-    "recovering": "Recovering..."
+    "recovering": "Recovering...",
+    "guest": "Guest Agent",
+    "summonGuest": "Summon Guest",
+    "guestAgent": "Guest Agent",
+    "selectGuestAgent": "Select an agent to consult",
+    "importTurns": "Import conversation turns",
+    "importAll": "Import All",
+    "importSelected": "Import Selected",
+    "backToHost": "Back to Main",
+    "guestLabel": "Guest",
+    "guestSessionTitle": "Guest: {name}",
+    "guestThinking": "Guest thinking...",
+    "closeGuest": "Close Guest",
+    "noAgentsAvailable": "No agents available"
   },
   "taskAgent": {
     "startHint": "Send a message to start the task flow",
@@ -273,9 +312,41 @@
     "namePlaceholder": "Agent name",
     "confirmDelete": "Are you sure you want to delete agent \"{name}\"?"
   },
+  "context": {
+    "title": "Context",
+    "newEntry": "New Entry",
+    "noEntries": "No context entries yet",
+    "label": "Label",
+    "labelPlaceholder": "e.g., User Profile",
+    "description": "Description",
+    "descriptionPlaceholder": "Briefly describe this context to help AI decide whether to read it",
+    "fileName": "File Name",
+    "fileNamePlaceholder": "e.g., user-profile.json",
+    "format": "Format",
+    "content": "Content",
+    "contentPlaceholder": "Enter context content...",
+    "saving": "Saving...",
+    "confirmDelete": "Are you sure you want to delete context entry \"{label}\"? This cannot be undone.",
+    "selectOrCreate": "Select an entry to view details, or create a new one",
+    "sidebar": "Context"
+  },
   "suggestions": {
     "apply": "Apply",
-    "applied": "Applied"
+    "applyAll": "Apply All",
+    "applied": "Applied",
+    "types": {
+      "add_section": "New Section",
+      "add_item": "New Item",
+      "update_item": "Update Item",
+      "update_section": "Update Section",
+      "delete_item": "Delete Item",
+      "delete_section": "Delete Section",
+      "move_item": "Move Item",
+      "reorder_item": "Reorder Item",
+      "reorder_section": "Reorder Section",
+      "batch": "Batch"
+    },
+    "batchCount": "{count} operations"
   },
   "settings": {
     "title": "Settings",

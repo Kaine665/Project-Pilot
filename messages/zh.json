@@ -95,6 +95,11 @@
     "addDescription": "添加描述",
     "descriptionPlaceholder": "输入描述...",
     "startAICollaboration": "发起 AI 协作",
+    "startAIWithAgent": "启动 AI（使用 {agent}）",
+    "bindAgent": "绑定 Agent",
+    "agentBound": "已绑定：{agent}",
+    "noAgent": "不绑定 Agent",
+    "noAgentsAvailable": "暂无可用 Agent",
     "moveToThisCycle": "移入本周期",
     "pushToLater": "推到以后",
     "batchMode": "批量模式",
@@ -113,7 +118,28 @@
       "all": "全部状态"
     },
     "noResults": "没有匹配的条目",
-    "unnamed": "未命名"
+    "unnamed": "未命名",
+    "taskContext": "任务上下文",
+    "taskContextTitle": "任务上下文",
+    "autoContext": "自动采集上下文",
+    "globalContext": "全局上下文",
+    "globalContextEmpty": "暂无上下文条目，可在上下文页面管理。",
+    "customContext": "自定义上下文",
+    "addContextItem": "添加上下文",
+    "contextLabelPlaceholder": "例如：设计文档参考",
+    "contextContentPlaceholder": "输入上下文内容...",
+    "contextTypeNote": "备注",
+    "contextTypeFile": "文件引用",
+    "launchAIWithContext": "启动 AI",
+    "contextCategories": {
+      "section": "板块信息",
+      "ancestors": "上层路径",
+      "siblings": "同级任务",
+      "otherSections": "其他板块",
+      "cycleDeadline": "周期截止日期"
+    },
+    "contextNoData": "无",
+    "contextItemCount": "{count} 项"
   },
   "projects": {
     "title": "项目管理",
@@ -247,7 +273,20 @@
     },
     "sessionInterrupted": "此会话在上次服务器重启时中断。点击继续恢复执行。",
     "continueSession": "继续会话",
-    "recovering": "恢复中..."
+    "recovering": "恢复中...",
+    "guest": "旁听 Agent",
+    "summonGuest": "召唤旁听",
+    "guestAgent": "旁听 Agent",
+    "selectGuestAgent": "选择一个 Agent 来咨询",
+    "importTurns": "导入对话轮次",
+    "importAll": "导入全部",
+    "importSelected": "导入选中",
+    "backToHost": "回到主会话",
+    "guestLabel": "旁听",
+    "guestSessionTitle": "旁听：{name}",
+    "guestThinking": "旁听 Agent 思考中...",
+    "closeGuest": "关闭旁听",
+    "noAgentsAvailable": "没有可用的 Agent"
   },
   "taskAgent": {
     "startHint": "发送消息开始任务流程",
@@ -273,9 +312,41 @@
     "namePlaceholder": "Agent 名称",
     "confirmDelete": "确定要删除 Agent「{name}」吗？"
   },
+  "context": {
+    "title": "上下文",
+    "newEntry": "新建条目",
+    "noEntries": "暂无上下文信息",
+    "label": "标签",
+    "labelPlaceholder": "例如：用户基本信息",
+    "description": "描述",
+    "descriptionPlaceholder": "简要描述此上下文的内容，帮助 AI 判断是否需要读取",
+    "fileName": "文件名",
+    "fileNamePlaceholder": "例如：user-profile.json",
+    "format": "格式",
+    "content": "内容",
+    "contentPlaceholder": "输入上下文内容...",
+    "saving": "保存中...",
+    "confirmDelete": "确定要删除上下文条目「{label}」吗？此操作不可撤销。",
+    "selectOrCreate": "选择一个条目查看详情，或创建新的上下文条目",
+    "sidebar": "上下文"
+  },
   "suggestions": {
     "apply": "应用",
-    "applied": "已应用"
+    "applyAll": "全部应用",
+    "applied": "已应用",
+    "types": {
+      "add_section": "新板块",
+      "add_item": "新条目",
+      "update_item": "修改条目",
+      "update_section": "修改板块",
+      "delete_item": "删除条目",
+      "delete_section": "删除板块",
+      "move_item": "移动条目",
+      "reorder_item": "条目排序",
+      "reorder_section": "板块排序",
+      "batch": "批量操作"
+    },
+    "batchCount": "{count} 项操作"
   },
   "settings": {
     "title": "设置",

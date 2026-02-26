@@ -62,6 +62,9 @@ cp -r data ~/.project-pilot/data/
     ├── task-artifacts/        # 任务产物
     ├── artifacts/             # 其他产物
     ├── prompts/               # Prompt 记录
+    ├── context/               # 上下文信息（详见 docs/context-system.md）
+    │   ├── index.json         #   索引文件（元数据）
+    │   └── {fileName}         #   内容文件（JSON/Markdown/Text）
     └── logs/                  # 日志文件
 ```
 
