@@ -1,8 +1,39 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Bot, Plus, Trash2, X, ChevronRight, Terminal, FileText, Globe, Users, ShieldOff, Maximize2, Minimize2 } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  Bot, Plus, Trash2, X, ChevronRight, Terminal, FileText, Globe, Users, ShieldOff, Maximize2, Minimize2,
+  Database, Brain, Code, Zap, Search, Shield, Wrench, BookOpen, Settings, MessageSquare, type LucideIcon,
+} from 'lucide-react';
 import type { Agent, AgentCapabilities } from '@/types';
+import { AgentChatPanel } from '@/components/agent-chat-panel';
+
+// ── Icon picker presets ──
+
+const AGENT_ICON_OPTIONS: Array<{ key: string; icon: LucideIcon; label: string }> = [
+  { key: 'bot',       icon: Bot,       label: '机器人' },
+  { key: 'brain',     icon: Brain,     label: '大脑' },
+  { key: 'database',  icon: Database,  label: '数据库' },
+  { key: 'code',      icon: Code,      label: '代码' },
+  { key: 'terminal',  icon: Terminal,  label: '终端' },
+  { key: 'zap',       icon: Zap,       label: '闪电' },
+  { key: 'search',    icon: Search,    label: '搜索' },
+  { key: 'shield',    icon: Shield,    label: '盾牌' },
+  { key: 'wrench',    icon: Wrench,    label: '工具' },
+  { key: 'book-open', icon: BookOpen,  label: '书本' },
+];
+
+const ICON_MAP: Record<string, LucideIcon> = Object.fromEntries(
+  AGENT_ICON_OPTIONS.map(o => [o.key, o.icon])
+);
+
+// Also map legacy names (e.g. "sparkles" used by built-in agent)
+ICON_MAP['sparkles'] = Bot;
+
+function AgentIcon({ iconKey, className }: { iconKey?: string; className?: string }) {
+  const Icon = (iconKey && ICON_MAP[iconKey]) || Bot;
+  return <Icon className={className} />;
+}
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 
 // ── Capability items config ──
@@ -29,11 +60,13 @@ type FormData = {
   systemPrompt: string;
   icon: string;
   capabilities: AgentCapabilities;
+  requiredParamsText: string;
 };
 
 const emptyForm: FormData = {
   name: '', description: '', systemPrompt: '', icon: '',
   capabilities: { ...DEFAULT_AGENT_CAPABILITIES },
+  requiredParamsText: '',
 };
 
 function agentToForm(a: Agent): FormData {
@@ -43,6 +76,7 @@ function agentToForm(a: Agent): FormData {
     systemPrompt: a.systemPrompt ?? '',
     icon: a.icon ?? '',
     capabilities: a.capabilities ?? { ...DEFAULT_AGENT_CAPABILITIES },
+    requiredParamsText: (a.requiredParams ?? []).join('\n'),
   };
 }
 
@@ -73,6 +107,267 @@ function ToggleSwitch({ checked, onChange, danger }: { checked: boolean; onChang
   );
 }
 
+// ── Settings Form component ──
+
+function SettingsForm({
+  creating,
+  form,
+  setForm,
+  selectedAgent,
+  hasChanges,
+  saving,
+  onSave,
+  onClose,
+  onDelete,
+  selectedId,
+  onExpandPrompt,
+}: {
+  creating: boolean;
+  form: FormData;
+  setForm: React.Dispatch<React.SetStateAction<FormData>>;
+  selectedAgent: Agent | null;
+  hasChanges: boolean;
+  saving: boolean;
+  onSave: () => void;
+  onClose: () => void;
+  onDelete: (id: string) => void;
+  selectedId: string | null;
+  onExpandPrompt: () => void;
+}) {
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="mx-auto max-w-2xl px-8 py-8">
+        {/* Panel header (only for creating mode — selected agent header is outside) */}
+        {creating && (
+          <div className="mb-6 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+              新建 Agent
+            </h2>
+            <button
+              onClick={onClose}
+              className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+              title="关闭"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Form */}
+        <div className="space-y-5">
+          {/* Name */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              名称 <span className="text-red-400">*</span>
+            </label>
+            <input
+              autoFocus
+              value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              placeholder="给 Agent 起个名字"
+              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+            />
+          </div>
+
+          {/* Slug (read-only for built-in agents) */}
+          {selectedAgent?.builtIn && selectedAgent?.slug && (
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                标识符
+              </label>
+              <div className="w-full rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-400">
+                {selectedAgent.slug}
+              </div>
+              <p className="mt-1 text-xs text-zinc-400">
+                内置 Agent 的标识符不可修改
+              </p>
+            </div>
+          )}
+
+          {/* Description */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              描述
+            </label>
+            <input
+              value={form.description}
+              onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+              placeholder="简要描述这个 Agent 的用途"
+              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+            />
+          </div>
+
+          {/* Icon */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              图标
+            </label>
+            <div className="grid grid-cols-5 gap-2">
+              {AGENT_ICON_OPTIONS.map(({ key, icon: Icon, label }) => {
+                const selected = form.icon === key || (!form.icon && key === 'bot');
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, icon: key }))}
+                    title={label}
+                    className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-2.5 text-xs transition-colors ${
+                      selected
+                        ? 'border-zinc-900 bg-zinc-100 text-zinc-900 dark:border-zinc-100 dark:bg-zinc-800 dark:text-zinc-100'
+                        : 'border-zinc-200 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:text-zinc-300'
+                    }`}
+                  >
+                    <Icon className="h-5 w-5" />
+                    <span className="truncate w-full text-center">{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* System Prompt */}
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                系统提示词
+              </label>
+              <button
+                onClick={onExpandPrompt}
+                className="rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                title="全屏编辑"
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <textarea
+              value={form.systemPrompt}
+              onChange={e => setForm(f => ({ ...f, systemPrompt: e.target.value }))}
+              placeholder="定义 Agent 的行为和能力，例如：你是一个专注于代码审查的助手..."
+              rows={8}
+              className="w-full resize-y rounded-md border border-zinc-300 px-3 py-2 text-sm leading-relaxed outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+            />
+          </div>
+
+          {/* Required Params */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              必要参数
+            </label>
+            <textarea
+              value={form.requiredParamsText}
+              onChange={e => setForm(f => ({ ...f, requiredParamsText: e.target.value }))}
+              placeholder={'该 Agent 执行任务所需的参数，每行一个\n例如：\nSUPABASE_URL\nSUPABASE_SERVICE_ROLE_KEY'}
+              rows={3}
+              className="w-full resize-y rounded-md border border-zinc-300 px-3 py-2 text-sm leading-relaxed font-mono outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+            />
+            <p className="mt-1 text-xs text-zinc-400">
+              仅声明参数名，实际值在项目或任务中配置
+            </p>
+          </div>
+
+          {/* Capabilities */}
+          <div>
+            <label className="mb-3 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              能力配置
+            </label>
+            <div className="space-y-1 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
+              {CAPABILITY_ITEMS.map(({ key, label, description, icon: Icon, danger }) => (
+                <div
+                  key={key}
+                  className={`flex items-center justify-between rounded-md px-3 py-2.5 transition-colors ${
+                    danger && form.capabilities[key]
+                      ? 'bg-red-50/50 dark:bg-red-950/20'
+                      : ''
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Icon className={`h-4 w-4 ${
+                      danger && form.capabilities[key]
+                        ? 'text-red-400'
+                        : 'text-zinc-400'
+                    }`} />
+                    <div>
+                      <div className={`text-sm font-medium ${
+                        danger && form.capabilities[key]
+                          ? 'text-red-600 dark:text-red-400'
+                          : 'text-zinc-900 dark:text-zinc-100'
+                      }`}>
+                        {label}
+                      </div>
+                      <div className="text-xs text-zinc-400">{description}</div>
+                    </div>
+                  </div>
+                  <ToggleSwitch
+                    checked={form.capabilities[key]}
+                    onChange={() => setForm(f => ({
+                      ...f,
+                      capabilities: { ...f.capabilities, [key]: !f.capabilities[key] },
+                    }))}
+                    danger={danger}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              onClick={onSave}
+              disabled={!form.name.trim() || saving || !hasChanges}
+              className="rounded-md bg-zinc-900 px-5 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+            >
+              {saving ? '保存中...' : creating ? '创建' : '保存'}
+            </button>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-600 transition-colors"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Session day-grouping helper ──
+
+interface SessionListItem {
+  id: string;
+  title: string;
+  updatedAt: string;
+}
+
+function groupSessionsByDay(sessions: SessionListItem[]) {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const yesterdayStart = todayStart - 86_400_000;
+
+  const groups: Array<{ label: string; items: SessionListItem[] }> = [];
+  const map = new Map<string, SessionListItem[]>();
+
+  for (const s of sessions) {
+    const d = new Date(s.updatedAt);
+    const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+    let label: string;
+    if (dayStart >= todayStart) label = '今天';
+    else if (dayStart >= yesterdayStart) label = '昨天';
+    else label = `${d.getMonth() + 1}月${d.getDate()}日`;
+
+    if (!map.has(label)) map.set(label, []);
+    map.get(label)!.push(s);
+  }
+
+  for (const [label, items] of map) {
+    groups.push({ label, items });
+  }
+
+  return groups;
+}
+
 // ── Main page ──
 
 export default function AgentsPage() {
@@ -82,6 +377,10 @@ export default function AgentsPage() {
   const [form, setForm] = useState<FormData>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [expandedPrompt, setExpandedPrompt] = useState(false);
+  const [viewMode, setViewMode] = useState<'chat' | 'settings'>('chat');
+  const [agentSessions, setAgentSessions] = useState<SessionListItem[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null | undefined>(undefined);
+  const [chatKey, setChatKey] = useState(0);
 
   const fetchAgents = useCallback(async () => {
     try {
@@ -95,13 +394,43 @@ export default function AgentsPage() {
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
 
+  // Refresh agent list when window regains focus
+  useEffect(() => {
+    const handleFocus = () => fetchAgents();
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [fetchAgents]);
+
+  // Fetch sessions for the selected agent
+  const fetchAgentSessions = useCallback(async (agentId: string) => {
+    try {
+      const res = await fetch(`/api/agent-chat/sessions?agentId=${agentId}`, { cache: 'no-store' });
+      const data = await res.json();
+      setAgentSessions(data.sessions ?? []);
+    } catch {
+      setAgentSessions([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedId && !creating) {
+      fetchAgentSessions(selectedId);
+    } else {
+      setAgentSessions([]);
+    }
+  }, [selectedId, creating, fetchAgentSessions]);
+
   const selectedAgent = agents.find(a => a.id === selectedId) ?? null;
+  const groupedSessions = useMemo(() => groupSessionsByDay(agentSessions), [agentSessions]);
 
   const handleSelect = (agent: Agent) => {
     setCreating(false);
     setSelectedId(agent.id);
     setForm(agentToForm(agent));
     setExpandedPrompt(false);
+    setViewMode('chat');
+    setActiveSessionId(undefined);
+    setChatKey(k => k + 1);
   };
 
   const handleStartCreate = () => {
@@ -116,12 +445,30 @@ export default function AgentsPage() {
     setCreating(false);
     setForm(emptyForm);
     setExpandedPrompt(false);
+    setViewMode('chat');
+    setActiveSessionId(undefined);
+  };
+
+  const handleSessionClick = (sessionId: string) => {
+    setActiveSessionId(sessionId);
+    setChatKey(k => k + 1);
+    setViewMode('chat');
+  };
+
+  const handleNewChat = () => {
+    setActiveSessionId(null);
+    setChatKey(k => k + 1);
+    setViewMode('chat');
   };
 
   const handleSave = async () => {
     const name = form.name.trim();
     if (!name) return;
     setSaving(true);
+    const parsedParams = form.requiredParamsText
+      .split('\n')
+      .map(l => l.trim())
+      .filter(Boolean);
     try {
       if (creating) {
         const res = await fetch('/api/agents', {
@@ -133,6 +480,7 @@ export default function AgentsPage() {
             systemPrompt: form.systemPrompt.trim() || undefined,
             icon: form.icon.trim() || undefined,
             capabilities: form.capabilities,
+            requiredParams: parsedParams.length > 0 ? parsedParams : undefined,
           }),
         });
         if (res.ok) {
@@ -153,6 +501,7 @@ export default function AgentsPage() {
             systemPrompt: form.systemPrompt.trim() || undefined,
             icon: form.icon.trim() || undefined,
             capabilities: form.capabilities,
+            requiredParams: parsedParams.length > 0 ? parsedParams : [],
           }),
         });
         if (res.ok) await fetchAgents();
@@ -180,7 +529,6 @@ export default function AgentsPage() {
     } catch { /* ignore */ }
   };
 
-  const isEditing = creating || selectedId !== null;
   const hasChanges = creating
     ? form.name.trim().length > 0
     : selectedAgent
@@ -189,271 +537,258 @@ export default function AgentsPage() {
         || form.systemPrompt !== (selectedAgent.systemPrompt ?? '')
         || form.icon !== (selectedAgent.icon ?? '')
         || JSON.stringify(form.capabilities) !== JSON.stringify(selectedAgent.capabilities ?? DEFAULT_AGENT_CAPABILITIES)
+        || form.requiredParamsText !== (selectedAgent.requiredParams ?? []).join('\n')
       : false;
 
   return (
     <div className="flex h-full">
-      {/* Left: Agent list */}
+      {/* Left sidebar */}
       <div className="flex w-72 shrink-0 flex-col border-r border-zinc-200 dark:border-zinc-800">
-        {/* List header */}
-        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <div className="flex flex-1 items-center justify-center gap-2">
-            <Bot className="h-5 w-5 text-zinc-500 dark:text-zinc-400" />
-            <span className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Agents</span>
-            <span className="text-sm text-zinc-400">({agents.length})</span>
-          </div>
-          <button
-            onClick={handleStartCreate}
-            className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-            title="新建 Agent"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Agent list */}
-        <div className="flex-1 overflow-y-auto">
-          {agents.length === 0 ? (
-            <div className="px-4 py-8 text-center text-xs text-zinc-400">
-              暂无 Agent
+        {/* ── Top half: Agents ── */}
+        <div className="flex h-1/2 flex-col">
+          <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-900 dark:text-zinc-100">
+              <Bot className="h-3.5 w-3.5" />
+              Agents
             </div>
-          ) : (
-            agents.map(a => (
-              <div
-                key={a.id}
-                onClick={() => handleSelect(a)}
-                className={`group flex cursor-pointer items-center gap-3 border-b border-zinc-100 px-4 py-3 transition-colors dark:border-zinc-800/50 ${
-                  selectedId === a.id
-                    ? 'bg-zinc-100 dark:bg-zinc-800'
-                    : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
-                }`}
-              >
-                <Bot className="h-4 w-4 shrink-0 text-zinc-400" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                    <span className="truncate">{a.name}</span>
-                    {a.builtIn && (
-                      <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                        内置
-                      </span>
+            <button
+              onClick={handleStartCreate}
+              className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+              title="新建 Agent"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {agents.length === 0 ? (
+              <div className="px-4 py-8 text-center text-xs text-zinc-400">
+                暂无 Agent
+              </div>
+            ) : (
+              agents.map(a => (
+                <div
+                  key={a.id}
+                  onClick={() => handleSelect(a)}
+                  className={`group flex cursor-pointer items-center gap-3 border-b border-zinc-100 px-4 py-3 transition-colors dark:border-zinc-800/50 ${
+                    selectedId === a.id
+                      ? 'bg-zinc-100 dark:bg-zinc-800'
+                      : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                  }`}
+                >
+                  <AgentIcon iconKey={a.icon} className="h-4 w-4 shrink-0 text-zinc-400" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                      <span className="truncate">{a.name}</span>
+                      {a.builtIn && (
+                        <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                          内置
+                        </span>
+                      )}
+                    </div>
+                    {a.description && (
+                      <div className="truncate text-xs text-zinc-400 dark:text-zinc-500">
+                        {a.description}
+                      </div>
                     )}
                   </div>
-                  {a.description && (
-                    <div className="truncate text-xs text-zinc-400 dark:text-zinc-500">
-                      {a.description}
-                    </div>
-                  )}
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-300 dark:text-zinc-600" />
                 </div>
-                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-300 dark:text-zinc-600" />
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* Right: Detail / Edit panel */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {isEditing && expandedPrompt ? (
-          /* ── Fullscreen system prompt editor ── */
-          <div className="flex flex-1 flex-col p-4 gap-3 overflow-hidden">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                系统提示词 — {form.name || '未命名'}
-              </label>
-              <button
-                onClick={() => setExpandedPrompt(false)}
-                className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                title="收起"
-              >
-                <Minimize2 className="h-4 w-4" />
-              </button>
-            </div>
-            <textarea
-              autoFocus
-              value={form.systemPrompt}
-              onChange={e => setForm(f => ({ ...f, systemPrompt: e.target.value }))}
-              placeholder="定义 Agent 的行为和能力，例如：你是一个专注于代码审查的助手..."
-              className="flex-1 w-full resize-none rounded-md border border-zinc-300 px-4 py-3 text-sm leading-relaxed outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
-            />
+              ))
+            )}
           </div>
-        ) : isEditing ? (
-          <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-2xl px-8 py-8">
-            {/* Panel header */}
-            <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-                {creating ? '新建 Agent' : '编辑 Agent'}
-                {selectedAgent?.builtIn && (
-                  <span className="ml-2 text-xs font-normal text-blue-500">内置</span>
-                )}
-              </h2>
-              <div className="flex items-center gap-2">
-                {!creating && !selectedAgent?.builtIn && (
-                  <button
-                    onClick={() => handleDelete(selectedId!)}
-                    className="rounded-md p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-500 transition-colors dark:hover:bg-red-900/20"
-                    title="删除"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-                <button
-                  onClick={handleClose}
-                  className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                  title="关闭"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
+        </div>
+
+        {/* ── Bottom half: Sessions ── */}
+        <div className="flex h-1/2 flex-col border-t border-zinc-200 dark:border-zinc-800">
+          <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-900 dark:text-zinc-100">
+              <MessageSquare className="h-3.5 w-3.5" />
+              会话
             </div>
-
-            {/* Form */}
-            <div className="space-y-5">
-              {/* Name */}
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  名称 <span className="text-red-400">*</span>
-                </label>
-                <input
-                  autoFocus
-                  value={form.name}
-                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                  placeholder="给 Agent 起个名字"
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
-                />
+            {selectedId && !creating && (
+              <button
+                onClick={handleNewChat}
+                className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                title="新建会话"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {!selectedId || creating ? (
+              <div className="px-4 py-8 text-center text-xs text-zinc-400">
+                选择一个 Agent 查看会话
               </div>
-
-              {/* Slug (read-only for built-in agents) */}
-              {selectedAgent?.builtIn && selectedAgent?.slug && (
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                    标识符
-                  </label>
-                  <div className="w-full rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-400">
-                    {selectedAgent.slug}
+            ) : agentSessions.length === 0 ? (
+              <div className="px-4 py-8 text-center text-xs text-zinc-400">
+                暂无会话记录
+              </div>
+            ) : (
+              groupedSessions.map(group => (
+                <div key={group.label}>
+                  <div className="sticky top-0 bg-zinc-50 px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400 dark:bg-zinc-900 dark:text-zinc-500">
+                    {group.label}
                   </div>
-                  <p className="mt-1 text-xs text-zinc-400">
-                    内置 Agent 的标识符不可修改
-                  </p>
-                </div>
-              )}
-
-              {/* Description */}
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  描述
-                </label>
-                <input
-                  value={form.description}
-                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                  placeholder="简要描述这个 Agent 的用途"
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
-                />
-              </div>
-
-              {/* Icon */}
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  图标
-                </label>
-                <input
-                  value={form.icon}
-                  onChange={e => setForm(f => ({ ...f, icon: e.target.value }))}
-                  placeholder="Lucide 图标名称，如 brain、zap、code"
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
-                />
-                <p className="mt-1 text-xs text-zinc-400">
-                  可选，留空使用默认机器人图标
-                </p>
-              </div>
-
-              {/* System Prompt */}
-              <div>
-                <div className="mb-1.5 flex items-center justify-between">
-                  <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                    系统提示词
-                  </label>
-                  <button
-                    onClick={() => setExpandedPrompt(true)}
-                    className="rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                    title="全屏编辑"
-                  >
-                    <Maximize2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <textarea
-                  value={form.systemPrompt}
-                  onChange={e => setForm(f => ({ ...f, systemPrompt: e.target.value }))}
-                  placeholder="定义 Agent 的行为和能力，例如：你是一个专注于代码审查的助手..."
-                  rows={8}
-                  className="w-full resize-y rounded-md border border-zinc-300 px-3 py-2 text-sm leading-relaxed outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
-                />
-              </div>
-
-              {/* Capabilities */}
-              <div>
-                <label className="mb-3 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  能力配置
-                </label>
-                <div className="space-y-1 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
-                  {CAPABILITY_ITEMS.map(({ key, label, description, icon: Icon, danger }) => (
+                  {group.items.map(s => (
                     <div
-                      key={key}
-                      className={`flex items-center justify-between rounded-md px-3 py-2.5 transition-colors ${
-                        danger && form.capabilities[key]
-                          ? 'bg-red-50/50 dark:bg-red-950/20'
-                          : ''
+                      key={s.id}
+                      onClick={() => handleSessionClick(s.id)}
+                      className={`flex cursor-pointer items-center gap-2.5 px-4 py-2.5 transition-colors ${
+                        activeSessionId === s.id
+                          ? 'bg-zinc-100 dark:bg-zinc-800'
+                          : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
                       }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <Icon className={`h-4 w-4 ${
-                          danger && form.capabilities[key]
-                            ? 'text-red-400'
-                            : 'text-zinc-400'
-                        }`} />
-                        <div>
-                          <div className={`text-sm font-medium ${
-                            danger && form.capabilities[key]
-                              ? 'text-red-600 dark:text-red-400'
-                              : 'text-zinc-900 dark:text-zinc-100'
-                          }`}>
-                            {label}
-                          </div>
-                          <div className="text-xs text-zinc-400">{description}</div>
-                        </div>
-                      </div>
-                      <ToggleSwitch
-                        checked={form.capabilities[key]}
-                        onChange={() => setForm(f => ({
-                          ...f,
-                          capabilities: { ...f.capabilities, [key]: !f.capabilities[key] },
-                        }))}
-                        danger={danger}
-                      />
+                      <MessageSquare className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                      <span className="flex-1 truncate text-xs text-zinc-700 dark:text-zinc-300">
+                        {s.title}
+                      </span>
                     </div>
                   ))}
                 </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Right: Detail / Chat / Edit panel */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {creating ? (
+          /* ── Creating new agent: always show settings form ── */
+          expandedPrompt ? (
+            <div className="flex flex-1 flex-col p-4 gap-3 overflow-hidden">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  系统提示词 — {form.name || '未命名'}
+                </label>
+                <button
+                  onClick={() => setExpandedPrompt(false)}
+                  className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                  title="收起"
+                >
+                  <Minimize2 className="h-4 w-4" />
+                </button>
+              </div>
+              <textarea
+                autoFocus
+                value={form.systemPrompt}
+                onChange={e => setForm(f => ({ ...f, systemPrompt: e.target.value }))}
+                placeholder="定义 Agent 的行为和能力，例如：你是一个专注于代码审查的助手..."
+                className="flex-1 w-full resize-none rounded-md border border-zinc-300 px-4 py-3 text-sm leading-relaxed outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+              />
+            </div>
+          ) : (
+            <SettingsForm
+              creating
+              form={form}
+              setForm={setForm}
+              selectedAgent={null}
+              hasChanges={hasChanges}
+              saving={saving}
+              onSave={handleSave}
+              onClose={handleClose}
+              onDelete={handleDelete}
+              selectedId={selectedId}
+              onExpandPrompt={() => setExpandedPrompt(true)}
+            />
+          )
+        ) : selectedAgent ? (
+          /* ── Existing agent selected ── */
+          expandedPrompt && viewMode === 'settings' ? (
+            <div className="flex flex-1 flex-col p-4 gap-3 overflow-hidden">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  系统提示词 — {form.name || '未命名'}
+                </label>
+                <button
+                  onClick={() => setExpandedPrompt(false)}
+                  className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                  title="收起"
+                >
+                  <Minimize2 className="h-4 w-4" />
+                </button>
+              </div>
+              <textarea
+                autoFocus
+                value={form.systemPrompt}
+                onChange={e => setForm(f => ({ ...f, systemPrompt: e.target.value }))}
+                placeholder="定义 Agent 的行为和能力，例如：你是一个专注于代码审查的助手..."
+                className="flex-1 w-full resize-none rounded-md border border-zinc-300 px-4 py-3 text-sm leading-relaxed outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+              />
+            </div>
+          ) : (
+            <>
+              {/* Panel header with view toggle */}
+              <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
+                <div className="flex items-center gap-2 min-w-0">
+                  <AgentIcon iconKey={selectedAgent.icon} className="h-4 w-4 shrink-0 text-zinc-500" />
+                  <span className="text-sm font-medium text-zinc-900 truncate dark:text-zinc-100">{selectedAgent.name}</span>
+                  {selectedAgent.builtIn && (
+                    <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                      内置
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => { setViewMode(v => v === 'chat' ? 'settings' : 'chat'); setExpandedPrompt(false); }}
+                    className={`rounded-md p-1.5 transition-colors ${
+                      viewMode === 'settings'
+                        ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
+                        : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300'
+                    }`}
+                    title={viewMode === 'chat' ? '设置' : '聊天'}
+                  >
+                    {viewMode === 'chat' ? <Settings className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
+                  </button>
+                  {!selectedAgent.builtIn && (
+                    <button
+                      onClick={() => handleDelete(selectedId!)}
+                      className="rounded-md p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-500 transition-colors dark:hover:bg-red-900/20"
+                      title="删除"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                  <button
+                    onClick={handleClose}
+                    className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                    title="关闭"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
 
-              {/* Actions */}
-              <div className="flex items-center gap-3 pt-2">
-                <button
-                  onClick={handleSave}
-                  disabled={!form.name.trim() || saving || !hasChanges}
-                  className="rounded-md bg-zinc-900 px-5 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-                >
-                  {saving ? '保存中...' : creating ? '创建' : '保存'}
-                </button>
-                <button
-                  onClick={handleClose}
-                  className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-600 transition-colors"
-                >
-                  取消
-                </button>
-              </div>
-            </div>
-          </div>
-          </div>
+              {/* View content */}
+              {viewMode === 'chat' ? (
+                <div className="flex-1 overflow-hidden">
+                  <AgentChatPanel
+                    key={`${selectedAgent.id}-${chatKey}`}
+                    agent={selectedAgent}
+                    initialSessionId={activeSessionId}
+                    onSessionChange={() => { if (selectedId) fetchAgentSessions(selectedId); }}
+                  />
+                </div>
+              ) : (
+                <SettingsForm
+                  creating={false}
+                  form={form}
+                  setForm={setForm}
+                  selectedAgent={selectedAgent}
+                  hasChanges={hasChanges}
+                  saving={saving}
+                  onSave={handleSave}
+                  onClose={handleClose}
+                  onDelete={handleDelete}
+                  selectedId={selectedId}
+                  onExpandPrompt={() => setExpandedPrompt(true)}
+                />
+              )}
+            </>
+          )
         ) : (
           /* Empty state */
           <div className="flex h-full flex-col items-center justify-center text-zinc-400">
