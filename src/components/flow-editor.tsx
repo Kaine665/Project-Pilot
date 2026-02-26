@@ -16,69 +16,25 @@ import type {
   TreeItem,
   Status,
 } from '@/types/flow';
+import type { Agent } from '@/types';
 import { Search, X } from 'lucide-react';
 import { MillerSectionBlock as SectionBlock } from './miller-columns';
 import { getEffectiveStatus } from './flow-shared';
 import { ProjectSettings } from './project-settings';
+import {
+  genId,
+  updateItemRecursive,
+  deleteItemRecursive,
+  addChildItem,
+  deriveStatuses,
+  reorderArray,
+  reorderChildItems,
+} from '@/lib/flow-tree-helpers';
 
 /** Highlight target passed from URL params when navigating back from task agent */
 export interface HighlightTarget {
   sectionId?: string;
   itemId?: string;
-}
-
-const genId = () => Math.random().toString(36).slice(2, 8);
-
-// --- Recursive tree helpers ---
-
-function updateItemRecursive(
-  items: TreeItem[],
-  itemId: string,
-  patch: Partial<Pick<TreeItem, 'content' | 'status' | 'description' | 'deferred'>>,
-): TreeItem[] {
-  return items.map(item => {
-    if (item.id === itemId) return { ...item, ...patch };
-    if (item.children?.length) {
-      return { ...item, children: updateItemRecursive(item.children, itemId, patch) };
-    }
-    return item;
-  });
-}
-
-function deleteItemRecursive(items: TreeItem[], itemId: string): TreeItem[] {
-  return items
-    .filter(item => item.id !== itemId)
-    .map(item =>
-      item.children?.length
-        ? { ...item, children: deleteItemRecursive(item.children, itemId) }
-        : item,
-    );
-}
-
-function addChildItem(items: TreeItem[], parentId: string, child: TreeItem): TreeItem[] {
-  return items.map(item => {
-    if (item.id === parentId) {
-      return { ...item, children: [...(item.children || []), child] };
-    }
-    if (item.children?.length) {
-      return { ...item, children: addChildItem(item.children, parentId, child) };
-    }
-    return item;
-  });
-}
-
-// Derive statuses bottom-up: parent status = derived from children
-function deriveStatuses(items: TreeItem[]): TreeItem[] {
-  return items.map(item => {
-    if (!item.children?.length) return item;
-    const children = deriveStatuses(item.children);
-    const statuses = children.map(c => c.status);
-    let status: Status;
-    if (statuses.every(s => s === 'done')) status = 'done';
-    else if (statuses.some(s => s === 'done' || s === 'doing')) status = 'doing';
-    else status = 'todo';
-    return { ...item, children, status };
-  });
 }
 
 // --- Tree filter for search/status ---
@@ -130,33 +86,6 @@ export function filterTreeItems(
   });
 }
 
-// --- Reorder helpers ---
-
-function reorderArray<T>(arr: T[], oldIndex: number, newIndex: number): T[] {
-  const result = [...arr];
-  const [moved] = result.splice(oldIndex, 1);
-  result.splice(newIndex, 0, moved);
-  return result;
-}
-
-function reorderChildItems(
-  items: TreeItem[],
-  parentId: string,
-  oldIndex: number,
-  newIndex: number,
-): TreeItem[] {
-  return items.map(item => {
-    if (item.id === parentId) {
-      const children = reorderArray(item.children || [], oldIndex, newIndex);
-      return { ...item, children };
-    }
-    if (item.children?.length) {
-      return { ...item, children: reorderChildItems(item.children, parentId, oldIndex, newIndex) };
-    }
-    return item;
-  });
-}
-
 // --- Actions interface ---
 
 export interface FlowActions {
@@ -164,7 +93,7 @@ export interface FlowActions {
   updateSection: (sectionId: string, patch: Partial<Pick<Section, 'name' | 'description'>>) => void;
   deleteSection: (sectionId: string) => void;
   addItem: (sectionId: string, content: string, parentItemId?: string) => void;
-  updateItem: (sectionId: string, itemId: string, patch: Partial<Pick<TreeItem, 'content' | 'status' | 'description' | 'deferred'>>) => void;
+  updateItem: (sectionId: string, itemId: string, patch: Partial<Pick<TreeItem, 'content' | 'status' | 'description' | 'deferred' | 'context' | 'agentId'>>) => void;
   deleteItem: (sectionId: string, itemId: string) => void;
   setCycleDeadline: (date: string | undefined) => void;
   reorderItems: (sectionId: string, parentItemId: string | null, oldIndex: number, newIndex: number) => void;
@@ -178,6 +107,7 @@ interface FlowContextValue {
   projectName: string;
   data: FlowData;
   actions: FlowActions;
+  agents: Agent[];
   showDeferred: boolean;
   toggleShowDeferred: () => void;
   highlightTarget: HighlightTarget | null;
@@ -316,6 +246,14 @@ export function FlowEditor({ projectKey, projectName, projectDescription, initia
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<Status | 'all'>('all');
+  const [agents, setAgents] = useState<Agent[]>([]);
+
+  useEffect(() => {
+    fetch('/api/agents')
+      .then(r => r.ok ? r.json() : { agents: [] })
+      .then(({ agents }: { agents: Agent[] }) => setAgents(agents))
+      .catch(() => {});
+  }, []);
 
   const [highlightTarget, setHighlightTarget] = useState<HighlightTarget | null>(
     initialHighlight ?? null,
@@ -611,6 +549,7 @@ export function FlowEditor({ projectKey, projectName, projectDescription, initia
         projectName,
         data,
         actions,
+        agents,
         showDeferred,
         toggleShowDeferred: () => setShowDeferred(v => !v),
         highlightTarget,

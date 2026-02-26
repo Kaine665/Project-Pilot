@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
-import { Send, Loader2, Trash2, Square } from 'lucide-react';
+import { Send, Loader2, Trash2, Square, Paperclip, X as XIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { ChatBubble } from '@/components/chat-bubble';
@@ -70,6 +70,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
     }>>([]);
     const scrollRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [pendingFiles, setPendingFiles] = useState<Array<{ name: string; content: string }>>([]);
 
     // Stream connection abort (only disconnects the SSE reader, does NOT kill the backend process)
     const streamAbortRef = useRef<AbortController | null>(null);
@@ -564,8 +566,25 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
       sendMessage: (text: string) => doSend(text),
     }), [doSend]);
 
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+      Array.from(e.target.files ?? []).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const text = (ev.target?.result as string) ?? '';
+          setPendingFiles(prev => [...prev, { name: file.name, content: text }]);
+        };
+        reader.readAsText(file);
+      });
+      e.target.value = '';
+    };
+
     const handleSubmit = () => {
-      doSend(input);
+      const fileParts = pendingFiles.map(f => `📎 **${f.name}**\n\`\`\`\n${f.content}\n\`\`\``);
+      const fullText = fileParts.length > 0
+        ? (input.trim() ? `${input.trim()}\n\n---\n${fileParts.join('\n\n')}` : fileParts.join('\n\n'))
+        : input;
+      setPendingFiles([]);
+      doSend(fullText);
     };
 
     // ── Explicit stop (sends POST /api/ai-chat/stop) ──
@@ -593,7 +612,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
     const handleKeyDown = (e: React.KeyboardEvent) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        handleSubmit();
+        if (!isStreaming) handleSubmit();
       }
     };
 
@@ -730,6 +749,25 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 
         {/* Input area */}
         <div className="border-t border-zinc-100 p-3 dark:border-zinc-800">
+          <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
+          {/* File attachment row */}
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-400 hover:border-zinc-300 hover:text-zinc-600 transition-colors dark:border-zinc-700 dark:text-zinc-500 dark:hover:border-zinc-600 dark:hover:text-zinc-300"
+            >
+              <Paperclip className="h-3 w-3" />
+              附加文件
+            </button>
+            {pendingFiles.map((f, i) => (
+              <span key={i} className="flex items-center gap-1 rounded-full bg-zinc-100 pl-2.5 pr-1.5 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                {f.name}
+                <button onClick={() => setPendingFiles(prev => prev.filter((_, j) => j !== i))} className="ml-0.5 rounded-full p-0.5 hover:bg-zinc-200 dark:hover:bg-zinc-700">
+                  <XIcon className="h-2.5 w-2.5" />
+                </button>
+              </span>
+            ))}
+          </div>
           <div className="flex items-end gap-2">
             <textarea
               ref={textareaRef}
@@ -754,7 +792,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
             <Button
               size="sm"
               onClick={handleSubmit}
-              disabled={!input.trim()}
+              disabled={!input.trim() && pendingFiles.length === 0}
               className="h-9 px-3"
             >
               <Send className="h-4 w-4" />

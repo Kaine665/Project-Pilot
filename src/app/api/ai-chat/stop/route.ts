@@ -14,6 +14,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'taskId is required' }, { status: 400 });
   }
 
-  const stopped = processManager.stop(taskId);
+  const stopped = await processManager.stop(taskId);
   return NextResponse.json({ stopped });
 }

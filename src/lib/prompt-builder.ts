@@ -1,5 +1,7 @@
-import type { Task, ChatMessage, ProjectConfig, SessionPhase } from '@/types';
+import fs from 'fs/promises';
+import type { Task, ChatMessage, ProjectConfig, SessionPhase, ContextIndexData } from '@/types';
 import { isLegacyFlowContext } from '@/types/flow-context';
+import { getContextIndexPath, getContextFilePath, readJsonFile } from '@/lib/file-store';
 
 export interface PromptContext {
   task: Task;
@@ -21,19 +23,19 @@ export interface PromptContext {
  * Phase 4: 执行（先创建 git 分支）
  * Phase 5: 总结与合并
  */
-export function buildPrompt(ctx: PromptContext): string;
+export function buildPrompt(ctx: PromptContext): Promise<string>;
 export function buildPrompt(
   task: Task,
   project: ProjectConfig | null,
   history: ChatMessage[],
   newMessage: string,
-): string;
-export function buildPrompt(
+): Promise<string>;
+export async function buildPrompt(
   taskOrCtx: Task | PromptContext,
   project?: ProjectConfig | null,
   history?: ChatMessage[],
   newMessage?: string,
-): string {
+): Promise<string> {
   // Normalize to PromptContext
   const ctx: PromptContext = 'task' in taskOrCtx && 'newMessage' in taskOrCtx
     ? taskOrCtx as PromptContext
@@ -50,7 +52,7 @@ export function buildPrompt(
   sections.push(buildSystemInstructions());
 
   // ── Section 2: Task four elements (四要素) ──
-  sections.push(buildTaskContext(ctx));
+  sections.push(await buildTaskContext(ctx));
 
   // ── Section 2.5: Phase reminder (阶段提醒) ──
   sections.push(buildPhaseReminder(ctx.task.phase));
@@ -150,7 +152,7 @@ function buildSystemInstructions(): string {
 - 你的工作范围仅限于用户任务所指定的目标项目，不要操作 ProjectPilot 本身`;
 }
 
-function buildTaskContext(ctx: PromptContext): string {
+async function buildTaskContext(ctx: PromptContext): Promise<string> {
   const lines: string[] = [];
   const fc = ctx.task.flowContext;
 
@@ -255,6 +257,47 @@ function buildTaskContext(ctx: PromptContext): string {
 
     if (fc.cycleDeadline) {
       lines.push(`  周期截止：${fc.cycleDeadline}`);
+    }
+
+    if (!isLegacyFlowContext(fc) && fc.customContext?.length) {
+      lines.push('');
+      lines.push('**用户附加上下文**：');
+      for (const ci of fc.customContext) {
+        lines.push(`  - **${ci.label}**：${ci.content}`);
+      }
+    }
+
+    // ── 全局上下文直接注入 ──
+    // 与 buildContextSection()（agent-chat-manager.ts）的区别：
+    //   buildContextSection() = 索引表，列出所有条目，AI 自行 cat 按需读取
+    //   这里 = 用户在任务级别明确选中的条目，内容直接内联到 prompt
+    // 两者共存：选中的条目内容在这里注入，未选中的仍在索引表里供 AI 按需读取
+    if (!isLegacyFlowContext(fc) && fc.globalContextIds?.length) {
+      const contextIndex = await readJsonFile<ContextIndexData>(getContextIndexPath(), { entries: [] });
+      const loadedEntries: { label: string; description: string; content: string; sourcePath?: string }[] = [];
+      for (const gid of fc.globalContextIds) {
+        const entry = contextIndex.entries.find(e => e.id === gid);
+        if (!entry) continue;
+        try {
+          const filePath = getContextFilePath(entry.fileName);
+          const content = await fs.readFile(filePath, 'utf-8');
+          if (content) loadedEntries.push({ label: entry.label, description: entry.description, content, sourcePath: entry.sourcePath });
+        } catch {
+          // file missing — skip silently
+        }
+      }
+      if (loadedEntries.length > 0) {
+        lines.push('');
+        lines.push('**用户指定上下文（全局）**：');
+        for (const e of loadedEntries) {
+          lines.push('');
+          const heading = e.sourcePath
+            ? `### ${e.label}（${e.description}）\n> 原始文件路径：\`${e.sourcePath}\``
+            : `### ${e.label}（${e.description}）`;
+          lines.push(heading);
+          lines.push(e.content);
+        }
+      }
     }
   }
 

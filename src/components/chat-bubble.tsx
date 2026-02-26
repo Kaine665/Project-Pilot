@@ -1,7 +1,7 @@
 'use client';
 
 import { memo } from 'react';
-import { Bot, User, GitBranch } from 'lucide-react';
+import { Bot, User, GitBranch, BookMarked } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { ToolCallCard } from '@/components/tool-call-card';
 import { FormattedText } from '@/components/formatted-text';
@@ -14,6 +14,8 @@ interface ChatBubbleProps {
   isStreaming?: boolean;
   /** Callback to branch from this message */
   onBranch?: (messageId: string) => void;
+  /** Callback to save message as knowledge draft */
+  onSaveAsKnowledge?: (messageId: string, content: string) => void;
   /** Show action buttons (hidden during streaming) */
   showActions?: boolean;
 }
@@ -23,6 +25,7 @@ export const ChatBubble = memo(function ChatBubble({
   streamingBlocks,
   isStreaming,
   onBranch,
+  onSaveAsKnowledge,
   showActions,
 }: ChatBubbleProps) {
   const t = useTranslations();
@@ -74,8 +77,21 @@ export const ChatBubble = memo(function ChatBubble({
     });
   };
 
+  const renderImages = () => {
+    if (!isUser || !message.images || message.images.length === 0) return null;
+    return (
+      <div className="mb-1.5 flex flex-wrap gap-1.5">
+        {message.images.map((src, i) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img key={i} src={src} alt="" className="max-h-48 max-w-xs rounded object-contain border border-white/20" />
+        ))}
+      </div>
+    );
+  };
+
   const renderLegacy = () => (
     <>
+      {renderImages()}
       {message.content && (
         <div className="wrap-break-word">
           {isUser ? (
@@ -117,7 +133,7 @@ export const ChatBubble = memo(function ChatBubble({
               : 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200'
           }`}
         >
-          {blocks ? renderBlocks(blocks) : renderLegacy()}
+          {blocks ? <>{renderImages()}{renderBlocks(blocks)}</> : renderLegacy()}
 
           {/* Interrupted indicator */}
           {message.interrupted && (
@@ -134,17 +150,29 @@ export const ChatBubble = memo(function ChatBubble({
           )}
         </div>
 
-        {/* Branch action */}
-        {showActions && onBranch && (
-          <div className={`mt-0.5 flex items-center ${isUser ? 'justify-end' : 'justify-start'}`}>
-            <button
-              onClick={(e) => { e.stopPropagation(); onBranch(message.id); }}
-              className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
-              title={t('chat.createBranchFrom')}
-            >
-              <GitBranch className="h-2.5 w-2.5" />
-              <span>{t('chat.branch')}</span>
-            </button>
+        {/* Actions: branch + save as knowledge */}
+        {showActions && (onBranch || (!isUser && onSaveAsKnowledge)) && (
+          <div className={`mt-0.5 flex items-center gap-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
+            {!isUser && onSaveAsKnowledge && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onSaveAsKnowledge(message.id, message.content || ''); }}
+                className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
+                title="存为知识"
+              >
+                <BookMarked className="h-2.5 w-2.5" />
+                <span>存为知识</span>
+              </button>
+            )}
+            {onBranch && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onBranch(message.id); }}
+                className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
+                title={t('chat.createBranchFrom')}
+              >
+                <GitBranch className="h-2.5 w-2.5" />
+                <span>{t('chat.branch')}</span>
+              </button>
+            )}
           </div>
         )}
       </div>

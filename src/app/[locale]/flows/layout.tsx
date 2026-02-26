@@ -3,8 +3,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { TopNav } from '@/components/top-nav';
-import { PlannerChatPanel } from '@/components/planner-chat-panel';
-import { FolderKanban, Plus, Trash2, Network, GripVertical, Bot, Layers, ChevronRight } from 'lucide-react';
+import { AgentChatPanel } from '@/components/agent-chat-panel';
+import { FolderKanban, Plus, Trash2, Network, GripVertical, Bot, Layers, BookOpen, ChevronRight } from 'lucide-react';
+import { BUTLER_AGENT_ID } from '@/lib/default-agents';
+import type { Agent } from '@/types';
 import { useRouter, usePathname } from '@/i18n/routing';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -51,20 +53,39 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   const router = useRouter();
   const pathname = usePathname();
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
-  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [activeKeyRaw, setActiveKeyRaw] = useState<string | null>(null);
+  const internalKeyChangeRef = useRef(false);
+
+  const setActiveKey = useCallback((key: string) => {
+    internalKeyChangeRef.current = true;
+    setActiveKeyRaw(key);
+    // Sync to URL (replaceState doesn't update Next.js searchParams,
+    // so we use internalKeyChangeRef to prevent the sync effect from resetting)
+    const url = new URL(window.location.href);
+    if (key) {
+      url.searchParams.set('project', key);
+    } else {
+      url.searchParams.delete('project');
+    }
+    window.history.replaceState({}, '', url.toString());
+  }, []);
+
+  const activeKey = activeKeyRaw;
   const [panelOpen, setPanelOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [sections, setSections] = useState<{ id: string; name: string }[]>([]);
   const [highlightSectionId, setHighlightSectionId] = useState<string | null>(null);
   const [plannerOpen, setPlannerOpen] = useState(false);
+  const [butlerAgent, setButlerAgent] = useState<Agent | null>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
   const isAgentsPage = pathname.startsWith('/flows/agents');
   const isDimensionsPage = pathname.startsWith('/flows/dimensions');
+  const isContextPage = pathname.startsWith('/flows/context');
   const isRecycleBinPage = pathname.startsWith('/flows/recycle-bin');
   const isButlerPage = pathname.startsWith('/flows/butler');
-  const isSubRoute = isAgentsPage || isDimensionsPage || isRecycleBinPage || isButlerPage;
+  const isSubRoute = isAgentsPage || isDimensionsPage || isContextPage || isRecycleBinPage || isButlerPage;
 
   // Auto-close expandable panel when on sub-route pages
   useEffect(() => {
@@ -108,6 +129,13 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   }, [fetchProjects, activeKey, projectParam]);
 
   useEffect(() => {
+    // Skip sync if the change was initiated internally (via setActiveKey),
+    // because window.history.replaceState doesn't update useSearchParams,
+    // causing projectParam to be stale and fight with the new activeKey.
+    if (internalKeyChangeRef.current) {
+      internalKeyChangeRef.current = false;
+      return;
+    }
     if (projectParam && activeKey && projectParam !== activeKey) {
       if (projects.some(p => p.key === projectParam)) {
         setActiveKey(projectParam);
@@ -119,6 +147,19 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
     if (activeKey) fetchSections(activeKey);
     else setSections([]);
   }, [activeKey, fetchSections]);
+
+  // Load butler agent
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/agents');
+        const data = await res.json();
+        const agents: Agent[] = data.agents ?? [];
+        const butler = agents.find(a => a.id === BUTLER_AGENT_ID && !a.archived);
+        if (butler) setButlerAgent(butler);
+      } catch { /* ignore */ }
+    })();
+  }, []);
 
   // Listen for planner toggle/open from TopNav
   useEffect(() => {
@@ -177,6 +218,10 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
 
   const handleNavigateDimensions = () => {
     router.push('/flows/dimensions');
+  };
+
+  const handleNavigateContext = () => {
+    router.push('/flows/context');
   };
 
   const [projectDragging, setProjectDragging] = useState(false);
@@ -242,8 +287,8 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
     } catch { /* ignore */ }
   }, [sections, activeKey]);
 
-  const panelWidth = 'w-52';
-  const panelInnerWidth = 'w-52';
+  const panelWidth = 'w-60';
+  const panelInnerWidth = 'w-60';
 
   return (
     <FlowsContext.Provider value={{ projects, activeKey, setActiveKey, fetchProjects, highlightSectionId, setHighlightSectionId }}>
@@ -303,6 +348,21 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right">信息角度</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className={`flex h-11 w-11 items-center justify-center rounded-md transition-colors ${
+                      isContextPage
+                        ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
+                        : 'text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200'
+                    }`}
+                    onClick={handleNavigateContext}
+                  >
+                    <BookOpen className="h-5 w-5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">上下文</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -408,7 +468,9 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
             }`}
           >
             <div className="flex h-full w-[360px] flex-col">
-              <PlannerChatPanel projectKey={activeKey} />
+              {butlerAgent && (
+                <AgentChatPanel agent={butlerAgent} variant="sidebar" projectKey={activeKey} />
+              )}
             </div>
           </div>
           )}
@@ -437,6 +499,7 @@ function SortableProjectItem({
   onHighlightSection: (id: string | null) => void;
   hideSections: boolean;
 }) {
+  const [collapsed, setCollapsed] = useState(false);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.key });
   const yOnlyTransform = transform ? { ...transform, x: 0 } : null;
   const style = {
@@ -445,19 +508,39 @@ function SortableProjectItem({
     opacity: isDragging ? 0.5 : 1,
   };
 
+  const hasSections = isActive && sections.length > 0;
+  const expanded = hasSections && !collapsed && !hideSections;
+
+  const handleChevronClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isActive) {
+      // 非 active 项目：先选中（会自动展开）
+      onSelect(project.key);
+      setCollapsed(false);
+    } else {
+      // active 项目：切换展开/收起
+      setCollapsed(prev => !prev);
+    }
+  };
+
   return (
     <div ref={setNodeRef} style={style} {...attributes}>
       {/* Project row */}
       <div
-        className={`group flex w-full items-center gap-1 rounded-md px-1.5 py-1.5 text-sm cursor-pointer transition-colors ${
+        className={`group flex w-full items-center gap-1 rounded-md px-1.5 py-1.5 text-base cursor-pointer transition-colors ${
           isActive
             ? 'text-zinc-900 font-medium dark:text-zinc-100'
             : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-200'
         }`}
       >
-        <div className="flex flex-1 items-center gap-1 min-w-0" onClick={() => onSelect(project.key)}>
-          <ChevronRight className={`h-3 w-3 shrink-0 text-zinc-400 transition-transform duration-150 ${isActive ? 'rotate-90' : ''}`} />
-          <FolderKanban className="h-3.5 w-3.5 shrink-0" />
+        <button
+          className="shrink-0 p-0 bg-transparent border-none cursor-pointer"
+          onClick={handleChevronClick}
+        >
+          <ChevronRight className={`h-3.5 w-3.5 text-zinc-400 transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`} />
+        </button>
+        <div className="flex flex-1 items-center gap-1 min-w-0" onClick={() => { onSelect(project.key); setCollapsed(false); }}>
+          <FolderKanban className="h-4 w-4 shrink-0" />
           <span className="truncate">{project.name}</span>
         </div>
         <button
@@ -469,7 +552,7 @@ function SortableProjectItem({
         </button>
       </div>
       {/* Sections under active project */}
-      {isActive && sections.length > 0 && !hideSections && (
+      {expanded && (
         <DndContext sensors={sectionSensors} collisionDetection={closestCenter} onDragEnd={onSectionDragEnd}>
           <SortableContext items={sections.map(s => s.id)} strategy={verticalListSortingStrategy}>
             {sections.map(s => (
@@ -507,9 +590,9 @@ function SortableSectionItem({
       style={style}
       {...attributes}
       onClick={handleClick}
-      className="group flex w-full items-center gap-1 rounded-md pl-6 pr-1 py-1.5 text-xs cursor-pointer text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 transition-colors dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-200"
+      className="group flex w-full items-center gap-1 rounded-md pl-6 pr-1 py-1.5 text-sm cursor-pointer text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 transition-colors dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-200"
     >
-      <Network className="h-3 w-3 shrink-0" />
+      <Network className="h-3.5 w-3.5 shrink-0" />
       <span className="flex-1 truncate">{section.name || '未命名'}</span>
       <button
         className="shrink-0 cursor-grab active:cursor-grabbing text-zinc-300 hover:text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity"

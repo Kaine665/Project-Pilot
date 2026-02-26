@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, createContext } from 'react';
+import { useState, useRef, useEffect, createContext } from 'react';
 import {
   Check,
   Clock,
@@ -15,6 +15,7 @@ import type {
   Section,
   TreeItem,
   Status,
+  ContextItem,
 } from '@/types/flow';
 import type {
   FlowTaskContext,
@@ -22,6 +23,7 @@ import type {
   SiblingBrief,
   SectionBrief,
 } from '@/types/flow-context';
+import type { Agent } from '@/types';
 
 // --- Status config ---
 
@@ -108,23 +110,28 @@ export function collectFlowTaskContext(params: {
   task: TreeItem;
   allSections: Section[];
   cycleDeadline?: string;
+  excludes?: string[];
+  customItems?: ContextItem[];
+  globalContextIds?: string[];
 }): FlowTaskContext {
-  const { projectKey, projectName, section, ancestors, task, allSections, cycleDeadline } = params;
+  const { projectKey, projectName, section, ancestors, task, allSections, cycleDeadline, excludes = [], customItems, globalContextIds } = params;
+
+  const skip = (key: string) => excludes.includes(key);
 
   const parent = ancestors.length > 0 ? ancestors[ancestors.length - 1] : null;
   const siblingSource = parent ? (parent.children ?? []) : section.items;
-  const siblings: SiblingBrief[] = siblingSource
+  const siblings: SiblingBrief[] = skip('siblings') ? [] : siblingSource
     .filter(item => item.id !== task.id)
     .map(item => ({ content: item.content, status: item.status }));
 
-  const ancestorBriefs: AncestorBrief[] = ancestors.map(a => ({
+  const ancestorBriefs: AncestorBrief[] = skip('ancestors') ? [] : ancestors.map(a => ({
     id: a.id,
     content: a.content,
     description: a.description,
     status: a.status,
   }));
 
-  const otherSections: SectionBrief[] = allSections
+  const otherSections: SectionBrief[] = skip('otherSections') ? [] : allSections
     .filter(s => s.id !== section.id)
     .map(s => ({ name: s.name, description: s.description }));
 
@@ -134,13 +141,15 @@ export function collectFlowTaskContext(params: {
     flowTaskId: task.id,
     taskContent: task.content,
     taskDescription: task.description,
-    sectionId: section.id,
-    sectionName: section.name,
-    sectionDescription: section.description,
+    sectionId: skip('section') ? '' : section.id,
+    sectionName: skip('section') ? '' : section.name,
+    sectionDescription: skip('section') ? undefined : section.description,
     ancestors: ancestorBriefs,
     siblings,
     otherSections,
-    cycleDeadline,
+    cycleDeadline: skip('cycleDeadline') ? undefined : cycleDeadline,
+    customContext: customItems?.length ? customItems : undefined,
+    globalContextIds: globalContextIds?.length ? globalContextIds : undefined,
   };
 }
 
@@ -307,12 +316,36 @@ export function EditableText({
 }
 
 export function DeleteButton({ onClick }: { onClick: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(null);
+
+  useEffect(() => {
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, []);
+
   return (
     <button
-      className="opacity-0 group-hover/item:opacity-100 p-0.5 rounded hover:bg-red-50 dark:hover:bg-red-950/30 text-muted-foreground hover:text-red-500 transition-all shrink-0"
+      className={`p-0.5 rounded transition-all shrink-0 ${
+        confirming
+          ? 'bg-red-500 text-white hover:bg-red-600'
+          : 'text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30'
+      }`}
       onClick={e => {
         e.stopPropagation();
-        onClick();
+        if (confirming) {
+          if (timerRef.current) clearTimeout(timerRef.current);
+          setConfirming(false);
+          onClick();
+        } else {
+          setConfirming(true);
+          timerRef.current = setTimeout(() => setConfirming(false), 2000);
+        }
+      }}
+      onMouseLeave={() => {
+        if (confirming) {
+          if (timerRef.current) clearTimeout(timerRef.current);
+          timerRef.current = setTimeout(() => setConfirming(false), 1000);
+        }
       }}
     >
       <X className="w-3.5 h-3.5" />
@@ -389,11 +422,13 @@ export interface ItemActionsCtx {
   sectionId: string;
   section: Section;
   onToggleStatus: (itemId: string) => void;
-  onUpdate: (itemId: string, patch: Partial<Pick<TreeItem, 'content' | 'description' | 'status' | 'deferred'>>) => void;
+  onUpdate: (itemId: string, patch: Partial<Pick<TreeItem, 'content' | 'description' | 'status' | 'deferred' | 'context' | 'agentId'>>) => void;
   onDelete: (itemId: string) => void;
   onAddChild: (parentItemId: string, content: string) => void;
   onToggleDefer: (itemId: string, currentDeferred: boolean) => void;
   onLaunchAI: (item: TreeItem, ancestors: TreeItem[]) => void;
+  agents: Agent[];
+  onAssignAgent: (itemId: string, agentId: string | null) => void;
 }
 
 export const ItemActionsContext = createContext<ItemActionsCtx | null>(null);

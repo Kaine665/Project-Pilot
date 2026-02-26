@@ -18,6 +18,7 @@ import type {
   Section,
   TreeItem,
   Status,
+  ContextItem,
 } from '@/types/flow';
 import type {
   FlowTaskContext,
@@ -163,23 +164,28 @@ function collectFlowTaskContext(params: {
   task: TreeItem;
   allSections: Section[];
   cycleDeadline?: string;
+  excludes?: string[];
+  customItems?: ContextItem[];
+  globalContextIds?: string[];
 }): FlowTaskContext {
-  const { projectKey, projectName, section, ancestors, task, allSections, cycleDeadline } = params;
+  const { projectKey, projectName, section, ancestors, task, allSections, cycleDeadline, excludes = [], customItems, globalContextIds } = params;
+
+  const skip = (key: string) => excludes.includes(key);
 
   const parent = ancestors.length > 0 ? ancestors[ancestors.length - 1] : null;
   const siblingSource = parent ? (parent.children ?? []) : section.items;
-  const siblings: SiblingBrief[] = siblingSource
+  const siblings: SiblingBrief[] = skip('siblings') ? [] : siblingSource
     .filter(item => item.id !== task.id)
     .map(item => ({ content: item.content, status: item.status }));
 
-  const ancestorBriefs: AncestorBrief[] = ancestors.map(a => ({
+  const ancestorBriefs: AncestorBrief[] = skip('ancestors') ? [] : ancestors.map(a => ({
     id: a.id,
     content: a.content,
     description: a.description,
     status: a.status,
   }));
 
-  const otherSections: SectionBrief[] = allSections
+  const otherSections: SectionBrief[] = skip('otherSections') ? [] : allSections
     .filter(s => s.id !== section.id)
     .map(s => ({ name: s.name, description: s.description }));
 
@@ -188,13 +194,15 @@ function collectFlowTaskContext(params: {
     projectName,
     flowTaskId: task.id,
     taskContent: task.content,
-    sectionId: section.id,
-    sectionName: section.name,
-    sectionDescription: section.description,
+    sectionId: skip('section') ? '' : section.id,
+    sectionName: skip('section') ? '' : section.name,
+    sectionDescription: skip('section') ? undefined : section.description,
     ancestors: ancestorBriefs,
     siblings,
     otherSections,
-    cycleDeadline,
+    cycleDeadline: skip('cycleDeadline') ? undefined : cycleDeadline,
+    customContext: customItems?.length ? customItems : undefined,
+    globalContextIds: globalContextIds?.length ? globalContextIds : undefined,
   };
 }
 
@@ -394,7 +402,7 @@ interface ItemActionsCtx {
   sectionId: string;
   section: Section;
   onToggleStatus: (itemId: string) => void;
-  onUpdate: (itemId: string, patch: Partial<Pick<TreeItem, 'content' | 'description' | 'status' | 'deferred'>>) => void;
+  onUpdate: (itemId: string, patch: Partial<Pick<TreeItem, 'content' | 'description' | 'status' | 'deferred' | 'context'>>) => void;
   onDelete: (itemId: string) => void;
   onAddChild: (parentItemId: string, content: string) => void;
   onToggleDefer: (itemId: string, currentDeferred: boolean) => void;
@@ -662,6 +670,9 @@ export function SectionBlock({ section }: { section: Section }) {
       task: item,
       allSections: data.sections,
       cycleDeadline: data.cycleDeadline,
+      excludes: item.context?.excludes,
+      customItems: item.context?.items,
+      globalContextIds: item.context?.globalContextIds,
     });
 
     const res = await fetch('/api/tasks', {

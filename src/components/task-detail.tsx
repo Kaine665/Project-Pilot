@@ -5,10 +5,11 @@ import { useRouter } from '@/i18n/routing';
 import { useTranslations } from 'next-intl';
 import { ArrowLeft, ChevronRight, Trash2, Pencil } from 'lucide-react';
 import { ChatPanel } from '@/components/chat-panel';
+import { AgentChatPanel } from '@/components/agent-chat-panel';
 import { ArtifactPanel } from '@/components/artifact-panel';
 import { ConversationTabs } from '@/components/conversation-tabs';
 import type { ChatPanelHandle } from '@/components/chat-panel';
-import type { Task, TaskUnderstanding, TaskResult, AIPlan, SessionPhase, ConversationMeta } from '@/types';
+import type { Task, TaskUnderstanding, TaskResult, AIPlan, SessionPhase, ConversationMeta, Agent } from '@/types';
 import { isLegacyFlowContext } from '@/types/flow-context';
 import { cn } from '@/lib/utils';
 
@@ -39,6 +40,9 @@ export function TaskDetail({ taskId, artifactOpen = true }: TaskDetailProps) {
 
   // Phase tracking
   const [phase, setPhase] = useState<SessionPhase | undefined>(undefined);
+
+  // Agent for this task (determines execution mode)
+  const [taskAgent, setTaskAgent] = useState<Agent | null>(null);
 
   // Git
   const [gitLoading, setGitLoading] = useState(false);
@@ -122,6 +126,18 @@ export function TaskDetail({ taskId, artifactOpen = true }: TaskDetailProps) {
     window.addEventListener('task-updated', handler);
     return () => window.removeEventListener('task-updated', handler);
   }, [fetchTask]);
+
+  // Load agent for this task to determine execution mode
+  useEffect(() => {
+    if (!task?.agentId) { setTaskAgent(null); return; }
+    const agentId = task.agentId;
+    fetch('/api/agents')
+      .then(r => r.ok ? r.json() : { agents: [] })
+      .then(({ agents }: { agents: Agent[] }) => {
+        setTaskAgent(agents.find(a => a.id === agentId) ?? null);
+      })
+      .catch(() => setTaskAgent(null));
+  }, [task?.agentId]);
 
   const saveTask = async (updates: Partial<Task>) => {
     if (!taskId) return;
@@ -394,6 +410,22 @@ export function TaskDetail({ taskId, artifactOpen = true }: TaskDetailProps) {
     window.dispatchEvent(new CustomEvent('task-updated'));
   }, [fetchTask]);
 
+  // ── Execution mode decision ──────────────────────────────────────────────────
+  // Two paths, determined by the bound agent's executionMode field:
+  //
+  //   'task' (task worker only):
+  //     → ChatPanel → ProcessManager → buildPrompt() + git worktree + phases
+  //     → ArtifactPanel shows understanding / plan / result
+  //
+  //   'chat' (all custom agents, default when executionMode is unset):
+  //     → AgentChatPanel → AgentChatManager → agent.systemPrompt directly
+  //     → ArtifactPanel hidden (no phases, no artifacts)
+  //
+  // NOTE: executionMode='task' only works for task worker. buildPrompt() is
+  // task-worker-specific infrastructure; custom agents cannot opt into it.
+  // ─────────────────────────────────────────────────────────────────────────────
+  const isChatMode = taskAgent !== null && (taskAgent.executionMode ?? 'chat') === 'chat';
+
   // Determine left panel content
   let leftContent: React.ReactNode;
   if (loading) {
@@ -406,6 +438,12 @@ export function TaskDetail({ taskId, artifactOpen = true }: TaskDetailProps) {
     leftContent = (
       <div className="flex h-full items-center justify-center">
         <p className="text-sm text-zinc-400">{t('notFound')}</p>
+      </div>
+    );
+  } else if (isChatMode && taskAgent) {
+    leftContent = (
+      <div className="h-full overflow-hidden">
+        <AgentChatPanel agent={taskAgent} />
       </div>
     );
   } else {
@@ -443,9 +481,9 @@ export function TaskDetail({ taskId, artifactOpen = true }: TaskDetailProps) {
     );
   }
 
-  // Determine right panel content
+  // Determine right panel content (hidden in chat mode — no phases/artifacts)
   let rightContent: React.ReactNode;
-  if (!task) {
+  if (!task || isChatMode) {
     rightContent = null;
   } else {
     rightContent = (
@@ -572,11 +610,11 @@ export function TaskDetail({ taskId, artifactOpen = true }: TaskDetailProps) {
         <div className="flex-1 overflow-hidden">{leftContent}</div>
       </div>
 
-      {/* Right: Artifact Side Panel */}
+      {/* Right: Artifact Side Panel (hidden in chat mode) */}
       <div
         className={cn(
           'shrink-0 overflow-hidden border-l border-zinc-200 bg-zinc-50 transition-[width] duration-200 ease-in-out dark:border-zinc-800 dark:bg-zinc-950',
-          artifactOpen ? 'w-72' : 'w-0 border-l-0',
+          artifactOpen && !isChatMode ? 'w-72' : 'w-0 border-l-0',
         )}
       >
         <div className="h-full w-72">{rightContent}</div>
