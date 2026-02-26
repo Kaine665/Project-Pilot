@@ -30,6 +30,7 @@ export interface Session {
   completedAt?: string;
   ai_execution?: AIExecution;
   gitBranch?: string; // 执行时创建的一次性 git 分支名
+  worktreePath?: string; // git worktree 绝对路径，用于并行任务隔离
   claudeSessionId?: string; // Claude CLI 会话 ID（旧数据兼容；新数据写入 conversation 级别）
   activeConversationId?: string; // 当前活跃的对话 ID
   /** 从项目跟踪链路发起时附带的上下文（见 docs/types/flow-task-context.md） */
@@ -246,6 +247,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  images?: string[];          // base64 data URLs，仅用户消息有
   toolCalls?: ChatToolCall[];
   contentBlocks?: ContentBlock[];
   extractedPlanId?: string;
@@ -302,6 +304,7 @@ export type ChatSSEEvent =
   | { type: 'branch_merged'; branch: string; targetBranch: string }
   | { type: 'phase_changed'; phase: SessionPhase }
   | { type: 'retry_needed'; attempt: number; maxAttempts: number; retryMessage: string }
+  | { type: 'knowledge_draft_created'; entryId: string; label: string }
   | { type: 'error'; message: string }
   | { type: 'done' };
 
@@ -409,6 +412,13 @@ export interface Agent {
   icon?: string;
   /** Per-agent tool capabilities */
   capabilities?: AgentCapabilities;
+  /**
+   * Execution mode for this agent in task sessions.
+   * - 'task': uses ProcessManager + buildPrompt + phases (git worktree, understanding/doing/summarizing)
+   * - 'chat': uses AgentChatManager + systemPrompt directly (lightweight interactive chat)
+   * Defaults to 'chat' for custom agents. Only task worker uses 'task'.
+   */
+  executionMode?: 'task' | 'chat';
   /** Parameter names this agent requires to run (template only, values filled at project/task level) */
   requiredParams?: string[];
   archived?: boolean;
@@ -435,6 +445,34 @@ export interface Dimension {
 
 export interface DimensionsData {
   dimensions: Dimension[];
+}
+
+// ==================== Context（上下文） ====================
+
+export interface ContextEntry {
+  id: string;           // e.g., "ctx-1740464738582-a3f"
+  label: string;        // e.g., "用户基本信息"
+  description: string;  // agent 靠这个决定是否读文件
+  fileName: string;     // 相对于 context 目录，如 "user-profile.json"
+  format: 'json' | 'markdown' | 'text';
+  group?: string;       // 上下文包/分组名，如 "ELApp"，可选
+  /** 原始文件的本地绝对路径，由用户在从本地文件导入时填写，供 AI 修改源文件使用 */
+  sourcePath?: string;
+  /**
+   * 'draft' = Agent 自动产出，等待用户确认。
+   * 'active' / undefined = 正常生效。
+   */
+  status?: 'draft' | 'active';
+  /** 产出此条目的 Agent 会话 ID */
+  sourceAgentSessionId?: string;
+  /** Agent 产出此知识的时间 */
+  producedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContextIndexData {
+  entries: ContextEntry[];
 }
 
 // ==================== Flow Project ====================

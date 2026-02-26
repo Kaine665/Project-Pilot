@@ -6,12 +6,27 @@ import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 
 async function readAgents(): Promise<AgentsData> {
   const data = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
-  // Ensure built-in agents exist (idempotent)
+  // ── 内置 Agent 字段迁移 ──
+  // 磁盘上的 agents.json 可能是旧版本写入的，缺少后来新增的字段（如 capabilities）。
+  // 必须在每次读取时将 DEFAULT_AGENTS 的新字段合并进来，否则下游（settings-manager
+  // 的 buildAgentPermissionArgs 等）会回退到 DEFAULT_AGENT_CAPABILITIES，导致
+  // skipReview=false → Claude 进程缺少 --dangerously-skip-permissions → 非交互模式卡死。
+  // 同样的合并逻辑在 agent-chat-manager.ts 的 start() 中也有一份（运行时双保险）。
   let changed = false;
   for (const defaultAgent of DEFAULT_AGENTS) {
-    if (!data.agents.some(a => a.id === defaultAgent.id)) {
+    const existing = data.agents.find(a => a.id === defaultAgent.id);
+    if (!existing) {
       data.agents.unshift(defaultAgent);
       changed = true;
+    } else {
+      // Merge missing fields from default (e.g. capabilities added later)
+      for (const key of Object.keys(defaultAgent) as Array<keyof Agent>) {
+        if (existing[key] === undefined && defaultAgent[key] !== undefined) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (existing as any)[key] = defaultAgent[key];
+          changed = true;
+        }
+      }
     }
   }
   if (changed) {
@@ -34,7 +49,7 @@ export async function GET(request: NextRequest) {
 
 /** POST /api/agents — create a new agent */
 export async function POST(request: NextRequest) {
-  const { name, description, systemPrompt, icon, capabilities } = await request.json();
+  const { name, description, systemPrompt, icon, capabilities, requiredParams } = await request.json();
   if (!name?.trim()) {
     return NextResponse.json({ error: 'name is required' }, { status: 400 });
   }
@@ -47,6 +62,7 @@ export async function POST(request: NextRequest) {
     systemPrompt: systemPrompt?.trim() || undefined,
     icon: icon?.trim() || undefined,
     capabilities: capabilities ?? { ...DEFAULT_AGENT_CAPABILITIES },
+    requiredParams: Array.isArray(requiredParams) && requiredParams.length > 0 ? requiredParams : undefined,
     createdAt: now,
     updatedAt: now,
   };
@@ -61,7 +77,7 @@ export async function POST(request: NextRequest) {
 /** PATCH /api/agents — update an agent. Body: { id, ...fields } */
 export async function PATCH(request: NextRequest) {
   const body = await request.json();
-  const { id, name, description, systemPrompt, icon, capabilities } = body;
+  const { id, name, description, systemPrompt, icon, capabilities, requiredParams } = body;
   if (!id) {
     return NextResponse.json({ error: 'id is required' }, { status: 400 });
   }
@@ -82,6 +98,7 @@ export async function PATCH(request: NextRequest) {
   if (systemPrompt !== undefined) agent.systemPrompt = systemPrompt.trim() || undefined;
   if (icon !== undefined) agent.icon = icon.trim() || undefined;
   if (capabilities !== undefined) agent.capabilities = capabilities as AgentCapabilities;
+  if (requiredParams !== undefined) agent.requiredParams = Array.isArray(requiredParams) && requiredParams.length > 0 ? requiredParams : undefined;
   agent.updatedAt = new Date().toISOString();
 
   await writeAgents(data);

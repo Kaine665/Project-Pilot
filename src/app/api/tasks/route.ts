@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { title, content, projectKey, flowContext } = body;
+  const { title, content, projectKey, flowContext, agentId } = body;
 
   // 🔒 Security: validate title
   if (!title || typeof title !== 'string') {
@@ -95,6 +95,16 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // 🔒 Security: validate agentId format if provided
+  if (agentId !== undefined && agentId !== null) {
+    if (typeof agentId !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(agentId) || agentId.length > 100) {
+      return NextResponse.json(
+        { error: 'Invalid agentId format' },
+        { status: 400 },
+      );
+    }
+  }
+
   const now = new Date().toISOString();
   const newTask: Task = {
     id: `task-${Date.now()}`,
@@ -102,6 +112,7 @@ export async function POST(request: NextRequest) {
     content: content ?? undefined,
     ...(projectKey && { projectKey }),
     ...(flowContext && { flowContext }),
+    ...(agentId && { agentId }),
     status: 'todo',
     phase: (projectKey ? 'branching' : 'understanding') as SessionPhase,
     createdAt: now,

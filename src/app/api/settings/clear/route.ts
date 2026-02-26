@@ -8,7 +8,7 @@ import {
   getFlowsDir,
   getFlowIndexPath,
   getAgentsPath,
-  getPlannerSessionsPath,
+  getAgentChatSessionsPath,
   writeJsonFile,
   readJsonFile,
 } from '@/lib/file-store';
@@ -70,13 +70,13 @@ export async function POST(request: NextRequest) {
       // 备份 sessions 相关
       await backupFile(getTasksPath());
       await backupFile(getAiPlansPath());
-      await backupFile(getPlannerSessionsPath());
+      await backupFile(getAgentChatSessionsPath());
       await backupDir2(path.join(dataDir, 'conversations'));
 
       // 清空
       await writeJsonFile(getTasksPath(), { tasks: [] });
       await writeJsonFile(getAiPlansPath(), { plans: [] });
-      await writeJsonFile(getPlannerSessionsPath(), { sessions: [] });
+      await writeJsonFile(getAgentChatSessionsPath(), { sessions: [] });
 
       // 删除 conversations 目录内容
       try {

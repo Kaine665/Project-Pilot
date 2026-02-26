@@ -7,7 +7,7 @@ import {
   getProjectsPath,
   getAiPlansPath,
   getAgentsPath,
-  getPlannerSessionsPath,
+  getAgentChatSessionsPath,
   getFlowsDir,
   writeJsonFile,
 } from '@/lib/file-store';
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     await fs.mkdir(backupDir, { recursive: true });
 
     // 复制核心文件到备份
-    const filesToBackup = ['tasks.json', 'projects.json', 'ai-plans.json', 'agents.json', 'planner-sessions.json'];
+    const filesToBackup = ['tasks.json', 'projects.json', 'ai-plans.json', 'agents.json', 'agent-chat-sessions.json'];
     for (const file of filesToBackup) {
       const src = path.join(dataDir, file);
       try {
@@ -90,8 +90,8 @@ export async function POST(request: NextRequest) {
       await writeJsonFile(getAgentsPath(), { agents });
       stats.agents = agents.length;
     }
-    if (data.plannerSessions) {
-      await writeJsonFile(getPlannerSessionsPath(), data.plannerSessions);
+    if (data.agentChatSessions) {
+      await writeJsonFile(getAgentChatSessionsPath(), data.agentChatSessions);
     }
 
     // 写入 flows

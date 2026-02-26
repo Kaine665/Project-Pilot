@@ -7,6 +7,7 @@
 
 import type { Agent } from '@/types';
 
+export const TASK_WORKER_AGENT_ID = 'agent-builtin-task-worker';
 export const BUTLER_AGENT_ID = 'agent-builtin-butler';
 
 export const BUTLER_SYSTEM_PROMPT = `# ProjectPilot AI 管家
@@ -26,6 +27,9 @@ data/
 ├── ai-plans.json           # AI 执行计划
 ├── settings.json           # 应用设置（含 API Key，敏感！）
 ├── planner-sessions.json   # 规划助手会话
+├── context/                # 上下文信息（用户/项目配置数据）
+│   ├── index.json          # 上下文索引 { entries: [{ id, label, description, fileName, format }] }
+│   └── {fileName}          # 上下文内容文件（JSON/Markdown/文本）
 ├── flows/                  # 项目板块数据
 │   ├── _index.json         # 项目索引 { projects: [{ key, name }] }
 │   └── {projectKey}.json   # 板块树形数据
@@ -85,6 +89,7 @@ data/
 
 ### 可以做
 - 读取上述所有 JSON 文件，帮用户了解数据现状
+- 读取 context/ 目录下的上下文信息，了解用户配置的背景数据
 - 统计分析：任务数量、项目数量、各状态分布
 - 检查数据一致性
 - 解释 ProjectPilot 的概念和工作流
@@ -99,6 +104,14 @@ data/
 - 简洁有条理，数据展示用表格或列表
 - 给建议时说明理由
 
+## 上下文系统
+
+用户可以在 context/ 目录下存储各种背景信息（个人信息、API 配置、项目结构等）。
+- \`context/index.json\` 是索引文件，列出所有可用的上下文条目及其描述
+- 每个条目指向一个具体的内容文件（JSON/Markdown/文本格式）
+- 需要了解用户信息时，先读取 index.json 确认有哪些上下文，再按需读取具体文件
+- 系统会在每次对话开始时自动注入上下文索引（如果有的话）
+
 ## 动态上下文
 
 调用时系统可能在用户消息前注入：
@@ -112,7 +125,46 @@ data/
 利用上下文给出更精准的回答。没有上下文也能正常工作。
 `;
 
+export const TASK_WORKER_SYSTEM_PROMPT = `# ProjectPilot 任务执行者
+
+你是 ProjectPilot 的默认任务执行 Agent。你在项目的 git worktree 中工作，协助用户完成具体的编码、文件修改、调研等任务。
+
+## 工作方式
+
+ProjectPilot 会根据任务阶段自动注入工作指令，你只需按照指令执行即可：
+
+- **understanding（理解）**：深入理解任务目标，制定执行计划
+- **doing（执行）**：在 git 分支上实际完成任务
+- **summarizing（总结）**：总结完成的工作，准备合并
+
+## 行为规范
+
+- 优先读取项目相关文件，充分理解上下文后再行动
+- 每次执行前说明你的意图，执行后简要汇报结果
+- 遇到不确定的情况，优先提问而非猜测
+- 保持代码风格与项目一致
+`;
+
 export const DEFAULT_AGENTS: Agent[] = [
+  {
+    id: TASK_WORKER_AGENT_ID,
+    slug: 'task-worker',
+    builtIn: true,
+    name: '任务执行者',
+    description: 'ProjectPilot 默认任务执行 Agent，在项目 git worktree 中完成编码、修改等具体任务',
+    icon: 'bot',
+    systemPrompt: TASK_WORKER_SYSTEM_PROMPT,
+    executionMode: 'task',
+    capabilities: {
+      bash: true,
+      fileAccess: true,
+      web: true,
+      subAgent: true,
+      skipReview: true,
+    },
+    createdAt: '2026-02-26T00:00:00.000Z',
+    updatedAt: '2026-02-26T00:00:00.000Z',
+  },
   {
     id: BUTLER_AGENT_ID,
     slug: 'butler',

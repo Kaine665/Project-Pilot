@@ -130,9 +130,6 @@ export async function ensureFlowsMigrated(): Promise<void> {
   }
 }
 
-export function getPlannerSessionsPath(): string {
-  return path.join(DATA_DIR, 'planner-sessions.json');
-}
 
 export function getArtifactSummaryPath(planId: string): string {
   return path.join(DATA_DIR, 'artifacts', planId, 'summary.json');
@@ -148,6 +145,33 @@ export function getAgentsPath(): string {
 
 export function getDimensionsPath(): string {
   return path.join(DATA_DIR, 'dimensions.json');
+}
+
+export function getAgentChatSessionsPath(): string {
+  return path.join(DATA_DIR, 'agent-chat-sessions.json');
+}
+
+// ── Context 路径函数 ──
+// 索引 + 内容文件分离设计（详见 docs/context-system.md）：
+//   index.json  → 元数据，注入 agent prompt（buildContextSection）
+//   {fileName}  → 内容，agent 通过 bash cat 按需读取
+// getContextFilePath 的 path.basename 安全检查不可移除 — 防路径穿越
+
+export function getContextDir(): string {
+  return path.join(DATA_DIR, 'context');
+}
+
+export function getContextIndexPath(): string {
+  return path.join(DATA_DIR, 'context', 'index.json');
+}
+
+export function getContextFilePath(fileName: string): string {
+  // 🔒 Security: prevent path traversal — fileName must be flat (no directory separators)
+  const safe = path.basename(fileName);
+  if (!safe || safe !== fileName || safe.includes('..')) {
+    throw new Error(`Invalid context file name: ${fileName}`);
+  }
+  return path.join(DATA_DIR, 'context', safe);
 }
 
 // 🔒 Security: Maximum JSON file size to prevent DoS attacks

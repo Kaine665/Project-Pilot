@@ -7,7 +7,7 @@ import {
   getProjectsPath,
   getAiPlansPath,
   getAgentsPath,
-  getPlannerSessionsPath,
+  getAgentChatSessionsPath,
   getFlowsDir,
   readJsonFile,
 } from '@/lib/file-store';
@@ -20,12 +20,12 @@ import {
 export async function GET() {
   try {
     // 收集核心数据文件
-    const [tasks, projects, aiPlans, agents, plannerSessions] = await Promise.all([
+    const [tasks, projects, aiPlans, agents, agentChatSessions] = await Promise.all([
       readJsonFile(getTasksPath(), {}),
       readJsonFile(getProjectsPath(), {}),
       readJsonFile(getAiPlansPath(), {}),
       readJsonFile(getAgentsPath(), {}),
-      readJsonFile(getPlannerSessionsPath(), {}),
+      readJsonFile(getAgentChatSessionsPath(), {}),
     ]);
 
     // 收集 flows 数据
@@ -84,7 +84,7 @@ export async function GET() {
         projects,
         aiPlans,
         agents,
-        plannerSessions,
+        agentChatSessions,
         flows,
         conversations,
       },

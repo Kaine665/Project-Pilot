@@ -155,8 +155,17 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   bash: ['Bash'],
   fileAccess: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'NotebookEdit'],
   web: ['WebFetch', 'WebSearch'],
-  subAgent: ['Task'],
+  subAgent: ['Task', 'TaskOutput', 'TaskStop'],
 };
+
+/** Meta tools that should always be available regardless of capability settings */
+const META_TOOLS = [
+  'EnterPlanMode', 'ExitPlanMode',
+  'TodoWrite',
+  'AskUserQuestion',
+  'EnterWorktree',
+  'Skill',
+];
 
 /**
  * 根据 Agent 能力配置构造 --allowedTools 参数。
@@ -172,7 +181,7 @@ export function buildAgentToolArgs(capabilities: AgentCapabilities | undefined):
   const allEnabled = toolCapKeys.every(k => caps[k]);
   if (allEnabled) return [];
 
-  const allowed: string[] = [];
+  const allowed: string[] = [...META_TOOLS];
   for (const key of toolCapKeys) {
     if (caps[key]) {
       allowed.push(...CAPABILITY_TOOL_MAP[key]);
