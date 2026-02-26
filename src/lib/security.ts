@@ -206,6 +206,63 @@ export function safeGitDeleteBranch(branch: string, workingDir: string, force = 
   safeGitExec(['branch', force ? '-D' : '-d', branch], { cwd: workingDir, stdio: 'pipe' });
 }
 
+// ── Git Worktree 操作 ──
+
+/**
+ * 验证 worktree 路径安全性：必须在 {projectPath}/.worktrees/ 下，防止路径穿越。
+ */
+export function validateWorktreePath(worktreePath: string, projectPath: string): string {
+  validateWorkingDir(projectPath);
+
+  const resolved = path.resolve(worktreePath);
+  const expectedPrefix = path.join(path.resolve(projectPath), '.worktrees');
+
+  if (!resolved.startsWith(expectedPrefix + path.sep) && resolved !== expectedPrefix) {
+    throw new Error(`Worktree path must be under ${expectedPrefix}`);
+  }
+
+  // 不允许 null 字节
+  if (resolved.includes('\0')) {
+    throw new Error('Invalid worktree path');
+  }
+
+  return resolved;
+}
+
+/**
+ * 创建 git worktree 并新建分支。
+ * 等价于: git worktree add <path> -b <branch> <baseBranch>
+ */
+export function safeGitWorktreeAdd(
+  worktreePath: string,
+  branch: string,
+  baseBranch: string,
+  repoDir: string,
+): void {
+  validateWorkingDir(repoDir);
+  validateBranchName(branch);
+  validateBranchName(baseBranch);
+  safeGitExec(
+    ['worktree', 'add', worktreePath, '-b', branch, baseBranch],
+    { cwd: repoDir },
+  );
+}
+
+/**
+ * 移除 git worktree。
+ * 等价于: git worktree remove <path> [--force]
+ */
+export function safeGitWorktreeRemove(
+  worktreePath: string,
+  repoDir: string,
+  force = false,
+): void {
+  validateWorkingDir(repoDir);
+  const args = ['worktree', 'remove', worktreePath];
+  if (force) args.push('--force');
+  safeGitExec(args, { cwd: repoDir });
+}
+
 /**
  * 获取当前分支名。
  */

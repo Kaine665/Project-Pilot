@@ -5,14 +5,18 @@ import {
   readJsonFile,
   modifyJsonFile,
 } from '@/lib/file-store';
+import path from 'path';
 import {
   validateWorkingDir,
   validateBranchName,
+  validateWorktreePath,
   safeGitCheckout,
   safeGitCreateBranch,
   safeGitMerge,
   safeGitDeleteBranch,
   safeGitCurrentBranch,
+  safeGitWorktreeAdd,
+  safeGitWorktreeRemove,
   detectDefaultBranch,
   isValidTaskId,
 } from '@/lib/security';
@@ -72,11 +76,11 @@ export async function POST(request: NextRequest) {
 
   try {
     if (action === 'create-branch') {
-      return await handleCreateBranch(taskId, task.title, task.gitBranch, workingDir, project?.defaultBranch);
+      return await handleCreateBranch(taskId, task.title, task.gitBranch, task.worktreePath, workingDir, project?.defaultBranch);
     } else if (action === 'merge') {
-      return await handleMerge(taskId, task.gitBranch, workingDir, project?.defaultBranch);
+      return await handleMerge(taskId, task.gitBranch, task.worktreePath, workingDir, project?.defaultBranch);
     } else if (action === 'discard') {
-      return await handleDiscard(taskId, task.gitBranch, workingDir, project?.defaultBranch);
+      return await handleDiscard(taskId, task.gitBranch, task.worktreePath, workingDir, project?.defaultBranch);
     } else {
       return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
     }
@@ -146,35 +150,24 @@ async function handleCreateBranch(
   taskId: string,
   taskTitle: string,
   existingBranch: string | undefined,
+  existingWorktreePath: string | undefined,
   workingDir: string,
   defaultBranch?: string,
 ) {
   try {
-    // Validate working directory
     validateWorkingDir(workingDir);
 
     if (existingBranch) {
-      // Validate existing branch name
+      // Branch already exists — if worktree exists, just report it
       validateBranchName(existingBranch);
 
-      // Branch already exists, just check it out
-      try {
-        const currentBranch = safeGitCurrentBranch(workingDir);
-
-        if (currentBranch !== existingBranch) {
-          safeGitCheckout(existingBranch, workingDir);
-        }
-
-        return NextResponse.json({
-          ok: true,
-          branch: existingBranch,
-          message: `已切换到任务分支 ${existingBranch}`,
-          created: false,
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return NextResponse.json({ error: `Failed to checkout branch: ${message}` }, { status: 500 });
-      }
+      return NextResponse.json({
+        ok: true,
+        branch: existingBranch,
+        worktreePath: existingWorktreePath,
+        message: `任务分支 ${existingBranch} 已存在`,
+        created: false,
+      });
     }
 
     // Determine base branch
@@ -184,29 +177,32 @@ async function handleCreateBranch(
     const slug = slugify(taskTitle);
     const branchName = slug ? `task/${taskId}-${slug}` : `task/${taskId}`;
 
-    // Validate generated branch name
     validateBranchName(branchName);
     validateBranchName(baseBranch);
 
-    // Create branch from base
+    // Compute worktree path
+    const shortId = taskId.replace(/^task-/, '').slice(-8);
+    const safeName = branchName.replace(/^task\//, '').replace(/[^a-zA-Z0-9_-]/g, '-');
+    const worktreePath = path.join(workingDir, '.worktrees', `${shortId}-${safeName}`);
+    validateWorktreePath(worktreePath, workingDir);
+
+    // Create worktree with new branch
     try {
-      // Make sure we're on the base branch first
-      safeGitCheckout(baseBranch, workingDir);
-      // Create and switch to new branch
-      safeGitCreateBranch(branchName, workingDir);
+      safeGitWorktreeAdd(worktreePath, branchName, baseBranch, workingDir);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return NextResponse.json(
-        { error: `Failed to create branch: ${message}` },
+        { error: `Failed to create worktree: ${message}` },
         { status: 500 },
       );
     }
 
-    // Save branch name to task
+    // Save branch name and worktree path to task
     await modifyJsonFile<TasksData>(getTasksPath(), { tasks: [] }, (data) => {
       const t = data.tasks.find((t) => t.id === taskId);
       if (t) {
         t.gitBranch = branchName;
+        t.worktreePath = worktreePath;
         t.updatedAt = new Date().toISOString();
       }
       return data;
@@ -216,7 +212,8 @@ async function handleCreateBranch(
       ok: true,
       branch: branchName,
       baseBranch,
-      message: `已从 ${baseBranch} 创建任务分支 ${branchName}`,
+      worktreePath,
+      message: `已从 ${baseBranch} 创建任务分支 ${branchName}（worktree）`,
       created: true,
     });
   } catch (err) {
@@ -228,6 +225,7 @@ async function handleCreateBranch(
 async function handleMerge(
   taskId: string,
   gitBranch: string | undefined,
+  worktreePath: string | undefined,
   workingDir: string,
   defaultBranch?: string,
 ) {
@@ -239,33 +237,36 @@ async function handleMerge(
   }
 
   try {
-    // Validate working directory
     validateWorkingDir(workingDir);
-
-    // Validate branch names
     validateBranchName(gitBranch);
 
     const targetBranch = defaultBranch ?? detectDefaultBranch(workingDir);
     validateBranchName(targetBranch);
 
-    // Switch to target branch
+    // Remove worktree first (can't delete branch while it's checked out in a worktree)
+    if (worktreePath) {
+      try {
+        safeGitWorktreeRemove(worktreePath, workingDir, true);
+      } catch { /* best-effort */ }
+    }
+
+    // Switch to target branch in main repo
     safeGitCheckout(targetBranch, workingDir);
 
     // Merge task branch
     const mergeOutput = safeGitMerge(gitBranch, workingDir, `Merge task branch ${gitBranch}`);
 
-    // Delete the merged branch
+    // Delete the merged branch (best-effort)
     try {
       safeGitDeleteBranch(gitBranch, workingDir);
-    } catch {
-      // Branch deletion is best-effort; may fail if not fully merged
-    }
+    } catch { /* best-effort */ }
 
-    // Clear gitBranch from task (merge complete)
+    // Clear gitBranch and worktreePath from task
     await modifyJsonFile<TasksData>(getTasksPath(), { tasks: [] }, (data) => {
       const t = data.tasks.find((t) => t.id === taskId);
       if (t) {
         t.gitBranch = undefined;
+        t.worktreePath = undefined;
         t.updatedAt = new Date().toISOString();
       }
       return data;
@@ -289,6 +290,7 @@ async function handleMerge(
 async function handleDiscard(
   taskId: string,
   gitBranch: string | undefined,
+  worktreePath: string | undefined,
   workingDir: string,
   defaultBranch?: string,
 ) {
@@ -306,17 +308,25 @@ async function handleDiscard(
     const targetBranch = defaultBranch ?? detectDefaultBranch(workingDir);
     validateBranchName(targetBranch);
 
-    // Switch to default branch first
+    // Remove worktree first
+    if (worktreePath) {
+      try {
+        safeGitWorktreeRemove(worktreePath, workingDir, true);
+      } catch { /* best-effort */ }
+    }
+
+    // Switch to default branch
     safeGitCheckout(targetBranch, workingDir);
 
     // Force-delete the task branch (it's unmerged, that's intentional)
     safeGitDeleteBranch(gitBranch, workingDir, true);
 
-    // Clear gitBranch from task
+    // Clear gitBranch and worktreePath from task
     await modifyJsonFile<TasksData>(getTasksPath(), { tasks: [] }, (data) => {
       const t = data.tasks.find((t) => t.id === taskId);
       if (t) {
         t.gitBranch = undefined;
+        t.worktreePath = undefined;
         t.updatedAt = new Date().toISOString();
       }
       return data;

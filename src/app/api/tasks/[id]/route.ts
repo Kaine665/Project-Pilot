@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getTasksPath, getFlowDataPath, readJsonFile, modifyJsonFile } from '@/lib/file-store';
-import { isValidTaskId, isValidProjectKey } from '@/lib/security';
-import type { Task, TasksData } from '@/types';
+import { getTasksPath, getFlowDataPath, getProjectsPath, readJsonFile, modifyJsonFile } from '@/lib/file-store';
+import { isValidTaskId, isValidProjectKey, safeGitWorktreeRemove, safeGitDeleteBranch } from '@/lib/security';
+import type { Task, TasksData, ProjectsData } from '@/types';
 import type { FlowData, TreeItem, Status } from '@/types/flow';
 import type { FlowTaskContext } from '@/types/flow-context';
 import { isLegacyFormat, migrateLegacyToSections } from '@/lib/flow-migration';
@@ -133,15 +133,43 @@ export async function PATCH(
 
 /**
  * DELETE /api/tasks/[id]
- * Permanently remove a task.
+ * Permanently remove a task. Cleans up worktree and branch if they exist.
  */
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  let found = false;
 
+  // Read task data first to get worktree info for cleanup
+  const tasksData = await readJsonFile<TasksData>(getTasksPath(), DEFAULT_TASKS_DATA);
+  const task = tasksData.tasks.find((t) => t.id === id);
+
+  if (!task) {
+    return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+  }
+
+  // Best-effort: cleanup worktree and branch before removing task data
+  if (task.projectKey && (task.worktreePath || task.gitBranch)) {
+    try {
+      const projectsData = await readJsonFile<ProjectsData>(getProjectsPath(), { projects: {} });
+      const project = projectsData.projects[task.projectKey];
+      if (project?.path) {
+        if (task.worktreePath) {
+          try {
+            safeGitWorktreeRemove(task.worktreePath, project.path, true);
+          } catch { /* best-effort */ }
+        }
+        if (task.gitBranch) {
+          try {
+            safeGitDeleteBranch(task.gitBranch, project.path, true);
+          } catch { /* best-effort */ }
+        }
+      }
+    } catch { /* best-effort */ }
+  }
+
+  let found = false;
   await modifyJsonFile<TasksData>(getTasksPath(), DEFAULT_TASKS_DATA, (data) => {
     const index = data.tasks.findIndex((t) => t.id === id);
     if (index === -1) return data;

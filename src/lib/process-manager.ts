@@ -5,6 +5,8 @@
  * 不与任何 HTTP 连接绑定。前端只是观察窗口。
  */
 
+import path from 'path';
+import fs from 'fs';
 import { spawn, type ChildProcess } from 'child_process';
 import {
   getConversationPath,
@@ -22,11 +24,15 @@ import {
 import {
   validateWorkingDir,
   validateBranchName,
+  validateWorktreePath,
   safeGitCheckout,
   safeGitCreateBranch,
   safeGitMerge,
   safeGitDeleteBranch,
   safeGitCurrentBranch,
+  safeGitWorktreeAdd,
+  safeGitWorktreeRemove,
+  safeGitExec,
   detectDefaultBranch as safeDetectDefaultBranch,
 } from '@/lib/security';
 import { ensureConversationIndex, updateConversationMeta } from '@/lib/conversation-migration';
@@ -55,6 +61,7 @@ import type {
 } from '@/types';
 import type { FlowData, TreeItem, Status as FlowStatus } from '@/types/flow';
 import { isLegacyFormat, migrateLegacyToSections } from '@/lib/flow-migration';
+import { TASK_WORKER_AGENT_ID, DEFAULT_AGENTS } from '@/lib/default-agents';
 import type { FlowTaskContext } from '@/types/flow-context';
 import { detectDangerousCommand } from '@/lib/danger-detector';
 
@@ -138,20 +145,41 @@ class ProcessManager {
 
     const projectsData = await readJsonFile<ProjectsData>(getProjectsPath(), { projects: {} });
     const project = task.projectKey ? projectsData.projects[task.projectKey] ?? null : null;
-    const workingDir = project?.path ?? process.cwd();
+    const projectDir = project?.path ?? process.cwd();
 
-    // ── Load agent (if task has agentId) ──
+    // ── Load agent capabilities (explicit binding or default task worker) ──
     const agentCaps = await (async () => {
-      if (!task.agentId) return undefined;
+      const effectiveAgentId = task.agentId || TASK_WORKER_AGENT_ID;
       const agentsData = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
-      const agent = agentsData.agents.find(a => a.id === task.agentId);
+      const diskAgent = agentsData.agents.find(a => a.id === effectiveAgentId);
+      const builtinAgent = DEFAULT_AGENTS.find(a => a.id === effectiveAgentId);
+      const agent = diskAgent ?? builtinAgent;
       return agent?.capabilities;
     })();
 
     // ── Phase 0: branching — one-shot branch name generation ──
     if (task.phase === 'branching') {
-      return this.runBranchingPhase(taskId, task, workingDir, project?.defaultBranch);
+      return this.runBranchingPhase(taskId, task, projectDir, project?.defaultBranch);
     }
+
+    // ── Ensure worktree exists (handles resume-after-stop) ──
+    if (task.gitBranch && project?.path) {
+      const wtPath = this.ensureWorktree(task, project.path);
+      if (wtPath && wtPath !== task.worktreePath) {
+        await modifyJsonFile<{ tasks: Session[] }>(getTasksPath(), { tasks: [] }, (data) => {
+          const t = data.tasks.find((t) => t.id === taskId);
+          if (t) {
+            t.worktreePath = wtPath;
+            t.updatedAt = new Date().toISOString();
+          }
+          return data;
+        });
+        task.worktreePath = wtPath;
+      }
+    }
+
+    // Use worktree path as cwd if available, otherwise fall back to project dir
+    const workingDir = task.worktreePath ?? projectDir;
 
     // ── Resolve conversation ──
     const convIndex = await ensureConversationIndex(taskId);
@@ -210,7 +238,7 @@ class ProcessManager {
         newMessage: message,
         detectedBaseBranch: (() => { try { return this.detectDefaultBranch(workingDir); } catch { return undefined; } })(),
       };
-      stdinContent = buildPrompt(promptCtx);
+      stdinContent = await buildPrompt(promptCtx);
     }
 
     // Save user message immediately (so it survives crashes)
@@ -245,10 +273,8 @@ class ProcessManager {
       throw new Error(`Invalid working directory: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    // Permission args: use agent-level if agentId is set, otherwise fall back to global
-    const permissionArgs = agentCaps
-      ? await buildAgentPermissionArgs(task.phase, agentCaps)
-      : await buildClaudePermissionArgs(task.phase);
+    // Permission args: always agent-level (task worker is the default agent)
+    const permissionArgs = await buildAgentPermissionArgs(task.phase, agentCaps);
     const toolArgs = buildAgentToolArgs(agentCaps);
     const resumeArgs = isResume
       ? ['--resume', claudeSessionId!]
@@ -382,8 +408,9 @@ class ProcessManager {
             }
 
             // 自动合并分支回主分支，但不标记完成——用户需自行验证后手动完成
+            // Merge from the main repo directory (projectDir), not the worktree
             if (result.status === 'completed') {
-              await this.autoMergeBranch(taskId, workingDir, project?.defaultBranch, run);
+              await this.autoMergeBranch(taskId, projectDir, project?.defaultBranch, run);
             }
           }
 
@@ -481,14 +508,44 @@ class ProcessManager {
 
   /**
    * Stop a running process explicitly.
+   * Cleans up the worktree (but preserves the branch for potential resume).
    */
-  stop(taskId: string): boolean {
+  async stop(taskId: string): Promise<boolean> {
     const run = this.runs.get(taskId);
     if (!run || run.status !== 'running') return false;
     run.status = 'stopped';
     if (run.process) {
       run.process.kill('SIGTERM');
     }
+
+    // Best-effort worktree cleanup on stop
+    // Note: We do NOT delete the branch — user may want to resume
+    try {
+      const tasksData = await readJsonFile<{ tasks: Session[] }>(getTasksPath(), { tasks: [] });
+      const task = tasksData.tasks.find((t) => t.id === taskId);
+      if (task?.worktreePath && task?.projectKey) {
+        const projectsData = await readJsonFile<ProjectsData>(getProjectsPath(), { projects: {} });
+        const project = projectsData.projects[task.projectKey];
+        if (project?.path) {
+          try {
+            safeGitWorktreeRemove(task.worktreePath, project.path, true);
+            console.log(`[PM] Cleaned up worktree at ${task.worktreePath} on stop`);
+          } catch { /* best-effort */ }
+        }
+        // Clear worktreePath but keep gitBranch for potential resume
+        await modifyJsonFile<{ tasks: Session[] }>(getTasksPath(), { tasks: [] }, (data) => {
+          const t = data.tasks.find((t) => t.id === taskId);
+          if (t) {
+            t.worktreePath = undefined;
+            t.updatedAt = new Date().toISOString();
+          }
+          return data;
+        });
+      }
+    } catch (err) {
+      console.error('[PM] Failed to cleanup worktree on stop:', err);
+    }
+
     return true;
   }
 
@@ -518,37 +575,47 @@ class ProcessManager {
   /**
    * Auto-merge git branch back to default branch (but do NOT mark session as done).
    * User must verify the build and manually mark completion.
+   * IMPORTANT: projectDir must be the main repo directory, NOT the worktree.
    */
   private async autoMergeBranch(
     taskId: string,
-    workingDir: string,
+    projectDir: string,
     defaultBranch: string | undefined,
     run: ProcessRun,
   ): Promise<void> {
     try {
-      // Validate working directory
-      validateWorkingDir(workingDir);
+      validateWorkingDir(projectDir);
 
-      // Reload task to get latest gitBranch (may have been set during execution)
+      // Reload task to get latest gitBranch and worktreePath
       const tasksData = await readJsonFile<{ tasks: Session[] }>(getTasksPath(), { tasks: [] });
       const task = tasksData.tasks.find((t) => t.id === taskId);
       if (!task?.gitBranch) return;
 
       const gitBranch = task.gitBranch;
-      const targetBranch = defaultBranch ?? this.detectDefaultBranch(workingDir);
+      const worktreePath = task.worktreePath;
+      const targetBranch = defaultBranch ?? this.detectDefaultBranch(projectDir);
 
-      // Validate branch names
       validateBranchName(gitBranch);
       validateBranchName(targetBranch);
 
-      // Checkout target branch
-      safeGitCheckout(targetBranch, workingDir);
-      // Merge task branch
-      safeGitMerge(gitBranch, workingDir, `Merge task branch ${gitBranch}`);
+      // Step 1: Remove worktree first (branch can't be deleted while checked out in a worktree)
+      if (worktreePath) {
+        try {
+          safeGitWorktreeRemove(worktreePath, projectDir, true);
+          console.log(`[PM] Removed worktree at ${worktreePath}`);
+        } catch (err) {
+          console.warn(`[PM] Failed to remove worktree (continuing):`, err);
+        }
+      }
 
-      // Delete merged branch (best-effort)
+      // Step 2: Checkout target branch in main repo
+      safeGitCheckout(targetBranch, projectDir);
+      // Step 3: Merge task branch
+      safeGitMerge(gitBranch, projectDir, `Merge task branch ${gitBranch}`);
+
+      // Step 4: Delete merged branch (best-effort)
       try {
-        safeGitDeleteBranch(gitBranch, workingDir);
+        safeGitDeleteBranch(gitBranch, projectDir);
       } catch {
         // Ignore deletion failures
       }
@@ -560,11 +627,12 @@ class ProcessManager {
         targetBranch,
       });
 
-      // Clear gitBranch reference (branch is merged and deleted)
+      // Clear gitBranch and worktreePath (branch is merged and deleted)
       await modifyJsonFile<{ tasks: Session[] }>(getTasksPath(), { tasks: [] }, (data) => {
         const t = data.tasks.find((t) => t.id === taskId);
         if (t) {
           t.gitBranch = undefined;
+          t.worktreePath = undefined;
           t.updatedAt = new Date().toISOString();
         }
         return data;
@@ -580,36 +648,100 @@ class ProcessManager {
   }
 
   /**
-   * Create a git branch for task execution. Returns branch name, or null on failure.
-   * Branch name format: task/{shortId}-{slug} — unique per taskId.
+   * Create a git worktree for task execution.
+   * Each task gets an isolated working directory under {projectDir}/.worktrees/.
+   * Returns { branch, worktreePath } on success, or null on failure.
    */
-  private createTaskBranch(
+  private createTaskWorktree(
     taskId: string,
     title: string,
-    workingDir: string,
+    projectDir: string,
     defaultBranch?: string,
     branchSlug?: string,
-  ): string | null {
+  ): { branch: string; worktreePath: string } | null {
     try {
-      // Validate working directory first
-      validateWorkingDir(workingDir);
+      validateWorkingDir(projectDir);
 
       const branch = generateBranchName(taskId, title, branchSlug);
-      const baseBranch = defaultBranch ?? this.detectDefaultBranch(workingDir);
+      const baseBranch = defaultBranch ?? this.detectDefaultBranch(projectDir);
 
-      // Validate branch names
       validateBranchName(branch);
       validateBranchName(baseBranch);
 
-      // Ensure we're on the base branch first
-      safeGitCheckout(baseBranch, workingDir);
-      // Create and checkout new branch
-      safeGitCreateBranch(branch, workingDir);
+      // Compute worktree path: {projectDir}/.worktrees/{shortId}-{safeName}
+      const shortId = taskId.replace(/^task-/, '').slice(-8);
+      const safeName = branch.replace(/^task\//, '').replace(/[^a-zA-Z0-9_-]/g, '-');
+      const worktreePath = path.join(projectDir, '.worktrees', `${shortId}-${safeName}`);
 
-      console.log(`[PM] Created branch ${branch} from ${baseBranch}`);
-      return branch;
+      validateWorktreePath(worktreePath, projectDir);
+
+      // Create worktree with new branch from base
+      safeGitWorktreeAdd(worktreePath, branch, baseBranch, projectDir);
+
+      // Best-effort: ensure .worktrees is in .gitignore
+      this.ensureWorktreesGitignored(projectDir);
+
+      console.log(`[PM] Created worktree at ${worktreePath} on branch ${branch} from ${baseBranch}`);
+      return { branch, worktreePath };
     } catch (err) {
-      console.error(`[PM] Failed to create branch:`, err);
+      console.error(`[PM] Failed to create worktree:`, err);
+      return null;
+    }
+  }
+
+  /**
+   * Best-effort: add .worktrees/ to .gitignore if not already present.
+   */
+  private ensureWorktreesGitignored(projectDir: string): void {
+    try {
+      const gitignorePath = path.join(projectDir, '.gitignore');
+      let content = '';
+      try {
+        content = fs.readFileSync(gitignorePath, 'utf-8');
+      } catch { /* file doesn't exist */ }
+      if (!content.includes('.worktrees')) {
+        const line = content.endsWith('\n') || content === '' ? '.worktrees/\n' : '\n.worktrees/\n';
+        fs.appendFileSync(gitignorePath, line, 'utf-8');
+      }
+    } catch { /* best-effort */ }
+  }
+
+  /**
+   * Ensure a worktree exists for a task that has a gitBranch but no worktreePath.
+   * Handles the resume-after-stop case by recreating the worktree from the existing branch.
+   */
+  private ensureWorktree(task: Session, projectDir: string): string | null {
+    if (task.worktreePath) {
+      // Verify worktree still exists on disk
+      try {
+        fs.statSync(task.worktreePath);
+        return task.worktreePath;
+      } catch {
+        // Worktree directory missing, recreate below
+      }
+    }
+
+    if (!task.gitBranch) return null;
+
+    try {
+      validateWorkingDir(projectDir);
+      validateBranchName(task.gitBranch);
+
+      const shortId = task.id.replace(/^task-/, '').slice(-8);
+      const safeName = task.gitBranch.replace(/^task\//, '').replace(/[^a-zA-Z0-9_-]/g, '-');
+      const worktreePath = path.join(projectDir, '.worktrees', `${shortId}-${safeName}`);
+      validateWorktreePath(worktreePath, projectDir);
+
+      // Use git worktree add with existing branch (no -b flag)
+      safeGitExec(
+        ['worktree', 'add', worktreePath, task.gitBranch],
+        { cwd: projectDir },
+      );
+
+      console.log(`[PM] Recreated worktree at ${worktreePath} for branch ${task.gitBranch}`);
+      return worktreePath;
+    } catch (err) {
+      console.error('[PM] Failed to recreate worktree:', err);
       return null;
     }
   }
@@ -742,15 +874,18 @@ class ProcessManager {
       // Extract branch slug from AI output
       const branchSlug = extractBranchSlugFromText(run.assistantText);
 
-      // Determine branch name (AI slug or fallback)
+      // Determine branch name (AI slug or fallback) and create worktree
       const effectiveSlug = branchSlug || undefined;
-      const branch = this.createTaskBranch(taskId, task.title, workingDir, defaultBranch, effectiveSlug);
+      const wtResult = this.createTaskWorktree(taskId, task.title, workingDir, defaultBranch, effectiveSlug);
 
       // Advance to 'understanding' phase
       await modifyJsonFile<{ tasks: Session[] }>(getTasksPath(), { tasks: [] }, (data) => {
         const t = data.tasks.find((t) => t.id === taskId);
         if (t) {
-          if (branch) t.gitBranch = branch;
+          if (wtResult) {
+            t.gitBranch = wtResult.branch;
+            t.worktreePath = wtResult.worktreePath;
+          }
           t.phase = 'understanding';
           t.updatedAt = new Date().toISOString();
         }
@@ -758,16 +893,16 @@ class ProcessManager {
       });
 
       // Emit events to frontend
-      if (branch) {
-        this.trackAndEmit(run, { type: 'branch_created', branch, slug: branchSlug || '' });
+      if (wtResult) {
+        this.trackAndEmit(run, { type: 'branch_created', branch: wtResult.branch, slug: branchSlug || '' });
       }
       this.trackAndEmit(run, { type: 'phase_changed', phase: 'understanding' });
 
       if (!branchSlug) {
         console.warn(`[PM] Phase 0: slug extraction failed, used fallback for ${taskId}`);
       }
-      if (!branch) {
-        this.trackAndEmit(run, { type: 'error', message: 'Git 分支创建失败，已跳过进入理解阶段。' });
+      if (!wtResult) {
+        this.trackAndEmit(run, { type: 'error', message: 'Git worktree 创建失败，已跳过进入理解阶段。' });
       }
 
       // Emit done and update status
