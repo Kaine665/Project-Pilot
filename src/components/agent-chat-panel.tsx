@@ -563,33 +563,42 @@ export function AgentChatPanel({
   };
 
   // Switch to a new (empty) session
+  // Allow switching even during streaming — the backend process continues
+  // running and will persist on its own via onProcessClose → persistAfterClose.
   const handleNewSession = () => {
-    if (isStreaming) return;
     if (streamAbortRef.current) {
       streamAbortRef.current.abort();
       streamAbortRef.current = null;
     }
+    setIsStreaming(false);
+    setStreamingBlocks([]);
     setSessionId(null);
     setSessionTitle(hasProject ? t('chat.newSession') : '新会话');
     setMessages([]);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
+    lastEventIdxRef.current = -1;
+    finalizingRef.current = false;
   };
 
   // Switch to an existing session
+  // Allow switching even during streaming — same rationale as handleNewSession.
   const handleSwitchSession = async (target: SessionListItem) => {
-    if (isStreaming) return;
     if (streamAbortRef.current) {
       streamAbortRef.current.abort();
       streamAbortRef.current = null;
     }
-    setSessionId(target.id);
-    setSessionTitle(target.title);
-    setMessages([]);
+    setIsStreaming(false);
+    setStreamingBlocks([]);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
+    lastEventIdxRef.current = -1;
+    finalizingRef.current = false;
+    setSessionId(target.id);
+    setSessionTitle(target.title);
+    setMessages([]);
     setDropdownOpen(false);
     await loadSessionData(target.id);
   };
@@ -930,7 +939,6 @@ export function AgentChatPanel({
                     <span className="text-xs font-medium text-zinc-400">{t('chat.conversations')}</span>
                     <button
                       onClick={() => { handleNewSession(); setDropdownOpen(false); }}
-                      disabled={isStreaming}
                       className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-blue-600 hover:bg-zinc-100 dark:text-blue-400 dark:hover:bg-zinc-800"
                     >
                       <Plus className="h-3 w-3" />
@@ -1219,7 +1227,6 @@ export function AgentChatPanel({
             <span className="text-sm font-medium text-zinc-500">{t('chat.conversations')}</span>
             <button
               onClick={handleNewSession}
-              disabled={isStreaming}
               className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-blue-600 hover:bg-zinc-200 dark:text-blue-400 dark:hover:bg-zinc-800"
             >
               <Plus className="h-3 w-3" />
