@@ -301,7 +301,7 @@ export function FlowEditor({ projectKey, projectName, projectDescription, initia
     setLoading(true);
     fetch(`/api/data?project=${projectKey}`)
       .then(res => res.ok ? res.json() : EMPTY_DATA)
-      .then(d => setData(d))
+      .then(d => setData({ ...EMPTY_DATA, ...d }))
       .catch(() => setData(EMPTY_DATA))
       .finally(() => setLoading(false));
   }, [projectKey]);
@@ -666,9 +666,12 @@ export function FlowEditor({ projectKey, projectName, projectDescription, initia
                 </button>
                 <button
                   className="text-xs px-3 py-1 rounded-full border border-dashed border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
-                  onClick={() => actions.addSection()}
+                  onClick={() => {
+                    const section = data.sections[0];
+                    if (section) actions.addItem(section.id, t('flows.newItem'));
+                  }}
                 >
-                  + {t('flows.addSection')}
+                  + {t('flows.addTopItem')}
                 </button>
               </div>
             </div>

@@ -12,7 +12,7 @@ import type {
   LegacyTask,
 } from '@/types/flow';
 
-/** 检测是否为旧格式 */
+/** 检测是否为旧格式（flows[] + crossCutting[]） */
 export function isLegacyFormat(data: unknown): data is LegacyFlowData {
   return (
     data !== null &&
@@ -20,6 +20,28 @@ export function isLegacyFormat(data: unknown): data is LegacyFlowData {
     'flows' in data &&
     Array.isArray((data as LegacyFlowData).flows)
   );
+}
+
+/** 检测是否为 items-only 格式（顶层 items[]，无有效 sections） */
+export function isItemsOnlyFormat(data: unknown): boolean {
+  if (data === null || typeof data !== 'object') return false;
+  const d = data as Record<string, unknown>;
+  const hasItems = 'items' in d && Array.isArray(d.items) && d.items.length > 0;
+  const hasNoSections = !('sections' in d) || !Array.isArray(d.sections) || d.sections.length === 0;
+  return hasItems && hasNoSections;
+}
+
+/** 将 items-only 格式迁移为 sections 格式 */
+export function migrateItemsOnlyToSections(data: Record<string, unknown>): FlowData {
+  const items = data.items as TreeItem[];
+  return {
+    sections: [{
+      id: '_default',
+      name: '默认',
+      items,
+    }],
+    cycleDeadline: typeof data.cycleDeadline === 'string' ? data.cycleDeadline : undefined,
+  };
 }
 
 /** 将旧格式迁移为新格式 */

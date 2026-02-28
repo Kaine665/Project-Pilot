@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import { getFlowDataPath, ensureFlowsMigrated } from '@/lib/file-store';
-import { isLegacyFormat, migrateLegacyToSections } from '@/lib/flow-migration';
+import { isLegacyFormat, migrateLegacyToSections, isItemsOnlyFormat, migrateItemsOnlyToSections } from '@/lib/flow-migration';
 
 export async function GET(request: NextRequest) {
   const project = request.nextUrl.searchParams.get('project');
@@ -15,9 +15,12 @@ export async function GET(request: NextRequest) {
     const raw = await fs.readFile(filePath, 'utf-8');
     let data = JSON.parse(raw);
 
-    // 自动迁移旧格式（flows[] + crossCutting[] → sections[]）
+    // 自动迁移旧格式
     if (isLegacyFormat(data)) {
       data = migrateLegacyToSections(data);
+      await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+    } else if (isItemsOnlyFormat(data)) {
+      data = migrateItemsOnlyToSections(data);
       await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
     }
 
