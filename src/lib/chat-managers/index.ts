@@ -1,0 +1,25 @@
+/**
+ * Unified export for the chat manager hierarchy.
+ *
+ * External consumers import from here or from the backward-compatible
+ * re-export files at `@/lib/process-manager` and `@/lib/agent-chat-manager`.
+ */
+
+// ── Base ──
+export { BaseChatManager } from './base-chat-manager';
+
+// ── Types ──
+export type { BaseRun, RunStatus, RunStatusInfo, SpawnConfig } from './types';
+
+// ── ProcessManager ──
+export { processManager } from './process-manager';
+export type { ProcessRun } from './process-manager';
+
+// ── AgentChatManager ──
+export { agentChatManager, generateSessionId } from './agent-chat-manager';
+export type {
+  AgentChatRun,
+  ImageAttachment,
+  ImageMediaType,
+  FlowContext,
+} from './agent-chat-manager';
