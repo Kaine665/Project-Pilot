@@ -99,6 +99,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     message: string,
     flowContext?: FlowContext,
     images?: ImageAttachment[],
+    initialTitle?: string,
   ): Promise<string> {
     const agent = await this.loadAgent(agentId);
 
@@ -180,7 +181,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       sessionId,
       agentId,
       projectKey: flowContext?.projectKey ?? existing?.projectKey,
-      sessionTitle: existing?.sessionTitle,
+      sessionTitle: existing?.sessionTitle ?? initialTitle,
       messages,
       tempPaths,
     };

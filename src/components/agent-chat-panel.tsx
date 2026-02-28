@@ -10,12 +10,19 @@ import { GuestAgentOverlay } from '@/components/guest-agent-overlay';
 import type { Agent } from '@/types';
 import type { ChatMessage, ChatToolCall, ChatSSEEvent, ContentBlock } from '@/types';
 
+// Session list item (no messages)
+export interface SessionListItem {
+  id: string;
+  title: string;
+  updatedAt: string;
+}
+
 interface AgentChatPanelProps {
   agent: Agent;
   /** undefined = auto-select latest; null = new empty session; string = load specific session */
   initialSessionId?: string | null;
   /** Called when sessions are created or updated (for parent to refresh sidebar) */
-  onSessionChange?: () => void;
+  onSessionChange?: (newSession?: SessionListItem) => void;
   /** Display variant: sidebar or full (butler mode). Omit for plain agent chat. */
   variant?: 'sidebar' | 'full';
   /** Project scope (butler mode). When set, flow context is injected. */
@@ -27,13 +34,6 @@ type IndexedSSEEvent = ChatSSEEvent & { _idx: number };
 // Strip <session-title> tags from display text
 function stripSessionTitleTag(text: string): string {
   return text.replace(/<session-title>[\s\S]*?<\/session-title>\s*/, '');
-}
-
-// Session list item (no messages)
-interface SessionListItem {
-  id: string;
-  title: string;
-  updatedAt: string;
 }
 
 export function AgentChatPanel({
@@ -141,8 +141,14 @@ export function AgentChatPanel({
       if (pk) url += `&projectKey=${pk}`;
       const res = await fetch(url, { cache: 'no-store' });
       const data = await res.json();
-      setSessionList(data.sessions ?? []);
-      return data.sessions ?? [];
+      const remote: SessionListItem[] = data.sessions ?? [];
+      // Merge: keep optimistically-inserted local sessions that backend doesn't know about yet
+      setSessionList(prev => {
+        const remoteIds = new Set(remote.map(s => s.id));
+        const localOnly = prev.filter(s => !remoteIds.has(s.id));
+        return [...localOnly, ...remote];
+      });
+      return remote;
     } catch {
       return [];
     }
@@ -389,16 +395,19 @@ export function AgentChatPanel({
       }
 
       // Check if a run is still live in memory
-      const sessionsToCheck = (!hasProject && initialSessionId)
-        ? sessions.filter(s => s.id === initialSessionId)
-        : sessions;
+      // When initialSessionId is specified, always check it directly (it may not
+      // be persisted to disk yet if the AI is still streaming).
+      const sessionIdsToCheck = (!hasProject && initialSessionId)
+        ? [initialSessionId]
+        : sessions.map(s => s.id);
 
-      for (const s of sessionsToCheck) {
-        const statusRes = await fetch(`/api/agent-chat/status?sessionId=${s.id}`, { cache: 'no-store' });
+      for (const sid of sessionIdsToCheck) {
+        const statusRes = await fetch(`/api/agent-chat/status?sessionId=${sid}`, { cache: 'no-store' });
         const statusData = await statusRes.json();
         if (!cancelled && statusData.status === 'running') {
-          setSessionId(s.id);
-          setSessionTitle(s.title);
+          const title = sessions.find(s => s.id === sid)?.title ?? '会话';
+          setSessionId(sid);
+          setSessionTitle(title);
           if (Array.isArray(statusData.messages) && statusData.messages.length > 0) {
             const restored: ChatMessage[] = statusData.messages.map(
               (m: { role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }, i: number) => ({
@@ -415,7 +424,7 @@ export function AgentChatPanel({
           blocksRef.current = [];
           fullTextRef.current = '';
           toolCallsRef.current = [];
-          connectToStream(s.id, 0);
+          connectToStream(sid, 0);
           break;
         }
       }
@@ -477,6 +486,23 @@ export function AgentChatPanel({
 
     setErrorMsg(null);
 
+    // For new sessions: generate sessionId + update UI immediately (before fetch)
+    let targetSessionId = sessionId;
+    if (!targetSessionId) {
+      targetSessionId = `agent-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const quickTitle = text.trim().slice(0, 10) || (hasProject ? t('chat.newSession') : '新会话');
+      setSessionId(targetSessionId);
+      setSessionTitle(quickTitle);
+      // Insert into session list immediately so it appears in history
+      const newItem: SessionListItem = {
+        id: targetSessionId!,
+        title: quickTitle,
+        updatedAt: new Date().toISOString(),
+      };
+      setSessionList(prev => [newItem, ...prev]);
+      onSessionChange?.(newItem);
+    }
+
     try {
       const res = await fetch('/api/agent-chat', {
         method: 'POST',
@@ -484,9 +510,10 @@ export function AgentChatPanel({
         body: JSON.stringify({
           agentId: agent.id,
           message: text.trim(),
-          sessionId: sessionId ?? undefined,
+          sessionId: targetSessionId,
           projectKey: projectKey ?? undefined,
           images: imageAttachments.length > 0 ? imageAttachments : undefined,
+          initialTitle: text.trim().slice(0, 10) || undefined,
         }),
       });
 
@@ -495,16 +522,8 @@ export function AgentChatPanel({
         throw new Error(errData.error || `HTTP ${res.status}`);
       }
 
-      const data = await res.json();
-
-      // New session created — capture the sessionId
-      if (!sessionId && data.sessionId) {
-        setSessionId(data.sessionId);
-        setSessionTitle(hasProject ? t('chat.newSession') : '新会话');
-        onSessionChange?.();
-      }
-
-      connectToStream(data.sessionId, 0);
+      await res.json();
+      connectToStream(targetSessionId, 0);
     } catch (err) {
       const msg = (err as Error).message || 'Unknown error';
       console.error('Agent chat send failed:', msg);
@@ -565,42 +584,33 @@ export function AgentChatPanel({
   };
 
   // Switch to a new (empty) session
-  // Allow switching even during streaming — the backend process continues
-  // running and will persist on its own via onProcessClose → persistAfterClose.
   const handleNewSession = () => {
+    if (isStreaming) return;
     if (streamAbortRef.current) {
       streamAbortRef.current.abort();
       streamAbortRef.current = null;
     }
-    setIsStreaming(false);
-    setStreamingBlocks([]);
     setSessionId(null);
     setSessionTitle(hasProject ? t('chat.newSession') : '新会话');
     setMessages([]);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
-    lastEventIdxRef.current = -1;
-    finalizingRef.current = false;
   };
 
   // Switch to an existing session
-  // Allow switching even during streaming — same rationale as handleNewSession.
   const handleSwitchSession = async (target: SessionListItem) => {
+    if (isStreaming) return;
     if (streamAbortRef.current) {
       streamAbortRef.current.abort();
       streamAbortRef.current = null;
     }
-    setIsStreaming(false);
-    setStreamingBlocks([]);
-    blocksRef.current = [];
-    fullTextRef.current = '';
-    toolCallsRef.current = [];
-    lastEventIdxRef.current = -1;
-    finalizingRef.current = false;
     setSessionId(target.id);
     setSessionTitle(target.title);
     setMessages([]);
+    blocksRef.current = [];
+    fullTextRef.current = '';
+    toolCallsRef.current = [];
     setDropdownOpen(false);
     await loadSessionData(target.id);
   };
@@ -941,6 +951,7 @@ export function AgentChatPanel({
                     <span className="text-xs font-medium text-zinc-400">{t('chat.conversations')}</span>
                     <button
                       onClick={() => { handleNewSession(); setDropdownOpen(false); }}
+                      disabled={isStreaming}
                       className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-blue-600 hover:bg-zinc-100 dark:text-blue-400 dark:hover:bg-zinc-800"
                     >
                       <Plus className="h-3 w-3" />
@@ -1229,6 +1240,7 @@ export function AgentChatPanel({
             <span className="text-sm font-medium text-zinc-500">{t('chat.conversations')}</span>
             <button
               onClick={handleNewSession}
+              disabled={isStreaming}
               className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-blue-600 hover:bg-zinc-200 dark:text-blue-400 dark:hover:bg-zinc-800"
             >
               <Plus className="h-3 w-3" />

@@ -19,12 +19,13 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB per image (base64 decoded)
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { agentId, message, sessionId: requestedSessionId, projectKey, images } = body as {
+  const { agentId, message, sessionId: requestedSessionId, projectKey, images, initialTitle } = body as {
     agentId: string;
     message: string;
     sessionId?: string;
     projectKey?: string;
     images?: Array<{ mediaType: string; data: string }>;
+    initialTitle?: string;
   };
 
   // 🔒 Security: validate required fields
@@ -103,7 +104,7 @@ export async function POST(request: NextRequest) {
       };
     }
 
-    const runId = await agentChatManager.start(sessionId, agentId, message, flowContext, validatedImages);
+    const runId = await agentChatManager.start(sessionId, agentId, message, flowContext, validatedImages, initialTitle);
     return NextResponse.json({ runId, sessionId });
   } catch (err) {
     return NextResponse.json(

@@ -6,7 +6,7 @@ import {
   Database, Brain, Code, Zap, Search, Shield, Wrench, BookOpen, Settings, MessageSquare, Check, type LucideIcon,
 } from 'lucide-react';
 import type { Agent, AgentCapabilities, ContextEntry } from '@/types';
-import { AgentChatPanel } from '@/components/agent-chat-panel';
+import { AgentChatPanel, type SessionListItem } from '@/components/agent-chat-panel';
 
 // ── Icon picker presets ──
 
@@ -433,12 +433,6 @@ function SettingsForm({
 
 // ── Session day-grouping helper ──
 
-interface SessionListItem {
-  id: string;
-  title: string;
-  updatedAt: string;
-}
-
 function groupSessionsByDay(sessions: SessionListItem[]) {
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -500,14 +494,19 @@ export default function AgentsPage() {
     return () => window.removeEventListener('focus', handleFocus);
   }, [fetchAgents]);
 
-  // Fetch sessions for the selected agent
+  // Fetch sessions for the selected agent (merge with local-only items)
   const fetchAgentSessions = useCallback(async (agentId: string) => {
     try {
       const res = await fetch(`/api/agent-chat/sessions?agentId=${agentId}`, { cache: 'no-store' });
       const data = await res.json();
-      setAgentSessions(data.sessions ?? []);
+      const remote: SessionListItem[] = data.sessions ?? [];
+      setAgentSessions(prev => {
+        const remoteIds = new Set(remote.map(s => s.id));
+        const localOnly = prev.filter(s => !remoteIds.has(s.id));
+        return [...localOnly, ...remote];
+      });
     } catch {
-      setAgentSessions([]);
+      // don't clear — keep optimistic items
     }
   }, []);
 
@@ -871,7 +870,15 @@ export default function AgentsPage() {
                     key={`${selectedAgent.id}-${chatKey}`}
                     agent={selectedAgent}
                     initialSessionId={activeSessionId}
-                    onSessionChange={() => { if (selectedId) fetchAgentSessions(selectedId); }}
+                    onSessionChange={(newSession) => {
+                      if (newSession) {
+                        // Optimistically insert new session at top of sidebar list
+                        setAgentSessions(prev =>
+                          prev.some(s => s.id === newSession.id) ? prev : [newSession, ...prev],
+                        );
+                      }
+                      if (selectedId) fetchAgentSessions(selectedId);
+                    }}
                   />
                 </div>
               ) : (
