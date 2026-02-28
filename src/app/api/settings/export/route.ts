@@ -11,6 +11,8 @@ import {
   getFlowsDir,
   readJsonFile,
 } from '@/lib/file-store';
+import { resolveSystemPrompt } from '@/lib/agent-prompt-store';
+import type { Agent, AgentsData } from '@/types';
 
 /**
  * GET /api/settings/export
@@ -27,6 +29,14 @@ export async function GET() {
       readJsonFile(getAgentsPath(), {}),
       readJsonFile(getAgentChatSessionsPath(), {}),
     ]);
+
+    // 导出时将外置的 systemPrompt 重新填入 agents 数据，保证导出文件自包含
+    const agentsData = agents as AgentsData;
+    if (agentsData.agents) {
+      for (const agent of agentsData.agents) {
+        agent.systemPrompt = await resolveSystemPrompt(agent.id, agent.systemPrompt);
+      }
+    }
 
     // 收集 flows 数据
     const flows: Record<string, unknown> = {};

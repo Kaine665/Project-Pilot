@@ -9,6 +9,7 @@ import {
   readJsonFile,
   ensureFlowsMigrated,
 } from '@/lib/file-store';
+import { deletePromptFile } from '@/lib/agent-prompt-store';
 import type { AgentsData, DimensionsData, ProjectIndex } from '@/types';
 
 type RecycleBinCategory = 'project' | 'agent' | 'dimension';
@@ -98,6 +99,8 @@ export async function DELETE(request: NextRequest) {
       }
       agentsData.agents.splice(idx, 1);
       await fs.writeFile(getAgentsPath(), JSON.stringify(agentsData, null, 2), 'utf-8');
+      // 清理外置的 prompt 文件
+      await deletePromptFile(id);
       break;
     }
 

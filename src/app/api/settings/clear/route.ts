@@ -9,6 +9,7 @@ import {
   getFlowIndexPath,
   getAgentsPath,
   getAgentChatSessionsPath,
+  getPromptsDir,
   writeJsonFile,
   readJsonFile,
 } from '@/lib/file-store';
@@ -108,6 +109,24 @@ export async function POST(request: NextRequest) {
         }
       }
       await writeJsonFile(getAgentsPath(), { agents: builtInAgents });
+
+      // 清理非内置 agent 的外置 prompt 文件
+      const promptsDir = getPromptsDir();
+      await backupDir2(promptsDir);
+      try {
+        const builtInIds = new Set(builtInAgents.map(a => a.id));
+        const files = await fs.readdir(promptsDir);
+        for (const file of files) {
+          if (file.endsWith('.md')) {
+            const agentId = file.slice(0, -3);
+            if (!builtInIds.has(agentId)) {
+              await fs.unlink(path.join(promptsDir, file));
+            }
+          }
+        }
+      } catch {
+        // prompts 目录不存在则跳过
+      }
     }
 
     return NextResponse.json({

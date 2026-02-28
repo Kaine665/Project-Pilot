@@ -12,6 +12,7 @@ import {
   writeJsonFile,
 } from '@/lib/file-store';
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import { writePromptFile } from '@/lib/agent-prompt-store';
 import type { Agent } from '@/types';
 
 /**
@@ -85,6 +86,13 @@ export async function POST(request: NextRequest) {
       for (const defaultAgent of DEFAULT_AGENTS) {
         if (!agents.some((a: Agent) => a.id === defaultAgent.id)) {
           agents.unshift(defaultAgent);
+        }
+      }
+      // 将 systemPrompt 外置到 .md 文件，不存入 agents.json
+      for (const agent of agents) {
+        if (agent.systemPrompt) {
+          await writePromptFile(agent.id, agent.systemPrompt);
+          delete agent.systemPrompt;
         }
       }
       await writeJsonFile(getAgentsPath(), { agents });
