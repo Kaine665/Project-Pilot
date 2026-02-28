@@ -155,10 +155,11 @@ export function AgentChatPanel({
       if (!res.ok) return;
       const data = await res.json();
       const restored: ChatMessage[] = (data.messages ?? []).map(
-        (m: { role: 'user' | 'assistant'; content: string }, i: number) => ({
+        (m: { role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }, i: number) => ({
           id: `restored-${i}`,
           role: m.role,
           content: m.content,
+          contentBlocks: m.contentBlocks,
           timestamp: '',
         }),
       );
@@ -400,10 +401,11 @@ export function AgentChatPanel({
           setSessionTitle(s.title);
           if (Array.isArray(statusData.messages) && statusData.messages.length > 0) {
             const restored: ChatMessage[] = statusData.messages.map(
-              (m: { role: 'user' | 'assistant'; content: string }, i: number) => ({
+              (m: { role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }, i: number) => ({
                 id: `restored-${i}`,
                 role: m.role,
                 content: m.content,
+                contentBlocks: m.contentBlocks,
                 timestamp: '',
               }),
             );

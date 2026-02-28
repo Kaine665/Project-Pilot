@@ -34,7 +34,7 @@ import {
   buildAgentPermissionArgs,
   buildAgentToolArgs,
 } from '@/lib/settings-manager';
-import type { ChatSSEEvent, Agent, AgentsData } from '@/types';
+import type { ChatSSEEvent, ContentBlock, Agent, AgentsData } from '@/types';
 import type { AgentChatSession, AgentChatSessionsData } from '@/types/agent-chat';
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
 
@@ -58,7 +58,7 @@ export interface AgentChatRun extends BaseRun {
   agentId: string;
   projectKey?: string;
   sessionTitle?: string;
-  messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[] }>;
+  messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }>;
   // Guest Agent
   parentSessionId?: string;
   importedTurnIndices?: number[];
@@ -391,7 +391,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     agentId: string;
     projectKey?: string;
     sessionTitle?: string;
-    messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[] }>;
+    messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }>;
     tempPaths: string[];
     parentSessionId?: string;
     importedTurnIndices?: number[];
@@ -455,7 +455,18 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     // Save assistant message (strip title + knowledge tags)
     if (run.assistantText) {
       const cleaned = stripKnowledgeTags(stripSessionTitle(run.assistantText));
-      run.messages.push({ role: 'assistant', content: cleaned });
+      // Also clean contentBlocks text entries
+      const cleanedBlocks = run.contentBlocks.map(block => {
+        if (block.type === 'text') {
+          return { ...block, text: stripKnowledgeTags(stripSessionTitle(block.text)) };
+        }
+        return block;
+      }).filter(block => !(block.type === 'text' && !block.text.trim()));
+      run.messages.push({
+        role: 'assistant',
+        content: cleaned,
+        contentBlocks: cleanedBlocks.length > 0 ? cleanedBlocks : undefined,
+      });
     }
   }
 

@@ -1,9 +1,11 @@
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { PlanRenderer } from '@/components/plan-renderer';
 
 /**
- * 轻量文本格式化组件
- * 支持：加粗、换行、列表，但不渲染大标题
+ * Markdown 文本格式化组件
+ * 使用 react-markdown 渲染完整的 GitHub Flavored Markdown
  * 特殊处理：```json:plan 代码块会被渲染为友好的计划展示
  */
 
@@ -32,94 +34,128 @@ export function FormattedText({ text, className = '' }: FormattedTextProps) {
     );
   }
 
-  const lines = text.split('\n');
-
   return (
-    <div className={className}>
-      {lines.map((line, lineIndex) => {
-        // 空行
-        if (!line.trim()) {
-          return <div key={lineIndex} className="h-2" />;
-        }
-
-        // 无序列表 (- item)
-        if (line.trim().startsWith('- ')) {
-          const content = line.trim().substring(2);
-          return (
-            <div key={lineIndex} className="flex gap-2 text-sm">
-              <span className="text-zinc-400 dark:text-zinc-500">•</span>
-              <span className="flex-1">{formatInlineMarkdown(content)}</span>
+    <div className={`${className} formatted-markdown`}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          // Headings — render as bold text, not huge headers (chat context)
+          h1: ({ children }) => (
+            <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mt-3 mb-1">
+              {children}
+            </p>
+          ),
+          h2: ({ children }) => (
+            <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mt-3 mb-1">
+              {children}
+            </p>
+          ),
+          h3: ({ children }) => (
+            <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mt-2 mb-1">
+              {children}
+            </p>
+          ),
+          h4: ({ children }) => (
+            <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mt-2 mb-1">
+              {children}
+            </p>
+          ),
+          // Paragraph
+          p: ({ children }) => (
+            <p className="text-sm leading-relaxed mb-1.5 last:mb-0">{children}</p>
+          ),
+          // Bold
+          strong: ({ children }) => (
+            <strong className="font-semibold text-zinc-900 dark:text-zinc-100">
+              {children}
+            </strong>
+          ),
+          // Inline code
+          code: ({ className: codeClassName, children, ...props }) => {
+            // Multi-line code block (rendered by <pre><code>)
+            const isBlock = codeClassName?.startsWith('language-');
+            if (isBlock) {
+              return (
+                <code className={`${codeClassName ?? ''} text-xs`} {...props}>
+                  {children}
+                </code>
+              );
+            }
+            // Inline code
+            return (
+              <code className="rounded bg-zinc-200/70 dark:bg-zinc-700 px-1 py-0.5 text-xs font-mono text-zinc-800 dark:text-zinc-200">
+                {children}
+              </code>
+            );
+          },
+          // Code block wrapper
+          pre: ({ children }) => (
+            <pre className="my-2 overflow-x-auto rounded-md bg-zinc-900 dark:bg-zinc-950 p-3 text-xs text-zinc-100">
+              {children}
+            </pre>
+          ),
+          // Unordered list
+          ul: ({ children }) => (
+            <ul className="my-1 space-y-0.5 pl-4 text-sm list-disc marker:text-zinc-400 dark:marker:text-zinc-500">
+              {children}
+            </ul>
+          ),
+          // Ordered list
+          ol: ({ children }) => (
+            <ol className="my-1 space-y-0.5 pl-4 text-sm list-decimal marker:text-zinc-400 dark:marker:text-zinc-500">
+              {children}
+            </ol>
+          ),
+          // List item
+          li: ({ children }) => (
+            <li className="text-sm leading-relaxed">{children}</li>
+          ),
+          // Table
+          table: ({ children }) => (
+            <div className="my-2 overflow-x-auto">
+              <table className="min-w-full text-xs border-collapse">
+                {children}
+              </table>
             </div>
-          );
-        }
-
-        // 有序列表 (1. item, 2. item)
-        const orderedMatch = line.trim().match(/^(\d+)\.\s+(.+)$/);
-        if (orderedMatch) {
-          const [, number, content] = orderedMatch;
-          return (
-            <div key={lineIndex} className="flex gap-2 text-sm">
-              <span className="text-zinc-400 dark:text-zinc-500 font-mono text-xs">{number}.</span>
-              <span className="flex-1">{formatInlineMarkdown(content)}</span>
-            </div>
-          );
-        }
-
-        // 普通文本
-        return (
-          <p key={lineIndex} className="text-sm">
-            {formatInlineMarkdown(line)}
-          </p>
-        );
-      })}
+          ),
+          thead: ({ children }) => (
+            <thead className="bg-zinc-100 dark:bg-zinc-800">{children}</thead>
+          ),
+          th: ({ children }) => (
+            <th className="border border-zinc-200 dark:border-zinc-700 px-2 py-1 text-left font-semibold text-zinc-700 dark:text-zinc-300">
+              {children}
+            </th>
+          ),
+          td: ({ children }) => (
+            <td className="border border-zinc-200 dark:border-zinc-700 px-2 py-1 text-zinc-600 dark:text-zinc-400">
+              {children}
+            </td>
+          ),
+          // Links
+          a: ({ href, children }) => (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 dark:text-blue-400 underline underline-offset-2 hover:text-blue-700 dark:hover:text-blue-300"
+            >
+              {children}
+            </a>
+          ),
+          // Horizontal rule
+          hr: () => (
+            <hr className="my-2 border-zinc-200 dark:border-zinc-700" />
+          ),
+          // Blockquote
+          blockquote: ({ children }) => (
+            <blockquote className="my-2 border-l-2 border-zinc-300 dark:border-zinc-600 pl-3 text-sm text-zinc-500 dark:text-zinc-400 italic">
+              {children}
+            </blockquote>
+          ),
+        }}
+      >
+        {text}
+      </ReactMarkdown>
     </div>
   );
-}
-
-/**
- * 处理行内 markdown 格式（加粗、代码）
- */
-function formatInlineMarkdown(text: string): React.ReactNode {
-  const parts: React.ReactNode[] = [];
-  let currentIndex = 0;
-
-  // 匹配 **加粗** 和 `代码`
-  const regex = /(\*\*(.+?)\*\*)|(`(.+?)`)/g;
-  let match;
-
-  while ((match = regex.exec(text)) !== null) {
-    // 添加前面的普通文本
-    if (match.index > currentIndex) {
-      parts.push(text.substring(currentIndex, match.index));
-    }
-
-    // 添加格式化的部分
-    if (match[2]) {
-      // 加粗 **text**
-      parts.push(
-        <strong key={match.index} className="font-semibold text-zinc-900 dark:text-zinc-100">
-          {match[2]}
-        </strong>
-      );
-    } else if (match[4]) {
-      // 代码 `text`
-      parts.push(
-        <code
-          key={match.index}
-          className="rounded bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 text-xs font-mono"
-        >
-          {match[4]}
-        </code>
-      );
-    }
-
-    currentIndex = match.index + match[0].length;
-  }
-
-  // 添加剩余的普通文本
-  if (currentIndex < text.length) {
-    parts.push(text.substring(currentIndex));
-  }
-
-  return parts.length > 0 ? parts : text;
 }
