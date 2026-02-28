@@ -1,6 +1,7 @@
 // ==================== Session（AI 会话） ====================
 
 import type { FlowTaskContext } from './flow-context';
+import type { ResourceRef } from './resource';
 
 /** Session 当前所处的工作流阶段 */
 export type SessionPhase = 'branching' | 'understanding' | 'planning' | 'executing' | 'summarizing';
@@ -421,8 +422,14 @@ export interface Agent {
   executionMode?: 'task' | 'chat';
   /** Parameter names this agent requires to run (template only, values filled at project/task level) */
   requiredParams?: string[];
-  /** Context entry IDs to preload into the prompt (content expanded automatically, on top of global index) */
+  /** @deprecated Use defaultResources instead. Kept for backward compatibility with existing data. */
   contextIds?: string[];
+  /**
+   * Default resource set for this agent.
+   * When a new chat session starts, these refs are used to build the prompt.
+   * If absent, migrateAgentToResources() derives them from legacy fields at runtime.
+   */
+  defaultResources?: ResourceRef[];
   archived?: boolean;
   archivedAt?: string;
   createdAt: string;
@@ -475,6 +482,25 @@ export interface ContextEntry {
 
 export interface ContextIndexData {
   entries: ContextEntry[];
+}
+
+// ==================== Todo（AI 待办清单） ====================
+
+export type TodoPriority = 'high' | 'medium' | 'low';
+export type TodoStatus = 'pending' | 'in_progress' | 'done';
+
+export interface TodoItem {
+  id: string;
+  title: string;
+  description?: string;
+  status: TodoStatus;
+  priority: TodoPriority;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TodosData {
+  todos: TodoItem[];
 }
 
 // ==================== Flow Project ====================

@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAgentsPath, readJsonFile, writeJsonFile } from '@/lib/file-store';
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import { readPromptFile, writePromptFile, deletePromptFile, resolveSystemPrompt } from '@/lib/agent-prompt-store';
 import type { Agent, AgentCapabilities, AgentsData } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
+import type { ResourceRef } from '@/types/resource';
 
 async function readAgents(): Promise<AgentsData> {
   const data = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
@@ -29,6 +31,21 @@ async function readAgents(): Promise<AgentsData> {
       }
     }
   }
+
+  // ── systemPrompt 外置懒迁移 ──
+  // 旧版 agents.json 中 systemPrompt 是内联字符串，现在迁移到 prompts/{agentId}.md 文件。
+  // 首次读取时：如果 agent 有内联 systemPrompt 且无对应 .md 文件，写文件并从 JSON 中删除。
+  for (const agent of data.agents) {
+    if (agent.systemPrompt) {
+      const existingFile = await readPromptFile(agent.id);
+      if (!existingFile) {
+        await writePromptFile(agent.id, agent.systemPrompt);
+      }
+      delete agent.systemPrompt;
+      changed = true;
+    }
+  }
+
   if (changed) {
     await writeAgents(data);
   }
@@ -44,41 +61,55 @@ export async function GET(request: NextRequest) {
   const data = await readAgents();
   const includeArchived = request.nextUrl.searchParams.get('includeArchived') === 'true';
   const agents = includeArchived ? data.agents : data.agents.filter(a => !a.archived);
+
+  // 从 .md 文件填充 systemPrompt（前端仍通过此字段获取 prompt 内容）
+  for (const agent of agents) {
+    agent.systemPrompt = await resolveSystemPrompt(agent.id, agent.systemPrompt);
+  }
+
   return NextResponse.json({ agents });
 }
 
 /** POST /api/agents — create a new agent */
 export async function POST(request: NextRequest) {
-  const { name, description, systemPrompt, icon, capabilities, requiredParams, contextIds } = await request.json();
+  const { name, description, systemPrompt, icon, capabilities, requiredParams, contextIds, defaultResources } = await request.json();
   if (!name?.trim()) {
     return NextResponse.json({ error: 'name is required' }, { status: 400 });
   }
 
+  const promptText = systemPrompt?.trim() || undefined;
   const now = new Date().toISOString();
   const agent: Agent = {
     id: `agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     name: name.trim(),
     description: description?.trim() || undefined,
-    systemPrompt: systemPrompt?.trim() || undefined,
+    // systemPrompt 不存入 agents.json，外置到 .md 文件
     icon: icon?.trim() || undefined,
     capabilities: capabilities ?? { ...DEFAULT_AGENT_CAPABILITIES },
     requiredParams: Array.isArray(requiredParams) && requiredParams.length > 0 ? requiredParams : undefined,
     contextIds: Array.isArray(contextIds) && contextIds.length > 0 ? contextIds : undefined,
+    defaultResources: Array.isArray(defaultResources) && defaultResources.length > 0 ? defaultResources as ResourceRef[] : undefined,
     createdAt: now,
     updatedAt: now,
   };
+
+  // 将 systemPrompt 写入外置文件
+  if (promptText) {
+    await writePromptFile(agent.id, promptText);
+  }
 
   const data = await readAgents();
   data.agents.push(agent);
   await writeAgents(data);
 
-  return NextResponse.json({ ok: true, agent });
+  // 响应中带上 systemPrompt（前端仍需要此字段）
+  return NextResponse.json({ ok: true, agent: { ...agent, systemPrompt: promptText } });
 }
 
 /** PATCH /api/agents — update an agent. Body: { id, ...fields } */
 export async function PATCH(request: NextRequest) {
   const body = await request.json();
-  const { id, name, description, systemPrompt, icon, capabilities, requiredParams, contextIds } = body;
+  const { id, name, description, systemPrompt, icon, capabilities, requiredParams, contextIds, defaultResources } = body;
   if (!id) {
     return NextResponse.json({ error: 'id is required' }, { status: 400 });
   }
@@ -96,15 +127,30 @@ export async function PATCH(request: NextRequest) {
 
   if (name !== undefined) agent.name = name.trim();
   if (description !== undefined) agent.description = description.trim() || undefined;
-  if (systemPrompt !== undefined) agent.systemPrompt = systemPrompt.trim() || undefined;
   if (icon !== undefined) agent.icon = icon.trim() || undefined;
   if (capabilities !== undefined) agent.capabilities = capabilities as AgentCapabilities;
   if (requiredParams !== undefined) agent.requiredParams = Array.isArray(requiredParams) && requiredParams.length > 0 ? requiredParams : undefined;
   if (contextIds !== undefined) agent.contextIds = Array.isArray(contextIds) && contextIds.length > 0 ? contextIds : undefined;
+  if (defaultResources !== undefined) agent.defaultResources = Array.isArray(defaultResources) && defaultResources.length > 0 ? defaultResources as ResourceRef[] : undefined;
+
+  // systemPrompt 写入外置 .md 文件，不存入 agents.json
+  if (systemPrompt !== undefined) {
+    const promptText = systemPrompt.trim();
+    if (promptText) {
+      await writePromptFile(agent.id, promptText);
+    } else {
+      await deletePromptFile(agent.id);
+    }
+    delete agent.systemPrompt;
+  }
+
   agent.updatedAt = new Date().toISOString();
 
   await writeAgents(data);
-  return NextResponse.json({ ok: true, agent });
+
+  // 响应中带上 systemPrompt（前端仍需要此字段）
+  const resolved = await resolveSystemPrompt(agent.id, agent.systemPrompt);
+  return NextResponse.json({ ok: true, agent: { ...agent, systemPrompt: resolved } });
 }
 
 /** DELETE /api/agents — soft-delete an agent (move to recycle bin). Body: { id } */
