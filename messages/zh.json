@@ -48,6 +48,27 @@
     "archive": "归档",
     "unarchive": "取消归档"
   },
+  "todos": {
+    "title": "AI 待办",
+    "newTodo": "新建待办",
+    "placeholder": "输入待办标题...",
+    "descriptionPlaceholder": "添加详细描述...",
+    "loading": "加载中...",
+    "noTodos": "暂无待办",
+    "confirmDelete": "确定要删除此待办吗？",
+    "filters": {
+      "all": "全部",
+      "pending": "待办",
+      "in_progress": "进行中",
+      "done": "已完成"
+    },
+    "columns": {
+      "title": "标题",
+      "priority": "优先级",
+      "status": "状态",
+      "createdAt": "创建时间"
+    }
+  },
   "tasks": {
     "title": "任务列表",
     "newTask": "新建任务",

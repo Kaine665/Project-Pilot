@@ -48,6 +48,27 @@
     "archive": "Archive",
     "unarchive": "Unarchive"
   },
+  "todos": {
+    "title": "AI Todos",
+    "newTodo": "New Todo",
+    "placeholder": "Enter todo title...",
+    "descriptionPlaceholder": "Add description...",
+    "loading": "Loading...",
+    "noTodos": "No todos yet",
+    "confirmDelete": "Are you sure you want to delete this todo?",
+    "filters": {
+      "all": "All",
+      "pending": "Pending",
+      "in_progress": "In Progress",
+      "done": "Done"
+    },
+    "columns": {
+      "title": "Title",
+      "priority": "Priority",
+      "status": "Status",
+      "createdAt": "Created"
+    }
+  },
   "tasks": {
     "title": "Task List",
     "newTask": "New Task",
