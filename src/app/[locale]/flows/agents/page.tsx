@@ -3,9 +3,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Bot, Plus, Trash2, X, ChevronRight, Terminal, FileText, Globe, Users, ShieldOff, Maximize2, Minimize2,
-  Database, Brain, Code, Zap, Search, Shield, Wrench, BookOpen, Settings, MessageSquare, type LucideIcon,
+  Database, Brain, Code, Zap, Search, Shield, Wrench, BookOpen, Settings, MessageSquare, Check, type LucideIcon,
 } from 'lucide-react';
-import type { Agent, AgentCapabilities } from '@/types';
+import type { Agent, AgentCapabilities, ContextEntry } from '@/types';
 import { AgentChatPanel } from '@/components/agent-chat-panel';
 
 // ── Icon picker presets ──
@@ -61,12 +61,14 @@ type FormData = {
   icon: string;
   capabilities: AgentCapabilities;
   requiredParamsText: string;
+  contextIds: string[];
 };
 
 const emptyForm: FormData = {
   name: '', description: '', systemPrompt: '', icon: '',
   capabilities: { ...DEFAULT_AGENT_CAPABILITIES },
   requiredParamsText: '',
+  contextIds: [],
 };
 
 function agentToForm(a: Agent): FormData {
@@ -77,6 +79,7 @@ function agentToForm(a: Agent): FormData {
     icon: a.icon ?? '',
     capabilities: a.capabilities ?? { ...DEFAULT_AGENT_CAPABILITIES },
     requiredParamsText: (a.requiredParams ?? []).join('\n'),
+    contextIds: a.contextIds ?? [],
   };
 }
 
@@ -134,6 +137,39 @@ function SettingsForm({
   selectedId: string | null;
   onExpandPrompt: () => void;
 }) {
+  // Fetch available context entries for the picker
+  const [contextEntries, setContextEntries] = useState<ContextEntry[]>([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/context');
+        const data = await res.json();
+        setContextEntries((data.entries ?? []).filter((e: ContextEntry) => !e.status || e.status === 'active'));
+      } catch { setContextEntries([]); }
+    })();
+  }, []);
+
+  const toggleContext = (id: string) => {
+    setForm(f => ({
+      ...f,
+      contextIds: f.contextIds.includes(id)
+        ? f.contextIds.filter(cid => cid !== id)
+        : [...f.contextIds, id],
+    }));
+  };
+
+  // Group context entries
+  const contextGroups = useMemo(() => {
+    const groups: Array<{ group: string | null; entries: ContextEntry[] }> = [];
+    const groupNames = [...new Set(contextEntries.map(e => e.group).filter((g): g is string => !!g))].sort();
+    const ungrouped = contextEntries.filter(e => !e.group);
+    if (ungrouped.length > 0) groups.push({ group: null, entries: ungrouped });
+    for (const g of groupNames) {
+      groups.push({ group: g, entries: contextEntries.filter(e => e.group === g) });
+    }
+    return groups;
+  }, [contextEntries]);
+
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-2xl px-8 py-8">
@@ -310,6 +346,69 @@ function SettingsForm({
             </div>
           </div>
 
+          {/* Context Binding */}
+          {contextEntries.length > 0 && (
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                预加载上下文
+              </label>
+              <p className="mb-2 text-xs text-zinc-400">
+                选中的上下文内容将在对话时自动展开注入，Agent 无需手动读取
+              </p>
+              <div className="space-y-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700 max-h-60 overflow-y-auto">
+                {contextGroups.map(({ group, entries }) => (
+                  <div key={group ?? '__ungrouped'}>
+                    {group && (
+                      <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                        {group}
+                      </div>
+                    )}
+                    <div className="space-y-0.5">
+                      {entries.map(entry => {
+                        const checked = form.contextIds.includes(entry.id);
+                        return (
+                          <button
+                            key={entry.id}
+                            type="button"
+                            onClick={() => toggleContext(entry.id)}
+                            className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors ${
+                              checked
+                                ? 'bg-zinc-100 dark:bg-zinc-800'
+                                : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                            }`}
+                          >
+                            <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
+                              checked
+                                ? 'border-zinc-900 bg-zinc-900 dark:border-zinc-100 dark:bg-zinc-100'
+                                : 'border-zinc-300 dark:border-zinc-600'
+                            }`}>
+                              {checked && <Check className="h-3 w-3 text-white dark:text-zinc-900" />}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm text-zinc-900 dark:text-zinc-100">
+                                {entry.label}
+                              </div>
+                              {entry.description && (
+                                <div className="truncate text-xs text-zinc-400">
+                                  {entry.description}
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {form.contextIds.length > 0 && (
+                <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                  已选 {form.contextIds.length} 项
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex items-center gap-3 pt-2">
             <button
@@ -481,6 +580,7 @@ export default function AgentsPage() {
             icon: form.icon.trim() || undefined,
             capabilities: form.capabilities,
             requiredParams: parsedParams.length > 0 ? parsedParams : undefined,
+            contextIds: form.contextIds.length > 0 ? form.contextIds : undefined,
           }),
         });
         if (res.ok) {
@@ -502,6 +602,7 @@ export default function AgentsPage() {
             icon: form.icon.trim() || undefined,
             capabilities: form.capabilities,
             requiredParams: parsedParams.length > 0 ? parsedParams : [],
+            contextIds: form.contextIds,
           }),
         });
         if (res.ok) await fetchAgents();
@@ -538,6 +639,7 @@ export default function AgentsPage() {
         || form.icon !== (selectedAgent.icon ?? '')
         || JSON.stringify(form.capabilities) !== JSON.stringify(selectedAgent.capabilities ?? DEFAULT_AGENT_CAPABILITIES)
         || form.requiredParamsText !== (selectedAgent.requiredParams ?? []).join('\n')
+        || JSON.stringify([...form.contextIds].sort()) !== JSON.stringify([...(selectedAgent.contextIds ?? [])].sort())
       : false;
 
   return (

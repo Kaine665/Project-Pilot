@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
 
 /** POST /api/agents — create a new agent */
 export async function POST(request: NextRequest) {
-  const { name, description, systemPrompt, icon, capabilities, requiredParams } = await request.json();
+  const { name, description, systemPrompt, icon, capabilities, requiredParams, contextIds } = await request.json();
   if (!name?.trim()) {
     return NextResponse.json({ error: 'name is required' }, { status: 400 });
   }
@@ -63,6 +63,7 @@ export async function POST(request: NextRequest) {
     icon: icon?.trim() || undefined,
     capabilities: capabilities ?? { ...DEFAULT_AGENT_CAPABILITIES },
     requiredParams: Array.isArray(requiredParams) && requiredParams.length > 0 ? requiredParams : undefined,
+    contextIds: Array.isArray(contextIds) && contextIds.length > 0 ? contextIds : undefined,
     createdAt: now,
     updatedAt: now,
   };
@@ -77,7 +78,7 @@ export async function POST(request: NextRequest) {
 /** PATCH /api/agents — update an agent. Body: { id, ...fields } */
 export async function PATCH(request: NextRequest) {
   const body = await request.json();
-  const { id, name, description, systemPrompt, icon, capabilities, requiredParams } = body;
+  const { id, name, description, systemPrompt, icon, capabilities, requiredParams, contextIds } = body;
   if (!id) {
     return NextResponse.json({ error: 'id is required' }, { status: 400 });
   }
@@ -99,6 +100,7 @@ export async function PATCH(request: NextRequest) {
   if (icon !== undefined) agent.icon = icon.trim() || undefined;
   if (capabilities !== undefined) agent.capabilities = capabilities as AgentCapabilities;
   if (requiredParams !== undefined) agent.requiredParams = Array.isArray(requiredParams) && requiredParams.length > 0 ? requiredParams : undefined;
+  if (contextIds !== undefined) agent.contextIds = Array.isArray(contextIds) && contextIds.length > 0 ? contextIds : undefined;
   agent.updatedAt = new Date().toISOString();
 
   await writeAgents(data);
