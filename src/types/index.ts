@@ -421,6 +421,8 @@ export interface Agent {
   executionMode?: 'task' | 'chat';
   /** Parameter names this agent requires to run (template only, values filled at project/task level) */
   requiredParams?: string[];
+  /** Context entry IDs to preload into the prompt (content expanded automatically, on top of global index) */
+  contextIds?: string[];
   archived?: boolean;
   archivedAt?: string;
   createdAt: string;

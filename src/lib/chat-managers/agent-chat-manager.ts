@@ -10,7 +10,7 @@
  * - Session CRUD (list, load, delete, persisted to agent-chat-sessions.json)
  */
 
-import { writeFile, unlink, mkdir } from 'fs/promises';
+import { readFile, writeFile, unlink, mkdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
@@ -630,6 +630,31 @@ async function buildContextSection(): Promise<string> {
   return md;
 }
 
+// ── Preloaded Context Builder ──
+
+async function buildPreloadedContextSection(contextIds: string[] | undefined): Promise<string> {
+  if (!contextIds || contextIds.length === 0) return '';
+
+  const data = await readJsonFile<ContextIndexData>(getContextIndexPath(), { entries: [] });
+  const entries = data.entries.filter(e => contextIds.includes(e.id) && (!e.status || e.status === 'active'));
+  if (entries.length === 0) return '';
+
+  const sections: string[] = [];
+  for (const entry of entries) {
+    try {
+      const filePath = getContextFilePath(entry.fileName);
+      const content = await readFile(filePath, 'utf-8');
+      sections.push(`### ${entry.label}\n\n${content.trim()}`);
+    } catch {
+      // File missing or unreadable — skip silently
+    }
+  }
+
+  if (sections.length === 0) return '';
+
+  return `\n\n## Agent 预加载上下文\n\n以下上下文已由配置自动加载，无需手动读取：\n\n${sections.join('\n\n---\n\n')}\n`;
+}
+
 // ── Knowledge Saving Instructions ──
 
 const KNOWLEDGE_SAVE_INSTRUCTIONS = `
@@ -654,8 +679,9 @@ async function buildAgentChatPrompt(agent: Agent, message: string): Promise<stri
     || `你是一个名为「${agent.name}」的 AI 助手。${agent.description || ''}`;
 
   const contextSection = await buildContextSection();
+  const preloadedSection = await buildPreloadedContextSection(agent.contextIds);
 
-  return `${systemPrompt}${contextSection}${KNOWLEDGE_SAVE_INSTRUCTIONS}
+  return `${systemPrompt}${contextSection}${preloadedSection}${KNOWLEDGE_SAVE_INSTRUCTIONS}
 
 ## 会话标题
 
@@ -681,8 +707,9 @@ async function buildAgentChatPromptWithFlowContext(
     || `你是一个名为「${agent.name}」的 AI 助手。${agent.description || ''}`;
 
   const contextSection = await buildContextSection();
+  const preloadedSection = await buildPreloadedContextSection(agent.contextIds);
 
-  return `${systemPrompt}${contextSection}${KNOWLEDGE_SAVE_INSTRUCTIONS}
+  return `${systemPrompt}${contextSection}${preloadedSection}${KNOWLEDGE_SAVE_INSTRUCTIONS}
 
 ## 当前项目上下文
 
@@ -716,6 +743,7 @@ async function buildGuestAgentPrompt(
     || `你是一个名为「${agent.name}」的 AI 助手。${agent.description || ''}`;
 
   const contextSection = await buildContextSection();
+  const preloadedSection = await buildPreloadedContextSection(agent.contextIds);
 
   let referenceSection = '';
   if (importedTurns.length > 0) {
@@ -735,7 +763,7 @@ ${turnsText}
 `;
   }
 
-  return `${systemPrompt}${contextSection}${referenceSection}
+  return `${systemPrompt}${contextSection}${preloadedSection}${referenceSection}
 
 ## 会话标题
 
