@@ -20,12 +20,14 @@ import type { StreamParser } from '@/lib/claude-stream-parser';
 import {
   getAgentChatSessionsPath,
   getAgentsPath,
+  getPromptFilePath,
   getContextIndexPath,
   getContextFilePath,
   getContextDir,
   readJsonFile,
   modifyJsonFile,
 } from '@/lib/file-store';
+import { resolveSystemPrompt } from '@/lib/agent-prompt-store';
 import type { ContextIndexData, ContextEntry } from '@/types';
 import {
   buildClaudeEnv,
@@ -634,17 +636,20 @@ async function buildResourcePrompt(
   const baseRefs = agent.defaultResources ?? migrateAgentToResources(agent);
   const allRefs = extraRefs ? [...baseRefs, ...extraRefs] : baseRefs;
 
-  // Provide the resolved system prompt text via loader context
-  const systemPromptText = agent.systemPrompt
+  // Resolve system prompt: prefer .md file, fallback to inline, then auto-generated
+  const resolved = await resolveSystemPrompt(agent.id, agent.systemPrompt);
+  const systemPromptText = resolved
     || `你是一个名为「${agent.name}」的 AI 助手。${agent.description || ''}`;
 
   const ctx: SystemPromptLoaderContext = {
     agentId: agent.id,
     systemPromptText,
+    // exposePromptPath: pass prompt file path if the agent opts in
+    promptFilePath: agent.capabilities?.exposePromptPath ? getPromptFilePath(agent.id) : undefined,
   };
 
-  const resolved = await resourceRegistry.resolveAll(allRefs, ctx);
-  return resourceRegistry.formatAsPrompt(resolved);
+  const resolvedResources = await resourceRegistry.resolveAll(allRefs, ctx);
+  return resourceRegistry.formatAsPrompt(resolvedResources);
 }
 
 // ── Prompt Builders (powered by Resource Registry) ──

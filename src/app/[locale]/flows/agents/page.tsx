@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Bot, Plus, Trash2, X, ChevronRight, Terminal, FileText, Globe, Users, ShieldOff, Maximize2, Minimize2,
-  Database, Brain, Code, Zap, Search, Shield, Wrench, BookOpen, Settings, MessageSquare, Check, type LucideIcon,
+  Database, Brain, Code, Zap, Search, Shield, Wrench, BookOpen, Settings, MessageSquare, Check, Copy, Eye, type LucideIcon,
 } from 'lucide-react';
 import type { Agent, AgentCapabilities, ContextEntry } from '@/types';
 import { AgentChatPanel, type SessionListItem } from '@/components/agent-chat-panel';
@@ -49,7 +49,8 @@ const CAPABILITY_ITEMS: Array<{
   { key: 'fileAccess', label: '文件读写',       description: 'Read、Write、Edit、Glob、Grep', icon: FileText },
   { key: 'web',        label: 'Web 搜索/抓取',  description: 'WebFetch、WebSearch',          icon: Globe },
   { key: 'subAgent',   label: '子 Agent',       description: 'Task 工具（创建子代理）',       icon: Users },
-  { key: 'skipReview', label: '无需审核',       description: '自动批准所有工具调用',           icon: ShieldOff, danger: true },
+  { key: 'skipReview',      label: '无需审核',       description: '自动批准所有工具调用',                icon: ShieldOff, danger: true },
+  { key: 'exposePromptPath', label: '暴露提示词路径', description: '将 prompt 文件路径注入提示词，AI 可自行读写', icon: Eye },
 ];
 
 // ── Form types ──
@@ -474,6 +475,7 @@ export default function AgentsPage() {
   const [agentSessions, setAgentSessions] = useState<SessionListItem[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null | undefined>(undefined);
   const [chatKey, setChatKey] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const fetchAgents = useCallback(async () => {
     try {
@@ -521,6 +523,26 @@ export default function AgentsPage() {
   const selectedAgent = agents.find(a => a.id === selectedId) ?? null;
   const groupedSessions = useMemo(() => groupSessionsByDay(agentSessions), [agentSessions]);
 
+  // B2: Filter agents by search query (fuzzy match on name + description)
+  // B3: Sort agents — built-in first, then by updatedAt descending (most recent first)
+  const displayAgents = useMemo(() => {
+    let list = agents;
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter(a =>
+        a.name.toLowerCase().includes(q) ||
+        (a.description ?? '').toLowerCase().includes(q),
+      );
+    }
+    return [...list].sort((a, b) => {
+      // Built-in agents always on top
+      if (a.builtIn && !b.builtIn) return -1;
+      if (!a.builtIn && b.builtIn) return 1;
+      // Then by updatedAt descending
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
+  }, [agents, searchQuery]);
+
   const handleSelect = (agent: Agent) => {
     setCreating(false);
     setSelectedId(agent.id);
@@ -536,6 +558,31 @@ export default function AgentsPage() {
     setCreating(true);
     setForm(emptyForm);
     setExpandedPrompt(false);
+  };
+
+  // B1: Clone an agent — copy all config with "(副本)" suffix
+  const handleClone = async (source: Agent) => {
+    try {
+      const res = await fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: `${source.name} (副本)`,
+          description: source.description,
+          systemPrompt: source.systemPrompt,
+          icon: source.icon,
+          capabilities: source.capabilities,
+          requiredParams: source.requiredParams,
+          contextIds: source.contextIds,
+          defaultResources: source.defaultResources,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        await fetchAgents();
+        handleSelect(data.agent);
+      }
+    } catch { /* ignore */ }
   };
 
   const handleClose = () => {
@@ -660,13 +707,30 @@ export default function AgentsPage() {
               <Plus className="h-4 w-4" />
             </button>
           </div>
+          {/* B2: Search input */}
+          <div className="border-b border-zinc-100 px-3 py-1.5 dark:border-zinc-800/50">
+            <div className="flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900">
+              <Search className="h-3 w-3 shrink-0 text-zinc-400" />
+              <input
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="搜索 Agent..."
+                className="flex-1 bg-transparent text-xs outline-none placeholder:text-zinc-400 text-zinc-900 dark:text-zinc-100"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          </div>
           <div className="flex-1 overflow-y-auto">
-            {agents.length === 0 ? (
+            {displayAgents.length === 0 ? (
               <div className="px-4 py-8 text-center text-xs text-zinc-400">
-                暂无 Agent
+                {searchQuery ? '没有匹配的 Agent' : '暂无 Agent'}
               </div>
             ) : (
-              agents.map(a => (
+              displayAgents.map(a => (
                 <div
                   key={a.id}
                   onClick={() => handleSelect(a)}
@@ -692,6 +756,14 @@ export default function AgentsPage() {
                       </div>
                     )}
                   </div>
+                  {/* B1: Clone button */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleClone(a); }}
+                    className="shrink-0 rounded-md p-1 text-zinc-300 opacity-0 transition-all hover:bg-zinc-200 hover:text-zinc-600 group-hover:opacity-100 dark:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
+                    title="克隆"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </button>
                   <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-300 dark:text-zinc-600" />
                 </div>
               ))

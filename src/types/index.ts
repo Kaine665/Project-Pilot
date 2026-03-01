@@ -389,6 +389,8 @@ export interface AgentCapabilities {
   subAgent: boolean;
   /** Maps to --dangerously-skip-permissions (auto-approve all tool calls) */
   skipReview: boolean;
+  /** Expose the prompt file path in the system prompt so the AI can read/edit its own instructions */
+  exposePromptPath: boolean;
 }
 
 export const DEFAULT_AGENT_CAPABILITIES: AgentCapabilities = {
@@ -397,6 +399,7 @@ export const DEFAULT_AGENT_CAPABILITIES: AgentCapabilities = {
   web: true,
   subAgent: true,
   skipReview: false,
+  exposePromptPath: false,
 };
 
 export interface Agent {
