@@ -98,35 +98,24 @@ export async function POST(request: NextRequest) {
     }
 
     if (target === 'all') {
-      // 清除 agents，但保留内置 agent
+      // agents 和 prompts 不清除 — 只清空 agent-chat 会话记录
+      // Agent 定义和 prompt 是用户精心配置的资产，清空数据不应该丢失它们
       await backupFile(getAgentsPath());
       const agentsData = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
-      const builtInAgents = agentsData.agents.filter(a => a.builtIn);
       // Ensure all default built-in agents are present
       for (const defaultAgent of DEFAULT_AGENTS) {
-        if (!builtInAgents.some(a => a.id === defaultAgent.id)) {
-          builtInAgents.unshift(defaultAgent);
+        if (!agentsData.agents.some(a => a.id === defaultAgent.id)) {
+          agentsData.agents.unshift(defaultAgent);
         }
       }
-      await writeJsonFile(getAgentsPath(), { agents: builtInAgents });
-
-      // 清理非内置 agent 的外置 prompt 文件
-      const promptsDir = getPromptsDir();
-      await backupDir2(promptsDir);
-      try {
-        const builtInIds = new Set(builtInAgents.map(a => a.id));
-        const files = await fs.readdir(promptsDir);
-        for (const file of files) {
-          if (file.endsWith('.md')) {
-            const agentId = file.slice(0, -3);
-            if (!builtInIds.has(agentId)) {
-              await fs.unlink(path.join(promptsDir, file));
-            }
-          }
+      // Un-archive any soft-deleted agents (fresh start for sessions, not for agent definitions)
+      for (const agent of agentsData.agents) {
+        if (agent.archived) {
+          agent.archived = undefined;
+          agent.archivedAt = undefined;
         }
-      } catch {
-        // prompts 目录不存在则跳过
       }
+      await writeJsonFile(getAgentsPath(), agentsData);
     }
 
     return NextResponse.json({

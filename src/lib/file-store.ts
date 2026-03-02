@@ -192,6 +192,28 @@ export function getContextFilePath(fileName: string): string {
   return path.join(DATA_DIR, 'context', safe);
 }
 
+// ── Design Docs 路径函数 ──
+// 索引 + Markdown 文件分离：
+//   _index.json  → 按项目分组的元数据
+//   {docId}.md   → 文档正文
+// getDesignDocFilePath 的 path.basename 安全检查不可移除 — 防路径穿越
+
+export function getDesignDocsDir(): string {
+  return path.join(DATA_DIR, 'design-docs');
+}
+
+export function getDesignDocsIndexPath(): string {
+  return path.join(DATA_DIR, 'design-docs', '_index.json');
+}
+
+export function getDesignDocFilePath(fileName: string): string {
+  const safe = path.basename(fileName);
+  if (!safe || safe !== fileName || safe.includes('..')) {
+    throw new Error(`Invalid doc file name: ${fileName}`);
+  }
+  return path.join(DATA_DIR, 'design-docs', safe);
+}
+
 // 🔒 Security: Maximum JSON file size to prevent DoS attacks
 const MAX_JSON_SIZE = 50 * 1024 * 1024; // 50MB
 
@@ -222,10 +244,51 @@ export async function readJsonFile<T>(filePath: string, defaultValue: T): Promis
   }
 }
 
+// ── 写入前自动快照 ──
+// 关键数据文件在每次写入前自动保存旧版本到 _snapshots/，保留最近 MAX_SNAPSHOTS 份
+
+const SNAPSHOT_DIR = path.join(DATA_DIR, '_snapshots');
+const MAX_SNAPSHOTS = 10;
+
+/** 需要做写入前快照的文件（basename） */
+const SNAPSHOT_TARGETS = new Set(['agents.json']);
+
+async function snapshotBeforeWrite(filePath: string): Promise<void> {
+  const baseName = path.basename(filePath);
+  if (!SNAPSHOT_TARGETS.has(baseName)) return;
+
+  try {
+    await fs.stat(filePath); // 文件不存在则跳过
+  } catch {
+    return;
+  }
+
+  try {
+    await fs.mkdir(SNAPSHOT_DIR, { recursive: true });
+    const stem = baseName.replace('.json', '');
+    const dest = path.join(SNAPSHOT_DIR, `${stem}_${Date.now()}.json`);
+    await fs.copyFile(filePath, dest);
+
+    // 清理超出上限的旧快照
+    const files = (await fs.readdir(SNAPSHOT_DIR))
+      .filter(f => f.startsWith(`${stem}_`) && f.endsWith('.json'))
+      .sort(); // 时间戳排序，最旧在前
+    if (files.length > MAX_SNAPSHOTS) {
+      for (const old of files.slice(0, files.length - MAX_SNAPSHOTS)) {
+        await fs.unlink(path.join(SNAPSHOT_DIR, old)).catch(() => {});
+      }
+    }
+  } catch {
+    // 快照失败不阻塞正常写入
+  }
+}
+
 /**
  * 写入 JSON 文件，自动创建目录
+ * 对关键文件（agents.json）会在写入前自动保存快照
  */
 export async function writeJsonFile(filePath: string, data: unknown): Promise<void> {
+  await snapshotBeforeWrite(filePath);
   const dirPath = path.dirname(filePath);
   await fs.mkdir(dirPath, { recursive: true });
   await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');

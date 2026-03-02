@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, Loader2, Maximize2, Minimize2, Square, Bot, Sparkles, ChevronDown, Plus, MessageSquare, Trash2, X, UserPlus, Paperclip, BookMarked } from 'lucide-react';
+import { Send, Loader2, Maximize2, Minimize2, Square, Bot, Sparkles, ChevronDown, Plus, MessageSquare, Trash2, X, UserPlus, Paperclip, BookMarked, FileText } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from '@/i18n/routing';
 import { Button } from '@/components/ui/button';
@@ -78,6 +78,9 @@ export function AgentChatPanel({
   // Knowledge draft notifications (auto-path)
   const [knowledgeDrafts, setKnowledgeDrafts] = useState<Array<{ entryId: string; label: string }>>([]);
 
+  // Design doc saved notifications (auto-path)
+  const [docsSaved, setDocsSaved] = useState<Array<{ docId: string; title: string; projectKey: string }>>([]);
+
   // Save as knowledge dialog (manual path)
   const [saveDialog, setSaveDialog] = useState<{ open: boolean; content: string }>({ open: false, content: '' });
   const [saveForm, setSaveForm] = useState<{ label: string; description: string; format: 'text' | 'json' | 'markdown' }>({ label: '', description: '', format: 'text' });
@@ -91,6 +94,7 @@ export function AgentChatPanel({
   const lastEventIdxRef = useRef<number>(-1);
   const finalizingRef = useRef(false);
   const sessionIdRef = useRef<string | null>(null);
+  const doSendRef = useRef<(text: string) => void>(() => {});
 
   // Keep ref in sync
   useEffect(() => {
@@ -310,6 +314,10 @@ export function AgentChatPanel({
 
             case 'knowledge_draft_created':
               setKnowledgeDrafts(prev => [...prev, { entryId: event.entryId, label: event.label }]);
+              break;
+
+            case 'doc_created':
+              setDocsSaved(prev => [...prev, { docId: event.docId, title: event.title, projectKey: event.projectKey }]);
               break;
 
             case 'error':
@@ -532,6 +540,23 @@ export function AgentChatPanel({
     }
   }, [agent.id, sessionId, isStreaming, pendingImages, hasProject, projectKey, connectToStream, onSessionChange, t]);
 
+  // Keep doSendRef in sync (avoid stale closure in event listener)
+  useEffect(() => {
+    doSendRef.current = doSend;
+  }, [doSend]);
+
+  // Listen for AskUserQuestion answers dispatched via custom event
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const answer = (e as CustomEvent<{ answer: string }>).detail?.answer;
+      if (answer) {
+        doSendRef.current(answer);
+      }
+    };
+    window.addEventListener('ask-user-answer', handler);
+    return () => window.removeEventListener('ask-user-answer', handler);
+  }, []);
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     Array.from(e.target.files ?? []).forEach(file => {
       const reader = new FileReader();
@@ -627,6 +652,47 @@ export function AgentChatPanel({
     setSaveDialog({ open: true, content });
   };
 
+  // Delete a single message from the conversation
+  const handleDeleteMessage = useCallback((messageId: string) => {
+    setMessages(prev => prev.filter(m => m.id !== messageId));
+  }, []);
+
+  // Regenerate: remove the last assistant message and resend the last user message
+  const handleRegenerate = useCallback(() => {
+    if (isStreaming) return;
+    setMessages(prev => {
+      // Find the last user message
+      const lastUserIdx = prev.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
+      if (lastUserIdx === -1) return prev;
+      const lastUserMsg = prev[lastUserIdx];
+      // Remove all messages after (and including) the last assistant message after this user msg
+      const trimmed = prev.slice(0, lastUserIdx + 1);
+      // Re-send the user's message
+      setTimeout(() => doSend(lastUserMsg.content), 0);
+      // Remove the user msg too since doSend will re-add it
+      return trimmed.slice(0, -1);
+    });
+  }, [isStreaming, doSend]);
+
+  // Retry: resend the last user message (for failed sends)
+  const handleRetry = useCallback(() => {
+    if (isStreaming) return;
+    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+    if (!lastUserMsg) return;
+    // Remove the failed user message and the error, then re-send
+    setMessages(prev => prev.filter(m => m.id !== lastUserMsg.id));
+    setErrorMsg(null);
+    setTimeout(() => doSend(lastUserMsg.content), 0);
+  }, [isStreaming, messages, doSend]);
+
+  // Compute the last assistant message ID (for regenerate button positioning)
+  const lastAssistantId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'assistant') return messages[i].id;
+    }
+    return null;
+  }, [messages]);
+
   const handleSaveKnowledgeSubmit = async () => {
     if (!saveForm.label.trim() || !saveForm.description.trim()) return;
     setSavingKnowledge(true);
@@ -695,6 +761,11 @@ export function AgentChatPanel({
                   message={msg}
                   showActions={!isStreaming}
                   onSaveAsKnowledge={handleSaveAsKnowledge}
+                  onDelete={handleDeleteMessage}
+                  onRegenerate={handleRegenerate}
+                  isLastAssistant={msg.id === lastAssistantId}
+                  onRetry={handleRetry}
+                  hasSendError={!!errorMsg && msg.role === 'user' && msg.id === messages[messages.length - 1]?.id}
                 />
               ))}
 
@@ -732,6 +803,22 @@ export function AgentChatPanel({
             <button
               onClick={() => setKnowledgeDrafts([])}
               className="shrink-0 text-amber-400 hover:text-amber-600 dark:text-amber-600 dark:hover:text-amber-400"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+
+        {/* Design doc saved notification */}
+        {docsSaved.length > 0 && !isStreaming && (
+          <div className="mx-3 mb-2 flex items-center justify-between gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs dark:border-blue-800/50 dark:bg-blue-900/15">
+            <div className="flex items-center gap-1.5 text-blue-700 dark:text-blue-400">
+              <FileText className="h-3 w-3 shrink-0" />
+              <span>Agent 已保存 {docsSaved.length} 条设计文档</span>
+            </div>
+            <button
+              onClick={() => setDocsSaved([])}
+              className="shrink-0 text-blue-400 hover:text-blue-600 dark:text-blue-600 dark:hover:text-blue-400"
             >
               <X className="h-3 w-3" />
             </button>
@@ -1033,6 +1120,11 @@ export function AgentChatPanel({
                 message={msg}
                 showActions={!isStreaming}
                 onSaveAsKnowledge={handleSaveAsKnowledge}
+                onDelete={handleDeleteMessage}
+                onRegenerate={handleRegenerate}
+                isLastAssistant={msg.id === lastAssistantId}
+                onRetry={handleRetry}
+                hasSendError={!!errorMsg && msg.role === 'user' && msg.id === messages[messages.length - 1]?.id}
               />
             ))}
 
@@ -1141,6 +1233,19 @@ export function AgentChatPanel({
             <span>Agent 保存了 {knowledgeDrafts.length} 条知识草稿，前往上下文页面确认</span>
           </div>
           <button onClick={() => setKnowledgeDrafts([])} className="shrink-0 text-amber-400 hover:text-amber-600">
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+
+      {/* Design doc saved notification */}
+      {docsSaved.length > 0 && !isStreaming && (
+        <div className="mx-2 mb-1 flex items-center justify-between gap-2 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs dark:border-blue-800/50 dark:bg-blue-900/15">
+          <div className="flex items-center gap-1.5 text-blue-700 dark:text-blue-400">
+            <FileText className="h-3 w-3 shrink-0" />
+            <span>Agent 保存了 {docsSaved.length} 条设计文档，前往设计文档页面查看</span>
+          </div>
+          <button onClick={() => setDocsSaved([])} className="shrink-0 text-blue-400 hover:text-blue-600">
             <X className="h-3 w-3" />
           </button>
         </div>

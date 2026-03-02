@@ -66,6 +66,14 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
     label: '知识保存指令',
   });
 
+  // Design doc save instructions — always present
+  refs.push({
+    type: 'doc-save-instructions',
+    id: '_static',
+    priority: 85,
+    label: '设计文档保存指令',
+  });
+
   // Session title instructions — always present
   refs.push({
     type: 'session-title-instructions',

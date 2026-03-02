@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { TopNav } from '@/components/top-nav';
 import { AgentChatPanel } from '@/components/agent-chat-panel';
-import { FolderKanban, Plus, Trash2, Network, GripVertical, Bot, Layers, BookOpen, ListTodo, ChevronRight } from 'lucide-react';
+import { FolderKanban, Plus, Trash2, Network, GripVertical, Bot, Layers, BookOpen, FileText, ListTodo, ChevronRight } from 'lucide-react';
 import { BUTLER_AGENT_ID } from '@/lib/default-agents';
 import type { Agent } from '@/types';
 import { useRouter, usePathname } from '@/i18n/routing';
@@ -85,8 +85,9 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   const isContextPage = pathname.startsWith('/flows/context');
   const isRecycleBinPage = pathname.startsWith('/flows/recycle-bin');
   const isButlerPage = pathname.startsWith('/flows/butler');
+  const isDocsPage = pathname.startsWith('/flows/docs');
   const isTodosPage = pathname.startsWith('/flows/todos');
-  const isSubRoute = isAgentsPage || isDimensionsPage || isContextPage || isRecycleBinPage || isButlerPage || isTodosPage;
+  const isSubRoute = isAgentsPage || isDimensionsPage || isContextPage || isDocsPage || isRecycleBinPage || isButlerPage || isTodosPage;
 
   // Auto-close expandable panel when on sub-route pages
   useEffect(() => {
@@ -223,6 +224,10 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
 
   const handleNavigateContext = () => {
     router.push('/flows/context');
+  };
+
+  const handleNavigateDocs = () => {
+    router.push('/flows/docs');
   };
 
   const handleNavigateTodos = () => {
@@ -368,6 +373,21 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right">上下文</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className={`flex h-11 w-11 items-center justify-center rounded-md transition-colors ${
+                      isDocsPage
+                        ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
+                        : 'text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200'
+                    }`}
+                    onClick={handleNavigateDocs}
+                  >
+                    <FileText className="h-5 w-5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">设计文档</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>

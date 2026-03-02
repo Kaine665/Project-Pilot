@@ -462,6 +462,20 @@ function groupSessionsByDay(sessions: SessionListItem[]) {
   return groups;
 }
 
+// ── URL param sync helper ──
+
+function syncUrlParams(params: Record<string, string | null | undefined>) {
+  const url = new URL(window.location.href);
+  for (const [key, value] of Object.entries(params)) {
+    if (value) {
+      url.searchParams.set(key, value);
+    } else {
+      url.searchParams.delete(key);
+    }
+  }
+  window.history.replaceState({}, '', url.toString());
+}
+
 // ── Main page ──
 
 export default function AgentsPage() {
@@ -488,6 +502,28 @@ export default function AgentsPage() {
   }, []);
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
+
+  // Restore selection from URL params after agents load
+  useEffect(() => {
+    if (agents.length === 0) return;
+    const url = new URL(window.location.href);
+    const agentParam = url.searchParams.get('agent');
+    const sessionParam = url.searchParams.get('session');
+    if (agentParam) {
+      const agent = agents.find(a => a.id === agentParam);
+      if (agent) {
+        setSelectedId(agent.id);
+        setForm(agentToForm(agent));
+        if (sessionParam) {
+          setActiveSessionId(sessionParam);
+        }
+      } else {
+        // Agent from URL no longer exists — clear
+        syncUrlParams({ agent: null, session: null });
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agents.length]); // Only run when agents list first loads
 
   // Refresh agent list when window regains focus
   useEffect(() => {
@@ -551,6 +587,7 @@ export default function AgentsPage() {
     setViewMode('chat');
     setActiveSessionId(undefined);
     setChatKey(k => k + 1);
+    syncUrlParams({ agent: agent.id, session: null });
   };
 
   const handleStartCreate = () => {
@@ -592,18 +629,21 @@ export default function AgentsPage() {
     setExpandedPrompt(false);
     setViewMode('chat');
     setActiveSessionId(undefined);
+    syncUrlParams({ agent: null, session: null });
   };
 
   const handleSessionClick = (sessionId: string) => {
     setActiveSessionId(sessionId);
     setChatKey(k => k + 1);
     setViewMode('chat');
+    syncUrlParams({ session: sessionId });
   };
 
   const handleNewChat = () => {
     setActiveSessionId(null);
     setChatKey(k => k + 1);
     setViewMode('chat');
+    syncUrlParams({ session: null });
   };
 
   const handleSave = async () => {
@@ -635,6 +675,7 @@ export default function AgentsPage() {
           setCreating(false);
           setSelectedId(data.agent.id);
           setForm(agentToForm(data.agent));
+          syncUrlParams({ agent: data.agent.id, session: null });
         }
       } else if (selectedId) {
         const res = await fetch('/api/agents', {
@@ -671,6 +712,7 @@ export default function AgentsPage() {
         if (selectedId === id) {
           setSelectedId(null);
           setForm(emptyForm);
+          syncUrlParams({ agent: null, session: null });
         }
       }
     } catch { /* ignore */ }
@@ -948,6 +990,8 @@ export default function AgentsPage() {
                         setAgentSessions(prev =>
                           prev.some(s => s.id === newSession.id) ? prev : [newSession, ...prev],
                         );
+                        setActiveSessionId(newSession.id);
+                        syncUrlParams({ session: newSession.id });
                       }
                       if (selectedId) fetchAgentSessions(selectedId);
                     }}

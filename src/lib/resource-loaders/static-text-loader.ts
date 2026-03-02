@@ -2,6 +2,7 @@
  * Static text loaders — fixed prompt sections that don't depend on external data.
  *
  * - KnowledgeInstructionsLoader: knowledge save instructions
+ * - DocSaveInstructionsLoader: design doc save instructions
  * - SessionTitleInstructionsLoader: session title generation instructions
  * - FlowContextLoader: project flow context section
  * - ReferenceTurnsLoader: imported conversation turns (guest agent)
@@ -32,6 +33,33 @@ export class KnowledgeInstructionsLoader implements ResourceLoader {
       ref,
       content: KNOWLEDGE_SAVE_TEXT,
       sectionTitle: '知识保存',
+      ok: true,
+    };
+  }
+}
+
+// ── Design Doc Save Instructions ──
+
+const DOC_SAVE_TEXT = `当你在工作中产出了**设计决策、架构约束、规范文档**等需要长期遵守的内容时，你可以将其保存为项目设计文档。系统会自动将其保存到对应项目下，供所有 Agent 按需读取：
+
+<save-doc project="项目key" title="文档标题（简短）" description="一句话描述文档内容">
+Markdown 文档内容...
+</save-doc>
+
+注意：
+- project 必须是已注册的项目 key（如 elapp、projct-pilot 等）
+- 内容使用 Markdown 格式
+- 只在内容具有长期约束力或参考价值时使用（架构决策、迁移规范、设计原则等）
+- 不要用来保存临时笔记或一次性分析结果（那些用 save-knowledge）`;
+
+export class DocSaveInstructionsLoader implements ResourceLoader {
+  readonly type = 'doc-save-instructions' as const;
+
+  async resolve(ref: ResourceRef, _ctx: LoaderContext): Promise<ResolvedResource> {
+    return {
+      ref,
+      content: DOC_SAVE_TEXT,
+      sectionTitle: '设计文档保存',
       ok: true,
     };
   }

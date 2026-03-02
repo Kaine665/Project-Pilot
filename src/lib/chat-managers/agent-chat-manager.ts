@@ -24,11 +24,14 @@ import {
   getContextIndexPath,
   getContextFilePath,
   getContextDir,
+  getDesignDocsDir,
+  getDesignDocsIndexPath,
+  getDesignDocFilePath,
   readJsonFile,
   modifyJsonFile,
 } from '@/lib/file-store';
 import { resolveSystemPrompt } from '@/lib/agent-prompt-store';
-import type { ContextIndexData, ContextEntry } from '@/types';
+import type { ContextIndexData, ContextEntry, DocsIndexData, DocEntry } from '@/types';
 import {
   buildClaudeEnv,
   buildClaudeModelArgs,
@@ -460,13 +463,24 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       }
     }
 
-    // Save assistant message (strip title + knowledge tags)
+    // Parse and persist design doc drafts
     if (run.assistantText) {
-      const cleaned = stripKnowledgeTags(stripSessionTitle(run.assistantText));
+      const docDrafts = parseDocTags(run.assistantText);
+      for (const draft of docDrafts) {
+        const docId = await createDesignDoc(draft);
+        if (docId) {
+          this.trackAndEmit(run, { type: 'doc_created', docId, title: draft.title, projectKey: draft.project });
+        }
+      }
+    }
+
+    // Save assistant message (strip title + knowledge tags + doc tags)
+    if (run.assistantText) {
+      const cleaned = stripDocTags(stripKnowledgeTags(stripSessionTitle(run.assistantText)));
       // Also clean contentBlocks text entries
       const cleanedBlocks = run.contentBlocks.map(block => {
         if (block.type === 'text') {
-          return { ...block, text: stripKnowledgeTags(stripSessionTitle(block.text)) };
+          return { ...block, text: stripDocTags(stripKnowledgeTags(stripSessionTitle(block.text))) };
         }
         return block;
       }).filter(block => !(block.type === 'text' && !block.text.trim()));
@@ -614,6 +628,73 @@ async function createDraftContextEntry(draft: KnowledgeTag, sessionId: string): 
     return id;
   } catch (err) {
     console.error('[AgentChat] Failed to create draft context entry:', err);
+    return null;
+  }
+}
+
+// ── Design Doc Tag Helpers ──
+
+interface DocTag {
+  project: string;
+  title: string;
+  description: string;
+  content: string;
+}
+
+function parseDocTags(text: string): DocTag[] {
+  const regex = /<save-doc\s+project="([^"]+)"\s+title="([^"]+)"\s+description="([^"]+)">([\s\S]*?)<\/save-doc>/g;
+  const results: DocTag[] = [];
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    results.push({
+      project: match[1].trim(),
+      title: match[2].trim(),
+      description: match[3].trim(),
+      content: match[4].trim(),
+    });
+  }
+  return results;
+}
+
+function stripDocTags(text: string): string {
+  return text.replace(/<save-doc[\s\S]*?<\/save-doc>/g, '').trim();
+}
+
+async function createDesignDoc(draft: DocTag): Promise<string | null> {
+  try {
+    const now = new Date().toISOString();
+    const docId = `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const fileName = `${docId}.md`;
+
+    const entry: DocEntry = {
+      id: docId,
+      title: draft.title,
+      description: draft.description,
+      fileName,
+      projectKey: draft.project,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const docsDir = getDesignDocsDir();
+    await mkdir(docsDir, { recursive: true });
+    await writeFile(getDesignDocFilePath(fileName), draft.content, 'utf-8');
+
+    await modifyJsonFile<DocsIndexData>(
+      getDesignDocsIndexPath(),
+      { projects: {} },
+      (data) => {
+        if (!data.projects[entry.projectKey]) {
+          data.projects[entry.projectKey] = [];
+        }
+        data.projects[entry.projectKey].push(entry);
+        return data;
+      },
+    );
+
+    return docId;
+  } catch (err) {
+    console.error('[AgentChat] Failed to create design doc:', err);
     return null;
   }
 }

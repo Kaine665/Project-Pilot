@@ -426,6 +426,8 @@
     "maxTurns": "Max Turns per Conversation",
     "maxTurnsHint": "Limit the number of agentic turns per conversation. 0 means no limit.",
     "maxTurnsPlaceholder": "0 (no limit)",
+    "defaultExposePromptPath": "Expose Prompt Path by Default",
+    "defaultExposePromptPathHint": "When creating a new Agent, enable 'Expose Prompt Path' by default, allowing the AI to read and edit its own system prompt. You can still toggle this per Agent.",
     "advanced": "Advanced",
     "baseUrl": "API Base URL (Optional)",
     "baseUrlPlaceholder": "https://api.anthropic.com",

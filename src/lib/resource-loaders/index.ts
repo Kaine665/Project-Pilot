@@ -10,6 +10,7 @@ import { TodoListLoader } from './todo-list-loader';
 import { InlineTextLoader } from './inline-text-loader';
 import {
   KnowledgeInstructionsLoader,
+  DocSaveInstructionsLoader,
   SessionTitleInstructionsLoader,
   FlowContextLoader,
   ReferenceTurnsLoader,
@@ -21,6 +22,7 @@ resourceRegistry.register(new SystemPromptLoader());
 resourceRegistry.register(new TodoListLoader());
 resourceRegistry.register(new InlineTextLoader());
 resourceRegistry.register(new KnowledgeInstructionsLoader());
+resourceRegistry.register(new DocSaveInstructionsLoader());
 resourceRegistry.register(new SessionTitleInstructionsLoader());
 resourceRegistry.register(new FlowContextLoader());
 resourceRegistry.register(new ReferenceTurnsLoader());

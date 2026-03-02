@@ -115,6 +115,8 @@ export interface ClaudeSettings {
   effortLevel?: EffortLevel;
   /** 每次对话最大 agentic 轮次，0 = 不限制 */
   maxTurns?: number;
+  /** 新建 Agent 时是否默认暴露提示词路径（默认 true） */
+  defaultExposePromptPath?: boolean;
 }
 
 /** 通用设置 */
@@ -306,6 +308,7 @@ export type ChatSSEEvent =
   | { type: 'phase_changed'; phase: SessionPhase }
   | { type: 'retry_needed'; attempt: number; maxAttempts: number; retryMessage: string }
   | { type: 'knowledge_draft_created'; entryId: string; label: string }
+  | { type: 'doc_created'; docId: string; title: string; projectKey: string }
   | { type: 'error'; message: string }
   | { type: 'done' };
 
@@ -389,6 +392,8 @@ export interface AgentCapabilities {
   subAgent: boolean;
   /** Maps to --dangerously-skip-permissions (auto-approve all tool calls) */
   skipReview: boolean;
+  /** Inject pending todos into the system prompt */
+  todoRead: boolean;
   /** Expose the prompt file path in the system prompt so the AI can read/edit its own instructions */
   exposePromptPath: boolean;
 }
@@ -399,7 +404,8 @@ export const DEFAULT_AGENT_CAPABILITIES: AgentCapabilities = {
   web: true,
   subAgent: true,
   skipReview: false,
-  exposePromptPath: false,
+  todoRead: false,
+  exposePromptPath: true,
 };
 
 export interface Agent {
@@ -518,6 +524,22 @@ export interface ProjectEntry {
 
 export interface ProjectIndex {
   projects: ProjectEntry[];
+}
+
+// ==================== Design Docs（项目设计文档） ====================
+
+export interface DocEntry {
+  id: string;           // doc-{timestamp}-{random}
+  title: string;
+  description?: string;
+  fileName: string;     // design-docs/{docId}.md
+  projectKey: string;   // 关联项目
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DocsIndexData {
+  projects: Record<string, DocEntry[]>;
 }
 
 // ==================== Artifacts ====================

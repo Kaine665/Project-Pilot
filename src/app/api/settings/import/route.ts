@@ -10,10 +10,11 @@ import {
   getAgentChatSessionsPath,
   getFlowsDir,
   writeJsonFile,
+  readJsonFile,
 } from '@/lib/file-store';
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
 import { writePromptFile } from '@/lib/agent-prompt-store';
-import type { Agent } from '@/types';
+import type { Agent, AgentsData } from '@/types';
 
 /**
  * POST /api/settings/import
@@ -80,23 +81,39 @@ export async function POST(request: NextRequest) {
       stats.plans = Array.isArray(planList) ? planList.length : 0;
     }
     if (data.agents) {
-      // Ensure built-in agents survive import
+      // Merge imported agents into existing ones — never discard existing agents
       const imported = data.agents as { agents?: Agent[] };
-      const agents = Array.isArray(imported.agents) ? imported.agents : [];
-      for (const defaultAgent of DEFAULT_AGENTS) {
-        if (!agents.some((a: Agent) => a.id === defaultAgent.id)) {
-          agents.unshift(defaultAgent);
+      const importedAgents = Array.isArray(imported.agents) ? imported.agents : [];
+      const existingData = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
+      const mergedAgents = [...existingData.agents];
+
+      for (const incoming of importedAgents) {
+        const idx = mergedAgents.findIndex(a => a.id === incoming.id);
+        if (idx >= 0) {
+          // Update existing agent with imported data
+          mergedAgents[idx] = { ...mergedAgents[idx], ...incoming };
+        } else {
+          // Add new agent from import
+          mergedAgents.push(incoming);
         }
       }
+
+      // Ensure built-in agents are present
+      for (const defaultAgent of DEFAULT_AGENTS) {
+        if (!mergedAgents.some((a: Agent) => a.id === defaultAgent.id)) {
+          mergedAgents.unshift(defaultAgent);
+        }
+      }
+
       // 将 systemPrompt 外置到 .md 文件，不存入 agents.json
-      for (const agent of agents) {
+      for (const agent of mergedAgents) {
         if (agent.systemPrompt) {
           await writePromptFile(agent.id, agent.systemPrompt);
           delete agent.systemPrompt;
         }
       }
-      await writeJsonFile(getAgentsPath(), { agents });
-      stats.agents = agents.length;
+      await writeJsonFile(getAgentsPath(), { agents: mergedAgents });
+      stats.agents = mergedAgents.length;
     }
     if (data.agentChatSessions) {
       await writeJsonFile(getAgentChatSessionsPath(), data.agentChatSessions);

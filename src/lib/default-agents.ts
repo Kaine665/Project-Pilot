@@ -27,8 +27,6 @@ data/
 ├── ai-plans.json           # AI 执行计划
 ├── settings.json           # 应用设置（含 API Key，敏感！）
 ├── planner-sessions.json   # 规划助手会话
-├── prompts/                # Agent 系统提示词（每个 Agent 一个 .md 文件）
-│   └── {agentId}.md        # 系统提示词内容（Markdown 格式）
 ├── context/                # 上下文信息（用户/项目配置数据）
 │   ├── index.json          # 上下文索引 { entries: [{ id, label, description, fileName, format }] }
 │   └── {fileName}          # 上下文内容文件（JSON/Markdown/文本）
@@ -163,7 +161,8 @@ export const DEFAULT_AGENTS: Agent[] = [
       web: true,
       subAgent: true,
       skipReview: true,
-      exposePromptPath: false,
+      todoRead: false,
+      exposePromptPath: true,
     },
     createdAt: '2026-02-26T00:00:00.000Z',
     updatedAt: '2026-02-26T00:00:00.000Z',
@@ -182,7 +181,8 @@ export const DEFAULT_AGENTS: Agent[] = [
       web: false,
       subAgent: false,
       skipReview: true,
-      exposePromptPath: false,
+      todoRead: false,
+      exposePromptPath: true,
     },
     createdAt: '2026-02-25T00:00:00.000Z',
     updatedAt: '2026-02-25T00:00:00.000Z',

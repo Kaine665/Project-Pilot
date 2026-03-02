@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PlanRenderer } from '@/components/plan-renderer';
@@ -8,6 +8,48 @@ import { PlanRenderer } from '@/components/plan-renderer';
  * 使用 react-markdown 渲染完整的 GitHub Flavored Markdown
  * 特殊处理：```json:plan 代码块会被渲染为友好的计划展示
  */
+
+// Extract plain text from React children (for copy button)
+function extractText(node: React.ReactNode): string {
+  if (typeof node === 'string') return node;
+  if (typeof node === 'number') return String(node);
+  if (!node) return '';
+  if (Array.isArray(node)) return node.map(extractText).join('');
+  if (typeof node === 'object' && 'props' in node) {
+    return extractText((node as React.ReactElement).props.children);
+  }
+  return '';
+}
+
+// Code block with copy button
+function CodeBlock({ children }: { children: React.ReactNode }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    const text = extractText(children).replace(/\n$/, '');
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, [children]);
+
+  return (
+    <div className="relative my-2">
+      <button
+        onClick={handleCopy}
+        className={`absolute right-2 top-2 z-10 rounded px-1.5 py-0.5 text-[10px] transition-colors ${
+          copied
+            ? 'bg-green-600 text-white'
+            : 'bg-zinc-700 text-zinc-400 hover:bg-zinc-600 hover:text-zinc-200'
+        }`}
+      >
+        {copied ? '已复制' : '复制'}
+      </button>
+      <pre className="overflow-x-auto rounded-md bg-zinc-900 dark:bg-zinc-950 p-3 pr-14 text-xs text-zinc-100">
+        {children}
+      </pre>
+    </div>
+  );
+}
 
 interface FormattedTextProps {
   text: string;
@@ -88,12 +130,8 @@ export function FormattedText({ text, className = '' }: FormattedTextProps) {
               </code>
             );
           },
-          // Code block wrapper
-          pre: ({ children }) => (
-            <pre className="my-2 overflow-x-auto rounded-md bg-zinc-900 dark:bg-zinc-950 p-3 text-xs text-zinc-100">
-              {children}
-            </pre>
-          ),
+          // Code block wrapper with copy button
+          pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
           // Unordered list
           ul: ({ children }) => (
             <ul className="my-1 space-y-0.5 pl-4 text-sm list-disc marker:text-zinc-400 dark:marker:text-zinc-500">

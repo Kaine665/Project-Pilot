@@ -34,6 +34,7 @@ export default function SettingsPage() {
   const [skipPermissions, setSkipPermissions] = useState(true);
   const [effortLevel, setEffortLevel] = useState<EffortLevel>('high');
   const [maxTurns, setMaxTurns] = useState(0);
+  const [defaultExposePromptPath, setDefaultExposePromptPath] = useState(true);
   const [baseUrl, setBaseUrl] = useState('');
 
   // Privacy state
@@ -82,6 +83,7 @@ export default function SettingsPage() {
         setSkipPermissions(data.claude.skipPermissions !== false);
         setEffortLevel(data.claude.effortLevel || 'high');
         setMaxTurns(data.claude.maxTurns || 0);
+        setDefaultExposePromptPath(data.claude.defaultExposePromptPath !== false);
         setBaseUrl(data.claude.baseUrl || '');
         setTelemetry(data.general?.telemetry || false);
 
@@ -156,7 +158,7 @@ export default function SettingsPage() {
         body: JSON.stringify({
           claude: {
             provider, authMode, apiKey, model: effectiveModel,
-            skipPermissions, effortLevel, maxTurns, baseUrl,
+            skipPermissions, effortLevel, maxTurns, defaultExposePromptPath, baseUrl,
           },
           general: { telemetry },
         }),
@@ -602,6 +604,36 @@ export default function SettingsPage() {
                       placeholder={t('maxTurnsPlaceholder')}
                     />
                     <p className="text-xs text-zinc-500">{t('maxTurnsHint')}</p>
+                  </CardContent>
+                </Card>
+
+                {/* Default Expose Prompt Path */}
+                <Card>
+                  <CardContent className="pt-4">
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2 text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                          <Eye className="h-4 w-4" />
+                          {t('defaultExposePromptPath')}
+                        </div>
+                        <p className="text-xs text-zinc-500 pr-4">{t('defaultExposePromptPathHint')}</p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={defaultExposePromptPath}
+                        onClick={() => setDefaultExposePromptPath(!defaultExposePromptPath)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
+                          defaultExposePromptPath ? 'bg-zinc-900 dark:bg-zinc-100' : 'bg-zinc-200 dark:bg-zinc-700'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform dark:bg-zinc-900 ${
+                            defaultExposePromptPath ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </label>
                   </CardContent>
                 </Card>
               </>

@@ -426,6 +426,8 @@
     "maxTurns": "每次对话最大轮次",
     "maxTurnsHint": "限制每次对话的最大 Agent 轮次。0 表示不限制。",
     "maxTurnsPlaceholder": "0（不限制）",
+    "defaultExposePromptPath": "默认暴露提示词路径",
+    "defaultExposePromptPathHint": "新建 Agent 时默认开启「暴露提示词路径」，允许 AI 读取和编辑自己的系统提示词。你仍然可以在每个 Agent 中单独调整。",
     "advanced": "高级设置",
     "baseUrl": "API 基础 URL (可选)",
     "baseUrlPlaceholder": "https://api.anthropic.com",

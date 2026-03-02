@@ -6,6 +6,8 @@
  * For 'critical' level patterns, ProcessManager auto-stops the process.
  */
 
+import os from 'os';
+import path from 'path';
 import type { DangerLevel } from '@/types';
 
 interface DangerPattern {
@@ -41,6 +43,42 @@ const DANGER_PATTERNS: DangerPattern[] = [
   { pattern: /\bdel\s+\/[sfq]/i,                                reason: 'Windows 批量删除',          level: 'warning' },
 ];
 
+// ── ProjectPilot data 目录写入保护 ──
+// Agent 可以读取 data 目录（管家需要读），但不允许写入/删除/覆盖
+
+const DATA_DIR = process.env.PROJECT_PILOT_DATA_DIR
+  || path.join(os.homedir(), '.project-pilot', 'data');
+
+// 写入/删除操作的关键词（出现在命令中 + 路径命中 data 目录 = 拦截）
+const WRITE_INDICATORS = /\b(>|>>|tee|mv|cp|rm|del|unlink|echo\s+.*>|cat\s+.*>|printf\s+.*>|Write-Output|Set-Content|Out-File|Remove-Item|Move-Item|Copy-Item)\b/;
+
+/**
+ * Check if a command attempts to write/delete files inside the ProjectPilot data directory.
+ * Read-only access (cat, head, type, Get-Content) is allowed.
+ */
+function detectDataDirWrite(command: string): DangerDetection | null {
+  // Normalize path separators for matching
+  const normalized = command.replace(/\\/g, '/');
+  const dataDirNormalized = DATA_DIR.replace(/\\/g, '/');
+
+  // Check if command references the data directory
+  const referencesDataDir = normalized.includes(dataDirNormalized)
+    || normalized.includes('.project-pilot/data')
+    || normalized.includes('.project-pilot\\data');
+
+  if (!referencesDataDir) return null;
+
+  // Only block write/delete operations, not reads
+  if (WRITE_INDICATORS.test(command)) {
+    return {
+      reason: `禁止写入 ProjectPilot 数据目录（${DATA_DIR}）`,
+      level: 'critical',
+    };
+  }
+
+  return null;
+}
+
 export interface DangerDetection {
   reason: string;
   level: DangerLevel;
@@ -59,6 +97,10 @@ export function detectDangerousCommand(input: string): DangerDetection | null {
   } catch {
     // Input might be a raw command string
   }
+
+  // ── Data directory write protection (check first, highest priority) ──
+  const dataDirHit = detectDataDirWrite(command);
+  if (dataDirHit) return dataDirHit;
 
   for (const { pattern, reason, level } of DANGER_PATTERNS) {
     if (pattern.test(command)) {

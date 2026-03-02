@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAgentsPath, readJsonFile, writeJsonFile } from '@/lib/file-store';
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
 import { readPromptFile, writePromptFile, deletePromptFile, resolveSystemPrompt } from '@/lib/agent-prompt-store';
+import { getSettings } from '@/lib/settings-manager';
 import type { Agent, AgentCapabilities, AgentsData } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import type { ResourceRef } from '@/types/resource';
@@ -31,7 +32,6 @@ async function readAgents(): Promise<AgentsData> {
       }
     }
   }
-
   // ── systemPrompt 外置懒迁移 ──
   // 旧版 agents.json 中 systemPrompt 是内联字符串，现在迁移到 prompts/{agentId}.md 文件。
   // 首次读取时：如果 agent 有内联 systemPrompt 且无对应 .md 文件，写文件并从 JSON 中删除。
@@ -79,13 +79,24 @@ export async function POST(request: NextRequest) {
 
   const promptText = systemPrompt?.trim() || undefined;
   const now = new Date().toISOString();
+
+  // When no capabilities are provided, apply global default for exposePromptPath
+  let effectiveCaps: AgentCapabilities;
+  if (capabilities) {
+    effectiveCaps = capabilities;
+  } else {
+    const settings = await getSettings();
+    const exposeByDefault = settings.claude.defaultExposePromptPath !== false;
+    effectiveCaps = { ...DEFAULT_AGENT_CAPABILITIES, exposePromptPath: exposeByDefault };
+  }
+
   const agent: Agent = {
     id: `agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     name: name.trim(),
     description: description?.trim() || undefined,
     // systemPrompt 不存入 agents.json，外置到 .md 文件
     icon: icon?.trim() || undefined,
-    capabilities: capabilities ?? { ...DEFAULT_AGENT_CAPABILITIES },
+    capabilities: effectiveCaps,
     requiredParams: Array.isArray(requiredParams) && requiredParams.length > 0 ? requiredParams : undefined,
     contextIds: Array.isArray(contextIds) && contextIds.length > 0 ? contextIds : undefined,
     defaultResources: Array.isArray(defaultResources) && defaultResources.length > 0 ? defaultResources as ResourceRef[] : undefined,

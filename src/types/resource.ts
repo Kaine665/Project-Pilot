@@ -15,6 +15,7 @@ export type ResourceType =
   | 'todo-list'                   // Pending todo items
   | 'inline-text'                 // Inline text snippet (content stored in ref)
   | 'knowledge-instructions'      // Static: knowledge save instructions
+  | 'doc-save-instructions'       // Static: design doc save instructions
   | 'session-title-instructions'  // Static: session title generation instructions
   | 'flow-context'                // Project flow context (for flow-bound chats)
   | 'reference-turns';            // Imported conversation turns (guest agent)
@@ -30,7 +31,7 @@ export interface ResourceRef {
    * - system-prompt: agentId (or '_fallback' for auto-generated prompt)
    * - todo-list: 'pending' | 'all'
    * - inline-text: arbitrary key
-   * - knowledge-instructions / session-title-instructions: '_static'
+   * - knowledge-instructions / doc-save-instructions / session-title-instructions: '_static'
    * - context-index: '_all'
    * - flow-context: '_snapshot'
    * - reference-turns: '_imported'
