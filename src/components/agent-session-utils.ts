@@ -1,0 +1,62 @@
+// ── Types ──
+
+export interface AllSessionItem {
+  id: string;
+  title: string;
+  updatedAt: string;
+  agentId: string;
+  agentName: string;
+  agentIcon?: string;
+  unreadCount?: number;
+}
+
+// Opened session instance: tracks a mounted AgentChatPanel
+export interface OpenedSession {
+  sessionId: string | null; // null = new session (not yet created)
+  agentId: string;
+  key: number; // stable key for React
+}
+
+// ── Session day-grouping helper ──
+
+export function groupSessionsByDay<T extends { updatedAt: string }>(sessions: T[]) {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const yesterdayStart = todayStart - 86_400_000;
+
+  const groups: Array<{ label: string; items: T[] }> = [];
+  const map = new Map<string, T[]>();
+
+  for (const s of sessions) {
+    const d = new Date(s.updatedAt);
+    const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+    let label: string;
+    if (dayStart >= todayStart) label = '今天';
+    else if (dayStart >= yesterdayStart) label = '昨天';
+    else label = `${d.getMonth() + 1}月${d.getDate()}日`;
+
+    if (!map.has(label)) map.set(label, []);
+    map.get(label)!.push(s);
+  }
+
+  for (const [label, items] of map) {
+    groups.push({ label, items });
+  }
+
+  return groups;
+}
+
+// ── URL param sync helper ──
+
+export function syncUrlParams(params: Record<string, string | null | undefined>) {
+  const url = new URL(window.location.href);
+  for (const [key, value] of Object.entries(params)) {
+    if (value) {
+      url.searchParams.set(key, value);
+    } else {
+      url.searchParams.delete(key);
+    }
+  }
+  window.history.replaceState({}, '', url.toString());
+}

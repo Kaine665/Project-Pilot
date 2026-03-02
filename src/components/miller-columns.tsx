@@ -9,16 +9,12 @@ import {
   createContext,
   useContext,
 } from 'react';
-import { createPortal } from 'react-dom';
 import {
   Plus,
-  Sparkles,
-  ChevronsRight,
-  TextCursorInput,
   GripVertical,
-  BookOpen,
   Bot,
 } from 'lucide-react';
+import { ItemActionsPanel, ItemAgentPickerPanel } from './miller-item-panels';
 import * as Dialog from '@radix-ui/react-dialog';
 import { TaskContextDialog } from './task-context-dialog';
 import { useRouter } from '@/i18n/routing';
@@ -337,143 +333,45 @@ function MillerColumnItem({
       )}
 
       {/* Actions panel — rendered via portal to escape overflow clipping */}
-      {actionsOpen && createPortal(
-          <div
-            ref={actionsPanelRef}
-            className="fixed flex items-center gap-1.5 bg-white dark:bg-zinc-900 rounded-lg shadow-lg border border-zinc-200 dark:border-zinc-700 px-2.5 py-1.5 z-9999"
-            style={{ top: actionsPos.top, left: actionsPos.left, transform: 'translateY(-50%)' }}
-            onMouseEnter={cancelCloseActions}
-            onMouseLeave={scheduleCloseActions}
-          >
-            {!item.description && !addingDesc && (
-              <button
-                className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground transition-colors"
-                onClick={e => {
-                  e.stopPropagation();
-                  setActionsOpen(false);
-                  setAddingDesc(true);
-                }}
-                title={t('flows.addDescription')}
-              >
-                <TextCursorInput className="w-3.5 h-3.5" />
-              </button>
-            )}
-            <button
-              className="p-1 rounded hover:bg-amber-50 dark:hover:bg-amber-950/30 text-muted-foreground hover:text-amber-600 transition-colors"
-              onClick={e => {
-                e.stopPropagation();
-                setActionsOpen(false);
-                setContextOpen(true);
-              }}
-              title={t('flows.taskContext')}
-            >
-              <BookOpen className="w-3.5 h-3.5" />
-            </button>
-            <button
-              className={`p-1 rounded transition-colors ${
-                item.agentId
-                  ? 'text-blue-500 bg-blue-50 dark:bg-blue-950/30'
-                  : 'text-muted-foreground hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/30'
-              }`}
-              onClick={e => {
-                e.stopPropagation();
-                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                setAgentPickerPos({ top: rect.bottom + 4, left: rect.left });
-                setActionsOpen(false);
-                setAgentPickerOpen(v => !v);
-              }}
-              title={boundAgent ? t('flows.agentBound', { agent: boundAgent.name }) : t('flows.bindAgent')}
-            >
-              <Bot className="w-3.5 h-3.5" />
-            </button>
-            <button
-              className="p-1 rounded hover:bg-violet-50 dark:hover:bg-violet-950/30 text-muted-foreground hover:text-violet-500 transition-colors"
-              onClick={e => {
-                e.stopPropagation();
-                setActionsOpen(false);
-                handleLaunchAI();
-              }}
-              title={boundAgent ? t('flows.startAIWithAgent', { agent: boundAgent.name }) : t('flows.startAICollaboration')}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-            </button>
-            <button
-              className={`p-1 rounded transition-colors ${
-                isDeferred
-                  ? 'text-blue-400 hover:text-blue-600'
-                  : 'text-muted-foreground hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/30'
-              }`}
-              onClick={e => {
-                e.stopPropagation();
-                setActionsOpen(false);
-                ctx.onToggleDefer(item.id, !!item.deferred);
-              }}
-              title={isDeferred ? t('flows.moveToThisCycle') : t('flows.pushToLater')}
-            >
-              <ChevronsRight className="w-3.5 h-3.5" />
-            </button>
-            <button
-              className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground transition-colors"
-              onClick={e => {
-                e.stopPropagation();
-                setActionsOpen(false);
-                if (!isSelected) {
-                  onSelect(item.id, depth);
-                }
-                setAddingToItemId(item.id);
-              }}
-              title={t('flows.addSubItem')}
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
-            <DeleteButton onClick={() => { setActionsOpen(false); ctx.onDelete(item.id); }} />
-          </div>,
-        document.body,
+      {actionsOpen && (
+        <ItemActionsPanel
+          panelRef={actionsPanelRef}
+          pos={actionsPos}
+          item={item}
+          addingDesc={addingDesc}
+          isDeferred={isDeferred}
+          isSelected={isSelected}
+          boundAgent={boundAgent}
+          onAddDescription={() => { setActionsOpen(false); setAddingDesc(true); }}
+          onOpenContext={() => { setActionsOpen(false); setContextOpen(true); }}
+          onOpenAgentPicker={e => {
+            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setAgentPickerPos({ top: rect.bottom + 4, left: rect.left });
+            setActionsOpen(false);
+            setAgentPickerOpen(v => !v);
+          }}
+          onLaunchAI={() => { setActionsOpen(false); handleLaunchAI(); }}
+          onToggleDefer={() => { setActionsOpen(false); ctx.onToggleDefer(item.id, !!item.deferred); }}
+          onAddSubItem={() => {
+            setActionsOpen(false);
+            if (!isSelected) { onSelect(item.id, depth); }
+            setAddingToItemId(item.id);
+          }}
+          onDelete={() => { setActionsOpen(false); ctx.onDelete(item.id); }}
+          onMouseEnter={cancelCloseActions}
+          onMouseLeave={scheduleCloseActions}
+        />
       )}
 
       {/* Agent picker panel */}
-      {agentPickerOpen && createPortal(
-        <div
-          ref={agentPickerRef}
-          className="fixed z-9999 bg-white dark:bg-zinc-900 rounded-lg shadow-lg border border-zinc-200 dark:border-zinc-700 w-48 py-1"
-          style={{ top: agentPickerPos.top, left: agentPickerPos.left }}
-          onMouseDown={e => e.stopPropagation()}
-        >
-          <button
-            className="w-full text-left px-3 py-1.5 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-2 text-muted-foreground"
-            onClick={e => {
-              e.stopPropagation();
-              ctx.onAssignAgent(item.id, null);
-              setAgentPickerOpen(false);
-            }}
-          >
-            <span className="w-3.5 h-3.5 shrink-0 inline-block" />
-            <span>{t('flows.noAgent')}</span>
-            {!item.agentId && <span className="ml-auto text-[10px]">✓</span>}
-          </button>
-          {agents.length > 0 && <div className="my-1 border-t border-zinc-200 dark:border-zinc-700" />}
-          {agents.map(agent => (
-            <button
-              key={agent.id}
-              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-2 ${
-                item.agentId === agent.id ? 'text-blue-600 dark:text-blue-400' : 'text-foreground'
-              }`}
-              onClick={e => {
-                e.stopPropagation();
-                ctx.onAssignAgent(item.id, agent.id);
-                setAgentPickerOpen(false);
-              }}
-            >
-              <Bot className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">{agent.name}</span>
-              {item.agentId === agent.id && <span className="ml-auto text-[10px]">✓</span>}
-            </button>
-          ))}
-          {agents.length === 0 && (
-            <div className="px-3 py-2 text-xs text-muted-foreground">{t('flows.noAgentsAvailable')}</div>
-          )}
-        </div>,
-        document.body,
+      {agentPickerOpen && (
+        <ItemAgentPickerPanel
+          panelRef={agentPickerRef}
+          pos={agentPickerPos}
+          agents={agents}
+          currentAgentId={item.agentId}
+          onAssign={agentId => { ctx.onAssignAgent(item.id, agentId); setAgentPickerOpen(false); }}
+        />
       )}
 
       {/* Context dialog */}
