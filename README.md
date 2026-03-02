@@ -14,10 +14,16 @@ ProjectPilot 是一个 AI 辅助的项目管理工具，它将**任务跟踪**�
 
 **核心特性：**
 - 📊 **Flow 可视化链路** - Flows → Nodes → Tasks 三层树形结构管理项目
-- 🤖 **AI Task Agent** - 五阶段工作流（理解→规划→执行→验证→总结）
-- 💬 **嵌入式 AI 对话** - 实时查看 AI 的思考和执行过程
+- 🤖 **自定义 Agent 系统** - 创建自定义 AI Agent，配置系统提示、权限、资源
+- 🏠 **智能管家（Butler）** - 项目级 AI 助手，了解项目全貌，支持侧边栏和全屏模式
+- 💬 **嵌入式 AI 对话** - 实时查看 AI 的思考和执行过程，支持多模态（图片）
 - 📦 **产物自动提取** - 智能识别并展示 AI 生成的代码、计划、结果
 - 🔄 **与 Claude Code 集成** - 直接调用 Claude CLI 执行复杂任务
+- 📖 **上下文系统** - 用户预设个人信息、API Key 等，Agent 按需读取
+- 📝 **知识草稿 & 设计文档** - 对话中自动提取知识片段和设计文档，持久化保存
+- 🔴 **未读消息提示** - Agent 回复后自动标记未读，红色 badge 提醒
+- ✅ **待办事项（Todos）** - 管理项目待办，Agent 可读取和操作
+- 👥 **Guest Agent（旁听）** - 在其他 Agent 对话中引入"旁听"Agent 提供不同视角
 
 ### 🚀 快速开始
 
@@ -91,6 +97,9 @@ Phase 5:   Summarizing  → AI 总结结果和经验
 
 ### 📚 文档
 
+- [Agent Chat 架构](docs/agent-chat-architecture.md)
+- [上下文系统](docs/context-system.md)
+- [数据存储](docs/data-storage.md)
 - [五阶段工作流设计](docs/ai-task-workflow.md)
 - [产物重试机制](docs/artifact-retry.md)
 - [前端设计](docs/frontend-design.md)
@@ -135,10 +144,16 @@ ProjectPilot is an AI-powered project management tool that deeply integrates **t
 
 **Key Features:**
 - 📊 **Flow Visualization** - Manage projects with Flows → Nodes → Tasks hierarchy
-- 🤖 **AI Task Agent** - 5-phase workflow (Understanding → Planning → Executing → Verifying → Summarizing)
-- 💬 **Embedded AI Chat** - Real-time view of AI's thinking and execution process
+- 🤖 **Custom Agent System** - Create custom AI Agents with system prompts, permissions, and resources
+- 🏠 **Smart Butler** - Project-level AI assistant that understands your project, supports sidebar and full-screen modes
+- 💬 **Embedded AI Chat** - Real-time view of AI's thinking and execution, with multimodal (image) support
 - 📦 **Automatic Artifact Extraction** - Intelligently identify and display AI-generated code, plans, and results
 - 🔄 **Claude Code Integration** - Direct integration with Claude CLI for complex tasks
+- 📖 **Context System** - User-defined context entries (personal info, API keys, etc.) available to Agents on demand
+- 📝 **Knowledge Drafts & Design Docs** - Auto-extract knowledge and design documents from conversations
+- 🔴 **Unread Notifications** - Red badge indicators for unread Agent replies
+- ✅ **Todos** - Manage project tasks; Agents can read and manipulate todo items
+- 👥 **Guest Agent** - Bring in "observer" Agents to provide different perspectives on conversations
 
 ### 🚀 Quick Start
 
@@ -212,6 +227,9 @@ Phase 5:   Summarizing  → AI summarizes results and learnings
 
 ### 📚 Documentation
 
+- [Agent Chat Architecture](docs/agent-chat-architecture.md)
+- [Context System](docs/context-system.md)
+- [Data Storage](docs/data-storage.md)
 - [5-Phase Workflow Design](docs/ai-task-workflow.md)
 - [Artifact Retry Mechanism](docs/artifact-retry.md)
 - [Frontend Design](docs/frontend-design.md)

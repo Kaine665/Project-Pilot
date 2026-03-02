@@ -52,21 +52,46 @@ cp -r data ~/.project-pilot/data/
 
 ## 数据结构
 
+> 更新时间：2026-03-02
+
 ```
 .project-pilot/
 └── data/
-    ├── projects.json          # 项目列表
-    ├── tasks.json             # 任务列表
-    ├── ai-plans.json          # AI 计划
-    ├── conversations/         # 对话历史
-    ├── task-artifacts/        # 任务产物
-    ├── artifacts/             # 其他产物
-    ├── prompts/               # Prompt 记录
-    ├── context/               # 上下文信息（详见 docs/context-system.md）
-    │   ├── index.json         #   索引文件（元数据）
-    │   └── {fileName}         #   内容文件（JSON/Markdown/Text）
-    └── logs/                  # 日志文件
+    ├── projects.json              # 项目注册表
+    ├── tasks.json                 # 任务列表（Task Worker 用）
+    ├── agents.json                # Agent 配置列表
+    ├── agent-chat-sessions.json   # Agent 对话会话（含未读计数）
+    ├── ai-plans.json              # AI 计划
+    ├── settings.json              # 用户设置（含 API key）
+    ├── todos.json                 # 待办事项
+    ├── conversations/             # AI 对话历史
+    ├── task-artifacts/            # 任务产物（understanding/plan/result）
+    ├── artifacts/                 # 其他产物
+    ├── prompts/                   # Prompt 记录
+    ├── context/                   # 上下文信息（详见 docs/context-system.md）
+    │   ├── index.json             #   索引文件（元数据）
+    │   └── {fileName}            #   内容文件（JSON/Markdown/Text）
+    ├── design-docs/               # 设计文档
+    │   ├── _index.json            #   文档索引
+    │   └── {fileName}            #   文档内容文件
+    ├── flows/                     # Flow 项目数据（每项目一个 JSON）
+    │   └── {projectKey}.json
+    ├── dimensions/                # 信息维度
+    ├── recycle-bin/               # 回收站
+    └── logs/                      # 日志文件
 ```
+
+### 关键数据文件说明
+
+| 文件 | 说明 | 路径函数 |
+|------|------|---------|
+| `agents.json` | 所有 Agent（含内置 Butler、Task Worker）的配置 | `getAgentsPath()` |
+| `agent-chat-sessions.json` | Agent 对话会话列表（含消息、claudeSessionId、unreadCount） | `getAgentChatSessionsPath()` |
+| `projects.json` | 项目注册表（项目名、key、路径等） | `getProjectsPath()` |
+| `tasks.json` | Task Worker 会话列表 | `getTasksPath()` |
+| `settings.json` | 用户设置（API key、偏好等） | `getSettingsPath()` |
+| `design-docs/_index.json` | 设计文档索引 | `getDesignDocsIndexPath()` |
+| `context/index.json` | 上下文条目索引 | `getContextIndexPath()` |
 
 ## 注意事项
 

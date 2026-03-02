@@ -124,17 +124,23 @@ export function getContextFilePath(fileName: string): string {
 
 ## Prompt 注入
 
-### 注入函数
+> 更新时间：2026-03-02 — 上下文注入已迁移至 Resource 系统
 
-```typescript
-// src/lib/agent-chat-manager.ts
-async function buildContextSection(): Promise<string> {
-  // 读取索引 → 生成 markdown 表格 → 返回注入片段
-  // 无条目时返回空字符串
-}
+### 新架构：Resource-based 注入
+
+上下文系统现在通过 Resource 系统注入 Agent prompt，不再使用旧的 `buildContextSection()` 硬编码拼接。
+
+```
+Agent.resources: ResourceRef[]
+  → ResourceRegistry.loadAll(refs)
+    → ContextIndexLoader (priority 50) — 注入全局索引表
+    → ContextLoader      (priority 60) — 内联指定条目内容
 ```
 
-### 注入结果示例
+**ContextIndexLoader** — 读取 `context/index.json`，生成 markdown 表格注入 prompt（等效旧 `buildContextSection()`）
+**ContextLoader** — 读取指定条目的完整内容，直接内联到 prompt
+
+### 注入结果示例（ContextIndexLoader 输出）
 
 ```markdown
 ## 可用上下文信息
@@ -151,13 +157,25 @@ async function buildContextSection(): Promise<string> {
 
 ```
 AgentChatManager.start()
-  → await buildAgentChatPrompt() / buildAgentChatPromptWithFlowContext()
-    → await buildContextSection()   ← 读索引，生成表格
-    → 拼接: systemPrompt + contextSection + ...
-  → 发送给 AI 模型
+  → ResourceRegistry.loadAll(agent.resources)
+    → ContextIndexLoader.load()   ← 读索引，生成表格
+    → ContextLoader.load()        ← 按 ref 内联指定条目
+    → ...其他 ResourceLoader
+  → 拼接为完整 system prompt
+  → 发送给 Claude CLI
 ```
 
-**两个 prompt 构建函数都必须调用 `buildContextSection()`，不能遗漏。**
+### 相关文件
+
+| 职责 | 文件 |
+|------|------|
+| 索引加载器 | `src/lib/resource-loaders/context-index-loader.ts` |
+| 内容加载器 | `src/lib/resource-loaders/context-loader.ts` |
+| Resource 注册表 | `src/lib/resource-registry.ts` |
+| Resource 迁移 | `src/lib/resource-migration.ts` |
+
+> **历史备注**：旧版使用 `buildContextSection()` 函数（在 `agent-chat-manager.ts` 中）直接拼接索引表。
+> 现已迁移至 Resource Loader 架构，`buildContextSection()` 已移除。
 
 ### 任务级全局上下文选择
 
@@ -249,10 +267,13 @@ TaskContextDialog (toggle 选中)
 | 文件 | 职责 |
 |------|------|
 | `src/types/index.ts` | `ContextEntry`, `ContextIndexData` 类型定义 |
+| `src/types/resource.ts` | `ResourceType`, `ResourceRef` 类型定义 |
 | `src/lib/file-store.ts` | `getContextDir()`, `getContextIndexPath()`, `getContextFilePath()` 路径函数 |
 | `src/app/api/context/route.ts` | GET（列表）/ POST（创建）API |
 | `src/app/api/context/[id]/route.ts` | GET（详情）/ PATCH（更新）/ DELETE（删除）API |
-| `src/lib/agent-chat-manager.ts` | `buildContextSection()` — 全局索引表注入 |
+| `src/lib/resource-loaders/context-index-loader.ts` | 全局索引表注入（替代旧 `buildContextSection()`） |
+| `src/lib/resource-loaders/context-loader.ts` | 指定条目内容内联 |
+| `src/lib/resource-registry.ts` | Resource 加载器注册表 |
 | `src/lib/prompt-builder.ts` | `buildTaskContext()` — 任务级全局上下文内联注入 |
 | `src/lib/default-agents.ts` | Butler agent 的上下文系统说明 |
 | `src/components/task-context-dialog.tsx` | 任务上下文 Dialog（含全局上下文选择） |

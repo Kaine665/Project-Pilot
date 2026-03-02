@@ -8,7 +8,7 @@
 
 **核心设计：索引 + 内容文件分离**
 
-- 索引文件 `context/index.json` 很小，每次 agent 对话启动时**自动注入 system prompt**
+- 索引文件 `context/index.json` 很小，通过 Resource 系统自动注入 agent system prompt
 - 内容文件可能很大，agent 通过 bash `cat` **按需读取**，不注入 prompt
 - agent 靠 `description` 字段判断是否需要读某个文件
 
@@ -16,27 +16,15 @@
 
 - 每个任务可在上下文 Dialog 中选择启用哪些全局条目（`TreeItem.context.globalContextIds`）
 - 选中的条目内容在 `prompt-builder.ts` 的 `buildTaskContext()` 中**直接读文件内联**到 prompt
-- 未选中的条目仍通过 `buildContextSection()` 以索引表形式存在，AI 可按需 `cat`
+- 未选中的条目通过 ContextIndexLoader 以索引表形式存在，AI 可按需 `cat`
 - 两层注入共存：任务级直接注入（确保 AI 一定看到） + 全局索引表（AI 按需读取）
-- 数据流：`TaskContextDialog` → `TreeItem.context.globalContextIds` → `collectFlowTaskContext` → `FlowTaskContext.globalContextIds` → `buildTaskContext()` 读文件
 
 **不可动摇的约束：**
 
 1. `getContextFilePath()` 必须用 `path.basename()` 做路径安全检查 — 防穿越攻击
-2. 索引注入 prompt 是在 `buildContextSection()` 里做的，`buildAgentChatPrompt` 和 `buildAgentChatPromptWithFlowContext` 都必须调用它
-3. 上下文条目是**硬删除**，不走回收站 — 这是配置数据，不需要软删除
-4. `fileName` 创建后不可在前端修改（input disabled），后端 PATCH 支持改名但前端不暴露
-5. `buildPrompt()` 和 `buildTaskContext()` 是 async 函数 — 因为任务级全局上下文需要读文件
-
-**文件位置：**
-
-```
-~/.project-pilot/data/context/
-├── index.json       ← 索引（元数据），注入 agent prompt
-├── *.json           ← 内容文件（JSON 格式）
-├── *.md             ← 内容文件（Markdown 格式）
-└── *.txt            ← 内容文件（Text 格式）
-```
+2. 上下文条目是**硬删除**，不走回收站 — 这是配置数据，不需要软删除
+3. `fileName` 创建后不可在前端修改（input disabled），后端 PATCH 支持改名但前端不暴露
+4. `buildPrompt()` 和 `buildTaskContext()` 是 async 函数 — 因为任务级全局上下文需要读文件
 
 **相关代码：**
 
@@ -46,7 +34,8 @@
 | 路径函数 | `src/lib/file-store.ts` — `getContextDir()`, `getContextIndexPath()`, `getContextFilePath()` |
 | API 集合 | `src/app/api/context/route.ts` — GET 列表 / POST 创建 |
 | API 单项 | `src/app/api/context/[id]/route.ts` — GET 详情 / PATCH 更新 / DELETE 删除 |
-| Prompt 注入 | `src/lib/agent-chat-manager.ts` — `buildContextSection()` |
+| Prompt 注入（索引） | `src/lib/resource-loaders/context-index-loader.ts` |
+| Prompt 注入（内容） | `src/lib/resource-loaders/context-loader.ts` |
 | Butler 提示 | `src/lib/default-agents.ts` — 数据目录树 + 上下文系统说明 |
 | 前端页面 | `src/app/[locale]/flows/context/page.tsx` — 卡片网格 + 编辑区 + 模板 chips |
 
@@ -68,10 +57,13 @@
 
 ## Agent 架构
 
-- Agent 对话管理在 `src/lib/agent-chat-manager.ts`
-- `buildAgentChatPrompt()` 和 `buildAgentChatPromptWithFlowContext()` 是 async 函数
-- 每次对话自动注入：系统提示 + 上下文索引 + 工具定义
+- Agent 对话管理在 `src/lib/chat-managers/agent-chat-manager.ts`（继承 `BaseChatManager`）
+- Prompt 构建通过 **Resource 系统**：`agent.resources: ResourceRef[]` → `ResourceRegistry.loadAll()` → 按 priority 排序加载
+- Resource 类型：`system-prompt`、`context-index`、`context`、`todo-list`、`inline-text`、`knowledge-instructions`、`doc-save-instructions`、`session-title-instructions`、`flow-context`、`reference-turns`
 - Butler 是默认 agent，system prompt 在 `src/lib/default-agents.ts`
+- **未读消息**：`AgentChatSession.unreadCount` 字段，`persistSession()` 递增，`markAsRead()` 清零
+- **知识草稿 & 设计文档**：对话中自动提取，通过 `ChatNotificationBanners` 展示，保存到 context/design-docs
+- **Guest Agent**：`parentSessionId` + `importedTurnIndices` 实现对话旁听
 
 ### 内置 Agent 字段迁移（不可省略）
 
@@ -109,6 +101,7 @@
 - Planner 系统已删除，管家功能统一到 Agent Chat
 - `agent-chat-panel.tsx` 三种渲染模式：plain（agents 页面）、sidebar（布局侧边栏）、full（全屏 butler 页面）
 - `variant` 和 `projectKey` 都是可选 props，agents 页面不传 → 零侵入
+- 组件已拆分提取：`chat-input.tsx`、`session-dropdown.tsx`、`conversation-tabs.tsx`、`chat-notification-banners.tsx`、`guest-agent-overlay.tsx`、`agent-form.tsx`、`agent-session-utils.ts`
 
 ### Agent 执行模式（executionMode）
 

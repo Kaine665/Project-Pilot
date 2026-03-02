@@ -1,6 +1,8 @@
 # Agent Chat 架构文档
 
-> 关联：`src/lib/agent-chat-manager.ts`、`src/app/api/agent-chat/`、`src/components/agent-chat-panel.tsx`
+> 关联：`src/lib/chat-managers/agent-chat-manager.ts`、`src/app/api/agent-chat/`、`src/components/agent-chat-panel.tsx`
+>
+> 更新时间：2026-03-02
 
 ---
 
@@ -13,7 +15,8 @@
 API route.ts
   │  校验 → agentChatManager.start()
   ▼
-AgentChatManager (内存单例)
+AgentChatManager (extends BaseChatManager，内存单例)
+  │  ResourceRegistry 加载 agent resources → 拼接 prompt
   │  spawn('claude', ['-p', '--image', ...])
   ▼
 Claude CLI 子进程
@@ -21,6 +24,32 @@ Claude CLI 子进程
   ▼
 SSE stream  ←  前端 EventSource
 ```
+
+### Resource-based Prompt 构建
+
+AgentChatManager 使用 Resource 系统动态构建 prompt，取代了旧的硬编码拼接方式：
+
+```
+agent.resources: ResourceRef[]
+  → ResourceRegistry.loadAll(refs)
+    → 各 ResourceLoader 按 priority 排序加载：
+      ├─ SystemPromptLoader      (priority 10)  — agent.systemPrompt
+      ├─ ContextIndexLoader      (priority 50)  — 全局上下文索引表
+      ├─ ContextLoader           (priority 60)  — 指定上下文条目内联
+      ├─ TodoListLoader          (priority 70)  — 待办事项
+      ├─ InlineTextLoader        (priority *)   — 自定义内联文本
+      ├─ StaticTextLoader: knowledge-instructions  (priority 80)
+      ├─ StaticTextLoader: doc-save-instructions   (priority 85)
+      └─ StaticTextLoader: session-title-instructions (priority 90)
+  → 拼接为完整 system prompt
+```
+
+**相关文件：**
+- `src/lib/resource-registry.ts` — 全局注册表单例
+- `src/lib/resource-loader.ts` — ResourceLoader 接口
+- `src/lib/resource-loaders/` — 各类加载器实现
+- `src/lib/resource-migration.ts` — 旧版 Agent 字段到 ResourceRef[] 迁移
+- `src/types/resource.ts` — ResourceType、ResourceRef 类型定义
 
 ---
 
@@ -92,8 +121,120 @@ close event
     ├─ 提取 sessionTitle（AI 生成 <session-title> 标签 或 fallback 用户消息前30字）
     ├─ 追加 assistant message 到 messages[]
     ├─ 捕获 claudeSessionId（用于下次 --resume）
-    └─ persistSession() → data/agent-chat-sessions.json
+    ├─ persistSession() → data/agent-chat-sessions.json
+    └─ 增加 unreadCount（未读消息计数）
 ```
+
+---
+
+## 未读消息（Unread Badge）
+
+Agent 回复后若用户不在当前会话，需要有未读提示（类似微信红点）。
+
+### 数据模型
+
+`AgentChatSession.unreadCount?: number` — 未读消息计数
+
+### 写入时机
+
+`persistSession()` 在保存 assistant 回复时自动 `unreadCount++`：
+
+```typescript
+if (idx >= 0) {
+  session.unreadCount = (data.sessions[idx].unreadCount || 0) + 1;
+  data.sessions[idx] = session;
+} else {
+  session.unreadCount = 1;
+  data.sessions.push(session);
+}
+```
+
+### 清零时机
+
+`markAsRead(sessionId)` 将 `unreadCount` 设为 0，在以下场景触发：
+
+| 场景 | 触发位置 |
+|------|---------|
+| 用户点击切换到某个会话 | agents page `handleSessionClick` / `agent-chat-panel` `handleSwitchSession` |
+| 活跃会话的流式回复结束 | `agent-chat-panel` `finalizeStream` |
+| agents 页面的 `onSessionChange` 回调 | agents page callback |
+
+### API
+
+```
+PATCH /api/agent-chat/sessions/{id}
+Body: { "action": "markAsRead" }
+Response: { "ok": true }
+```
+
+### 前端 UI
+
+三个位置展示红色未读 badge：
+
+1. **Agents 页面左侧边栏** — `agents/page.tsx` 会话列表项右侧
+2. **Butler 全屏模式左侧栏** — `agent-chat-panel.tsx` 会话列表
+3. **Sidebar 模式下拉菜单** — `session-dropdown.tsx` 会话条目
+
+未读 badge 样式：红底白字圆形（`bg-red-500 text-white rounded-full`），超过 99 显示 `99+`。
+当前活跃会话不显示 badge（`!isActive && unreadCount > 0`）。
+
+mark-as-read 请求使用 fire-and-forget 模式（`fetch().catch(() => {})`），不阻塞 UI。
+
+---
+
+## Guest Agent（旁听 Agent）
+
+Guest Agent 允许用户在一个会话中"旁听"另一个 Agent 的部分对话。
+
+### 数据模型
+
+```typescript
+// AgentChatSession 扩展字段
+parentSessionId?: string;        // 宿主会话 ID
+importedTurnIndices?: number[];  // 从宿主会话导入的轮次索引
+```
+
+### 工作流程
+
+```
+用户在主会话中选择轮次
+  → GuestAgentOverlay 发起请求
+    → POST /api/agent-chat/guest { parentSessionId, turnIndices, agentId }
+      → 创建 guest session，导入选中轮次
+      → guest agent 基于导入上下文继续对话
+```
+
+### 相关文件
+
+| 职责 | 文件 |
+|------|------|
+| 前端 overlay | `src/components/guest-agent-overlay.tsx` |
+| API 路由 | `src/app/api/agent-chat/guest/route.ts` |
+| 类型定义 | `src/types/agent-chat.ts` — `parentSessionId`, `importedTurnIndices` |
+
+---
+
+## 知识草稿 & 设计文档提取
+
+Agent 对话中可以自动提取知识草稿和设计文档。
+
+### 知识草稿（Knowledge Drafts）
+
+- Agent 对话中识别出值得保存的知识片段
+- 前端 `knowledgeDrafts` 状态跟踪待保存草稿
+- `SaveKnowledgeDialog` 弹窗让用户确认保存
+- 保存为 context 条目（`/api/context`），文件名 `knowledge-{id}.{ext}`
+
+### 设计文档（Design Docs）
+
+- Agent 对话中产出的设计文档
+- 前端 `docsSaved` 状态跟踪已保存文档
+- 保存到 `~/.project-pilot/data/design-docs/` 目录
+- 索引文件 `_index.json` + 内容文件
+
+### 通知 Banner
+
+`ChatNotificationBanners` 组件在对话区顶部展示知识草稿和文档保存提示。
 
 ---
 
@@ -101,15 +242,31 @@ close event
 
 | 职责 | 文件 |
 |------|------|
-| 会话管理、进程调度 | `src/lib/agent-chat-manager.ts` |
-| 图片类型定义 | `src/lib/agent-chat-manager.ts` — `ImageAttachment`, `ImageMediaType` |
+| 会话管理、进程调度 | `src/lib/chat-managers/agent-chat-manager.ts` |
+| 抽象基类 | `src/lib/chat-managers/base-chat-manager.ts` |
+| 进程管理 | `src/lib/chat-managers/process-manager.ts` |
+| 共享类型 | `src/lib/chat-managers/types.ts` |
+| Resource 注册表 | `src/lib/resource-registry.ts` |
+| Resource 加载器 | `src/lib/resource-loaders/` |
+| Resource 迁移 | `src/lib/resource-migration.ts` |
 | API 入口（含图片校验） | `src/app/api/agent-chat/route.ts` |
 | SSE 流 | `src/app/api/agent-chat/stream/route.ts` |
 | 停止进程 | `src/app/api/agent-chat/stop/route.ts` |
 | 会话 CRUD | `src/app/api/agent-chat/sessions/route.ts` |
+| 单会话操作（含 markAsRead） | `src/app/api/agent-chat/sessions/[id]/route.ts` |
+| Guest Agent API | `src/app/api/agent-chat/guest/route.ts` |
 | 前端对话面板 | `src/components/agent-chat-panel.tsx` |
+| 聊天输入框 | `src/components/chat-input.tsx` |
+| 会话下拉菜单 | `src/components/session-dropdown.tsx` |
+| 会话标签页 | `src/components/conversation-tabs.tsx` |
 | 消息气泡（含图片渲染） | `src/components/chat-bubble.tsx` |
+| 通知 Banner | `src/components/chat-notification-banners.tsx` |
+| Guest Agent Overlay | `src/components/guest-agent-overlay.tsx` |
+| 知识保存对话框 | `src/components/save-knowledge-dialog.tsx` |
+| Agent 表单（提取自 agents page） | `src/components/agent-form.tsx` |
+| 会话工具函数（提取自 agents page） | `src/components/agent-session-utils.ts` |
 | 会话类型 | `src/types/agent-chat.ts` — `AgentChatSession` |
+| Resource 类型 | `src/types/resource.ts` — `ResourceType`, `ResourceRef` |
 | 消息类型 | `src/types/index.ts` — `ChatMessage.images` |
 
 ---
@@ -153,8 +310,9 @@ ChatPanel → POST /api/ai-chat → ProcessManager
 
 ```
 AgentChatPanel → POST /api/agent-chat → AgentChatManager
-  ├─ agent.systemPrompt 作为系统提示
+  ├─ ResourceRegistry 加载 agent.resources → 构建完整 prompt
   ├─ 无 git、无阶段、无产物提取
+  ├─ 支持知识草稿提取 & 设计文档保存
   └─ ArtifactPanel 隐藏（isChatMode = true）
 ```
 

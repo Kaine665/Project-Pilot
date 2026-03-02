@@ -284,77 +284,59 @@ AI 开始执行后，侧栏显示实时执行状态。
 
 ## 实现状态
 
-> 更新时间：2026-02-13
+> 更新时间：2026-03-02
+
+> **注意**：本文档主要描述 Task Worker 的五阶段工作流前端设计。
+> 项目已新增 Agent Chat 系统（自定义 Agent、管家 Butler），其前端架构详见 [Agent Chat 架构文档](agent-chat-architecture.md)。
 
 ### 已完成 ✅
 
 **布局重构**：
-- `task-detail.tsx` — 移除顶部头部区域（标题编辑、描述编辑、状态栏、拖拽分割线），改为纯左右布局（左 ChatPanel + 右 ArtifactPanel）
-- `artifact-panel.tsx` — 新建侧栏组件，包含：会话信息卡片（始终第一）、空状态引导、任务理解卡片、执行计划卡片、执行状态卡片、执行结果卡片
-- 移除旧的三按钮工具栏、Tabs 切换（AI 对话/计划/验证产物）
+- `task-detail.tsx` — 纯左右布局（左 ChatPanel + 右 ArtifactPanel）
+- `artifact-panel.tsx` — 侧栏组件：会话信息卡片、空状态引导、任务理解/计划/状态/结果卡片
+- 移除旧的三按钮工具栏、Tabs 切换
 
 **左侧栏重设计**：
-- `task-list.tsx` — 重写为 Claude Code 风格：顶部 "New session" 按钮 → "会话列表" 标签 → 会话条目列表
-- 每个会话条目：状态圆点 + 标题 + hover 显示归档图标
-- 新建会话简化为仅输入标题，创建后自动选中
-- 支持 `archived` 字段，归档的会话从列表中隐藏
+- `task-list.tsx` — Claude Code 风格：顶部 "New session" → 会话列表，支持 `archived` 字段
 
 **可折叠面板**：
-- `page.tsx` — 左侧栏和右侧产出物面板均可折叠
-- 左侧栏：header 中 Bot 图标旁的 PanelLeftClose/PanelLeftOpen 按钮切换
-- 右侧栏：header 中设置按钮左侧的 PanelRightClose/PanelRightOpen 按钮切换
-- 折叠动画：`transition-[width] duration-200 ease-in-out`，内部固定 `w-72` 防止内容挤压
-
-**空状态处理**：
-- `task-detail.tsx` — 未选中会话时：左侧显示图标+引导文字，右侧显示"请先在左侧选择一个会话"
-- 从 early-return 模式重构为 `leftContent`/`rightContent` 变量，确保两个面板始终渲染
+- 左侧栏和右侧产出物面板均可折叠
 
 **会话创建流程简化**：
-- `types/index.ts` — `projectKey` 改为可选字段（`string?`），新增 `archived?: boolean`
-- `POST /api/tasks` — 仅 `title` 为必填，`projectKey` 可选
-- `prompt-builder.ts` — `buildTaskContext()` 三路分支处理项目信息：有配置 / 有 key 无配置 / 未指定
-- `ai-chat/route.ts`、`git/route.ts` — 添加 `projectKey` 空值保护
+- `projectKey` 可选，`POST /api/tasks` 仅 `title` 必填
 
 **对话自动启动**：
-- `chat-panel.tsx` — 新增 `taskTitle` prop，选中会话且历史为空时自动发送会话标题启动对话
-- 使用 `autoStartedRef` 防止重复触发，与 `loadingHistory`、`isStreaming` 状态联动
-
-**会话切换 bug 修复**：
-- `chat-panel.tsx` — 历史加载 effect 增加完整的清理逻辑：
-  - 进入时重置所有流式状态（isStreaming、streamingBlocks、rAF）
-  - 历史 fetch 使用 `AbortController`，sessionId 变化或组件卸载时中断
-  - cleanup 函数同时中断历史 fetch 和进行中的 SSE 流式请求
-  - 使用 `cache: 'no-store'` 防止浏览器缓存旧响应
-- `ai-chat/route.ts` — GET 响应添加 `Cache-Control: no-store` 头
+- `chat-panel.tsx` — `taskTitle` prop，选中会话且历史为空时自动发送标题启动对话
 
 **提取机制**：
-- `artifact-extractor.ts` — 新建，支持从 AI 回复中提取 `json:understanding` 和 `json:result`
-- `plan-extractor.ts` — 已有，提取 `json:plan`（无变化）
-- `ai-chat/route.ts` — AI 回复完成后，自动提取 understanding/result 并推送 SSE 事件
+- `artifact-extractor.ts` — 提取 `json:understanding` 和 `json:result`
+- `plan-extractor.ts` — 提取 `json:plan`
 
 **类型系统**：
-- `types/index.ts` — `Session`（原 Task）、`TaskUnderstanding`、`TaskResult`、`SessionArtifacts`（原 TaskArtifacts）接口，扩展 `ChatSSEEvent` 支持新事件类型
-- `types/flow-context.ts` — FlowTaskContext、FlowTaskBrief、FlowNodeBrief、CrossCuttingBrief
-- `types/deliverable.ts` — DeliverableType、DeliverableInference、SIGNAL_WORDS
-
-**数据存储**：
-- `file-store.ts` — 新增 `getTaskArtifactsPath()`
-- 产出物存储路径：`data/task-artifacts/{sessionId}.json`
+- `types/index.ts` — Session、TaskUnderstanding、TaskResult、SessionArtifacts
+- `types/flow-context.ts` — FlowTaskContext、FlowTaskBrief 等
+- `types/deliverable.ts` — DeliverableType、SIGNAL_WORDS
 
 **API**：
-- `GET /api/task-artifacts?taskId=xxx` — 查询会话产出物（understanding + 最新 plan + result）
+- `GET /api/task-artifacts?taskId=xxx` — 查询产出物
 - `PATCH /api/tasks/{id}` — 支持 `archived` 字段
-
-**前端实时更新**：
-- `chat-panel.tsx` — 新增 `onUnderstandingExtracted`、`onResultExtracted` 回调
-- SSE 事件 → 侧栏卡片实时更新
 
 ### 待完成 🟡
 
-- [ ] **prompt-builder 更新**：在系统指令中告诉 AI 使用 `json:understanding` 和 `json:result` 格式输出
-- [ ] **执行状态卡片的实时进度**：目前仅在有 gitBranch 时显示，步骤进度的实时更新需要 AI 在执行过程中输出结构化进度
-- [ ] **对话中 JSON 块的折叠显示**：提取到侧栏后，对话中的原始 JSON 块可以折叠或替换为提示
+- [ ] **执行状态卡片的实时进度**：步骤进度实时更新需要 AI 在执行过程中输出结构化进度
+- [ ] **对话中 JSON 块的折叠显示**：提取到侧栏后折叠原始 JSON 块
 - [ ] **Git discard 后端接口**：`/api/git` 的 `action=discard` 尚未实现
-- [ ] **侧栏宽度可调**：当前固定 `w-72`（288px），后续可加拖拽调整
-- [ ] **实现 get_task_detail 工具**：聚合 Session + flowContext + projectConfig + artifacts，输出四要素状态（见 `docs/ai-task-workflow.md`）
-- [ ] **API / 前端术语迁移**：现有 API 路径（`/api/tasks`）和组件文件名仍使用旧 Task 术语，待逐步迁移为 Session
+- [ ] **侧栏宽度可调**：当前固定 `w-72`（288px）
+
+### 后续新增的系统 🆕
+
+以下系统在本文档初稿之后新增，不属于 Task Worker 五阶段工作流，有独立的文档：
+
+| 系统 | 说明 | 文档 |
+|------|------|------|
+| Agent Chat | 自定义 Agent 对话、管家 Butler、多模态、Guest Agent | [agent-chat-architecture.md](agent-chat-architecture.md) |
+| Resource 系统 | 动态 prompt 构建（取代硬编码拼接） | [agent-chat-architecture.md](agent-chat-architecture.md) |
+| 知识草稿 & 设计文档 | 对话中自动提取知识和文档 | [agent-chat-architecture.md](agent-chat-architecture.md) |
+| 未读消息 | Agent 回复未读 badge | [agent-chat-architecture.md](agent-chat-architecture.md) |
+| 待办事项（Todos） | 项目级待办管理 | flows/todos 页面 |
+| 上下文系统 | 用户预设信息供 Agent 读取 | [context-system.md](context-system.md) |
