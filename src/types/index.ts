@@ -1,6 +1,7 @@
 // ==================== Session（AI 会话） ====================
 
 import type { FlowTaskContext } from './flow-context';
+import type { ResourceRef } from './resource';
 
 /** Session 当前所处的工作流阶段 */
 export type SessionPhase = 'branching' | 'understanding' | 'planning' | 'executing' | 'summarizing';
@@ -114,6 +115,8 @@ export interface ClaudeSettings {
   effortLevel?: EffortLevel;
   /** 每次对话最大 agentic 轮次，0 = 不限制 */
   maxTurns?: number;
+  /** 新建 Agent 时是否默认暴露提示词路径（默认 true） */
+  defaultExposePromptPath?: boolean;
 }
 
 /** 通用设置 */
@@ -388,6 +391,10 @@ export interface AgentCapabilities {
   subAgent: boolean;
   /** Maps to --dangerously-skip-permissions (auto-approve all tool calls) */
   skipReview: boolean;
+  /** Inject pending todos into the system prompt */
+  todoRead: boolean;
+  /** Expose the prompt file path in the system prompt so the AI can read/edit its own instructions */
+  exposePromptPath: boolean;
 }
 
 export const DEFAULT_AGENT_CAPABILITIES: AgentCapabilities = {
@@ -396,6 +403,8 @@ export const DEFAULT_AGENT_CAPABILITIES: AgentCapabilities = {
   web: true,
   subAgent: true,
   skipReview: false,
+  todoRead: false,
+  exposePromptPath: true,
 };
 
 export interface Agent {
@@ -421,8 +430,14 @@ export interface Agent {
   executionMode?: 'task' | 'chat';
   /** Parameter names this agent requires to run (template only, values filled at project/task level) */
   requiredParams?: string[];
-  /** Context entry IDs to preload into the prompt (content expanded automatically, on top of global index) */
+  /** @deprecated Use defaultResources instead. Kept for backward compatibility with existing data. */
   contextIds?: string[];
+  /**
+   * Default resource set for this agent.
+   * When a new chat session starts, these refs are used to build the prompt.
+   * If absent, migrateAgentToResources() derives them from legacy fields at runtime.
+   */
+  defaultResources?: ResourceRef[];
   archived?: boolean;
   archivedAt?: string;
   createdAt: string;
@@ -475,6 +490,26 @@ export interface ContextEntry {
 
 export interface ContextIndexData {
   entries: ContextEntry[];
+}
+
+// ==================== Todo（AI 待办清单） ====================
+
+export type TodoPriority = 'high' | 'medium' | 'low';
+export type TodoStatus = 'pending' | 'in_progress' | 'done';
+
+export interface TodoItem {
+  id: string;
+  title: string;
+  description?: string;
+  status: TodoStatus;
+  priority: TodoPriority;
+  agentId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TodosData {
+  todos: TodoItem[];
 }
 
 // ==================== Flow Project ====================
