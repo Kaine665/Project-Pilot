@@ -286,12 +286,17 @@ async function snapshotBeforeWrite(filePath: string): Promise<void> {
 /**
  * 写入 JSON 文件，自动创建目录
  * 对关键文件（agents.json）会在写入前自动保存快照
+ *
+ * 使用原子写入（write-to-tmp + rename）防止进程中断导致文件损坏。
  */
 export async function writeJsonFile(filePath: string, data: unknown): Promise<void> {
   await snapshotBeforeWrite(filePath);
   const dirPath = path.dirname(filePath);
   await fs.mkdir(dirPath, { recursive: true });
-  await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  const content = JSON.stringify(data, null, 2);
+  const tmpPath = filePath + `.tmp_${Date.now()}`;
+  await fs.writeFile(tmpPath, content, 'utf-8');
+  await fs.rename(tmpPath, filePath);
 }
 
 /**

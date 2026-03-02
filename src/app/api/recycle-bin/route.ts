@@ -7,6 +7,7 @@ import {
   getFlowDataPath,
   getFlowsDir,
   readJsonFile,
+  writeJsonFile,
   ensureFlowsMigrated,
 } from '@/lib/file-store';
 import { deletePromptFile } from '@/lib/agent-prompt-store';
@@ -79,8 +80,7 @@ export async function DELETE(request: NextRequest) {
       if (idx === -1) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
       index.projects.splice(idx, 1);
-      await fs.mkdir(getFlowsDir(), { recursive: true });
-      await fs.writeFile(getFlowIndexPath(), JSON.stringify(index, null, 2), 'utf-8');
+      await writeJsonFile(getFlowIndexPath(), index);
 
       // Delete flow data file
       const safe = (id as string).replace(/[^a-zA-Z0-9_-]/g, '');
@@ -98,7 +98,7 @@ export async function DELETE(request: NextRequest) {
         return NextResponse.json({ error: 'Cannot permanently delete a built-in agent' }, { status: 403 });
       }
       agentsData.agents.splice(idx, 1);
-      await fs.writeFile(getAgentsPath(), JSON.stringify(agentsData, null, 2), 'utf-8');
+      await writeJsonFile(getAgentsPath(), agentsData);
       // 清理外置的 prompt 文件
       await deletePromptFile(id);
       break;
@@ -109,7 +109,7 @@ export async function DELETE(request: NextRequest) {
       const idx = dimData.dimensions.findIndex(d => d.id === id);
       if (idx === -1) return NextResponse.json({ error: 'not found' }, { status: 404 });
       dimData.dimensions.splice(idx, 1);
-      await fs.writeFile(getDimensionsPath(), JSON.stringify(dimData, null, 2), 'utf-8');
+      await writeJsonFile(getDimensionsPath(), dimData);
       break;
     }
 

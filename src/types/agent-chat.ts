@@ -17,6 +17,9 @@ export interface AgentChatSession {
   createdAt: string;
   updatedAt: string;
 
+  /** 未读消息计数（agent 回复但用户尚未查看） */
+  unreadCount?: number;
+
   // ── Guest Agent（旁听 Agent）字段 ──
 
   /** 宿主会话 ID（仅 guest 会话有此字段） */

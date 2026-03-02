@@ -4,23 +4,19 @@ import {
   getFlowsDir,
   getFlowIndexPath,
   getFlowDataPath,
+  readJsonFile,
+  writeJsonFile,
   ensureFlowsMigrated,
 } from '@/lib/file-store';
 import type { ProjectEntry, ProjectIndex } from '@/types';
 
 async function readIndex(): Promise<ProjectIndex> {
   await ensureFlowsMigrated();
-  try {
-    const raw = await fs.readFile(getFlowIndexPath(), 'utf-8');
-    return JSON.parse(raw);
-  } catch {
-    return { projects: [] };
-  }
+  return readJsonFile<ProjectIndex>(getFlowIndexPath(), { projects: [] });
 }
 
 async function writeIndex(index: ProjectIndex): Promise<void> {
-  await fs.mkdir(getFlowsDir(), { recursive: true });
-  await fs.writeFile(getFlowIndexPath(), JSON.stringify(index, null, 2), 'utf-8');
+  await writeJsonFile(getFlowIndexPath(), index);
 }
 
 export async function GET(request: NextRequest) {

@@ -132,6 +132,7 @@
     "completed": "已完成 ({count})",
     "inProgress": "进行中 ({count})",
     "planned": "计划中 ({count})",
+    "addTopItem": "添加条目",
     "addItem": "添加条目...",
     "addSubItem": "添加子项...",
     "addDescription": "添加描述",

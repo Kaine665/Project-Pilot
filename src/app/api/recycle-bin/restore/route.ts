@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs/promises';
 import {
   getAgentsPath,
   getDimensionsPath,
   getFlowIndexPath,
-  getFlowsDir,
   readJsonFile,
+  writeJsonFile,
   ensureFlowsMigrated,
 } from '@/lib/file-store';
 import type { AgentsData, DimensionsData, ProjectIndex } from '@/types';
@@ -25,15 +24,13 @@ export async function POST(request: NextRequest) {
   switch (category as RecycleBinCategory) {
     case 'project': {
       await ensureFlowsMigrated();
-      const raw = await fs.readFile(getFlowIndexPath(), 'utf-8').catch(() => '{"projects":[]}');
-      const index: ProjectIndex = JSON.parse(raw);
+      const index = await readJsonFile<ProjectIndex>(getFlowIndexPath(), { projects: [] });
       const project = index.projects.find(p => p.key === id);
       if (!project) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
       project.archived = undefined;
       project.archivedAt = undefined;
-      await fs.mkdir(getFlowsDir(), { recursive: true });
-      await fs.writeFile(getFlowIndexPath(), JSON.stringify(index, null, 2), 'utf-8');
+      await writeJsonFile(getFlowIndexPath(), index);
       break;
     }
 
@@ -45,7 +42,7 @@ export async function POST(request: NextRequest) {
       agent.archived = undefined;
       agent.archivedAt = undefined;
       agent.updatedAt = new Date().toISOString();
-      await fs.writeFile(getAgentsPath(), JSON.stringify(agentsData, null, 2), 'utf-8');
+      await writeJsonFile(getAgentsPath(), agentsData);
       break;
     }
 
@@ -57,7 +54,7 @@ export async function POST(request: NextRequest) {
       dimension.archived = undefined;
       dimension.archivedAt = undefined;
       dimension.updatedAt = new Date().toISOString();
-      await fs.writeFile(getDimensionsPath(), JSON.stringify(dimData, null, 2), 'utf-8');
+      await writeJsonFile(getDimensionsPath(), dimData);
       break;
     }
 

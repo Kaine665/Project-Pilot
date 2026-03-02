@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { memo, useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PlanRenderer } from '@/components/plan-renderer';
@@ -57,7 +57,7 @@ interface FormattedTextProps {
   className?: string;
 }
 
-export function FormattedText({ text, className = '' }: FormattedTextProps) {
+export const FormattedText = memo(function FormattedText({ text, className = '' }: FormattedTextProps) {
   // 检测是否包含 json:plan 代码块
   const planMatch = text.match(/```json:plan\s*\n([\s\S]*?)```/);
 
@@ -197,4 +197,4 @@ export function FormattedText({ text, className = '' }: FormattedTextProps) {
       </ReactMarkdown>
     </div>
   );
-}
+});

@@ -7,6 +7,9 @@ import type { Agent, AgentCapabilities, AgentsData } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import type { ResourceRef } from '@/types/resource';
 
+/** 上次成功读取到的 agent 数量，用于写入前校验防止数据丢失 */
+let _lastKnownAgentCount = 0;
+
 async function readAgents(): Promise<AgentsData> {
   const data = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
   // ── 内置 Agent 字段迁移 ──
@@ -32,6 +35,7 @@ async function readAgents(): Promise<AgentsData> {
       }
     }
   }
+
   // ── systemPrompt 外置懒迁移 ──
   // 旧版 agents.json 中 systemPrompt 是内联字符串，现在迁移到 prompts/{agentId}.md 文件。
   // 首次读取时：如果 agent 有内联 systemPrompt 且无对应 .md 文件，写文件并从 JSON 中删除。
@@ -49,10 +53,26 @@ async function readAgents(): Promise<AgentsData> {
   if (changed) {
     await writeAgents(data);
   }
+
+  // 记录当前 agent 总数（含 archived），供 writeAgents 做丢失检测
+  _lastKnownAgentCount = data.agents.length;
+
   return data;
 }
 
 async function writeAgents(data: AgentsData): Promise<void> {
+  // ── 写入前数据丢失检测 ──
+  // 如果即将写入的 agent 数量比上次读取的少超过一半，大概率是数据损坏导致的，
+  // 拒绝写入以保护磁盘上的完整数据。
+  // _lastKnownAgentCount === 0 表示还没有成功读取过（首次启动），跳过检测。
+  const newCount = data.agents.length;
+  if (_lastKnownAgentCount > DEFAULT_AGENTS.length && newCount <= DEFAULT_AGENTS.length) {
+    console.error(
+      `[agents] WRITE BLOCKED: agent count dropped from ${_lastKnownAgentCount} to ${newCount}. ` +
+      `This looks like data corruption. Refusing to overwrite agents.json.`
+    );
+    return;
+  }
   await writeJsonFile(getAgentsPath(), data);
 }
 

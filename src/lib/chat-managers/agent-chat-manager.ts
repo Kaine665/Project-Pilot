@@ -379,6 +379,23 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     return found;
   }
 
+  async markAsRead(sessionId: string): Promise<boolean> {
+    let found = false;
+    await modifyJsonFile<AgentChatSessionsData>(
+      getAgentChatSessionsPath(),
+      DEFAULT_SESSIONS_DATA,
+      (data) => {
+        const session = data.sessions.find(s => s.id === sessionId);
+        if (session) {
+          session.unreadCount = 0;
+          found = true;
+        }
+        return data;
+      },
+    );
+    return found;
+  }
+
   async listGuestSessions(parentSessionId: string): Promise<Omit<AgentChatSession, 'messages'>[]> {
     const data = await readJsonFile<AgentChatSessionsData>(
       getAgentChatSessionsPath(),
@@ -558,8 +575,11 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
         const idx = data.sessions.findIndex(s => s.id === run.sessionId);
         if (idx >= 0) {
           session.createdAt = data.sessions[idx].createdAt;
+          // Increment unread count (agent replied)
+          session.unreadCount = (data.sessions[idx].unreadCount || 0) + 1;
           data.sessions[idx] = session;
         } else {
+          session.unreadCount = 1;
           data.sessions.push(session);
         }
         return data;

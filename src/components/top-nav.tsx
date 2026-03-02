@@ -2,14 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
-import { Bot, GitBranch, Settings, Sparkles } from 'lucide-react';
+import { GitBranch, Settings, Sparkles } from 'lucide-react';
 import { Link, usePathname, useRouter } from '@/i18n/routing';
 import { cn } from '@/lib/utils';
 import { LanguageSwitcher } from './language-switcher';
 
 const getNavItems = (t: ReturnType<typeof useTranslations>) => [
   { href: '/flows' as const, label: t('nav.projects'), icon: GitBranch },
-  { href: '/tasks' as const, label: t('nav.taskAgent'), icon: Bot },
   { href: '/settings' as const, label: t('nav.settings'), icon: Settings },
 ];
 
