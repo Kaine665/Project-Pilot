@@ -19,7 +19,7 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const { title, description, status, priority } = body;
+  const { title, description, status, priority, agentId } = body;
 
   const validStatuses = ['pending', 'in_progress', 'done'];
   const validPriorities = ['high', 'medium', 'low'];
@@ -36,6 +36,9 @@ export async function PATCH(
   if (priority !== undefined && !validPriorities.includes(priority)) {
     return NextResponse.json({ error: 'Invalid priority' }, { status: 400 });
   }
+  if (agentId !== undefined && agentId !== null && typeof agentId !== 'string') {
+    return NextResponse.json({ error: 'Invalid agentId' }, { status: 400 });
+  }
 
   let updated: TodosData['todos'][number] | null = null;
 
@@ -49,6 +52,7 @@ export async function PATCH(
         ...(description !== undefined && { description: description.trim() || undefined }),
         ...(status !== undefined && { status }),
         ...(priority !== undefined && { priority }),
+        ...(agentId !== undefined && { agentId: agentId || undefined }),
         updatedAt: new Date().toISOString(),
       };
       updated = patched;

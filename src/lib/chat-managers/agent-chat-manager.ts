@@ -6,6 +6,7 @@
  * - Image attachment handling (temp files + --image args)
  * - AI-generated session titles (<session-title> tag)
  * - Knowledge draft extraction (<save-knowledge> tag)
+ * - Design doc extraction (<save-doc> tag)
  * - Guest Agent (spectator mode with imported turns)
  * - Session CRUD (list, load, delete, persisted to agent-chat-sessions.json)
  */
@@ -705,7 +706,7 @@ async function createDesignDoc(draft: DocTag): Promise<string | null> {
  * Resolve an agent's effective resources and format them into prompt text.
  *
  * If the agent has `defaultResources`, use those directly.
- * Otherwise, derive them from legacy fields (contextIds, etc.)
+ * Otherwise, derive them from legacy fields (contextIds, todoRead, etc.)
  * via migrateAgentToResources().
  *
  * Extra refs (e.g. flow-context, reference-turns) can be appended.

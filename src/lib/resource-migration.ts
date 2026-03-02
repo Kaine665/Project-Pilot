@@ -15,6 +15,7 @@ import type { ResourceRef } from '@/types/resource';
  *   agent.contextIds               → context refs (priority 30 each)
  *   todoRead capability            → todo-list ref (priority 40)
  *   knowledge-instructions         → always included (priority 80)
+ *   doc-save-instructions          → always included (priority 85)
  *   session-title-instructions     → always included (priority 90)
  */
 export function migrateAgentToResources(agent: Agent): ResourceRef[] {
@@ -47,9 +48,8 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
     }
   }
 
-  // Todo list (if agent has todoRead capability — may not exist on all builds)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  if ((agent.capabilities as any)?.todoRead) {
+  // Todo list (if agent has todoRead capability)
+  if (agent.capabilities?.todoRead) {
     refs.push({
       type: 'todo-list',
       id: 'pending',

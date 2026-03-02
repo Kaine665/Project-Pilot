@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Bot, Plus, Trash2, X, ChevronRight, Terminal, FileText, Globe, Users, ShieldOff, Maximize2, Minimize2,
-  Database, Brain, Code, Zap, Search, Shield, Wrench, BookOpen, Settings, MessageSquare, Check, Copy, Eye, type LucideIcon,
+  Database, Brain, Code, Zap, Search, Shield, Wrench, BookOpen, Settings, MessageSquare, Check, Copy, ListTodo, Eye, ChevronDown, type LucideIcon,
 } from 'lucide-react';
 import type { Agent, AgentCapabilities, ContextEntry } from '@/types';
 import { AgentChatPanel, type SessionListItem } from '@/components/agent-chat-panel';
+import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 
 // ── Icon picker presets ──
 
@@ -34,7 +35,6 @@ function AgentIcon({ iconKey, className }: { iconKey?: string; className?: strin
   const Icon = (iconKey && ICON_MAP[iconKey]) || Bot;
   return <Icon className={className} />;
 }
-import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 
 // ── Capability items config ──
 
@@ -50,6 +50,7 @@ const CAPABILITY_ITEMS: Array<{
   { key: 'web',        label: 'Web 搜索/抓取',  description: 'WebFetch、WebSearch',          icon: Globe },
   { key: 'subAgent',   label: '子 Agent',       description: 'Task 工具（创建子代理）',       icon: Users },
   { key: 'skipReview',      label: '无需审核',       description: '自动批准所有工具调用',                icon: ShieldOff, danger: true },
+  { key: 'todoRead',        label: '读取待办',       description: '将 pending 待办注入提示词',           icon: ListTodo },
   { key: 'exposePromptPath', label: '暴露提示词路径', description: '将 prompt 文件路径注入提示词，AI 可自行读写', icon: Eye },
 ];
 
@@ -432,15 +433,33 @@ function SettingsForm({
   );
 }
 
+// ── Types ──
+
+interface AllSessionItem {
+  id: string;
+  title: string;
+  updatedAt: string;
+  agentId: string;
+  agentName: string;
+  agentIcon?: string;
+}
+
+// Opened session instance: tracks a mounted AgentChatPanel
+interface OpenedSession {
+  sessionId: string | null; // null = new session (not yet created)
+  agentId: string;
+  key: number; // stable key for React
+}
+
 // ── Session day-grouping helper ──
 
-function groupSessionsByDay(sessions: SessionListItem[]) {
+function groupSessionsByDay<T extends { updatedAt: string }>(sessions: T[]) {
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const yesterdayStart = todayStart - 86_400_000;
 
-  const groups: Array<{ label: string; items: SessionListItem[] }> = [];
-  const map = new Map<string, SessionListItem[]>();
+  const groups: Array<{ label: string; items: T[] }> = [];
+  const map = new Map<string, T[]>();
 
   for (const s of sessions) {
     const d = new Date(s.updatedAt);
@@ -479,18 +498,36 @@ function syncUrlParams(params: Record<string, string | null | undefined>) {
 // ── Main page ──
 
 export default function AgentsPage() {
+  // ── Core data ──
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [allSessions, setAllSessions] = useState<AllSessionItem[]>([]);
+
+  // ── Sidebar tab ──
+  const [sidebarTab, setSidebarTab] = useState<'conversations' | 'agents'>('conversations');
+
+  // ── Active panel ──
+  const [activePanel, setActivePanel] = useState<
+    | { type: 'session'; key: number }
+    | { type: 'agent'; agentId: string; mode: 'chat' | 'settings' }
+    | null
+  >(null);
+
+  // ── Multi-instance session panels (切换不销毁) ──
+  const [openedSessions, setOpenedSessions] = useState<OpenedSession[]>([]);
+  const nextKeyRef = useRef(1);
+
+  // ── Agent create/edit ──
   const [creating, setCreating] = useState(false);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [form, setForm] = useState<FormData>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [expandedPrompt, setExpandedPrompt] = useState(false);
-  const [viewMode, setViewMode] = useState<'chat' | 'settings'>('chat');
-  const [agentSessions, setAgentSessions] = useState<SessionListItem[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null | undefined>(undefined);
-  const [chatKey, setChatKey] = useState(0);
-  const [searchQuery, setSearchQuery] = useState('');
 
+  // ── New session agent picker ──
+  const [showAgentPicker, setShowAgentPicker] = useState(false);
+  const agentPickerRef = useRef<HTMLDivElement>(null);
+
+  // ── Fetch agents ──
   const fetchAgents = useCallback(async () => {
     try {
       const res = await fetch('/api/agents');
@@ -512,10 +549,15 @@ export default function AgentsPage() {
     if (agentParam) {
       const agent = agents.find(a => a.id === agentParam);
       if (agent) {
-        setSelectedId(agent.id);
+        setSelectedAgentId(agent.id);
         setForm(agentToForm(agent));
         if (sessionParam) {
-          setActiveSessionId(sessionParam);
+          // Open the session panel for this session
+          const key = nextKeyRef.current++;
+          setOpenedSessions(prev => [...prev, { sessionId: sessionParam, agentId: agent.id, key }]);
+          setActivePanel({ type: 'session', key });
+        } else {
+          setActivePanel({ type: 'agent', agentId: agent.id, mode: 'chat' });
         }
       } else {
         // Agent from URL no longer exists — clear
@@ -532,69 +574,100 @@ export default function AgentsPage() {
     return () => window.removeEventListener('focus', handleFocus);
   }, [fetchAgents]);
 
-  // Fetch sessions for the selected agent (merge with local-only items)
-  const fetchAgentSessions = useCallback(async (agentId: string) => {
+  // ── Fetch all sessions (cross-agent) ──
+  const fetchAllSessions = useCallback(async () => {
     try {
-      const res = await fetch(`/api/agent-chat/sessions?agentId=${agentId}`, { cache: 'no-store' });
-      const data = await res.json();
-      const remote: SessionListItem[] = data.sessions ?? [];
-      setAgentSessions(prev => {
-        const remoteIds = new Set(remote.map(s => s.id));
-        const localOnly = prev.filter(s => !remoteIds.has(s.id));
-        return [...localOnly, ...remote];
+      const [sessRes, agentsRes] = await Promise.all([
+        fetch('/api/agent-chat/sessions', { cache: 'no-store' }),
+        fetch('/api/agents'),
+      ]);
+      const sessData = await sessRes.json();
+      const agentsData = await agentsRes.json();
+      const agentMap = new Map<string, Agent>();
+      for (const a of (agentsData.agents ?? []) as Agent[]) {
+        agentMap.set(a.id, a);
+      }
+      const sessions: AllSessionItem[] = (sessData.sessions ?? []).map((s: { id: string; title: string; updatedAt: string; agentId: string }) => {
+        const agent = agentMap.get(s.agentId);
+        return {
+          id: s.id,
+          title: s.title,
+          updatedAt: s.updatedAt,
+          agentId: s.agentId,
+          agentName: agent?.name ?? '未知 Agent',
+          agentIcon: agent?.icon,
+        };
       });
-    } catch {
-      // don't clear — keep optimistic items
-    }
+      setAllSessions(sessions);
+      // Also update agents cache
+      setAgents(agentsData.agents ?? []);
+    } catch { /* ignore */ }
   }, []);
 
+  useEffect(() => { fetchAllSessions(); }, [fetchAllSessions]);
+
+  // ── Grouped sessions for display ──
+  const groupedSessions = useMemo(() => groupSessionsByDay(allSessions), [allSessions]);
+
+  // ── Close agent picker when clicking outside ──
   useEffect(() => {
-    if (selectedId && !creating) {
-      fetchAgentSessions(selectedId);
-    } else {
-      setAgentSessions([]);
+    if (!showAgentPicker) return;
+    const handleClick = (e: MouseEvent) => {
+      if (agentPickerRef.current && !agentPickerRef.current.contains(e.target as Node)) {
+        setShowAgentPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showAgentPicker]);
+
+  // ── Handlers: Conversations tab ──
+
+  const handleSessionClick = (session: AllSessionItem) => {
+    // Check if already opened
+    const existing = openedSessions.find(
+      o => o.sessionId === session.id && o.agentId === session.agentId,
+    );
+    if (existing) {
+      setActivePanel({ type: 'session', key: existing.key });
+      syncUrlParams({ agent: session.agentId, session: session.id });
+      return;
     }
-  }, [selectedId, creating, fetchAgentSessions]);
+    // Open new instance
+    const key = nextKeyRef.current++;
+    setOpenedSessions(prev => [...prev, { sessionId: session.id, agentId: session.agentId, key }]);
+    setActivePanel({ type: 'session', key });
+    syncUrlParams({ agent: session.agentId, session: session.id });
+  };
 
-  const selectedAgent = agents.find(a => a.id === selectedId) ?? null;
-  const groupedSessions = useMemo(() => groupSessionsByDay(agentSessions), [agentSessions]);
-
-  // B2: Filter agents by search query (fuzzy match on name + description)
-  // B3: Sort agents — built-in first, then by updatedAt descending (most recent first)
-  const displayAgents = useMemo(() => {
-    let list = agents;
-    if (searchQuery.trim()) {
-      const q = searchQuery.trim().toLowerCase();
-      list = list.filter(a =>
-        a.name.toLowerCase().includes(q) ||
-        (a.description ?? '').toLowerCase().includes(q),
-      );
-    }
-    return [...list].sort((a, b) => {
-      // Built-in agents always on top
-      if (a.builtIn && !b.builtIn) return -1;
-      if (!a.builtIn && b.builtIn) return 1;
-      // Then by updatedAt descending
-      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-    });
-  }, [agents, searchQuery]);
-
-  const handleSelect = (agent: Agent) => {
-    setCreating(false);
-    setSelectedId(agent.id);
-    setForm(agentToForm(agent));
-    setExpandedPrompt(false);
-    setViewMode('chat');
-    setActiveSessionId(undefined);
-    setChatKey(k => k + 1);
+  const handleNewSession = (agent: Agent) => {
+    const key = nextKeyRef.current++;
+    setOpenedSessions(prev => [...prev, { sessionId: null, agentId: agent.id, key }]);
+    setActivePanel({ type: 'session', key });
+    setShowAgentPicker(false);
     syncUrlParams({ agent: agent.id, session: null });
   };
 
+  // ── Handlers: Agents tab ──
+
+  const handleAgentClick = (agent: Agent) => {
+    setCreating(false);
+    setSelectedAgentId(agent.id);
+    setForm(agentToForm(agent));
+    setExpandedPrompt(false);
+    setActivePanel({ type: 'agent', agentId: agent.id, mode: 'chat' });
+    syncUrlParams({ agent: agent.id, session: null });
+  };
+
+  // Alias for handleAgentClick used by handleClone
+  const handleSelect = handleAgentClick;
+
   const handleStartCreate = () => {
-    setSelectedId(null);
+    setSelectedAgentId(null);
     setCreating(true);
     setForm(emptyForm);
     setExpandedPrompt(false);
+    setActivePanel(null);
   };
 
   // B1: Clone an agent — copy all config with "(副本)" suffix
@@ -623,27 +696,14 @@ export default function AgentsPage() {
   };
 
   const handleClose = () => {
-    setSelectedId(null);
+    setSelectedAgentId(null);
     setCreating(false);
     setForm(emptyForm);
     setExpandedPrompt(false);
-    setViewMode('chat');
-    setActiveSessionId(undefined);
+    if (activePanel?.type === 'agent') {
+      setActivePanel(null);
+    }
     syncUrlParams({ agent: null, session: null });
-  };
-
-  const handleSessionClick = (sessionId: string) => {
-    setActiveSessionId(sessionId);
-    setChatKey(k => k + 1);
-    setViewMode('chat');
-    syncUrlParams({ session: sessionId });
-  };
-
-  const handleNewChat = () => {
-    setActiveSessionId(null);
-    setChatKey(k => k + 1);
-    setViewMode('chat');
-    syncUrlParams({ session: null });
   };
 
   const handleSave = async () => {
@@ -673,16 +733,17 @@ export default function AgentsPage() {
           const data = await res.json();
           await fetchAgents();
           setCreating(false);
-          setSelectedId(data.agent.id);
+          setSelectedAgentId(data.agent.id);
           setForm(agentToForm(data.agent));
+          setActivePanel({ type: 'agent', agentId: data.agent.id, mode: 'chat' });
           syncUrlParams({ agent: data.agent.id, session: null });
         }
-      } else if (selectedId) {
+      } else if (selectedAgentId) {
         const res = await fetch('/api/agents', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            id: selectedId,
+            id: selectedAgentId,
             name,
             description: form.description.trim() || undefined,
             systemPrompt: form.systemPrompt.trim() || undefined,
@@ -709,14 +770,19 @@ export default function AgentsPage() {
       });
       if (res.ok) {
         await fetchAgents();
-        if (selectedId === id) {
-          setSelectedId(null);
+        if (selectedAgentId === id) {
+          setSelectedAgentId(null);
           setForm(emptyForm);
+          setActivePanel(null);
           syncUrlParams({ agent: null, session: null });
         }
       }
     } catch { /* ignore */ }
   };
+
+  // ── Derived state ──
+  const selectedAgent = agents.find(a => a.id === selectedAgentId) ?? null;
+  const agentViewMode = activePanel?.type === 'agent' ? activePanel.mode : 'chat';
 
   const hasChanges = creating
     ? form.name.trim().length > 0
@@ -730,148 +796,188 @@ export default function AgentsPage() {
         || JSON.stringify([...form.contextIds].sort()) !== JSON.stringify([...(selectedAgent.contextIds ?? [])].sort())
       : false;
 
+  // ── Active session info (for header display) ──
+  const activeOpened = activePanel?.type === 'session'
+    ? openedSessions.find(o => o.key === activePanel.key)
+    : null;
+  const activeSessionAgent = activeOpened
+    ? agents.find(a => a.id === activeOpened.agentId) ?? null
+    : null;
+  const activeSessionInfo = activeOpened?.sessionId
+    ? allSessions.find(s => s.id === activeOpened.sessionId)
+    : null;
+
   return (
     <div className="flex h-full">
       {/* Left sidebar */}
       <div className="flex w-72 shrink-0 flex-col border-r border-zinc-200 dark:border-zinc-800">
-        {/* ── Top half: Agents ── */}
-        <div className="flex h-1/2 flex-col">
-          <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
-            <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-900 dark:text-zinc-100">
-              <Bot className="h-3.5 w-3.5" />
-              Agents
-            </div>
-            <button
-              onClick={handleStartCreate}
-              className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-              title="新建 Agent"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-          </div>
-          {/* B2: Search input */}
-          <div className="border-b border-zinc-100 px-3 py-1.5 dark:border-zinc-800/50">
-            <div className="flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900">
-              <Search className="h-3 w-3 shrink-0 text-zinc-400" />
-              <input
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="搜索 Agent..."
-                className="flex-1 bg-transparent text-xs outline-none placeholder:text-zinc-400 text-zinc-900 dark:text-zinc-100"
-              />
-              {searchQuery && (
-                <button onClick={() => setSearchQuery('')} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            {displayAgents.length === 0 ? (
-              <div className="px-4 py-8 text-center text-xs text-zinc-400">
-                {searchQuery ? '没有匹配的 Agent' : '暂无 Agent'}
-              </div>
-            ) : (
-              displayAgents.map(a => (
-                <div
-                  key={a.id}
-                  onClick={() => handleSelect(a)}
-                  className={`group flex cursor-pointer items-center gap-3 border-b border-zinc-100 px-4 py-3 transition-colors dark:border-zinc-800/50 ${
-                    selectedId === a.id
-                      ? 'bg-zinc-100 dark:bg-zinc-800'
-                      : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
-                  }`}
-                >
-                  <AgentIcon iconKey={a.icon} className="h-4 w-4 shrink-0 text-zinc-400" />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                      <span className="truncate">{a.name}</span>
-                      {a.builtIn && (
-                        <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                          内置
-                        </span>
-                      )}
-                    </div>
-                    {a.description && (
-                      <div className="truncate text-xs text-zinc-400 dark:text-zinc-500">
-                        {a.description}
-                      </div>
-                    )}
-                  </div>
-                  {/* B1: Clone button */}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleClone(a); }}
-                    className="shrink-0 rounded-md p-1 text-zinc-300 opacity-0 transition-all hover:bg-zinc-200 hover:text-zinc-600 group-hover:opacity-100 dark:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
-                    title="克隆"
-                  >
-                    <Copy className="h-3.5 w-3.5" />
-                  </button>
-                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-300 dark:text-zinc-600" />
-                </div>
-              ))
-            )}
-          </div>
+        {/* ── Tab switcher ── */}
+        <div className="flex border-b border-zinc-200 dark:border-zinc-800">
+          <button
+            onClick={() => setSidebarTab('conversations')}
+            className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors ${
+              sidebarTab === 'conversations'
+                ? 'border-b-2 border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100'
+                : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+            }`}
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            对话
+          </button>
+          <button
+            onClick={() => setSidebarTab('agents')}
+            className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors ${
+              sidebarTab === 'agents'
+                ? 'border-b-2 border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100'
+                : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+            }`}
+          >
+            <Bot className="h-3.5 w-3.5" />
+            Agents
+          </button>
         </div>
 
-        {/* ── Bottom half: Sessions ── */}
-        <div className="flex h-1/2 flex-col border-t border-zinc-200 dark:border-zinc-800">
-          <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
-            <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-900 dark:text-zinc-100">
-              <MessageSquare className="h-3.5 w-3.5" />
-              会话
-            </div>
-            {selectedId && !creating && (
+        {/* ── Tab content ── */}
+        {sidebarTab === 'conversations' ? (
+          <div className="flex flex-1 flex-col overflow-hidden">
+            {/* New session button */}
+            <div className="relative flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+              <div className="text-xs font-medium text-zinc-400">
+                {allSessions.length > 0 && `${allSessions.length} 个对话`}
+              </div>
               <button
-                onClick={handleNewChat}
+                onClick={() => setShowAgentPicker(v => !v)}
                 className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                title="新建会话"
+                title="新建对话"
               >
                 <Plus className="h-4 w-4" />
               </button>
-            )}
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            {!selectedId || creating ? (
-              <div className="px-4 py-8 text-center text-xs text-zinc-400">
-                选择一个 Agent 查看会话
-              </div>
-            ) : agentSessions.length === 0 ? (
-              <div className="px-4 py-8 text-center text-xs text-zinc-400">
-                暂无会话记录
-              </div>
-            ) : (
-              groupedSessions.map(group => (
-                <div key={group.label}>
-                  <div className="sticky top-0 bg-zinc-50 px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400 dark:bg-zinc-900 dark:text-zinc-500">
-                    {group.label}
+              {/* Agent picker dropdown */}
+              {showAgentPicker && (
+                <div
+                  ref={agentPickerRef}
+                  className="absolute right-2 top-full z-20 mt-1 w-56 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+                >
+                  <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400">
+                    选择 Agent 开始对话
                   </div>
-                  {group.items.map(s => (
-                    <div
-                      key={s.id}
-                      onClick={() => handleSessionClick(s.id)}
-                      className={`flex cursor-pointer items-center gap-2.5 px-4 py-2.5 transition-colors ${
-                        activeSessionId === s.id
-                          ? 'bg-zinc-100 dark:bg-zinc-800'
-                          : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
-                      }`}
+                  {agents.map(a => (
+                    <button
+                      key={a.id}
+                      onClick={() => handleNewSession(a)}
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-zinc-50 transition-colors dark:hover:bg-zinc-800"
                     >
-                      <MessageSquare className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
-                      <span className="flex-1 truncate text-xs text-zinc-700 dark:text-zinc-300">
-                        {s.title}
-                      </span>
-                    </div>
+                      <AgentIcon iconKey={a.icon} className="h-4 w-4 shrink-0 text-zinc-400" />
+                      <span className="truncate text-zinc-900 dark:text-zinc-100">{a.name}</span>
+                    </button>
                   ))}
                 </div>
-              ))
-            )}
+              )}
+            </div>
+            {/* Session list */}
+            <div className="flex-1 overflow-y-auto">
+              {allSessions.length === 0 ? (
+                <div className="px-4 py-12 text-center text-xs text-zinc-400">
+                  <MessageSquare className="mx-auto mb-2 h-8 w-8 text-zinc-300 dark:text-zinc-600" />
+                  <p>暂无对话</p>
+                  <p className="mt-1">点击右上角 + 开始新对话</p>
+                </div>
+              ) : (
+                groupedSessions.map(group => (
+                  <div key={group.label}>
+                    <div className="sticky top-0 bg-zinc-50 px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400 dark:bg-zinc-900 dark:text-zinc-500">
+                      {group.label}
+                    </div>
+                    {group.items.map(s => {
+                      const isActive = activePanel?.type === 'session'
+                        && openedSessions.find(o => o.key === activePanel.key)?.sessionId === s.id;
+                      return (
+                        <div
+                          key={s.id}
+                          onClick={() => handleSessionClick(s)}
+                          className={`flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors ${
+                            isActive
+                              ? 'bg-zinc-100 dark:bg-zinc-800'
+                              : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                          }`}
+                        >
+                          <AgentIcon iconKey={s.agentIcon} className="h-4 w-4 shrink-0 text-zinc-400" />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                              {s.title}
+                            </div>
+                            <div className="truncate text-zinc-400" style={{ fontSize: 13 }}>
+                              {s.agentName}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))
+              )}
+            </div>
           </div>
-        </div>
+        ) : (
+          /* ── Agents tab ── */
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+              <div className="text-xs font-medium text-zinc-400">
+                {agents.length > 0 && `${agents.length} 个 Agent`}
+              </div>
+              <button
+                onClick={handleStartCreate}
+                className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                title="新建 Agent"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {agents.length === 0 ? (
+                <div className="px-4 py-8 text-center text-xs text-zinc-400">
+                  暂无 Agent
+                </div>
+              ) : (
+                agents.map(a => (
+                  <div
+                    key={a.id}
+                    onClick={() => handleAgentClick(a)}
+                    className={`group flex cursor-pointer items-center gap-3 border-b border-zinc-100 px-4 py-3 transition-colors dark:border-zinc-800/50 ${
+                      activePanel?.type === 'agent' && activePanel.agentId === a.id
+                        ? 'bg-zinc-100 dark:bg-zinc-800'
+                        : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                    }`}
+                  >
+                    <AgentIcon iconKey={a.icon} className="h-4 w-4 shrink-0 text-zinc-400" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                        <span className="truncate">{a.name}</span>
+                        {a.builtIn && (
+                          <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                            内置
+                          </span>
+                        )}
+                      </div>
+                      {a.description && (
+                        <div className="truncate text-xs text-zinc-400 dark:text-zinc-500">
+                          {a.description}
+                        </div>
+                      )}
+                    </div>
+                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-300 dark:text-zinc-600" />
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Right: Detail / Chat / Edit panel */}
+      {/* Right panel */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {creating ? (
-          /* ── Creating new agent: always show settings form ── */
+          /* ── Creating new agent ── */
           expandedPrompt ? (
             <div className="flex flex-1 flex-col p-4 gap-3 overflow-hidden">
               <div className="flex items-center justify-between">
@@ -905,13 +1011,13 @@ export default function AgentsPage() {
               onSave={handleSave}
               onClose={handleClose}
               onDelete={handleDelete}
-              selectedId={selectedId}
+              selectedId={selectedAgentId}
               onExpandPrompt={() => setExpandedPrompt(true)}
             />
           )
-        ) : selectedAgent ? (
-          /* ── Existing agent selected ── */
-          expandedPrompt && viewMode === 'settings' ? (
+        ) : activePanel?.type === 'agent' && selectedAgent ? (
+          /* ── Agent detail (chat / settings) ── */
+          expandedPrompt && agentViewMode === 'settings' ? (
             <div className="flex flex-1 flex-col p-4 gap-3 overflow-hidden">
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
@@ -935,7 +1041,7 @@ export default function AgentsPage() {
             </div>
           ) : (
             <>
-              {/* Panel header with view toggle */}
+              {/* Agent panel header */}
               <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
                 <div className="flex items-center gap-2 min-w-0">
                   <AgentIcon iconKey={selectedAgent.icon} className="h-4 w-4 shrink-0 text-zinc-500" />
@@ -948,19 +1054,25 @@ export default function AgentsPage() {
                 </div>
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={() => { setViewMode(v => v === 'chat' ? 'settings' : 'chat'); setExpandedPrompt(false); }}
+                    onClick={() => {
+                      if (activePanel?.type === 'agent') {
+                        const newMode = activePanel.mode === 'chat' ? 'settings' : 'chat';
+                        setActivePanel({ ...activePanel, mode: newMode });
+                        setExpandedPrompt(false);
+                      }
+                    }}
                     className={`rounded-md p-1.5 transition-colors ${
-                      viewMode === 'settings'
+                      agentViewMode === 'settings'
                         ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
                         : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300'
                     }`}
-                    title={viewMode === 'chat' ? '设置' : '聊天'}
+                    title={agentViewMode === 'chat' ? '设置' : '聊天'}
                   >
-                    {viewMode === 'chat' ? <Settings className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
+                    {agentViewMode === 'chat' ? <Settings className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
                   </button>
                   {!selectedAgent.builtIn && (
                     <button
-                      onClick={() => handleDelete(selectedId!)}
+                      onClick={() => handleDelete(selectedAgentId!)}
                       className="rounded-md p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-500 transition-colors dark:hover:bg-red-900/20"
                       title="删除"
                     >
@@ -977,24 +1089,13 @@ export default function AgentsPage() {
                 </div>
               </div>
 
-              {/* View content */}
-              {viewMode === 'chat' ? (
+              {agentViewMode === 'chat' ? (
                 <div className="flex-1 overflow-hidden">
                   <AgentChatPanel
-                    key={`${selectedAgent.id}-${chatKey}`}
+                    key={`agent-${selectedAgent.id}`}
                     agent={selectedAgent}
-                    initialSessionId={activeSessionId}
-                    onSessionChange={(newSession) => {
-                      if (newSession) {
-                        // Optimistically insert new session at top of sidebar list
-                        setAgentSessions(prev =>
-                          prev.some(s => s.id === newSession.id) ? prev : [newSession, ...prev],
-                        );
-                        setActiveSessionId(newSession.id);
-                        syncUrlParams({ session: newSession.id });
-                      }
-                      if (selectedId) fetchAgentSessions(selectedId);
-                    }}
+                    initialSessionId={null}
+                    onSessionChange={() => fetchAllSessions()}
                   />
                 </div>
               ) : (
@@ -1008,23 +1109,70 @@ export default function AgentsPage() {
                   onSave={handleSave}
                   onClose={handleClose}
                   onDelete={handleDelete}
-                  selectedId={selectedId}
+                  selectedId={selectedAgentId}
                   onExpandPrompt={() => setExpandedPrompt(true)}
                 />
               )}
             </>
           )
+        ) : activePanel?.type === 'session' ? (
+          /* ── Session chat panels (multi-instance, CSS visibility toggle) ── */
+          <>
+            {/* Session header */}
+            {activeSessionAgent && (
+              <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
+                <div className="flex items-center gap-2 min-w-0">
+                  <AgentIcon iconKey={activeSessionAgent.icon} className="h-4 w-4 shrink-0 text-zinc-500" />
+                  <span className="text-sm font-medium text-zinc-900 truncate dark:text-zinc-100">
+                    {activeSessionInfo?.title ?? '新会话'}
+                  </span>
+                  <span className="text-xs text-zinc-400 shrink-0">
+                    — {activeSessionAgent.name}
+                  </span>
+                </div>
+              </div>
+            )}
+            {/* Render all opened sessions, toggle visibility */}
+            <div className="flex-1 overflow-hidden relative">
+              {openedSessions.map(os => {
+                const agent = agents.find(a => a.id === os.agentId);
+                if (!agent) return null;
+                const isVisible = activePanel.key === os.key;
+                return (
+                  <div
+                    key={os.key}
+                    className={`absolute inset-0 ${isVisible ? 'flex flex-col' : 'hidden'}`}
+                  >
+                    <AgentChatPanel
+                      agent={agent}
+                      initialSessionId={os.sessionId}
+                      onSessionChange={(newSession) => {
+                        // Update the opened session's sessionId if it was null (new session)
+                        if (newSession && os.sessionId === null) {
+                          setOpenedSessions(prev =>
+                            prev.map(p => p.key === os.key ? { ...p, sessionId: newSession.id } : p),
+                          );
+                          syncUrlParams({ session: newSession.id });
+                        }
+                        fetchAllSessions();
+                      }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </>
         ) : (
-          /* Empty state */
+          /* ── Empty state ── */
           <div className="flex h-full flex-col items-center justify-center text-zinc-400">
-            <Bot className="mb-3 h-10 w-10" />
-            <p className="text-sm">选择一个 Agent 查看详情，或创建新的 Agent</p>
+            <MessageSquare className="mb-3 h-10 w-10" />
+            <p className="text-sm">选择一个对话，或开始新的对话</p>
             <button
-              onClick={handleStartCreate}
+              onClick={() => { setSidebarTab('conversations'); setShowAgentPicker(true); }}
               className="mt-4 flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm text-white hover:bg-zinc-700 transition-colors dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
             >
               <Plus className="h-4 w-4" />
-              新建 Agent
+              新建对话
             </button>
           </div>
         )}

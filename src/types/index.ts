@@ -504,6 +504,7 @@ export interface TodoItem {
   description?: string;
   status: TodoStatus;
   priority: TodoPriority;
+  agentId?: string;
   createdAt: string;
   updatedAt: string;
 }

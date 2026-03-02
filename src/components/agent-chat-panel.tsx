@@ -448,9 +448,19 @@ export function AgentChatPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent.id, projectKey]);
 
-  // Auto-scroll
+  // Smart auto-scroll: pause when user scrolls up, resume when near bottom
+  const [autoScroll, setAutoScroll] = useState(true);
   const scrollRafRef = useRef<number>(0);
+
+  const handleChatScroll = useCallback(() => {
+    if (!scrollRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 40;
+    setAutoScroll(isNearBottom);
+  }, []);
+
   useEffect(() => {
+    if (!autoScroll) return;
     if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
     scrollRafRef.current = requestAnimationFrame(() => {
       scrollRafRef.current = 0;
@@ -458,7 +468,7 @@ export function AgentChatPanel({
         scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
       }
     });
-  }, [messages, streamingBlocks]);
+  }, [messages, streamingBlocks, autoScroll]);
 
   // Send message
   const doSend = useCallback(async (text: string) => {
@@ -485,6 +495,7 @@ export function AgentChatPanel({
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
     setPendingImages([]);
+    setAutoScroll(true);
     setIsStreaming(true);
     blocksRef.current = [];
     fullTextRef.current = '';
@@ -747,7 +758,7 @@ export function AgentChatPanel({
     return (
       <div className="relative flex h-full flex-col">
         {/* Messages */}
-        <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
+        <div ref={scrollRef} onScroll={handleChatScroll} className="flex-1 space-y-3 overflow-y-auto p-4">
           {messages.length === 0 && !isStreaming ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
               <Bot className="h-10 w-10 stroke-1" />
@@ -1106,7 +1117,7 @@ export function AgentChatPanel({
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-3">
+      <div ref={scrollRef} onScroll={handleChatScroll} className="flex-1 space-y-3 overflow-y-auto p-3">
         {messages.length === 0 && !isStreaming ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
             <Sparkles className="h-8 w-8 stroke-1" />
