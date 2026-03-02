@@ -20,12 +20,14 @@ import type { StreamParser } from '@/lib/claude-stream-parser';
 import {
   getAgentChatSessionsPath,
   getAgentsPath,
+  getPromptFilePath,
   getContextIndexPath,
   getContextFilePath,
   getContextDir,
   readJsonFile,
   modifyJsonFile,
 } from '@/lib/file-store';
+import { resolveSystemPrompt } from '@/lib/agent-prompt-store';
 import type { ContextIndexData, ContextEntry } from '@/types';
 import {
   buildClaudeEnv,
@@ -34,9 +36,14 @@ import {
   buildAgentPermissionArgs,
   buildAgentToolArgs,
 } from '@/lib/settings-manager';
-import type { ChatSSEEvent, Agent, AgentsData } from '@/types';
+import type { ChatSSEEvent, ContentBlock, Agent, AgentsData } from '@/types';
 import type { AgentChatSession, AgentChatSessionsData } from '@/types/agent-chat';
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import type { ResourceRef, FlowContextRef, ReferenceTurnsRef } from '@/types/resource';
+import { resourceRegistry } from '@/lib/resource-registry';
+import '@/lib/resource-loaders'; // side-effect: registers all loaders
+import { migrateAgentToResources } from '@/lib/resource-migration';
+import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
 
 // ── Types ──
 
@@ -58,7 +65,7 @@ export interface AgentChatRun extends BaseRun {
   agentId: string;
   projectKey?: string;
   sessionTitle?: string;
-  messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[] }>;
+  messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }>;
   // Guest Agent
   parentSessionId?: string;
   importedTurnIndices?: number[];
@@ -99,6 +106,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     message: string,
     flowContext?: FlowContext,
     images?: ImageAttachment[],
+    initialTitle?: string,
   ): Promise<string> {
     const agent = await this.loadAgent(agentId);
 
@@ -180,7 +188,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       sessionId,
       agentId,
       projectKey: flowContext?.projectKey ?? existing?.projectKey,
-      sessionTitle: existing?.sessionTitle,
+      sessionTitle: existing?.sessionTitle ?? initialTitle,
       messages,
       tempPaths,
     };
@@ -391,7 +399,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     agentId: string;
     projectKey?: string;
     sessionTitle?: string;
-    messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[] }>;
+    messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }>;
     tempPaths: string[];
     parentSessionId?: string;
     importedTurnIndices?: number[];
@@ -455,7 +463,18 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     // Save assistant message (strip title + knowledge tags)
     if (run.assistantText) {
       const cleaned = stripKnowledgeTags(stripSessionTitle(run.assistantText));
-      run.messages.push({ role: 'assistant', content: cleaned });
+      // Also clean contentBlocks text entries
+      const cleanedBlocks = run.contentBlocks.map(block => {
+        if (block.type === 'text') {
+          return { ...block, text: stripKnowledgeTags(stripSessionTitle(block.text)) };
+        }
+        return block;
+      }).filter(block => !(block.type === 'text' && !block.text.trim()));
+      run.messages.push({
+        role: 'assistant',
+        content: cleaned,
+        contentBlocks: cleanedBlocks.length > 0 ? cleanedBlocks : undefined,
+      });
     }
   }
 
@@ -599,9 +618,109 @@ async function createDraftContextEntry(draft: KnowledgeTag, sessionId: string): 
   }
 }
 
-// ── Context Index Builder ──
+// ── Unified Resource-based Prompt Builder ──
 
-async function buildContextSection(): Promise<string> {
+/**
+ * Resolve an agent's effective resources and format them into prompt text.
+ *
+ * If the agent has `defaultResources`, use those directly.
+ * Otherwise, derive them from legacy fields (contextIds, todoRead, etc.)
+ * via migrateAgentToResources().
+ *
+ * Extra refs (e.g. flow-context, reference-turns) can be appended.
+ */
+async function buildResourcePrompt(
+  agent: Agent,
+  extraRefs?: ResourceRef[],
+): Promise<string> {
+  const baseRefs = agent.defaultResources ?? migrateAgentToResources(agent);
+  const allRefs = extraRefs ? [...baseRefs, ...extraRefs] : baseRefs;
+
+  // Resolve system prompt: prefer .md file, fallback to inline, then auto-generated
+  const resolved = await resolveSystemPrompt(agent.id, agent.systemPrompt);
+  const systemPromptText = resolved
+    || `你是一个名为「${agent.name}」的 AI 助手。${agent.description || ''}`;
+
+  const ctx: SystemPromptLoaderContext = {
+    agentId: agent.id,
+    systemPromptText,
+    // exposePromptPath: pass prompt file path if the agent opts in
+    promptFilePath: agent.capabilities?.exposePromptPath ? getPromptFilePath(agent.id) : undefined,
+  };
+
+  const resolvedResources = await resourceRegistry.resolveAll(allRefs, ctx);
+  return resourceRegistry.formatAsPrompt(resolvedResources);
+}
+
+// ── Prompt Builders (powered by Resource Registry) ──
+
+async function buildAgentChatPrompt(agent: Agent, message: string): Promise<string> {
+  const resourcePrompt = await buildResourcePrompt(agent);
+
+  return `${resourcePrompt}
+
+---
+
+用户消息：${message}`;
+}
+
+async function buildAgentChatPromptWithFlowContext(
+  agent: Agent,
+  message: string,
+  flowContext: FlowContext,
+): Promise<string> {
+  const { projectKey, projectName, flowDataPath } = flowContext;
+
+  const flowRef: FlowContextRef = {
+    type: 'flow-context',
+    id: '_snapshot',
+    priority: 70,
+    label: '项目上下文',
+    projectKey,
+    projectName,
+    flowDataPath,
+  };
+
+  const resourcePrompt = await buildResourcePrompt(agent, [flowRef]);
+
+  return `${resourcePrompt}
+
+---
+
+用户消息：${message}`;
+}
+
+async function buildGuestAgentPrompt(
+  agent: Agent,
+  message: string,
+  importedTurns: Array<{ role: 'user' | 'assistant'; content: string }>,
+): Promise<string> {
+  const extraRefs: ResourceRef[] = [];
+
+  if (importedTurns.length > 0) {
+    const turnsRef: ReferenceTurnsRef = {
+      type: 'reference-turns',
+      id: '_imported',
+      priority: 60,
+      label: '参考对话',
+      turns: importedTurns,
+    };
+    extraRefs.push(turnsRef);
+  }
+
+  const resourcePrompt = await buildResourcePrompt(agent, extraRefs);
+
+  return `${resourcePrompt}
+
+---
+
+用户消息：${message}`;
+}
+
+// ── Legacy Helpers (deprecated — kept for reference, no longer called) ──
+
+/** @deprecated Use buildResourcePrompt() instead */
+async function _legacyBuildContextSection(): Promise<string> {
   const data = await readJsonFile<ContextIndexData>(getContextIndexPath(), { entries: [] });
   const activeEntries = data.entries.filter(e => !e.status || e.status === 'active');
   if (activeEntries.length === 0) return '';
@@ -617,165 +736,32 @@ async function buildContextSection(): Promise<string> {
   const ungrouped = activeEntries.filter(e => !e.group);
 
   let md = '\n\n## 可用上下文信息\n\n以下是用户配置的上下文信息索引。需要时可通过 bash 的 cat 命令读取具体文件内容。\n';
-
   if (ungrouped.length > 0) {
     md += `\n${tableHeader}\n${ungrouped.map(toRow).join('\n')}\n`;
   }
-
   for (const group of groups) {
     const groupEntries = data.entries.filter(e => e.group === group);
     md += `\n### ${group}\n${tableHeader}\n${groupEntries.map(toRow).join('\n')}\n`;
   }
-
   return md;
 }
 
-// ── Preloaded Context Builder ──
-
-async function buildPreloadedContextSection(contextIds: string[] | undefined): Promise<string> {
+/** @deprecated Use buildResourcePrompt() instead */
+async function _legacyBuildPreloadedContextSection(contextIds: string[] | undefined): Promise<string> {
   if (!contextIds || contextIds.length === 0) return '';
-
   const data = await readJsonFile<ContextIndexData>(getContextIndexPath(), { entries: [] });
   const entries = data.entries.filter(e => contextIds.includes(e.id) && (!e.status || e.status === 'active'));
   if (entries.length === 0) return '';
-
   const sections: string[] = [];
   for (const entry of entries) {
     try {
       const filePath = getContextFilePath(entry.fileName);
       const content = await readFile(filePath, 'utf-8');
       sections.push(`### ${entry.label}\n\n${content.trim()}`);
-    } catch {
-      // File missing or unreadable — skip silently
-    }
+    } catch { /* skip */ }
   }
-
   if (sections.length === 0) return '';
-
   return `\n\n## Agent 预加载上下文\n\n以下上下文已由配置自动加载，无需手动读取：\n\n${sections.join('\n\n---\n\n')}\n`;
-}
-
-// ── Knowledge Saving Instructions ──
-
-const KNOWLEDGE_SAVE_INSTRUCTIONS = `
-## 知识保存
-
-当你完成了调查、分析或研究，并产出了具有**长期复用价值**的知识（如数据库结构、API 文档、系统架构、配置清单等），你可以将这些知识以如下格式嵌入到你的回复中，系统会自动将其保存为草稿上下文条目，供用户确认后复用：
-
-<save-knowledge label="知识标题（简短）" description="一句话描述，帮助 AI 决定是否需要读取" format="text">
-知识内容...
-</save-knowledge>
-
-注意：
-- format 只能是 text、json、markdown 之一
-- 只在知识具有长期复用价值时使用，不要滥用
-- 一次对话中最多保存 3 条知识
-- 知识将以草稿状态保存，用户确认后才会生效`;
-
-// ── Prompt Builders ──
-
-async function buildAgentChatPrompt(agent: Agent, message: string): Promise<string> {
-  const systemPrompt = agent.systemPrompt
-    || `你是一个名为「${agent.name}」的 AI 助手。${agent.description || ''}`;
-
-  const contextSection = await buildContextSection();
-  const preloadedSection = await buildPreloadedContextSection(agent.contextIds);
-
-  return `${systemPrompt}${contextSection}${preloadedSection}${KNOWLEDGE_SAVE_INSTRUCTIONS}
-
-## 会话标题
-
-在你的**第一条回复的开头**，用以下格式生成一个简短的会话标题（5-15 个字，概括这次对话的主题）：
-
-<session-title>标题内容</session-title>
-
-之后的回复不需要再输出标题。
-
----
-
-用户消息：${message}`;
-}
-
-async function buildAgentChatPromptWithFlowContext(
-  agent: Agent,
-  message: string,
-  flowContext: FlowContext,
-): Promise<string> {
-  const { projectKey, projectName, flowDataPath } = flowContext;
-
-  const systemPrompt = agent.systemPrompt
-    || `你是一个名为「${agent.name}」的 AI 助手。${agent.description || ''}`;
-
-  const contextSection = await buildContextSection();
-  const preloadedSection = await buildPreloadedContextSection(agent.contextIds);
-
-  return `${systemPrompt}${contextSection}${preloadedSection}${KNOWLEDGE_SAVE_INSTRUCTIONS}
-
-## 当前项目上下文
-
-你正在协助管理项目「${projectName}」（key: ${projectKey}）。
-
-项目数据文件位置：${flowDataPath}
-
-该文件是 JSON 格式，结构为 { "sections": [...] }，每个 section 包含 id、name、description、items 数组。每个 item 包含 id、content、status（todo/doing/done）、description、children（嵌套子项）等字段。
-
-你可以直接读取和修改这个文件来管理项目结构。修改后确保 JSON 格式正确。
-
-## 会话标题
-
-在你的**第一条回复的开头**，用以下格式生成一个简短的会话标题（5-15 个字，概括这次对话的主题）：
-
-<session-title>标题内容</session-title>
-
-之后的回复不需要再输出标题。
-
----
-
-用户消息：${message}`;
-}
-
-async function buildGuestAgentPrompt(
-  agent: Agent,
-  message: string,
-  importedTurns: Array<{ role: 'user' | 'assistant'; content: string }>,
-): Promise<string> {
-  const systemPrompt = agent.systemPrompt
-    || `你是一个名为「${agent.name}」的 AI 助手。${agent.description || ''}`;
-
-  const contextSection = await buildContextSection();
-  const preloadedSection = await buildPreloadedContextSection(agent.contextIds);
-
-  let referenceSection = '';
-  if (importedTurns.length > 0) {
-    const turnsText = importedTurns.map((t, i) => {
-      const roleLabel = t.role === 'user' ? '用户' : 'AI';
-      return `### 轮次 ${i + 1}（${roleLabel}）\n${t.content}`;
-    }).join('\n\n');
-
-    referenceSection = `
-
-## 参考对话
-
-以下是来自另一个 AI 会话的对话记录，用户希望你基于这些内容进行讨论（如讲解、分析等）。
-这些内容仅供参考，你不需要继续执行其中的操作。
-
-${turnsText}
-`;
-  }
-
-  return `${systemPrompt}${contextSection}${preloadedSection}${referenceSection}
-
-## 会话标题
-
-在你的**第一条回复的开头**，用以下格式生成一个简短的会话标题（5-15 个字，概括这次对话的主题）：
-
-<session-title>标题内容</session-title>
-
-之后的回复不需要再输出标题。
-
----
-
-用户消息：${message}`;
 }
 
 // ── Singleton ──

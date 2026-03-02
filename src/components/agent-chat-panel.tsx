@@ -10,12 +10,19 @@ import { GuestAgentOverlay } from '@/components/guest-agent-overlay';
 import type { Agent } from '@/types';
 import type { ChatMessage, ChatToolCall, ChatSSEEvent, ContentBlock } from '@/types';
 
+// Session list item (no messages)
+export interface SessionListItem {
+  id: string;
+  title: string;
+  updatedAt: string;
+}
+
 interface AgentChatPanelProps {
   agent: Agent;
   /** undefined = auto-select latest; null = new empty session; string = load specific session */
   initialSessionId?: string | null;
   /** Called when sessions are created or updated (for parent to refresh sidebar) */
-  onSessionChange?: () => void;
+  onSessionChange?: (newSession?: SessionListItem) => void;
   /** Display variant: sidebar or full (butler mode). Omit for plain agent chat. */
   variant?: 'sidebar' | 'full';
   /** Project scope (butler mode). When set, flow context is injected. */
@@ -27,13 +34,6 @@ type IndexedSSEEvent = ChatSSEEvent & { _idx: number };
 // Strip <session-title> tags from display text
 function stripSessionTitleTag(text: string): string {
   return text.replace(/<session-title>[\s\S]*?<\/session-title>\s*/, '');
-}
-
-// Session list item (no messages)
-interface SessionListItem {
-  id: string;
-  title: string;
-  updatedAt: string;
 }
 
 export function AgentChatPanel({
@@ -91,6 +91,7 @@ export function AgentChatPanel({
   const lastEventIdxRef = useRef<number>(-1);
   const finalizingRef = useRef(false);
   const sessionIdRef = useRef<string | null>(null);
+  const doSendRef = useRef<(text: string) => void>(() => {});
 
   // Keep ref in sync
   useEffect(() => {
@@ -141,8 +142,14 @@ export function AgentChatPanel({
       if (pk) url += `&projectKey=${pk}`;
       const res = await fetch(url, { cache: 'no-store' });
       const data = await res.json();
-      setSessionList(data.sessions ?? []);
-      return data.sessions ?? [];
+      const remote: SessionListItem[] = data.sessions ?? [];
+      // Merge: keep optimistically-inserted local sessions that backend doesn't know about yet
+      setSessionList(prev => {
+        const remoteIds = new Set(remote.map(s => s.id));
+        const localOnly = prev.filter(s => !remoteIds.has(s.id));
+        return [...localOnly, ...remote];
+      });
+      return remote;
     } catch {
       return [];
     }
@@ -155,10 +162,11 @@ export function AgentChatPanel({
       if (!res.ok) return;
       const data = await res.json();
       const restored: ChatMessage[] = (data.messages ?? []).map(
-        (m: { role: 'user' | 'assistant'; content: string }, i: number) => ({
+        (m: { role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }, i: number) => ({
           id: `restored-${i}`,
           role: m.role,
           content: m.content,
+          contentBlocks: m.contentBlocks,
           timestamp: '',
         }),
       );
@@ -388,22 +396,26 @@ export function AgentChatPanel({
       }
 
       // Check if a run is still live in memory
-      const sessionsToCheck = (!hasProject && initialSessionId)
-        ? sessions.filter(s => s.id === initialSessionId)
-        : sessions;
+      // When initialSessionId is specified, always check it directly (it may not
+      // be persisted to disk yet if the AI is still streaming).
+      const sessionIdsToCheck = (!hasProject && initialSessionId)
+        ? [initialSessionId]
+        : sessions.map(s => s.id);
 
-      for (const s of sessionsToCheck) {
-        const statusRes = await fetch(`/api/agent-chat/status?sessionId=${s.id}`, { cache: 'no-store' });
+      for (const sid of sessionIdsToCheck) {
+        const statusRes = await fetch(`/api/agent-chat/status?sessionId=${sid}`, { cache: 'no-store' });
         const statusData = await statusRes.json();
         if (!cancelled && statusData.status === 'running') {
-          setSessionId(s.id);
-          setSessionTitle(s.title);
+          const title = sessions.find(s => s.id === sid)?.title ?? '会话';
+          setSessionId(sid);
+          setSessionTitle(title);
           if (Array.isArray(statusData.messages) && statusData.messages.length > 0) {
             const restored: ChatMessage[] = statusData.messages.map(
-              (m: { role: 'user' | 'assistant'; content: string }, i: number) => ({
+              (m: { role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }, i: number) => ({
                 id: `restored-${i}`,
                 role: m.role,
                 content: m.content,
+                contentBlocks: m.contentBlocks,
                 timestamp: '',
               }),
             );
@@ -413,7 +425,7 @@ export function AgentChatPanel({
           blocksRef.current = [];
           fullTextRef.current = '';
           toolCallsRef.current = [];
-          connectToStream(s.id, 0);
+          connectToStream(sid, 0);
           break;
         }
       }
@@ -429,9 +441,19 @@ export function AgentChatPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent.id, projectKey]);
 
-  // Auto-scroll
+  // Smart auto-scroll: pause when user scrolls up, resume when near bottom
+  const [autoScroll, setAutoScroll] = useState(true);
   const scrollRafRef = useRef<number>(0);
+
+  const handleChatScroll = useCallback(() => {
+    if (!scrollRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 40;
+    setAutoScroll(isNearBottom);
+  }, []);
+
   useEffect(() => {
+    if (!autoScroll) return;
     if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
     scrollRafRef.current = requestAnimationFrame(() => {
       scrollRafRef.current = 0;
@@ -439,7 +461,7 @@ export function AgentChatPanel({
         scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
       }
     });
-  }, [messages, streamingBlocks]);
+  }, [messages, streamingBlocks, autoScroll]);
 
   // Send message
   const doSend = useCallback(async (text: string) => {
@@ -466,6 +488,7 @@ export function AgentChatPanel({
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
     setPendingImages([]);
+    setAutoScroll(true);
     setIsStreaming(true);
     blocksRef.current = [];
     fullTextRef.current = '';
@@ -475,6 +498,23 @@ export function AgentChatPanel({
 
     setErrorMsg(null);
 
+    // For new sessions: generate sessionId + update UI immediately (before fetch)
+    let targetSessionId = sessionId;
+    if (!targetSessionId) {
+      targetSessionId = `agent-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const quickTitle = text.trim().slice(0, 10) || (hasProject ? t('chat.newSession') : '新会话');
+      setSessionId(targetSessionId);
+      setSessionTitle(quickTitle);
+      // Insert into session list immediately so it appears in history
+      const newItem: SessionListItem = {
+        id: targetSessionId!,
+        title: quickTitle,
+        updatedAt: new Date().toISOString(),
+      };
+      setSessionList(prev => [newItem, ...prev]);
+      onSessionChange?.(newItem);
+    }
+
     try {
       const res = await fetch('/api/agent-chat', {
         method: 'POST',
@@ -482,9 +522,10 @@ export function AgentChatPanel({
         body: JSON.stringify({
           agentId: agent.id,
           message: text.trim(),
-          sessionId: sessionId ?? undefined,
+          sessionId: targetSessionId,
           projectKey: projectKey ?? undefined,
           images: imageAttachments.length > 0 ? imageAttachments : undefined,
+          initialTitle: text.trim().slice(0, 10) || undefined,
         }),
       });
 
@@ -493,16 +534,8 @@ export function AgentChatPanel({
         throw new Error(errData.error || `HTTP ${res.status}`);
       }
 
-      const data = await res.json();
-
-      // New session created — capture the sessionId
-      if (!sessionId && data.sessionId) {
-        setSessionId(data.sessionId);
-        setSessionTitle(hasProject ? t('chat.newSession') : '新会话');
-        onSessionChange?.();
-      }
-
-      connectToStream(data.sessionId, 0);
+      await res.json();
+      connectToStream(targetSessionId, 0);
     } catch (err) {
       const msg = (err as Error).message || 'Unknown error';
       console.error('Agent chat send failed:', msg);
@@ -510,6 +543,23 @@ export function AgentChatPanel({
       setIsStreaming(false);
     }
   }, [agent.id, sessionId, isStreaming, pendingImages, hasProject, projectKey, connectToStream, onSessionChange, t]);
+
+  // Keep doSendRef in sync (avoid stale closure in event listener)
+  useEffect(() => {
+    doSendRef.current = doSend;
+  }, [doSend]);
+
+  // Listen for AskUserQuestion answers dispatched via custom event
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const answer = (e as CustomEvent<{ answer: string }>).detail?.answer;
+      if (answer) {
+        doSendRef.current(answer);
+      }
+    };
+    window.addEventListener('ask-user-answer', handler);
+    return () => window.removeEventListener('ask-user-answer', handler);
+  }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     Array.from(e.target.files ?? []).forEach(file => {
@@ -606,6 +656,47 @@ export function AgentChatPanel({
     setSaveDialog({ open: true, content });
   };
 
+  // Delete a single message from the conversation
+  const handleDeleteMessage = useCallback((messageId: string) => {
+    setMessages(prev => prev.filter(m => m.id !== messageId));
+  }, []);
+
+  // Regenerate: remove the last assistant message and resend the last user message
+  const handleRegenerate = useCallback(() => {
+    if (isStreaming) return;
+    setMessages(prev => {
+      // Find the last user message
+      const lastUserIdx = prev.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
+      if (lastUserIdx === -1) return prev;
+      const lastUserMsg = prev[lastUserIdx];
+      // Remove all messages after (and including) the last assistant message after this user msg
+      const trimmed = prev.slice(0, lastUserIdx + 1);
+      // Re-send the user's message
+      setTimeout(() => doSend(lastUserMsg.content), 0);
+      // Remove the user msg too since doSend will re-add it
+      return trimmed.slice(0, -1);
+    });
+  }, [isStreaming, doSend]);
+
+  // Retry: resend the last user message (for failed sends)
+  const handleRetry = useCallback(() => {
+    if (isStreaming) return;
+    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+    if (!lastUserMsg) return;
+    // Remove the failed user message and the error, then re-send
+    setMessages(prev => prev.filter(m => m.id !== lastUserMsg.id));
+    setErrorMsg(null);
+    setTimeout(() => doSend(lastUserMsg.content), 0);
+  }, [isStreaming, messages, doSend]);
+
+  // Compute the last assistant message ID (for regenerate button positioning)
+  const lastAssistantId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'assistant') return messages[i].id;
+    }
+    return null;
+  }, [messages]);
+
   const handleSaveKnowledgeSubmit = async () => {
     if (!saveForm.label.trim() || !saveForm.description.trim()) return;
     setSavingKnowledge(true);
@@ -660,7 +751,7 @@ export function AgentChatPanel({
     return (
       <div className="relative flex h-full flex-col">
         {/* Messages */}
-        <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
+        <div ref={scrollRef} onScroll={handleChatScroll} className="flex-1 space-y-3 overflow-y-auto p-4">
           {messages.length === 0 && !isStreaming ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
               <Bot className="h-10 w-10 stroke-1" />
@@ -674,6 +765,11 @@ export function AgentChatPanel({
                   message={msg}
                   showActions={!isStreaming}
                   onSaveAsKnowledge={handleSaveAsKnowledge}
+                  onDelete={handleDeleteMessage}
+                  onRegenerate={handleRegenerate}
+                  isLastAssistant={msg.id === lastAssistantId}
+                  onRetry={handleRetry}
+                  hasSendError={!!errorMsg && msg.role === 'user' && msg.id === messages[messages.length - 1]?.id}
                 />
               ))}
 
@@ -998,7 +1094,7 @@ export function AgentChatPanel({
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-3">
+      <div ref={scrollRef} onScroll={handleChatScroll} className="flex-1 space-y-3 overflow-y-auto p-3">
         {messages.length === 0 && !isStreaming ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
             <Sparkles className="h-8 w-8 stroke-1" />
@@ -1012,6 +1108,11 @@ export function AgentChatPanel({
                 message={msg}
                 showActions={!isStreaming}
                 onSaveAsKnowledge={handleSaveAsKnowledge}
+                onDelete={handleDeleteMessage}
+                onRegenerate={handleRegenerate}
+                isLastAssistant={msg.id === lastAssistantId}
+                onRetry={handleRetry}
+                hasSendError={!!errorMsg && msg.role === 'user' && msg.id === messages[messages.length - 1]?.id}
               />
             ))}
 

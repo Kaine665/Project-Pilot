@@ -1,7 +1,7 @@
 'use client';
 
-import { memo } from 'react';
-import { Bot, User, GitBranch, BookMarked } from 'lucide-react';
+import { memo, useState } from 'react';
+import { Bot, User, GitBranch, BookMarked, Copy, Check, Trash2, RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { ToolCallCard } from '@/components/tool-call-card';
 import { FormattedText } from '@/components/formatted-text';
@@ -18,6 +18,18 @@ interface ChatBubbleProps {
   onSaveAsKnowledge?: (messageId: string, content: string) => void;
   /** Show action buttons (hidden during streaming) */
   showActions?: boolean;
+  /** Callback to copy message text */
+  onCopy?: (text: string) => void;
+  /** Callback to delete this message */
+  onDelete?: (messageId: string) => void;
+  /** Callback to regenerate (resend last user message). Only for assistant messages. */
+  onRegenerate?: () => void;
+  /** Whether this is the last assistant message (for regenerate button) */
+  isLastAssistant?: boolean;
+  /** Callback to retry a failed send */
+  onRetry?: () => void;
+  /** Whether this message had a send failure */
+  hasSendError?: boolean;
 }
 
 export const ChatBubble = memo(function ChatBubble({
@@ -27,9 +39,16 @@ export const ChatBubble = memo(function ChatBubble({
   onBranch,
   onSaveAsKnowledge,
   showActions,
+  onCopy,
+  onDelete,
+  onRegenerate,
+  isLastAssistant,
+  onRetry,
+  hasSendError,
 }: ChatBubbleProps) {
   const t = useTranslations();
   const isUser = message.role === 'user';
+  const [copied, setCopied] = useState(false);
 
   // Determine which blocks to render:
   // 1. streamingBlocks (live streaming)
@@ -39,6 +58,18 @@ export const ChatBubble = memo(function ChatBubble({
     streamingBlocks ??
     message.contentBlocks ??
     null;
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const text = message.content || '';
+    if (onCopy) {
+      onCopy(text);
+    } else {
+      navigator.clipboard.writeText(text);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
 
   const renderBlocks = (blocksToRender: ContentBlock[]) => {
     const lastTextIdx = blocksToRender.reduce(
@@ -112,7 +143,7 @@ export const ChatBubble = memo(function ChatBubble({
   );
 
   return (
-    <div className={`flex gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+    <div className={`group/bubble flex gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
       {/* Avatar */}
       <div
         className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
@@ -150,9 +181,34 @@ export const ChatBubble = memo(function ChatBubble({
           )}
         </div>
 
-        {/* Actions: branch + save as knowledge */}
-        {showActions && (onBranch || (!isUser && onSaveAsKnowledge)) && (
-          <div className={`mt-0.5 flex items-center gap-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
+        {/* Retry button for failed sends (user messages) */}
+        {hasSendError && isUser && onRetry && showActions && (
+          <div className={`mt-1 flex items-center gap-1.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
+            <span className="text-[10px] text-red-400 dark:text-red-500">发送失败</span>
+            <button
+              onClick={(e) => { e.stopPropagation(); onRetry(); }}
+              className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-red-500 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:text-red-300"
+            >
+              <RefreshCw className="h-2.5 w-2.5" />
+              <span>重试</span>
+            </button>
+          </div>
+        )}
+
+        {/* Action toolbar: hover-visible */}
+        {showActions && (
+          <div className={`mt-0.5 flex items-center gap-1 opacity-0 transition-opacity group-hover/bubble:opacity-100 ${isUser ? 'justify-end' : 'justify-start'}`}>
+            {/* Copy */}
+            <button
+              onClick={handleCopy}
+              className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
+              title="复制"
+            >
+              {copied ? <Check className="h-2.5 w-2.5" /> : <Copy className="h-2.5 w-2.5" />}
+              <span>{copied ? '已复制' : '复制'}</span>
+            </button>
+
+            {/* Save as knowledge (assistant only) */}
             {!isUser && onSaveAsKnowledge && (
               <button
                 onClick={(e) => { e.stopPropagation(); onSaveAsKnowledge(message.id, message.content || ''); }}
@@ -163,6 +219,8 @@ export const ChatBubble = memo(function ChatBubble({
                 <span>存为知识</span>
               </button>
             )}
+
+            {/* Branch */}
             {onBranch && (
               <button
                 onClick={(e) => { e.stopPropagation(); onBranch(message.id); }}
@@ -171,6 +229,30 @@ export const ChatBubble = memo(function ChatBubble({
               >
                 <GitBranch className="h-2.5 w-2.5" />
                 <span>{t('chat.branch')}</span>
+              </button>
+            )}
+
+            {/* Regenerate (last assistant only) */}
+            {!isUser && isLastAssistant && onRegenerate && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onRegenerate(); }}
+                className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
+                title="重新生成"
+              >
+                <RefreshCw className="h-2.5 w-2.5" />
+                <span>重新生成</span>
+              </button>
+            )}
+
+            {/* Delete */}
+            {onDelete && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(message.id); }}
+                className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-red-50 hover:text-red-500 dark:text-zinc-600 dark:hover:bg-red-950/30 dark:hover:text-red-400"
+                title="删除"
+              >
+                <Trash2 className="h-2.5 w-2.5" />
+                <span>删除</span>
               </button>
             )}
           </div>

@@ -151,6 +151,24 @@ export function getAgentChatSessionsPath(): string {
   return path.join(DATA_DIR, 'agent-chat-sessions.json');
 }
 
+export function getTodosPath(): string {
+  return path.join(DATA_DIR, 'todos.json');
+}
+
+// ── Prompt 文件路径函数 ──
+
+export function getPromptsDir(): string {
+  return path.join(DATA_DIR, 'prompts');
+}
+
+export function getPromptFilePath(agentId: string): string {
+  const safe = agentId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 100) {
+    throw new Error(`Invalid agent id: ${agentId}`);
+  }
+  return path.join(DATA_DIR, 'prompts', `${safe}.md`);
+}
+
 // ── Context 路径函数 ──
 // 索引 + 内容文件分离设计（详见 docs/context-system.md）：
 //   index.json  → 元数据，注入 agent prompt（buildContextSection）

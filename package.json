@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 4000 --turbopack",
+    "dev": "next dev --port 4010 --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -29,6 +29,8 @@
     "pinyin-pro": "^3.28.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.4.0",
     "zod": "^4.3.6"
   },

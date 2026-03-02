@@ -7,7 +7,12 @@ export interface AgentChatSession {
   agentId: string;
   projectKey?: string;           // 项目作用域（管家侧边栏/全屏模式）
   title: string;                 // AI 生成或 fallback
-  messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[] }>;
+  messages: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+    images?: string[];
+    contentBlocks?: import('./index').ContentBlock[];
+  }>;
   claudeSessionId?: string;      // 用于 --resume
   createdAt: string;
   updatedAt: string;
