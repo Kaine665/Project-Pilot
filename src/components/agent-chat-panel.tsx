@@ -11,7 +11,8 @@ import { ChatNotificationBanners } from '@/components/chat-notification-banners'
 import { SaveKnowledgeDialog } from '@/components/save-knowledge-dialog';
 import { SessionDropdown } from '@/components/session-dropdown';
 import { GuestAgentOverlay } from '@/components/guest-agent-overlay';
-import type { Agent } from '@/types';
+import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
+import type { Agent, ProviderId } from '@/types';
 import type { ChatMessage, ChatToolCall, ChatSSEEvent, ContentBlock } from '@/types';
 
 // Session list item (no messages)
@@ -35,6 +36,20 @@ interface AgentChatPanelProps {
 }
 
 type IndexedSSEEvent = ChatSSEEvent & { _idx: number };
+type ModelSelectOption = { value: string; label: string };
+
+const PROVIDER_LABELS: Record<ProviderId, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  deepseek: 'DeepSeek',
+  kimi: 'Kimi',
+  qwen: 'Qwen',
+  zhipu: 'GLM',
+  minimax: 'MiniMax',
+  openrouter: 'OpenRouter',
+  ollama: 'Ollama',
+  custom: 'Custom',
+};
 
 // Strip <session-title> tags from display text
 function stripSessionTitleTag(text: string): string {
@@ -63,6 +78,13 @@ export function AgentChatPanel({
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionList, setSessionList] = useState<SessionListItem[]>([]);
   const [sessionTitle, setSessionTitle] = useState(hasProject ? t('chat.newSession') : '新会话');
+  const [chatProvider, setChatProvider] = useState<ProviderId>('anthropic');
+  const [chatModel, setChatModel] = useState('claude-sonnet-4-5-20250929');
+  const [chatModelOptions, setChatModelOptions] = useState<ModelSelectOption[]>([
+    { value: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5' },
+  ]);
+  const [providerModelsMap, setProviderModelsMap] = useState<Partial<Record<ProviderId, string>>>({});
+  const [providerModelLibraryMap, setProviderModelLibraryMap] = useState<Partial<Record<ProviderId, string[]>>>({});
 
   // Guest Agent（旁听 Agent）
   const [guestAgent, setGuestAgent] = useState<Agent | null>(null);
@@ -115,6 +137,120 @@ export function AgentChatPanel({
       }
     })();
   }, [agent.id]);
+
+  const providerOptions = useMemo(
+    () => PROVIDER_REGISTRY.map((p) => ({ value: p.id, label: PROVIDER_LABELS[p.id] || p.id })),
+    [],
+  );
+
+  const buildModelOptionsForProvider = useCallback((
+    providerId: ProviderId,
+    modelsMap: Partial<Record<ProviderId, string>>,
+    libraryMap: Partial<Record<ProviderId, string[]>>,
+    fallbackModel?: string,
+  ): ModelSelectOption[] => {
+    const preset = getProviderPreset(providerId);
+    const optionMap = new Map<string, string>();
+
+    for (const m of preset.models) {
+      optionMap.set(m.id, m.label || m.id);
+    }
+
+    const libModels = Array.isArray(libraryMap[providerId]) ? libraryMap[providerId] : [];
+    for (const raw of libModels) {
+      if (typeof raw !== 'string') continue;
+      const modelId = raw.trim();
+      if (!modelId) continue;
+      if (!optionMap.has(modelId)) {
+        optionMap.set(modelId, modelId);
+      }
+    }
+
+    const scopedModel = (modelsMap[providerId] || '').trim();
+    if (scopedModel && !optionMap.has(scopedModel)) {
+      optionMap.set(scopedModel, scopedModel);
+    }
+
+    const fallback = (fallbackModel || '').trim();
+    if (fallback && !optionMap.has(fallback)) {
+      optionMap.set(fallback, fallback);
+    }
+
+    return Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
+  }, []);
+
+  // Load model selector options from settings
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/settings', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+
+        const claude = data?.claude ?? {};
+        const provider = (claude.provider as ProviderId) || 'anthropic';
+        const incomingProviderModels = (claude.providerModels && typeof claude.providerModels === 'object')
+          ? { ...claude.providerModels as Partial<Record<ProviderId, string>> }
+          : {};
+        const incomingModelLibrary = (claude.providerModelLibrary && typeof claude.providerModelLibrary === 'object')
+          ? { ...claude.providerModelLibrary as Partial<Record<ProviderId, string[]>> }
+          : {};
+
+        if (!incomingProviderModels[provider] && typeof claude.model === 'string' && claude.model.trim()) {
+          incomingProviderModels[provider] = claude.model.trim();
+        }
+
+        setProviderModelsMap(incomingProviderModels);
+        setProviderModelLibraryMap(incomingModelLibrary);
+
+        const fallbackModel = typeof claude.model === 'string' ? claude.model.trim() : '';
+        const options = buildModelOptionsForProvider(
+          provider,
+          incomingProviderModels,
+          incomingModelLibrary,
+          fallbackModel,
+        );
+        const preferred = (incomingProviderModels[provider] || fallbackModel || options[0]?.value || '').trim();
+        const selected = options.some((o) => o.value === preferred)
+          ? preferred
+          : (options[0]?.value || preferred);
+
+        setChatProvider(provider);
+        setChatModelOptions(options);
+        setChatModel(selected);
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [buildModelOptionsForProvider]);
+
+  useEffect(() => {
+    const fallbackModel = (providerModelsMap[chatProvider] || '').trim();
+    const options = buildModelOptionsForProvider(
+      chatProvider,
+      providerModelsMap,
+      providerModelLibraryMap,
+      fallbackModel,
+    );
+
+    setChatModelOptions(options);
+    setChatModel((prev) => {
+      const current = prev.trim();
+      if (current && options.some((o) => o.value === current)) {
+        return current;
+      }
+      if (fallbackModel && options.some((o) => o.value === fallbackModel)) {
+        return fallbackModel;
+      }
+      return options[0]?.value || '';
+    });
+  }, [chatProvider, providerModelsMap, providerModelLibraryMap, buildModelOptionsForProvider]);
 
   // Fetch session list
   const fetchSessionList = useCallback(async (agentId: string, pk?: string | null) => {
@@ -514,6 +650,8 @@ export function AgentChatPanel({
           message: text.trim(),
           sessionId: targetSessionId,
           projectKey: projectKey ?? undefined,
+          providerOverride: chatProvider,
+          modelOverride: chatModel || undefined,
           images: imageAttachments.length > 0 ? imageAttachments : undefined,
           initialTitle: text.trim().slice(0, 10) || undefined,
         }),
@@ -532,7 +670,7 @@ export function AgentChatPanel({
       setErrorMsg(msg);
       setIsStreaming(false);
     }
-  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, connectToStream, onSessionChange, t]);
+  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, chatProvider, chatModel, connectToStream, onSessionChange, t]);
 
   // Keep doSendRef in sync (avoid stale closure in event listener)
   useEffect(() => {
@@ -552,7 +690,7 @@ export function AgentChatPanel({
   }, []);
 
   // ChatInput submit handler
-  const handleChatInputSubmit = useCallback((text: string, images: string[], _files: Array<{ name: string; content: string }>) => {
+  const handleChatInputSubmit = useCallback((text: string, images: string[]) => {
     doSend(text, images);
   }, [doSend]);
 
@@ -750,6 +888,13 @@ export function AgentChatPanel({
             onAbort={handleAbort}
             isStreaming={isStreaming}
             placeholder={`向 ${agent.name} 发送消息...`}
+            providerOptions={providerOptions}
+            providerValue={chatProvider}
+            onProviderChange={(next) => setChatProvider(next as ProviderId)}
+            modelProviderLabel={PROVIDER_LABELS[chatProvider]}
+            modelOptions={chatModelOptions}
+            modelValue={chatModel}
+            onModelChange={setChatModel}
             guestAgents={guestAgents}
             showGuestPicker={showGuestPicker}
             onSelectGuest={handleSelectGuest}
@@ -859,6 +1004,13 @@ export function AgentChatPanel({
           placeholder={t('chat.plannerPlaceholder')}
           minHeight={isFull ? '120px' : '200px'}
           fullWidth
+          providerOptions={providerOptions}
+          providerValue={chatProvider}
+          onProviderChange={(next) => setChatProvider(next as ProviderId)}
+          modelProviderLabel={PROVIDER_LABELS[chatProvider]}
+          modelOptions={chatModelOptions}
+          modelValue={chatModel}
+          onModelChange={setChatModel}
           guestAgents={guestAgents}
           showGuestPicker={showGuestPicker}
           onSelectGuest={handleSelectGuest}

@@ -135,6 +135,8 @@ export async function POST(request: NextRequest) {
       flowContext,
       validatedImages,
       initialTitle,
+      normalizedProvider || undefined,
+      normalizedModel || undefined,
     );
     return NextResponse.json({ runId, sessionId });
   } catch (err) {

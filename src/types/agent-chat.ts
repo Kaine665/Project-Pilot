@@ -14,6 +14,8 @@ export interface AgentChatSession {
     contentBlocks?: import('./index').ContentBlock[];
   }>;
   claudeSessionId?: string;      // 用于 --resume
+  provider?: import('./index').ProviderId; // 本会话最近一次运行使用的 provider
+  model?: string;                // 本会话最近一次运行使用的 model id
   createdAt: string;
   updatedAt: string;
 

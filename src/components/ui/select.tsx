@@ -19,21 +19,21 @@ const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
       value={value}
       onChange={(e) => onChange?.(e.target.value)}
       className={cn(
-        'flex h-9 w-full rounded-md border border-zinc-200 bg-transparent px-3 py-1 text-sm shadow-sm transition-colors',
+        'flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm text-zinc-900 shadow-sm transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400',
         'disabled:cursor-not-allowed disabled:opacity-50',
-        'dark:border-zinc-700 dark:bg-zinc-950',
+        'dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100',
         className,
       )}
       {...props}
     >
       {placeholder && (
-        <option value="" disabled>
+        <option value="" disabled className="bg-white text-zinc-500 dark:bg-zinc-950 dark:text-zinc-400">
           {placeholder}
         </option>
       )}
       {options.map((opt) => (
-        <option key={opt.value} value={opt.value}>
+        <option key={opt.value} value={opt.value} className="bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
           {opt.label}
         </option>
       ))}

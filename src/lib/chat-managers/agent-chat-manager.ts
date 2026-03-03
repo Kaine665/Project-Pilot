@@ -39,8 +39,10 @@ import {
   buildClaudeMaxTurnsArgs,
   buildAgentPermissionArgs,
   buildAgentToolArgs,
+  getSettings,
 } from '@/lib/settings-manager';
-import type { ChatSSEEvent, ContentBlock, Agent, AgentsData } from '@/types';
+import { getProviderPreset } from '@/lib/provider-registry';
+import type { ChatSSEEvent, ContentBlock, Agent, AgentsData, ProviderId } from '@/types';
 import type { AgentChatSession, AgentChatSessionsData } from '@/types/agent-chat';
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
 import type { ResourceRef, FlowContextRef, ReferenceTurnsRef } from '@/types/resource';
@@ -69,6 +71,8 @@ export interface AgentChatRun extends BaseRun {
   agentId: string;
   projectKey?: string;
   sessionTitle?: string;
+  provider?: ProviderId;
+  model?: string;
   messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }>;
   // Guest Agent
   parentSessionId?: string;
@@ -94,6 +98,104 @@ export function generateSessionId(): string {
   return `agent-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
+function resolveScopedModelForProvider(
+  claude: Awaited<ReturnType<typeof getSettings>>['claude'],
+  provider: ProviderId,
+): string {
+  const scoped = claude.providerModels?.[provider];
+  if (typeof scoped === 'string' && scoped.trim()) return scoped.trim();
+  if (claude.provider === provider && typeof claude.model === 'string' && claude.model.trim()) {
+    return claude.model.trim();
+  }
+  return '';
+}
+
+function buildHistoryWindow(
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  maxMessages = 16,
+  maxChars = 8000,
+): string {
+  const recent = messages.slice(-maxMessages);
+  const lines: string[] = [];
+  let used = 0;
+
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const m = recent[i];
+    const role = m.role === 'user' ? '用户' : '助手';
+    const content = (m.content || '').trim();
+    if (!content) continue;
+    const chunk = `${role}: ${content}`;
+    const next = chunk.length + 2;
+    if (used + next > maxChars) break;
+    lines.unshift(chunk);
+    used += next;
+  }
+
+  return lines.join('\n\n');
+}
+
+async function buildAgentChatEnvForProvider(providerOverride?: ProviderId): Promise<NodeJS.ProcessEnv> {
+  const env = await buildClaudeEnv();
+  if (!providerOverride) return env;
+
+  const settings = await getSettings();
+  const claude = settings.claude;
+  const preset = getProviderPreset(providerOverride);
+
+  const scopedKey = (
+    claude.providerApiKeys?.[providerOverride]
+    || (claude.provider === providerOverride ? claude.apiKey : '')
+    || ''
+  ).trim();
+
+  const scopedBaseUrl = (
+    claude.provider === providerOverride
+      ? (claude.baseUrl || preset.baseUrl || '')
+      : (preset.baseUrl || '')
+  ).trim();
+
+  const isOfficial = providerOverride === 'anthropic' || providerOverride === 'openai';
+
+  if (isOfficial) {
+    delete env.ANTHROPIC_AUTH_TOKEN;
+
+    if (claude.authMode === 'api_key' && scopedKey) {
+      env.ANTHROPIC_API_KEY = scopedKey;
+    }
+
+    if (scopedBaseUrl) {
+      env.ANTHROPIC_BASE_URL = scopedBaseUrl;
+    } else {
+      delete env.ANTHROPIC_BASE_URL;
+    }
+
+    return env;
+  }
+
+  if (scopedBaseUrl) {
+    env.ANTHROPIC_BASE_URL = scopedBaseUrl;
+  } else {
+    delete env.ANTHROPIC_BASE_URL;
+  }
+
+  if (scopedKey) {
+    env.ANTHROPIC_AUTH_TOKEN = scopedKey;
+  } else {
+    delete env.ANTHROPIC_AUTH_TOKEN;
+  }
+
+  // Third-party providers use auth token mode.
+  env.ANTHROPIC_API_KEY = '';
+
+  if (preset.extraEnv) {
+    for (const [key, value] of Object.entries(preset.extraEnv)) {
+      env[key] = value;
+    }
+  }
+
+  return env;
+}
+
 // ── AgentChatManager ──
 
 class AgentChatManager extends BaseChatManager<AgentChatRun> {
@@ -111,6 +213,8 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     flowContext?: FlowContext,
     images?: ImageAttachment[],
     initialTitle?: string,
+    providerOverride?: ProviderId,
+    modelOverride?: string,
   ): Promise<string> {
     const agent = await this.loadAgent(agentId);
 
@@ -129,21 +233,49 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       throw new Error('This session is already running');
     }
 
-    const isResume = !!existing?.claudeSessionId;
+    const settings = await getSettings();
+    const defaultProvider = settings.claude.provider ?? 'anthropic';
+    const selectedProvider = providerOverride ?? existing?.provider ?? defaultProvider;
+    const normalizedModelOverride = typeof modelOverride === 'string' ? modelOverride.trim() : '';
+    const selectedModel = normalizedModelOverride
+      || existing?.model
+      || resolveScopedModelForProvider(settings.claude, selectedProvider);
+
+    const previousProvider = existing?.provider ?? defaultProvider;
+    const previousModel = existing?.model || resolveScopedModelForProvider(settings.claude, previousProvider);
+
+    const hasResumeSession = !!existing?.claudeSessionId;
+    const switchingProvider = hasResumeSession && selectedProvider !== previousProvider;
+    const switchingModel = hasResumeSession && !!selectedModel && selectedModel !== previousModel;
+    const shouldResume = hasResumeSession && !switchingProvider && !switchingModel;
 
     // Build or reuse message history
-    const messages = existing?.messages ?? [];
-    const dataUrls = images?.map(img => `data:${img.mediaType};base64,${img.data}`);
+    const messages = [...(existing?.messages ?? [])];
+    const historyBeforeTurn = messages.map((m) => ({ role: m.role, content: m.content }));
+    const dataUrls = images?.map((img) => `data:${img.mediaType};base64,${img.data}`);
     messages.push({ role: 'user', content: message, images: dataUrls?.length ? dataUrls : undefined });
 
     // Build prompt
     let stdinContent: string;
-    if (isResume) {
+    if (shouldResume) {
       stdinContent = message;
     } else if (flowContext) {
-      stdinContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext);
+      stdinContent = await buildAgentChatPromptWithFlowContext(
+        agent,
+        message,
+        flowContext,
+        historyBeforeTurn,
+        selectedProvider,
+        selectedModel,
+      );
     } else {
-      stdinContent = await buildAgentChatPrompt(agent, message);
+      stdinContent = await buildAgentChatPrompt(
+        agent,
+        message,
+        historyBeforeTurn,
+        selectedProvider,
+        selectedModel,
+      );
     }
 
     // Write images to temp files
@@ -163,19 +295,19 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     }
 
     // Build CLI args
-    const chatEnv = await buildClaudeEnv();
-    const chatModelArgs = await buildClaudeModelArgs();
+    const chatEnv = await buildAgentChatEnvForProvider(selectedProvider);
+    const chatModelArgs = selectedModel ? ['--model', selectedModel] : [];
     const chatMaxTurnsArgs = await buildClaudeMaxTurnsArgs();
     const chatPermArgs = await buildAgentPermissionArgs('executing', agent.capabilities);
     const chatToolArgs = buildAgentToolArgs(agent.capabilities);
-    const resumeArgs = isResume ? ['--resume', existing!.claudeSessionId!] : [];
+    const resumeArgs = shouldResume ? ['--resume', existing!.claudeSessionId!] : [];
 
     const config: SpawnConfig = {
       runKey: sessionId,
       workingDir: process.cwd(),
       stdinContent,
-      isResume,
-      claudeSessionId: existing?.claudeSessionId,
+      isResume: shouldResume,
+      claudeSessionId: shouldResume ? existing?.claudeSessionId : undefined,
       extraCliArgs: [
         ...chatPermArgs,
         ...chatToolArgs,
@@ -193,6 +325,8 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       agentId,
       projectKey: flowContext?.projectKey ?? existing?.projectKey,
       sessionTitle: existing?.sessionTitle ?? initialTitle,
+      provider: selectedProvider,
+      model: selectedModel || undefined,
       messages,
       tempPaths,
     };
@@ -420,6 +554,8 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     agentId: string;
     projectKey?: string;
     sessionTitle?: string;
+    provider?: ProviderId;
+    model?: string;
     messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }>;
     tempPaths: string[];
     parentSessionId?: string;
@@ -434,6 +570,8 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       agentId: d.agentId,
       projectKey: d.projectKey,
       sessionTitle: d.sessionTitle,
+      provider: d.provider,
+      model: d.model,
       messages: d.messages,
       parentSessionId: d.parentSessionId,
       importedTurnIndices: d.importedTurnIndices,
@@ -549,6 +687,8 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       toolCalls: [],
       claudeSessionId: diskSession.claudeSessionId,
       sessionTitle: diskSession.title,
+      provider: diskSession.provider,
+      model: diskSession.model,
       messages: [...diskSession.messages],
     };
   }
@@ -562,6 +702,8 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       title: run.sessionTitle ?? '新会话',
       messages: run.messages,
       claudeSessionId: run.claudeSessionId,
+      provider: run.provider,
+      model: run.model,
       createdAt: new Date(run.startedAt).toISOString(),
       updatedAt: now,
       parentSessionId: run.parentSessionId,
@@ -756,10 +898,27 @@ async function buildResourcePrompt(
 
 // ── Prompt Builders (powered by Resource Registry) ──
 
-async function buildAgentChatPrompt(agent: Agent, message: string): Promise<string> {
+function buildRuntimeHintBlock(provider: ProviderId, model: string): string {
+  const modelText = model || 'unknown';
+  return `\n\n[RUN_CONTEXT]\nprovider=${provider}\nmodel=${modelText}\n[/RUN_CONTEXT]\n`;
+}
+
+async function buildAgentChatPrompt(
+  agent: Agent,
+  message: string,
+  history: Array<{ role: 'user' | 'assistant'; content: string }>,
+  provider: ProviderId,
+  model: string,
+): Promise<string> {
   const resourcePrompt = await buildResourcePrompt(agent);
+  const historyText = buildHistoryWindow(history);
+  const historySection = historyText
+    ? `\n\n[RECENT_HISTORY]\n${historyText}\n[/RECENT_HISTORY]`
+    : '';
 
   return `${resourcePrompt}
+${buildRuntimeHintBlock(provider, model)}
+${historySection}
 
 ---
 
@@ -770,6 +929,9 @@ async function buildAgentChatPromptWithFlowContext(
   agent: Agent,
   message: string,
   flowContext: FlowContext,
+  history: Array<{ role: 'user' | 'assistant'; content: string }>,
+  provider: ProviderId,
+  model: string,
 ): Promise<string> {
   const { projectKey, projectName, flowDataPath } = flowContext;
 
@@ -784,8 +946,14 @@ async function buildAgentChatPromptWithFlowContext(
   };
 
   const resourcePrompt = await buildResourcePrompt(agent, [flowRef]);
+  const historyText = buildHistoryWindow(history);
+  const historySection = historyText
+    ? `\n\n[RECENT_HISTORY]\n${historyText}\n[/RECENT_HISTORY]`
+    : '';
 
   return `${resourcePrompt}
+${buildRuntimeHintBlock(provider, model)}
+${historySection}
 
 ---
 
