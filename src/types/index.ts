@@ -543,6 +543,13 @@ export interface DocsIndexData {
   projects: Record<string, DocEntry[]>;
 }
 
+// ==================== Orchestrator ====================
+
+export type {
+  OrchestratorPhase, SplitPlan, WorkerTask, WorkerResult,
+  OrchestratorSession, OrchestratorSessionsData, OrchestratorSSEEvent,
+} from './orchestrator';
+
 // ==================== Artifacts ====================
 
 export interface ArtifactItem {

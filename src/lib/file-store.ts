@@ -159,6 +159,10 @@ export function getTodosPath(): string {
   return path.join(DATA_DIR, 'todos.json');
 }
 
+export function getOrchestratorSessionsPath(): string {
+  return path.join(DATA_DIR, 'orchestrator-sessions.json');
+}
+
 // ── Prompt 文件路径函数 ──
 
 export function getPromptsDir(): string {
