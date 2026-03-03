@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Bot, Plus, Trash2, X, ChevronRight, Minimize2,
-  Settings, MessageSquare,
+  Settings, MessageSquare, Archive, ArchiveRestore,
 } from 'lucide-react';
 import type { Agent } from '@/types';
 import { AgentChatPanel } from '@/components/agent-chat-panel';
@@ -103,7 +103,7 @@ export default function AgentsPage() {
       for (const a of (agentsData.agents ?? []) as Agent[]) {
         agentMap.set(a.id, a);
       }
-      const sessions: AllSessionItem[] = (sessData.sessions ?? []).map((s: { id: string; title: string; updatedAt: string; agentId: string; unreadCount?: number }) => {
+      const sessions: AllSessionItem[] = (sessData.sessions ?? []).map((s: { id: string; title: string; updatedAt: string; agentId: string; unreadCount?: number; archived?: boolean }) => {
         const agent = agentMap.get(s.agentId);
         return {
           id: s.id,
@@ -113,6 +113,7 @@ export default function AgentsPage() {
           agentName: agent?.name ?? '未知 Agent',
           agentIcon: agent?.icon,
           unreadCount: s.unreadCount,
+          archived: s.archived,
         };
       });
       setAllSessions(sessions);
@@ -173,6 +174,17 @@ export default function AgentsPage() {
     setActivePanel({ type: 'session', key });
     setShowAgentPicker(false);
     syncUrlParams({ agent: agent.id, session: null });
+  };
+
+  const handleArchiveToggle = (session: AllSessionItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newArchived = !session.archived;
+    setAllSessions(prev => prev.map(s => s.id === session.id ? { ...s, archived: newArchived } : s));
+    fetch(`/api/agent-chat/sessions/${session.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: newArchived ? 'archive' : 'unarchive' }),
+    }).catch(() => {});
   };
 
   // ── Handlers: Agents tab ──
@@ -422,26 +434,33 @@ export default function AgentsPage() {
                         <div
                           key={s.id}
                           onClick={() => handleSessionClick(s)}
-                          className={`flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors ${
+                          className={`group/session flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors ${
                             isActive
                               ? 'bg-zinc-100 dark:bg-zinc-800'
                               : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
-                          }`}
+                          } ${s.archived ? 'opacity-45' : ''}`}
                         >
-                          <AgentIcon iconKey={s.agentIcon} className="h-4 w-4 shrink-0 text-zinc-400" />
+                          <AgentIcon iconKey={s.agentIcon} className={`h-4 w-4 shrink-0 ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-400'}`} />
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                            <div className={`truncate text-sm font-medium ${s.archived ? 'text-zinc-400 dark:text-zinc-500' : 'text-zinc-900 dark:text-zinc-100'}`}>
                               {s.title}
                             </div>
-                            <div className="truncate text-zinc-400" style={{ fontSize: 13 }}>
+                            <div className={`truncate ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-400'}`} style={{ fontSize: 13 }}>
                               {s.agentName}
                             </div>
                           </div>
-                          {!isActive && !!s.unreadCount && s.unreadCount > 0 && (
+                          {!isActive && !!s.unreadCount && s.unreadCount > 0 && !s.archived && (
                             <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-medium leading-none text-white">
                               {s.unreadCount > 99 ? '99+' : s.unreadCount}
                             </span>
                           )}
+                          <button
+                            onClick={(e) => handleArchiveToggle(s, e)}
+                            className="shrink-0 rounded-md p-1 text-zinc-300 opacity-0 transition-opacity hover:bg-zinc-100 hover:text-zinc-500 group-hover/session:opacity-100 dark:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-400"
+                            title={s.archived ? '取消归档' : '归档'}
+                          >
+                            {s.archived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
+                          </button>
                         </div>
                       );
                     })}

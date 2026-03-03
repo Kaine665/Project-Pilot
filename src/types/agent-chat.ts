@@ -20,6 +20,9 @@ export interface AgentChatSession {
   /** 未读消息计数（agent 回复但用户尚未查看） */
   unreadCount?: number;
 
+  /** 会话已归档（已完成的任务，侧边栏显示为灰色） */
+  archived?: boolean;
+
   // ── Guest Agent（旁听 Agent）字段 ──
 
   /** 宿主会话 ID（仅 guest 会话有此字段） */
