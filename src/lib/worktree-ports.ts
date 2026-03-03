@@ -134,9 +134,9 @@ export async function releasePort(branch: string): Promise<boolean> {
  *
  * 策略：
  * 1. 先尝试直接删除整个目录
- * 2. 如果失败，把 node_modules 移到项目根目录的 _trash_{name}/ 下
+ * 2. 如果失败，把 node_modules 移到 _trashs/ 统一垃圾桶中
  * 3. 删除剩余的 worktree 目录（此时没有锁了）
- * 4. _trash_* 目录会在下次 cleanup 时尝试清理，或由用户手动删除
+ * 4. _trashs/ 目录在每次 cleanup 时尝试清理，或由用户关闭编辑器后手动删除
  */
 async function removeWorktreeDirectory(dirPath: string): Promise<boolean> {
   try {
@@ -146,37 +146,29 @@ async function removeWorktreeDirectory(dirPath: string): Promise<boolean> {
   }
 
   // 尝试直接删除
-  try {
-    if (process.platform === 'win32') {
-      execSync(`rd /s /q "${dirPath}"`, { stdio: 'pipe' });
-    } else {
-      await fsPromises.rm(dirPath, { recursive: true, force: true });
-    }
-    // 检查是否真的删干净了（rd /s /q 可能部分删除但不报错）
-    try {
-      await fsPromises.stat(dirPath);
-    } catch {
-      return true; // 确认已删除
-    }
-  } catch {
-    // 删除失败，继续用 trash 策略
-  }
+  if (await tryRemoveDir(dirPath)) return true;
 
-  // Trash 策略：把 node_modules 移走，再删 worktree 目录
+  // Trash 策略：把 node_modules 移到统一垃圾桶，再删 worktree 目录
   const nodeModulesPath = path.join(dirPath, 'node_modules');
   const dirName = path.basename(dirPath);
-  const parentDir = path.dirname(dirPath);
-  const trashPath = path.join(parentDir, `_trash_${dirName}`);
+  const trashRoot = path.join(path.dirname(dirPath), '_trashs');
+  const trashDest = path.join(trashRoot, `${dirName}_${Date.now()}`);
 
   try {
     await fsPromises.stat(nodeModulesPath);
-    console.log('  Moving locked node_modules to trash...');
-    await fsPromises.rename(nodeModulesPath, trashPath);
+    await fsPromises.mkdir(trashRoot, { recursive: true });
+    console.log('  Moving locked node_modules to _trashs/...');
+    await fsPromises.rename(nodeModulesPath, trashDest);
   } catch {
     // node_modules 不存在或移动失败
   }
 
   // 再次尝试删除 worktree 目录
+  return tryRemoveDir(dirPath);
+}
+
+/** 尝试删除目录，返回是否成功（目录不存在也算成功） */
+async function tryRemoveDir(dirPath: string): Promise<boolean> {
   try {
     if (process.platform === 'win32') {
       execSync(`rd /s /q "${dirPath}"`, { stdio: 'pipe' });
@@ -184,35 +176,43 @@ async function removeWorktreeDirectory(dirPath: string): Promise<boolean> {
       await fsPromises.rm(dirPath, { recursive: true, force: true });
     }
   } catch {
-    // 仍然失败
+    // 删除命令失败
   }
-
+  // rd /s /q 可能部分删除但不报错，需确认
   try {
     await fsPromises.stat(dirPath);
-    return false; // 还在，真的删不掉
+    return false;
   } catch {
-    return true; // 删掉了
+    return true;
   }
 }
 
 /**
- * 清理之前残留的 _trash_* 目录（尽力而为）。
+ * 尝试清理 _trashs/ 统一垃圾桶（尽力而为）。
+ * 能删多少删多少，删不掉的留着下次再试。
  */
-async function cleanupTrashDirs(projectRoot: string): Promise<void> {
+async function cleanupTrashDir(projectRoot: string): Promise<void> {
+  const trashRoot = path.join(projectRoot, '_trashs');
   try {
-    const entries = await fsPromises.readdir(projectRoot, { withFileTypes: true });
+    await fsPromises.stat(trashRoot);
+  } catch {
+    return; // 不存在
+  }
+
+  // 尝试直接删整个 _trashs/
+  if (await tryRemoveDir(trashRoot)) {
+    console.log('  Cleaned up _trashs/');
+    return;
+  }
+
+  // 逐个子目录尝试
+  try {
+    const entries = await fsPromises.readdir(trashRoot, { withFileTypes: true });
     for (const entry of entries) {
-      if (entry.isDirectory() && entry.name.startsWith('_trash_')) {
-        const trashPath = path.join(projectRoot, entry.name);
-        try {
-          if (process.platform === 'win32') {
-            execSync(`rd /s /q "${trashPath}"`, { stdio: 'pipe' });
-          } else {
-            await fsPromises.rm(trashPath, { recursive: true, force: true });
-          }
-          console.log(`  Cleaned up old trash: ${entry.name}`);
-        } catch {
-          // 仍然锁住，下次再试
+      if (entry.isDirectory()) {
+        const sub = path.join(trashRoot, entry.name);
+        if (await tryRemoveDir(sub)) {
+          console.log(`  Cleaned up _trashs/${entry.name}`);
         }
       }
     }
@@ -262,9 +262,9 @@ export async function cleanupWorktree(branch: string, worktreePath: string): Pro
     }
   }
 
-  // Step 5: 尝试清理之前残留的 _trash_* 目录
-  console.log('[5/5] Cleaning up old trash directories...');
-  await cleanupTrashDirs(projectRoot);
+  // Step 5: 尝试清理 _trashs/ 垃圾桶
+  console.log('[5/5] Cleaning up _trashs/...');
+  await cleanupTrashDir(projectRoot);
 
   console.log('Cleanup complete.');
 }
