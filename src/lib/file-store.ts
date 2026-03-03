@@ -151,6 +151,10 @@ export function getAgentChatSessionsPath(): string {
   return path.join(DATA_DIR, 'agent-chat-sessions.json');
 }
 
+export function getWorktreePortsPath(): string {
+  return path.join(DATA_DIR, 'worktree-ports.json');
+}
+
 export function getTodosPath(): string {
   return path.join(DATA_DIR, 'todos.json');
 }
