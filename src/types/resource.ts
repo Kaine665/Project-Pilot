@@ -11,6 +11,7 @@
 export type ResourceType =
   | 'context'                     // ContextEntry — expand content inline
   | 'context-index'               // Global context index table (AI cats on demand)
+  | 'design-docs-index'           // Design docs index table (AI cats on demand)
   | 'system-prompt'               // Agent system prompt text
   | 'todo-list'                   // Pending todo items
   | 'inline-text'                 // Inline text snippet (content stored in ref)
@@ -33,6 +34,7 @@ export interface ResourceRef {
    * - inline-text: arbitrary key
    * - knowledge-instructions / doc-save-instructions / session-title-instructions: '_static'
    * - context-index: '_all'
+   * - design-docs-index: '_all'
    * - flow-context: '_snapshot'
    * - reference-turns: '_imported'
    */
