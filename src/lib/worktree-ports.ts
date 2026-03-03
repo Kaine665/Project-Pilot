@@ -12,6 +12,7 @@
  */
 
 import { execSync } from 'child_process';
+import path from 'path';
 import { promises as fsPromises } from 'fs';
 import { getWorktreePortsPath, readJsonFile, modifyJsonFile } from './file-store';
 
@@ -125,84 +126,145 @@ export async function releasePort(branch: string): Promise<boolean> {
 
 // ── Worktree 清理 ──
 
-/** sleep 工具 */
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 /**
- * Windows 上带重试的目录删除。
- * NTFS 文件句柄释放有延迟，.node 原生模块尤其严重。
- * 策略：用 rd /s /q 删除，失败则等待后重试。
+ * Windows 上的 worktree 目录删除。
+ *
+ * 核心问题：npm install 产生的 .node 原生模块（如 tailwindcss-oxide）
+ * 会被 Windows 锁住文件句柄，导致整个目录删不掉。
+ *
+ * 策略：
+ * 1. 先尝试直接删除整个目录
+ * 2. 如果失败，把 node_modules 移到项目根目录的 _trash_{name}/ 下
+ * 3. 删除剩余的 worktree 目录（此时没有锁了）
+ * 4. _trash_* 目录会在下次 cleanup 时尝试清理，或由用户手动删除
  */
-async function removeDirectoryWithRetry(dirPath: string, maxRetries = 5): Promise<boolean> {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+async function removeWorktreeDirectory(dirPath: string): Promise<boolean> {
+  try {
+    await fsPromises.stat(dirPath);
+  } catch {
+    return true; // 已不存在
+  }
+
+  // 尝试直接删除
+  try {
+    if (process.platform === 'win32') {
+      execSync(`rd /s /q "${dirPath}"`, { stdio: 'pipe' });
+    } else {
+      await fsPromises.rm(dirPath, { recursive: true, force: true });
+    }
+    // 检查是否真的删干净了（rd /s /q 可能部分删除但不报错）
     try {
       await fsPromises.stat(dirPath);
     } catch {
-      // 目录已不存在
-      return true;
+      return true; // 确认已删除
     }
-
-    try {
-      if (process.platform === 'win32') {
-        // Windows: rd /s /q 比 Node fs.rm 更可靠地处理长路径和锁
-        execSync(`rd /s /q "${dirPath}"`, { stdio: 'pipe' });
-      } else {
-        await fsPromises.rm(dirPath, { recursive: true, force: true });
-      }
-      return true;
-    } catch {
-      if (attempt < maxRetries) {
-        const waitMs = attempt * 2000; // 2s, 4s, 6s, 8s, 10s
-        console.log(`  Retry ${attempt}/${maxRetries}: directory locked, waiting ${waitMs / 1000}s...`);
-        await sleep(waitMs);
-      }
-    }
+  } catch {
+    // 删除失败，继续用 trash 策略
   }
-  return false;
+
+  // Trash 策略：把 node_modules 移走，再删 worktree 目录
+  const nodeModulesPath = path.join(dirPath, 'node_modules');
+  const dirName = path.basename(dirPath);
+  const parentDir = path.dirname(dirPath);
+  const trashPath = path.join(parentDir, `_trash_${dirName}`);
+
+  try {
+    await fsPromises.stat(nodeModulesPath);
+    console.log('  Moving locked node_modules to trash...');
+    await fsPromises.rename(nodeModulesPath, trashPath);
+  } catch {
+    // node_modules 不存在或移动失败
+  }
+
+  // 再次尝试删除 worktree 目录
+  try {
+    if (process.platform === 'win32') {
+      execSync(`rd /s /q "${dirPath}"`, { stdio: 'pipe' });
+    } else {
+      await fsPromises.rm(dirPath, { recursive: true, force: true });
+    }
+  } catch {
+    // 仍然失败
+  }
+
+  try {
+    await fsPromises.stat(dirPath);
+    return false; // 还在，真的删不掉
+  } catch {
+    return true; // 删掉了
+  }
 }
 
 /**
- * 完整清理一个 worktree：释放端口 → 删目录（带重试） → prune → 删分支
+ * 清理之前残留的 _trash_* 目录（尽力而为）。
+ */
+async function cleanupTrashDirs(projectRoot: string): Promise<void> {
+  try {
+    const entries = await fsPromises.readdir(projectRoot, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory() && entry.name.startsWith('_trash_')) {
+        const trashPath = path.join(projectRoot, entry.name);
+        try {
+          if (process.platform === 'win32') {
+            execSync(`rd /s /q "${trashPath}"`, { stdio: 'pipe' });
+          } else {
+            await fsPromises.rm(trashPath, { recursive: true, force: true });
+          }
+          console.log(`  Cleaned up old trash: ${entry.name}`);
+        } catch {
+          // 仍然锁住，下次再试
+        }
+      }
+    }
+  } catch {
+    // 忽略
+  }
+}
+
+/**
+ * 完整清理一个 worktree：释放端口 → 删目录 → prune → 删分支 → 清理旧垃圾
  */
 export async function cleanupWorktree(branch: string, worktreePath: string): Promise<void> {
+  const projectRoot = path.dirname(worktreePath);
+
   // Step 1: 释放端口
   const released = await releasePort(branch);
-  console.log(released ? `[1/4] Port released: ${branch}` : `[1/4] Port not found (already released or never registered)`);
+  console.log(released ? `[1/5] Port released: ${branch}` : `[1/5] Port not found (already released or never registered)`);
 
-  // Step 2: 删除 worktree 目录（带重试）
-  console.log(`[2/4] Removing directory: ${worktreePath}`);
-  const removed = await removeDirectoryWithRetry(worktreePath);
+  // Step 2: 删除 worktree 目录
+  console.log(`[2/5] Removing directory: ${worktreePath}`);
+  const removed = await removeWorktreeDirectory(worktreePath);
   if (removed) {
-    console.log(`[2/4] Directory removed`);
+    console.log(`[2/5] Directory removed`);
   } else {
-    console.error(`[2/4] FAILED: Could not remove directory after retries.`);
-    console.error(`  Manual cleanup needed: rd /s /q "${worktreePath}"`);
-    // 继续执行后续步骤，不中断
+    console.error(`[2/5] FAILED: Could not remove directory.`);
+    console.error(`  Manual cleanup needed: delete "${worktreePath}"`);
   }
 
-  // Step 3: git worktree prune（清理 git 中的 worktree 记录）
+  // Step 3: git worktree prune
   try {
     execSync('git worktree prune', { stdio: 'pipe' });
-    console.log('[3/4] Git worktree pruned');
+    console.log('[3/5] Git worktree pruned');
   } catch {
-    console.log('[3/4] Git worktree prune skipped (not in a git repo or already clean)');
+    console.log('[3/5] Git worktree prune skipped');
   }
 
   // Step 4: 删除分支
   try {
     execSync(`git branch -d "${branch}"`, { stdio: 'pipe' });
-    console.log(`[4/4] Branch deleted: ${branch}`);
+    console.log(`[4/5] Branch deleted: ${branch}`);
   } catch {
-    // 分支可能未合并或不存在
     try {
       execSync(`git branch -D "${branch}"`, { stdio: 'pipe' });
-      console.log(`[4/4] Branch force-deleted: ${branch}`);
+      console.log(`[4/5] Branch force-deleted: ${branch}`);
     } catch {
-      console.log(`[4/4] Branch not found or already deleted: ${branch}`);
+      console.log(`[4/5] Branch not found or already deleted: ${branch}`);
     }
   }
+
+  // Step 5: 尝试清理之前残留的 _trash_* 目录
+  console.log('[5/5] Cleaning up old trash directories...');
+  await cleanupTrashDirs(projectRoot);
 
   console.log('Cleanup complete.');
 }
