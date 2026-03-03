@@ -28,7 +28,9 @@ export default function SettingsPage() {
   // Form state
   const [provider, setProvider] = useState<ProviderId>('anthropic');
   const [authMode, setAuthMode] = useState<ClaudeAuthMode>('api_key');
-  const [apiKey, setApiKey] = useState('');
+  const [providerApiKeys, setProviderApiKeys] = useState<Partial<Record<ProviderId, string>>>({});
+  const [providerModels, setProviderModels] = useState<Partial<Record<ProviderId, string>>>({});
+  const [providerModelLibrary, setProviderModelLibrary] = useState<Partial<Record<ProviderId, string[]>>>({});
   const [model, setModel] = useState('claude-sonnet-4-5-20250929');
   const [customModel, setCustomModel] = useState('');
   const [skipPermissions, setSkipPermissions] = useState(true);
@@ -46,7 +48,15 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'failed'>('idle');
   const [oauthStatus, setOauthStatus] = useState<'unknown' | 'checking' | 'authenticated' | 'not_authenticated'>('unknown');
+  const [oauthLoginUrl, setOauthLoginUrl] = useState('');
+  const [oauthLoginCode, setOauthLoginCode] = useState('');
+  const [oauthCodeInput, setOauthCodeInput] = useState('');
+  const [oauthCodeSubmitting, setOauthCodeSubmitting] = useState(false);
+  const [oauthProcessAlive, setOauthProcessAlive] = useState(false);
+  const [oauthFlowMessage, setOauthFlowMessage] = useState('');
   const [loginPending, setLoginPending] = useState(false);
+  const [testState, setTestState] = useState<'idle' | 'testing' | 'success' | 'failed'>('idle');
+  const [testMessage, setTestMessage] = useState('');
 
   // Data management state
   const [dataDir, setDataDir] = useState('');
@@ -58,17 +68,68 @@ export default function SettingsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const preset = useMemo(() => getProviderPreset(provider), [provider]);
+  const apiKey = providerApiKeys[provider] || '';
 
-  const isPresetModel = useMemo(
-    () => preset.models.some((m) => m.id === model),
-    [preset, model],
-  );
+  const setCurrentProviderApiKey = useCallback((value: string) => {
+    setProviderApiKeys((prev) => ({ ...prev, [provider]: value }));
+  }, [provider]);
+
+  const setCurrentProviderModel = useCallback((value: string) => {
+    const trimmed = value.trim();
+    setProviderModels((prev) => {
+      const next = { ...prev };
+      if (trimmed) {
+        next[provider] = trimmed;
+      } else {
+        delete next[provider];
+      }
+      return next;
+    });
+  }, [provider]);
+
+  const applyProviderModelState = useCallback((
+    providerId: ProviderId,
+    incomingModel?: string,
+    libraryMap?: Partial<Record<ProviderId, string[]>>,
+  ) => {
+    const p = getProviderPreset(providerId);
+    const library = (libraryMap?.[providerId] || []).map((m) => m.trim());
+    const saved = (incomingModel || '').trim();
+    if (saved && (p.models.some((m) => m.id === saved) || library.includes(saved))) {
+      setModel(saved);
+      setCustomModel('');
+      return;
+    }
+    if (saved) {
+      setModel('__custom__');
+      setCustomModel(saved);
+      return;
+    }
+    if (p.models.length > 0) {
+      setModel(p.models[0].id);
+      setCustomModel('');
+      return;
+    }
+    setModel('__custom__');
+    setCustomModel('');
+  }, []);
 
   const modelSelectOptions = useMemo(() => {
     const options = preset.models.map((m) => ({ value: m.id, label: m.label }));
+    const presetIds = new Set(options.map((o) => o.value));
+    const extra = (providerModelLibrary[provider] || [])
+      .map((id) => id.trim())
+      .filter((id) => id && !presetIds.has(id))
+      .map((id) => ({ value: id, label: id }));
+    options.push(...extra);
     options.push({ value: '__custom__', label: t('customModel') });
     return options;
-  }, [preset, t]);
+  }, [preset, providerModelLibrary, provider, t]);
+
+  const isPresetModel = useMemo(
+    () => modelSelectOptions.some((o) => o.value === model && o.value !== '__custom__'),
+    [modelSelectOptions, model],
+  );
 
   // Load settings on mount
   const fetchSettings = useCallback(async () => {
@@ -77,9 +138,9 @@ export default function SettingsPage() {
       const res = await fetch('/api/settings');
       if (res.ok) {
         const data = await res.json();
-        setProvider(data.claude.provider || 'anthropic');
+        const loadedProvider = (data.claude.provider || 'anthropic') as ProviderId;
+        setProvider(loadedProvider);
         setAuthMode(data.claude.authMode);
-        setApiKey(data.claude.apiKey || '');
         setSkipPermissions(data.claude.skipPermissions !== false);
         setEffortLevel(data.claude.effortLevel || 'high');
         setMaxTurns(data.claude.maxTurns || 0);
@@ -87,22 +148,34 @@ export default function SettingsPage() {
         setBaseUrl(data.claude.baseUrl || '');
         setTelemetry(data.general?.telemetry || false);
 
-        const savedModel = data.claude.model || '';
-        const p = getProviderPreset(data.claude.provider || 'anthropic');
-        if (p.models.some((m: { id: string }) => m.id === savedModel)) {
-          setModel(savedModel);
-          setCustomModel('');
-        } else {
-          setModel('__custom__');
-          setCustomModel(savedModel);
+        const incomingKeys = (data.claude.providerApiKeys && typeof data.claude.providerApiKeys === 'object')
+          ? { ...data.claude.providerApiKeys as Partial<Record<ProviderId, string>> }
+          : {};
+        if (!incomingKeys[loadedProvider] && data.claude.apiKey) {
+          incomingKeys[loadedProvider] = data.claude.apiKey;
         }
+        setProviderApiKeys(incomingKeys);
+
+        const incomingModels = (data.claude.providerModels && typeof data.claude.providerModels === 'object')
+          ? { ...data.claude.providerModels as Partial<Record<ProviderId, string>> }
+          : {};
+        if (!incomingModels[loadedProvider] && data.claude.model) {
+          incomingModels[loadedProvider] = data.claude.model;
+        }
+        setProviderModels(incomingModels);
+
+        const incomingLibrary = (data.claude.providerModelLibrary && typeof data.claude.providerModelLibrary === 'object')
+          ? { ...data.claude.providerModelLibrary as Partial<Record<ProviderId, string[]>> }
+          : {};
+        setProviderModelLibrary(incomingLibrary);
+        applyProviderModelState(loadedProvider, incomingModels[loadedProvider], incomingLibrary);
       }
     } catch (err) {
       console.error('Failed to load settings:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [applyProviderModelState]);
 
   // Load data info
   const fetchDataInfo = useCallback(async () => {
@@ -122,6 +195,20 @@ export default function SettingsPage() {
   useEffect(() => {
     if (activeSection === 'data') fetchDataInfo();
   }, [activeSection, fetchDataInfo]);
+  useEffect(() => {
+    setTestState('idle');
+    setTestMessage('');
+  }, [provider, authMode, model, customModel, baseUrl, apiKey]);
+  useEffect(() => {
+    setOauthStatus('unknown');
+    setOauthLoginUrl('');
+    setOauthLoginCode('');
+    setOauthCodeInput('');
+    setOauthCodeSubmitting(false);
+    setOauthProcessAlive(false);
+    setOauthFlowMessage('');
+    setLoginPending(false);
+  }, [provider, authMode]);
 
   const navItems = useMemo(() => [
     { id: 'ai', icon: Brain, label: t('aiConfig') },
@@ -132,38 +219,162 @@ export default function SettingsPage() {
   ], [t]);
 
   const handleProviderChange = (newProvider: ProviderId) => {
+    const currentEffectiveModel = (model === '__custom__' ? customModel : model).trim();
+    setProviderModels((prev) => {
+      const next = { ...prev };
+      if (currentEffectiveModel) {
+        next[provider] = currentEffectiveModel;
+      } else {
+        delete next[provider];
+      }
+      return next;
+    });
+
     setProvider(newProvider);
     const p = getProviderPreset(newProvider);
-    if (p.models.length > 0) {
-      setModel(p.models[0].id);
-      setCustomModel('');
-    } else {
-      setModel('__custom__');
-      setCustomModel('');
-    }
-    if (newProvider !== 'anthropic') {
+    applyProviderModelState(newProvider, providerModels[newProvider], providerModelLibrary);
+    if (!p.supportsOAuth) {
       setAuthMode('api_key');
     }
     setBaseUrl('');
   };
 
+  const handleModelChange = (nextModel: string) => {
+    setModel(nextModel);
+    if (nextModel !== '__custom__') {
+      setCustomModel('');
+      setCurrentProviderModel(nextModel);
+    } else if (!customModel.trim()) {
+      setCurrentProviderModel('');
+    }
+  };
+
+  const handleCustomModelChange = (nextCustomModel: string) => {
+    setCustomModel(nextCustomModel);
+    setCurrentProviderModel(nextCustomModel);
+  };
+
+  const addModelToLibrary = useCallback((providerId: ProviderId, modelId: string) => {
+    const trimmed = modelId.trim();
+    if (!trimmed) return providerModelLibrary;
+
+    const presetForProvider = getProviderPreset(providerId);
+    const presetIds = new Set(presetForProvider.models.map((m) => m.id));
+    if (presetIds.has(trimmed)) {
+      return providerModelLibrary;
+    }
+
+    const current = providerModelLibrary[providerId] || [];
+    if (current.includes(trimmed)) {
+      return providerModelLibrary;
+    }
+
+    return {
+      ...providerModelLibrary,
+      [providerId]: [...current, trimmed],
+    };
+  }, [providerModelLibrary]);
+
+  const persistModelConfigs = useCallback(async (
+    nextProviderModels: Partial<Record<ProviderId, string>>,
+    nextModelLibrary: Partial<Record<ProviderId, string[]>>,
+    effectiveModel: string,
+  ) => {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        claude: {
+          provider,
+          providerModels: nextProviderModels,
+          providerModelLibrary: nextModelLibrary,
+          model: effectiveModel,
+        },
+      }),
+    });
+    if (!res.ok) {
+      throw new Error('Failed to persist model settings');
+    }
+  }, [provider]);
+
+  const handleTestConnection = async () => {
+    const effectiveModel = (model === '__custom__' ? customModel : model).trim();
+    if (!effectiveModel) {
+      setTestState('failed');
+      setTestMessage(t('modelRequired'));
+      return;
+    }
+
+    setTestState('testing');
+    setTestMessage('');
+
+    try {
+      const res = await fetch('/api/settings/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider,
+          authMode,
+          apiKey,
+          model: effectiveModel,
+          baseUrl,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setTestState('failed');
+        setTestMessage(typeof data.error === 'string' ? data.error : t('testFailed'));
+        return;
+      }
+
+      const nextProviderModels: Partial<Record<ProviderId, string>> = {
+        ...providerModels,
+        [provider]: effectiveModel,
+      };
+      const nextModelLibrary = addModelToLibrary(provider, effectiveModel);
+
+      setProviderModels(nextProviderModels);
+      setProviderModelLibrary(nextModelLibrary);
+      await persistModelConfigs(nextProviderModels, nextModelLibrary, effectiveModel);
+
+      setTestState('success');
+      setTestMessage(`${t('testSuccess')} · ${t('saved')}`);
+    } catch (err) {
+      setTestState('failed');
+      setTestMessage(err instanceof Error ? err.message : t('testFailed'));
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setSaveStatus('idle');
-    const effectiveModel = model === '__custom__' ? customModel : model;
+    const effectiveModel = (model === '__custom__' ? customModel : model).trim();
+    const nextProviderModels: Partial<Record<ProviderId, string>> = { ...providerModels };
+    if (effectiveModel) {
+      nextProviderModels[provider] = effectiveModel;
+    } else {
+      delete nextProviderModels[provider];
+    }
+    const nextModelLibrary = addModelToLibrary(provider, effectiveModel);
     try {
       const res = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           claude: {
-            provider, authMode, apiKey, model: effectiveModel,
+            provider, authMode, apiKey, providerApiKeys,
+            providerModels: nextProviderModels,
+            providerModelLibrary: nextModelLibrary,
+            model: effectiveModel,
             skipPermissions, effortLevel, maxTurns, defaultExposePromptPath, baseUrl,
           },
           general: { telemetry },
         }),
       });
       if (res.ok) {
+        setProviderModels(nextProviderModels);
+        setProviderModelLibrary(nextModelLibrary);
         setSaveStatus('saved');
         setTimeout(() => setSaveStatus('idle'), 3000);
         fetchSettings();
@@ -177,31 +388,229 @@ export default function SettingsPage() {
     }
   };
 
-  const checkOAuthStatus = async () => {
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const pollOAuthState = useCallback(async (rounds = 60, intervalMs = 1500) => {
+    for (let i = 0; i < rounds; i++) {
+      let processAliveSnapshot = false;
+      try {
+        const [urlRes, statusRes] = await Promise.all([
+          fetch(`/api/settings/auth-url?provider=${provider}`),
+          fetch(`/api/settings/auth-status?provider=${provider}`),
+        ]);
+
+        if (urlRes.ok) {
+          const urlData = await urlRes.json();
+          if (typeof urlData?.loginUrl === 'string') {
+            setOauthLoginUrl(urlData.loginUrl);
+          }
+          if (typeof urlData?.loginCode === 'string') {
+            setOauthLoginCode(urlData.loginCode);
+          }
+          processAliveSnapshot = !!urlData?.processAlive;
+          setOauthProcessAlive(processAliveSnapshot);
+        }
+
+        if (statusRes.ok) {
+          const statusData = await statusRes.json();
+          if (statusData?.authenticated) {
+            setOauthStatus('authenticated');
+            setOauthFlowMessage(t('oauthFlowCompleted'));
+            setLoginPending(false);
+            setOauthProcessAlive(false);
+            return true;
+          }
+        }
+      } catch (err) {
+        console.error('OAuth polling failed:', err);
+      }
+
+      if (!processAliveSnapshot && i >= 3) {
+        break;
+      }
+      await sleep(intervalMs);
+    }
+
+    setOauthStatus('not_authenticated');
+    setOauthFlowMessage(t('oauthFlowNotFinished'));
+    setLoginPending(false);
+    setOauthProcessAlive(false);
+    return false;
+  }, [provider, t]);
+
+  const checkOAuthStatus = useCallback(async () => {
     setOauthStatus('checking');
     try {
-      const res = await fetch('/api/settings/auth-status');
+      const res = await fetch(`/api/settings/auth-status?provider=${provider}`);
       const data = await res.json();
-      setOauthStatus(data.authenticated ? 'authenticated' : 'not_authenticated');
+      const authenticated = !!data?.authenticated;
+      setOauthStatus(authenticated ? 'authenticated' : 'not_authenticated');
+      setOauthFlowMessage(authenticated ? t('oauthFlowCompleted') : t('oauthFlowNotAuthenticated'));
+      if (authenticated) {
+        setLoginPending(false);
+        setOauthProcessAlive(false);
+      }
     } catch {
       setOauthStatus('not_authenticated');
+      setOauthFlowMessage(t('oauthFlowCheckFailed'));
     }
-  };
+  }, [provider, t]);
 
-  const triggerOAuthLogin = async () => {
-    if (loginPending) return;
-    setLoginPending(true);
+  const submitOAuthCode = useCallback(async () => {
+    const code = oauthCodeInput.trim();
+    if (!code) return;
+
+    setOauthCodeSubmitting(true);
+    setOauthFlowMessage(t('oauthCodeSubmittingHint'));
     try {
-      await fetch('/api/settings/auth-login', { method: 'POST' });
-      setTimeout(() => {
-        checkOAuthStatus();
-        setLoginPending(false);
-      }, 5000);
+      const res = await fetch('/api/settings/auth-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const msg = typeof data?.error === 'string' ? data.error : t('oauthCodeSubmitFailed');
+        setOauthFlowMessage(msg);
+        return;
+      }
+
+      setOauthCodeInput('');
+      setOauthFlowMessage(t('oauthCodeSubmitted'));
+      setLoginPending(true);
+      setOauthProcessAlive(true);
+      void pollOAuthState(40, 1200);
+    } catch (err) {
+      console.error('Submit OAuth code failed:', err);
+      setOauthFlowMessage(t('oauthCodeSubmitFailed'));
+    } finally {
+      setOauthCodeSubmitting(false);
+    }
+  }, [oauthCodeInput, pollOAuthState, t]);
+
+  const triggerOAuthLogin = useCallback(async () => {
+    if (loginPending) return;
+
+    setLoginPending(true);
+    setOauthStatus('checking');
+    setOauthLoginUrl('');
+    setOauthLoginCode('');
+    setOauthCodeInput('');
+    setOauthFlowMessage(t('oauthFlowStarting'));
+    setOauthProcessAlive(false);
+
+    let popup: Window | null = null;
+    let startedPolling = false;
+    try {
+      // Open a controllable tab synchronously first, then navigate it after URL is ready.
+      popup = window.open('about:blank', '_blank');
+    } catch {
+      popup = null;
+    }
+
+    const openOrNavigate = (url: string): boolean => {
+      try {
+        if (popup && !popup.closed) {
+          popup.location.replace(url);
+          return true;
+        }
+      } catch {
+        // fallback below
+      }
+      const newPopup = window.open(url, '_blank');
+      if (newPopup) {
+        popup = newPopup;
+        return true;
+      }
+      return false;
+    };
+
+    const tryOpenLoginUrl = (url: unknown): boolean => {
+      if (typeof url !== 'string' || !url.startsWith('http')) return false;
+      return openOrNavigate(url);
+    };
+
+    try {
+      const loginRes = await fetch('/api/settings/auth-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider }),
+      });
+      const loginData = await loginRes.json();
+
+      if (!loginRes.ok) {
+        setOauthStatus('not_authenticated');
+        setOauthFlowMessage(typeof loginData?.error === 'string' ? loginData.error : t('oauthFlowStartFailed'));
+        if (popup && !popup.closed) popup.close();
+        return;
+      }
+
+      if (loginData?.alreadyAuthenticated) {
+        setOauthStatus('authenticated');
+        setOauthFlowMessage(t('oauthFlowCompleted'));
+        if (popup && !popup.closed) popup.close();
+        return;
+      }
+
+      if (typeof loginData?.loginUrl === 'string' && loginData.loginUrl.startsWith('http')) {
+        setOauthLoginUrl(loginData.loginUrl);
+      }
+      if (typeof loginData?.loginCode === 'string') {
+        setOauthLoginCode(loginData.loginCode);
+      }
+
+      let opened = tryOpenLoginUrl(loginData?.loginUrl);
+
+      if (!opened) {
+        for (let i = 0; i < 15; i++) {
+          await sleep(800);
+          const pollRes = await fetch(`/api/settings/auth-url?provider=${provider}`);
+          const pollData = await pollRes.json();
+
+          if (typeof pollData?.loginUrl === 'string' && pollData.loginUrl.startsWith('http')) {
+            setOauthLoginUrl(pollData.loginUrl);
+          }
+          if (typeof pollData?.loginCode === 'string' && pollData.loginCode) {
+            setOauthLoginCode(pollData.loginCode);
+          }
+          setOauthProcessAlive(!!pollData?.processAlive);
+
+          opened = tryOpenLoginUrl(pollData?.loginUrl);
+          if (opened || !pollData?.processAlive) break;
+        }
+      }
+
+      if (!opened && provider === 'openai') {
+        opened = openOrNavigate('https://auth.openai.com/codex/device');
+      }
+
+      if (!opened && popup && !popup.closed) {
+        popup.close();
+      }
+      if (!opened) {
+        const manualUrl = provider === 'openai'
+          ? 'https://auth.openai.com/codex/device'
+          : 'https://claude.ai/login';
+        setOauthFlowMessage(`${t('oauthOpenManually')}: ${manualUrl}`);
+      } else {
+        setOauthFlowMessage(t('oauthFlowWaiting'));
+      }
+
+      setOauthProcessAlive(true);
+      startedPolling = true;
+      void pollOAuthState();
     } catch (err) {
       console.error('Failed to trigger login:', err);
-      setLoginPending(false);
+      setOauthStatus('not_authenticated');
+      setOauthFlowMessage(t('oauthFlowStartFailed'));
+      if (popup && !popup.closed) popup.close();
+    } finally {
+      if (!startedPolling) {
+        setLoginPending(false);
+        setOauthProcessAlive(false);
+      }
     }
-  };
+  }, [loginPending, pollOAuthState, provider, t]);
 
   const switchLocale = (newLocale: string) => {
     router.push(pathname, { locale: newLocale });
@@ -330,12 +739,23 @@ export default function SettingsPage() {
                 t={t} tActions={tActions} btnActive={btnActive} btnInactive={btnInactive}
                 provider={provider} authMode={authMode} apiKey={apiKey}
                 model={model} customModel={customModel} baseUrl={baseUrl}
-                oauthStatus={oauthStatus} loginPending={loginPending}
+                oauthStatus={oauthStatus}
+                oauthLoginUrl={oauthLoginUrl}
+                oauthLoginCode={oauthLoginCode}
+                oauthCodeInput={oauthCodeInput}
+                oauthCodeSubmitting={oauthCodeSubmitting}
+                oauthProcessAlive={oauthProcessAlive}
+                oauthFlowMessage={oauthFlowMessage}
+                loginPending={loginPending}
+                testState={testState} testMessage={testMessage}
                 preset={preset} isPresetModel={isPresetModel} modelSelectOptions={modelSelectOptions}
                 onProviderChange={handleProviderChange} onAuthModeChange={setAuthMode}
-                onApiKeyChange={setApiKey} onModelChange={setModel}
-                onCustomModelChange={setCustomModel} onBaseUrlChange={setBaseUrl}
+                onApiKeyChange={setCurrentProviderApiKey} onModelChange={handleModelChange}
+                onCustomModelChange={handleCustomModelChange} onBaseUrlChange={setBaseUrl}
+                onOauthCodeInputChange={setOauthCodeInput}
+                onSubmitOAuthCode={submitOAuthCode}
                 onCheckOAuthStatus={checkOAuthStatus} onTriggerOAuthLogin={triggerOAuthLogin}
+                onTestConnection={handleTestConnection}
               />
             )}
 

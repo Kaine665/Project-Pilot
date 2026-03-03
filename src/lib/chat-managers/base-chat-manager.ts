@@ -16,9 +16,9 @@
  *   - logPrefix            — customize console log prefix
  */
 
-import { spawn } from 'child_process';
 import { StreamParser, LineBuffer } from '@/lib/claude-stream-parser';
 import { detectDangerousCommand } from '@/lib/danger-detector';
+import { spawnClaude } from '@/lib/claude-cli';
 import type { ChatSSEEvent, ChatToolCall, ContentBlock } from '@/types';
 import type { BaseRun, RunStatus, RunStatusInfo, SpawnConfig } from './types';
 
@@ -198,7 +198,7 @@ export abstract class BaseChatManager<TRun extends BaseRun> {
     // ── Build CLI args ──
     // Note: auth env, model, maxTurns, permissions, tools, resume, image
     // args are all pre-built by the subclass and passed in extraCliArgs.
-    const claude = spawn('claude', [
+    const claude = spawnClaude([
       '-p',
       '--verbose',
       '--output-format', 'stream-json',

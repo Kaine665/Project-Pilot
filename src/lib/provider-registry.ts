@@ -20,7 +20,7 @@ export interface ProviderPreset {
   baseUrl?: string;
   /** 推荐模型列表（第一个为默认值） */
   models: ModelOption[];
-  /** 是否支持 OAuth 登录（仅 Anthropic 官方） */
+  /** 是否支持 OAuth 登录 */
   supportsOAuth: boolean;
   /** 是否需要用户自填 baseUrl（custom / ollama） */
   editableBaseUrl: boolean;
@@ -28,6 +28,8 @@ export interface ProviderPreset {
   editableModel: boolean;
   /** API Key 占位符提示 */
   apiKeyPlaceholder?: string;
+  /** 测试连接时是否使用 x-api-key 头（默认 false: Bearer） */
+  useApiKeyForAuth?: boolean;
   /** 第三方供应商需要的额外环境变量 */
   extraEnv?: Record<string, string>;
 }
@@ -46,6 +48,15 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
     editableBaseUrl: false,
     editableModel: true,
     apiKeyPlaceholder: 'sk-ant-api03-...',
+  },
+  {
+    id: 'openai',
+    nameKey: 'settings.providers.openai',
+    models: [],
+    supportsOAuth: true,
+    editableBaseUrl: false,
+    editableModel: true,
+    apiKeyPlaceholder: 'sk-proj-...',
   },
 
   // ── 中国厂商（原生 Anthropic 兼容端点） ──
@@ -67,16 +78,29 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
     },
   },
   {
+    id: 'kimi',
+    nameKey: 'settings.providers.kimi',
+    baseUrl: 'https://api.kimi.com/coding/v1',
+    models: [],
+    supportsOAuth: false,
+    editableBaseUrl: true,
+    editableModel: true,
+    apiKeyPlaceholder: 'sk-...',
+    extraEnv: {
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+    },
+  },
+  {
     id: 'qwen',
     nameKey: 'settings.providers.qwen',
-    baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+    baseUrl: 'https://coding.dashscope.aliyuncs.com/apps/anthropic',
     models: [
       { id: 'qwen3-coder-plus', label: 'Qwen3 Coder Plus' },
       { id: 'qwen3-coder', label: 'Qwen3 Coder' },
       { id: 'qwen-plus', label: 'Qwen Plus' },
     ],
     supportsOAuth: false,
-    editableBaseUrl: false,
+    editableBaseUrl: true,
     editableModel: true,
     apiKeyPlaceholder: 'sk-...',
     extraEnv: {
@@ -103,12 +127,12 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
   {
     id: 'minimax',
     nameKey: 'settings.providers.minimax',
-    baseUrl: 'https://api.minimaxi.com/v1',
+    baseUrl: 'https://api.minimax.chat/anthropic',
     models: [
       { id: 'MiniMax-M2.5', label: 'MiniMax M2.5' },
     ],
     supportsOAuth: false,
-    editableBaseUrl: false,
+    editableBaseUrl: true,
     editableModel: true,
     apiKeyPlaceholder: 'your-minimax-api-key',
     extraEnv: {

@@ -217,6 +217,12 @@ export function getDesignDocFilePath(fileName: string): string {
 // 🔒 Security: Maximum JSON file size to prevent DoS attacks
 const MAX_JSON_SIZE = 50 * 1024 * 1024; // 50MB
 
+function parseJsonSafe<T>(content: string): T {
+  // Some editors/tools write UTF-8 BOM, which breaks JSON.parse.
+  const normalized = content.charCodeAt(0) === 0xFEFF ? content.slice(1) : content;
+  return JSON.parse(normalized) as T;
+}
+
 /**
  * 读取 JSON 文件，文件不存在时返回 defaultValue
  *
@@ -233,7 +239,7 @@ export async function readJsonFile<T>(filePath: string, defaultValue: T): Promis
     }
 
     const content = await fs.readFile(filePath, 'utf-8');
-    return JSON.parse(content);
+    return parseJsonSafe<T>(content);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     // File not found or empty/corrupt JSON → return default
@@ -323,7 +329,7 @@ export async function modifyJsonFile<T>(
     }
 
     const content = await fs.readFile(filePath, 'utf-8');
-    data = JSON.parse(content);
+    data = parseJsonSafe<T>(content);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     // File not found → use default, but re-throw size errors

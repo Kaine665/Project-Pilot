@@ -35,7 +35,15 @@ interface AIConfigSectionProps extends TranslationProps {
   customModel: string;
   baseUrl: string;
   oauthStatus: 'unknown' | 'checking' | 'authenticated' | 'not_authenticated';
+  oauthLoginUrl: string;
+  oauthLoginCode: string;
+  oauthCodeInput: string;
+  oauthCodeSubmitting: boolean;
+  oauthProcessAlive: boolean;
+  oauthFlowMessage: string;
   loginPending: boolean;
+  testState: 'idle' | 'testing' | 'success' | 'failed';
+  testMessage: string;
   preset: { supportsOAuth?: boolean; apiKeyPlaceholder?: string; editableBaseUrl?: boolean; baseUrl?: string; models: Array<{ id: string; label: string }> };
   isPresetModel: boolean;
   modelSelectOptions: Array<{ value: string; label: string }>;
@@ -45,18 +53,24 @@ interface AIConfigSectionProps extends TranslationProps {
   onModelChange: (m: string) => void;
   onCustomModelChange: (m: string) => void;
   onBaseUrlChange: (u: string) => void;
+  onOauthCodeInputChange: (code: string) => void;
+  onSubmitOAuthCode: () => void;
   onCheckOAuthStatus: () => void;
   onTriggerOAuthLogin: () => void;
+  onTestConnection: () => void;
 }
 
 export function SettingsAISection({
   t, btnActive, btnInactive,
   provider, authMode, apiKey, model, customModel, baseUrl,
-  oauthStatus, loginPending,
+  oauthStatus, oauthLoginUrl, oauthLoginCode, oauthCodeInput, oauthCodeSubmitting, oauthProcessAlive, oauthFlowMessage, loginPending,
+  testState, testMessage,
   preset, isPresetModel, modelSelectOptions,
   onProviderChange, onAuthModeChange, onApiKeyChange,
   onModelChange, onCustomModelChange, onBaseUrlChange,
+  onOauthCodeInputChange, onSubmitOAuthCode,
   onCheckOAuthStatus, onTriggerOAuthLogin,
+  onTestConnection,
 }: AIConfigSectionProps) {
   return (
     <>
@@ -179,6 +193,59 @@ export function SettingsAISection({
                   {t('oauthCheckStatus')}
                 </Button>
               </div>
+
+              {oauthLoginUrl && (
+                <div className="space-y-1 rounded-md border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-900/40">
+                  <p className="text-xs text-zinc-500">{t('oauthLoginUrl')}</p>
+                  <a
+                    href={oauthLoginUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="break-all text-xs text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
+                  >
+                    {oauthLoginUrl}
+                  </a>
+                </div>
+              )}
+
+              {oauthLoginCode && (
+                <div className="space-y-1 rounded-md border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-900/40">
+                  <p className="text-xs text-zinc-500">{t('oauthDeviceCode')}</p>
+                  <p className="font-mono text-sm text-zinc-900 dark:text-zinc-100">{oauthLoginCode}</p>
+                </div>
+              )}
+
+              {provider === 'anthropic' && (
+                <div className="space-y-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-700">
+                  <label className="text-xs text-zinc-500">{t('oauthManualCode')}</label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={oauthCodeInput}
+                      onChange={(e) => onOauthCodeInputChange(e.target.value)}
+                      placeholder={t('oauthManualCodePlaceholder')}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={onSubmitOAuthCode}
+                      disabled={oauthCodeSubmitting || !oauthCodeInput.trim() || !loginPending}
+                    >
+                      {oauthCodeSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                      {t('oauthSubmitCode')}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-zinc-500">{t('oauthManualCodeHint')}</p>
+                </div>
+              )}
+
+              {(loginPending || oauthProcessAlive) && (
+                <p className="text-xs text-zinc-500">{t('oauthWaiting')}</p>
+              )}
+
+              {oauthFlowMessage && (
+                <p className="text-xs text-zinc-500">{oauthFlowMessage}</p>
+              )}
+
               <p className="text-xs text-zinc-500">{t('oauthHint')}</p>
             </div>
           )}
@@ -228,6 +295,23 @@ export function SettingsAISection({
             />
           )}
           <p className="text-xs text-zinc-500">{t('modelHint')}</p>
+          <div className="flex items-center gap-2 pt-1">
+            <Button variant="outline" size="sm" onClick={onTestConnection} disabled={testState === 'testing'}>
+              {testState === 'testing' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+              {t('testConnection')}
+            </Button>
+            {testState === 'success' && (
+              <span className="text-xs text-green-600 dark:text-green-400">{t('testSuccess')}</span>
+            )}
+            {testState === 'failed' && (
+              <span className="text-xs text-red-600 dark:text-red-400">{t('testFailed')}</span>
+            )}
+          </div>
+          {testMessage && (
+            <p className={`text-xs ${testState === 'failed' ? 'text-red-500' : 'text-zinc-500'}`}>
+              {testMessage}
+            </p>
+          )}
         </CardContent>
       </Card>
 

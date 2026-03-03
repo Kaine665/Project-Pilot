@@ -3,6 +3,8 @@ import { agentChatManager, generateSessionId } from '@/lib/agent-chat-manager';
 import type { FlowContext, ImageAttachment, ImageMediaType } from '@/lib/agent-chat-manager';
 import { getFlowDataPath, getFlowIndexPath, readJsonFile, ensureFlowsMigrated } from '@/lib/file-store';
 import { isValidProjectKey, isValidSessionId } from '@/lib/security';
+import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
+import type { ProviderId } from '@/types';
 
 interface ProjectIndex {
   projects: Array<{ key: string; name: string }>;
@@ -11,19 +13,31 @@ interface ProjectIndex {
 const ALLOWED_IMAGE_TYPES: ImageMediaType[] = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 const MAX_IMAGES = 5;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB per image (base64 decoded)
+const ALLOWED_PROVIDERS: ProviderId[] = PROVIDER_REGISTRY.map((p) => p.id);
 
 /**
  * POST /api/agent-chat
  * Start an agent chat conversation.
- * Body: { agentId, message, sessionId?, projectKey?, images?: [{mediaType, data}] }
+ * Body: { agentId, message, sessionId?, projectKey?, providerOverride?, modelOverride?, images?: [{mediaType, data}] }
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { agentId, message, sessionId: requestedSessionId, projectKey, images, initialTitle } = body as {
+  const {
+    agentId,
+    message,
+    sessionId: requestedSessionId,
+    projectKey,
+    providerOverride,
+    modelOverride,
+    images,
+    initialTitle,
+  } = body as {
     agentId: string;
     message: string;
     sessionId?: string;
     projectKey?: string;
+    providerOverride?: ProviderId;
+    modelOverride?: string;
     images?: Array<{ mediaType: string; data: string }>;
     initialTitle?: string;
   };
@@ -79,6 +93,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid projectKey format' }, { status: 400 });
   }
 
+  const normalizedProvider = (typeof providerOverride === 'string' ? providerOverride.trim() : '') as ProviderId;
+  if (providerOverride !== undefined && !ALLOWED_PROVIDERS.includes(normalizedProvider)) {
+    return NextResponse.json({ error: 'Invalid providerOverride' }, { status: 400 });
+  }
+
+  const normalizedModel = typeof modelOverride === 'string' ? modelOverride.trim() : '';
+  if (modelOverride !== undefined && (!normalizedModel || normalizedModel.length > 200)) {
+    return NextResponse.json({ error: 'Invalid modelOverride (1-200 chars)' }, { status: 400 });
+  }
+
   const sessionId = requestedSessionId || generateSessionId();
 
   try {
@@ -104,7 +128,14 @@ export async function POST(request: NextRequest) {
       };
     }
 
-    const runId = await agentChatManager.start(sessionId, agentId, message, flowContext, validatedImages, initialTitle);
+    const runId = await agentChatManager.start(
+      sessionId,
+      agentId,
+      message,
+      flowContext,
+      validatedImages,
+      initialTitle,
+    );
     return NextResponse.json({ runId, sessionId });
   } catch (err) {
     return NextResponse.json(

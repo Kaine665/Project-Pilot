@@ -13,11 +13,12 @@
 
 import path from 'path';
 import fs from 'fs';
-import { spawn } from 'child_process';
+import { pinyin } from 'pinyin-pro';
 import { BaseChatManager } from './base-chat-manager';
 import type { BaseRun, SpawnConfig } from './types';
 import type { StreamParser } from '@/lib/claude-stream-parser';
 import { StreamParser as StreamParserClass, LineBuffer } from '@/lib/claude-stream-parser';
+import { spawnClaude } from '@/lib/claude-cli';
 import {
   getConversationPath,
   getConversationFilePath,
@@ -497,7 +498,7 @@ class ProcessManager extends BaseChatManager<ProcessRun> {
     const permissionArgs = await buildClaudePermissionArgs('branching');
     const branchEnv = await buildClaudeEnv();
     const branchModelArgs = await buildClaudeModelArgs();
-    const claude = spawn('claude', [
+    const claude = spawnClaude([
       '-p',
       '--verbose',
       '--output-format', 'stream-json',
@@ -981,7 +982,6 @@ function generateBranchName(taskId: string, title: string, branchSlug?: string):
   }
 
   try {
-    const { pinyin } = require('pinyin-pro');
     const py: string = pinyin(title, { toneType: 'none', type: 'array' })
       .join('')
       .replace(/[^a-z]/g, '')

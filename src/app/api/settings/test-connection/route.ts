@@ -8,6 +8,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getProviderPreset } from '@/lib/provider-registry';
 import { getSettings } from '@/lib/settings-manager';
+import { execClaude } from '@/lib/claude-cli';
+import { execCodex } from '@/lib/codex-cli';
+import { parseAuthStatusText } from '@/lib/oauth-status';
 import type { ProviderId } from '@/types';
 
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -15,21 +18,89 @@ const ANTHROPIC_VERSION = '2023-06-01';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    let { provider, apiKey, model, baseUrl } = body;
+    const { provider } = body;
+    const authMode = body.authMode;
+    let { apiKey, model, baseUrl } = body;
 
     if (!provider || typeof provider !== 'string') {
       return NextResponse.json({ ok: false, error: 'Missing provider' }, { status: 400 });
     }
 
     const preset = getProviderPreset(provider as ProviderId);
+    const providerId = provider as ProviderId;
 
-    // 掩码回传时使用已保存的配置
-    if (typeof apiKey === 'string' && apiKey.startsWith('••')) {
+    // OAuth providers: test by checking CLI auth status.
+    if (authMode === 'oauth') {
+      if (provider === 'anthropic') {
+        try {
+          const { stdout, stderr } = await execClaude(['auth', 'status', '--json'], {
+            timeout: 8_000,
+            env: { ...process.env },
+          });
+          let authenticated = false;
+          try {
+            const parsed = JSON.parse(stdout) as { loggedIn?: boolean; authenticated?: boolean };
+            authenticated = !!(parsed.loggedIn ?? parsed.authenticated);
+          } catch {
+            authenticated = parseAuthStatusText(`${stdout}${stderr}`);
+          }
+          return authenticated
+            ? NextResponse.json({ ok: true })
+            : NextResponse.json({ ok: false, error: 'Anthropic OAuth 未认证' }, { status: 400 });
+        } catch (err) {
+          return NextResponse.json(
+            { ok: false, error: err instanceof Error ? err.message : 'Anthropic OAuth 检查失败' },
+            { status: 500 },
+          );
+        }
+      }
+
+      if (provider === 'openai') {
+        try {
+          const { stdout, stderr } = await execCodex(['login', 'status'], {
+            timeout: 8_000,
+            env: { ...process.env },
+          });
+          const authenticated = parseAuthStatusText(`${stdout}${stderr}`);
+          return authenticated
+            ? NextResponse.json({ ok: true })
+            : NextResponse.json({ ok: false, error: 'OpenAI/Codex OAuth 未认证' }, { status: 400 });
+        } catch (err) {
+          return NextResponse.json(
+            { ok: false, error: err instanceof Error ? err.message : 'OpenAI/Codex OAuth 检查失败' },
+            { status: 500 },
+          );
+        }
+      }
+
+      {
+        return NextResponse.json(
+          { ok: false, error: `${provider} 不支持 OAuth，请改用 API Key` },
+          { status: 400 },
+        );
+      }
+    }
+
+    // 掩码回传或未传 key 时，尝试回填已保存配置
+    if ((typeof apiKey === 'string' && apiKey.startsWith('••')) || !apiKey) {
       const settings = await getSettings();
-      if (settings.claude.provider === provider && settings.claude.apiKey) {
+      const scopedKey = settings.claude.providerApiKeys?.[providerId];
+      const scopedModel = settings.claude.providerModels?.[providerId];
+      const isActiveProvider = settings.claude.provider === provider;
+
+      if (scopedKey) {
+        apiKey = scopedKey;
+      } else if (isActiveProvider && settings.claude.apiKey) {
         apiKey = settings.claude.apiKey;
-        if (!model) model = settings.claude.model;
-        if (!baseUrl && settings.claude.baseUrl) baseUrl = settings.claude.baseUrl;
+      }
+
+      if (!model) {
+        model = scopedModel || (isActiveProvider ? settings.claude.model : model);
+      }
+
+      // baseUrl 是全局字段，仅在当前激活 provider 匹配时回填，避免误用其他 provider 的地址
+      if (!baseUrl && isActiveProvider && settings.claude.baseUrl) {
+        baseUrl = settings.claude.baseUrl;
       }
     }
 
@@ -80,7 +151,7 @@ export async function POST(request: NextRequest) {
         max_tokens: 10,
         messages: [{ role: 'user', content: 'Hi' }],
       }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(60000),
     });
 
     if (!res.ok) {

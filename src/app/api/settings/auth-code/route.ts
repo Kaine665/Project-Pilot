@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { loginProcess } from '@/lib/auth-login-state';
+import { loginProcess, loginProvider } from '@/lib/auth-login-state';
 
 /**
  * POST /api/settings/auth-code
@@ -14,6 +14,10 @@ export async function POST(req: Request) {
 
   if (!loginProcess || loginProcess.killed) {
     return NextResponse.json({ error: 'No active login process. Please click "Login" first.' }, { status: 409 });
+  }
+
+  if (loginProvider && loginProvider !== 'anthropic') {
+    return NextResponse.json({ error: 'Current OAuth flow does not accept manual code input.' }, { status: 409 });
   }
 
   if (!loginProcess.stdin) {

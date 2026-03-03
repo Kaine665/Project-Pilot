@@ -15,6 +15,25 @@ const CACHE_TTL_MS = 30_000;
 let cachedSettings: AppSettings | null = null;
 let cacheTimestamp = 0;
 
+function getProviderScopedApiKey(settings: AppSettings['claude']): string | undefined {
+  const scoped = settings.providerApiKeys?.[settings.provider];
+  if (typeof scoped === 'string' && scoped.trim()) {
+    return scoped;
+  }
+  return settings.apiKey;
+}
+
+function getProviderScopedModel(settings: AppSettings['claude']): string | undefined {
+  const scoped = settings.providerModels?.[settings.provider];
+  if (typeof scoped === 'string' && scoped.trim()) {
+    return scoped.trim();
+  }
+  if (typeof settings.model === 'string' && settings.model.trim()) {
+    return settings.model.trim();
+  }
+  return undefined;
+}
+
 export async function getSettings(): Promise<AppSettings> {
   const now = Date.now();
   if (cachedSettings && now - cacheTimestamp < CACHE_TTL_MS) {
@@ -59,13 +78,16 @@ export async function buildClaudeEnv(): Promise<NodeJS.ProcessEnv> {
   const claude = settings.claude;
   const provider = claude.provider ?? 'anthropic';
   const preset = getProviderPreset(provider);
+  const providerApiKey = getProviderScopedApiKey(claude);
 
   const env: NodeJS.ProcessEnv = { ...process.env };
 
-  if (provider === 'anthropic') {
+  if (provider === 'anthropic' || provider === 'openai') {
     // 官方模式：API Key 或 OAuth
-    if (claude.authMode === 'api_key' && claude.apiKey && !process.env.ANTHROPIC_API_KEY) {
-      env.ANTHROPIC_API_KEY = claude.apiKey;
+    // NOTE: openai 目前仅用于 Codex OAuth 登录管理；运行期仍由 Claude CLI 执行，
+    // 因此不走第三方兼容端点覆盖逻辑，避免误清空本地认证环境。
+    if (claude.authMode === 'api_key' && providerApiKey && !process.env.ANTHROPIC_API_KEY) {
+      env.ANTHROPIC_API_KEY = providerApiKey;
     }
     if (claude.baseUrl && !process.env.ANTHROPIC_BASE_URL) {
       env.ANTHROPIC_BASE_URL = claude.baseUrl;
@@ -78,8 +100,8 @@ export async function buildClaudeEnv(): Promise<NodeJS.ProcessEnv> {
     }
 
     // 第三方用 AUTH_TOKEN 认证，同时把 API_KEY 设为空字符串
-    if (claude.apiKey && !process.env.ANTHROPIC_AUTH_TOKEN) {
-      env.ANTHROPIC_AUTH_TOKEN = claude.apiKey;
+    if (providerApiKey && !process.env.ANTHROPIC_AUTH_TOKEN) {
+      env.ANTHROPIC_AUTH_TOKEN = providerApiKey;
     }
     if (!process.env.ANTHROPIC_API_KEY) {
       env.ANTHROPIC_API_KEY = '';
@@ -112,7 +134,7 @@ export async function buildClaudeEnv(): Promise<NodeJS.ProcessEnv> {
  */
 export async function buildClaudeModelArgs(): Promise<string[]> {
   const settings = await getSettings();
-  const model = settings.claude.model;
+  const model = getProviderScopedModel(settings.claude);
   if (!model) return [];
   return ['--model', model];
 }

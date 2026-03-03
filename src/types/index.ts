@@ -82,14 +82,18 @@ export type ClaudeModel = 'claude-opus-4-6' | 'claude-sonnet-4-5-20250929' | 'cl
  * AI 供应商 ID。
  *
  * - anthropic: Anthropic 官方（默认）
+ * - openai: OpenAI/Codex（OAuth 登录）
  * - deepseek / qwen / zhipu / minimax: 中国厂商（原生 Anthropic 兼容端点）
+ * - kimi: 月之暗面 Kimi（Anthropic 兼容端点）
  * - openrouter: 聚合网关
  * - ollama: 本地模型
  * - custom: 用户自定义端点
  */
 export type ProviderId =
   | 'anthropic'
+  | 'openai'
   | 'deepseek'
+  | 'kimi'
   | 'qwen'
   | 'zhipu'
   | 'minimax'
@@ -105,6 +109,13 @@ export interface ClaudeSettings {
   /** AI 供应商 */
   provider: ProviderId;
   authMode: ClaudeAuthMode;
+  /** 每个供应商独立保存 API Key（新结构） */
+  providerApiKeys?: Partial<Record<ProviderId, string>>;
+  /** 每个供应商独立保存模型 ID（新结构） */
+  providerModels?: Partial<Record<ProviderId, string>>;
+  /** 每个供应商的用户自定义模型列表（用于下拉可选项） */
+  providerModelLibrary?: Partial<Record<ProviderId, string[]>>;
+  /** @deprecated 旧结构：仅保存当前供应商 API Key */
   apiKey?: string;
   /** 模型 ID（自由字符串，供应商不同格式不同） */
   model: string;
