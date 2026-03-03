@@ -15,6 +15,7 @@ import {
 } from '@/lib/file-store';
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
 import type { AgentsData } from '@/types';
+import type { AgentChatSessionsData } from '@/types/agent-chat';
 
 type ClearTarget = 'sessions' | 'flows' | 'all';
 const VALID_TARGETS: ClearTarget[] = ['sessions', 'flows', 'all'];
@@ -67,7 +68,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // 统计清除数量
+    const cleared = { sessions: 0, tasks: 0, plans: 0, flows: 0 };
+
     if (target === 'sessions' || target === 'all') {
+      // 统计将被清除的会话数
+      const sessionsData = await readJsonFile<AgentChatSessionsData>(
+        getAgentChatSessionsPath(), { sessions: [] },
+      );
+      cleared.sessions = sessionsData.sessions.length;
+
       // 备份 sessions 相关
       await backupFile(getTasksPath());
       await backupFile(getAiPlansPath());
@@ -121,6 +131,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       backupDir: `_backup_${timestamp}`,
+      cleared,
     });
   } catch (error) {
     console.error('Clear data failed:', error);
