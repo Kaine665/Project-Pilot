@@ -12,6 +12,7 @@ import type { ResourceRef } from '@/types/resource';
  * Maps the legacy fields:
  *   agent.systemPrompt / fallback  → system-prompt ref (priority 0)
  *   context-index                  → always included (priority 20)
+ *   design-docs-index              → always included (priority 25)
  *   agent.contextIds               → context refs (priority 30 each)
  *   todoRead capability            → todo-list ref (priority 40)
  *   knowledge-instructions         → always included (priority 80)
@@ -35,6 +36,14 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
     id: '_all',
     priority: 20,
     label: '上下文索引',
+  });
+
+  // Design docs index table — always present
+  refs.push({
+    type: 'design-docs-index',
+    id: '_all',
+    priority: 25,
+    label: '设计文档索引',
   });
 
   // Preloaded context entries
