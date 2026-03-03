@@ -8,6 +8,7 @@ export interface AllSessionItem {
   agentName: string;
   agentIcon?: string;
   unreadCount?: number;
+  archived?: boolean;
 }
 
 // Opened session instance: tracks a mounted AgentChatPanel

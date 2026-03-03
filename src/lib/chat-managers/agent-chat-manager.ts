@@ -396,6 +396,23 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     return found;
   }
 
+  async setArchived(sessionId: string, archived: boolean): Promise<boolean> {
+    let found = false;
+    await modifyJsonFile<AgentChatSessionsData>(
+      getAgentChatSessionsPath(),
+      DEFAULT_SESSIONS_DATA,
+      (data) => {
+        const session = data.sessions.find(s => s.id === sessionId);
+        if (session) {
+          session.archived = archived || undefined; // don't persist false
+          found = true;
+        }
+        return data;
+      },
+    );
+    return found;
+  }
+
   async listGuestSessions(parentSessionId: string): Promise<Omit<AgentChatSession, 'messages'>[]> {
     const data = await readJsonFile<AgentChatSessionsData>(
       getAgentChatSessionsPath(),
@@ -575,6 +592,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
         const idx = data.sessions.findIndex(s => s.id === run.sessionId);
         if (idx >= 0) {
           session.createdAt = data.sessions[idx].createdAt;
+          session.archived = data.sessions[idx].archived; // preserve archive state
           // Increment unread count (agent replied)
           session.unreadCount = (data.sessions[idx].unreadCount || 0) + 1;
           data.sessions[idx] = session;
