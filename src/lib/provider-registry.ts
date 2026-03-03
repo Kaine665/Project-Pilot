@@ -52,7 +52,13 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
   {
     id: 'openai',
     nameKey: 'settings.providers.openai',
-    models: [],
+    models: [
+      { id: 'gpt-5.3-codex', label: 'GPT-5.3-Codex' },
+      { id: 'gpt-5.2-codex', label: 'GPT-5.2-Codex' },
+      { id: 'gpt-5.1-codex-max', label: 'GPT-5.1-Codex-Max' },
+      { id: 'gpt-5.2', label: 'GPT-5.2' },
+      { id: 'gpt-5.1-codex-mini', label: 'GPT-5.1-Codex-Mini' },
+    ],
     supportsOAuth: true,
     editableBaseUrl: false,
     editableModel: true,

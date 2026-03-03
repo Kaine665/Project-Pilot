@@ -17,7 +17,8 @@ import { join } from 'path';
 import { randomBytes } from 'crypto';
 import { BaseChatManager } from './base-chat-manager';
 import type { BaseRun, SpawnConfig } from './types';
-import type { StreamParser } from '@/lib/claude-stream-parser';
+import { LineBuffer, StreamParser as ClaudeStreamParser } from '@/lib/claude-stream-parser';
+import type { StreamParser as ClaudeStreamParserType } from '@/lib/claude-stream-parser';
 import {
   getAgentChatSessionsPath,
   getAgentsPath,
@@ -42,7 +43,9 @@ import {
   getSettings,
 } from '@/lib/settings-manager';
 import { getProviderPreset } from '@/lib/provider-registry';
-import type { ChatSSEEvent, ContentBlock, Agent, AgentsData, ProviderId } from '@/types';
+import { spawnCodex } from '@/lib/codex-cli';
+import { listOpenAIModels, resolveOpenAIEffortForModel } from '@/lib/codex-model-catalog';
+import type { ContentBlock, Agent, AgentsData, ProviderId, OpenAIReasoningEffort } from '@/types';
 import type { AgentChatSession, AgentChatSessionsData } from '@/types/agent-chat';
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
 import type { ResourceRef, FlowContextRef, ReferenceTurnsRef } from '@/types/resource';
@@ -73,12 +76,24 @@ export interface AgentChatRun extends BaseRun {
   sessionTitle?: string;
   provider?: ProviderId;
   model?: string;
+  effort?: OpenAIReasoningEffort;
   messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }>;
   // Guest Agent
   parentSessionId?: string;
   importedTurnIndices?: number[];
   // Temp image paths (for cleanup)
   _tempImagePaths?: string[];
+}
+
+interface CodexSpawnConfig {
+  runKey: string;
+  workingDir: string;
+  stdinContent: string;
+  isResume: boolean;
+  claudeSessionId?: string;
+  env: NodeJS.ProcessEnv;
+  model?: string;
+  effort: OpenAIReasoningEffort;
 }
 
 // ── Helpers ──
@@ -215,6 +230,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     initialTitle?: string,
     providerOverride?: ProviderId,
     modelOverride?: string,
+    effortOverride?: OpenAIReasoningEffort,
   ): Promise<string> {
     const agent = await this.loadAgent(agentId);
 
@@ -240,6 +256,14 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     const selectedModel = normalizedModelOverride
       || existing?.model
       || resolveScopedModelForProvider(settings.claude, selectedProvider);
+    const selectedEffort = selectedProvider === 'openai'
+      ? await this.resolveOpenAIEffortForSession(
+          selectedModel,
+          effortOverride,
+          existing?.effort,
+          settings.claude.openaiReasoningEffort,
+        )
+      : undefined;
 
     const previousProvider = existing?.provider ?? defaultProvider;
     const previousModel = existing?.model || resolveScopedModelForProvider(settings.claude, previousProvider);
@@ -327,11 +351,23 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       sessionTitle: existing?.sessionTitle ?? initialTitle,
       provider: selectedProvider,
       model: selectedModel || undefined,
+      effort: selectedEffort,
       messages,
       tempPaths,
     };
 
-    const run = await this.spawnAndManage(config);
+    const run = selectedProvider === 'openai'
+      ? await this.spawnCodexAndManage({
+          runKey: sessionId,
+          workingDir: process.cwd(),
+          stdinContent,
+          isResume: shouldResume,
+          claudeSessionId: shouldResume ? existing?.claudeSessionId : undefined,
+          env: { ...process.env },
+          model: selectedModel || undefined,
+          effort: selectedEffort || 'xhigh',
+        })
+      : await this.spawnAndManage(config);
     return run.runId;
   }
 
@@ -556,6 +592,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     sessionTitle?: string;
     provider?: ProviderId;
     model?: string;
+    effort?: OpenAIReasoningEffort;
     messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }>;
     tempPaths: string[];
     parentSessionId?: string;
@@ -572,6 +609,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       sessionTitle: d.sessionTitle,
       provider: d.provider,
       model: d.model,
+      effort: d.effort,
       messages: d.messages,
       parentSessionId: d.parentSessionId,
       importedTurnIndices: d.importedTurnIndices,
@@ -590,7 +628,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
   protected async onProcessClose(
     run: AgentChatRun,
     _aborted: boolean,
-    _streamParser: StreamParser,
+    _streamParser: ClaudeStreamParserType,
   ): Promise<void> {
     // Clean up temp image files
     if (run._tempImagePaths) {
@@ -652,6 +690,200 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
   // Private helpers
   // ═══════════════════════════════════════════════════════════════════════
 
+  private async resolveOpenAIEffortForSession(
+    selectedModel: string,
+    effortOverride?: OpenAIReasoningEffort,
+    existingEffort?: OpenAIReasoningEffort,
+    settingsEffort?: OpenAIReasoningEffort,
+  ): Promise<OpenAIReasoningEffort> {
+    const desired = effortOverride || existingEffort || settingsEffort || 'xhigh';
+    const modelId = selectedModel.trim();
+    if (!modelId) {
+      return desired;
+    }
+
+    try {
+      const { models } = await listOpenAIModels();
+      const match = models.find((model) => model.id === modelId || model.model === modelId) || null;
+      return resolveOpenAIEffortForModel(match, desired).effort;
+    } catch {
+      return desired;
+    }
+  }
+
+  private extractCodexAgentText(item: unknown): string {
+    if (!item || typeof item !== 'object') return '';
+    const payload = item as Record<string, unknown>;
+    if (typeof payload.text === 'string') {
+      return payload.text;
+    }
+    if (Array.isArray(payload.content)) {
+      const parts: string[] = [];
+      for (const part of payload.content) {
+        if (typeof part === 'string') {
+          parts.push(part);
+          continue;
+        }
+        if (!part || typeof part !== 'object') continue;
+        const node = part as Record<string, unknown>;
+        if (typeof node.text === 'string') {
+          parts.push(node.text);
+        } else if (typeof node.content === 'string') {
+          parts.push(node.content);
+        }
+      }
+      return parts.join('');
+    }
+    return '';
+  }
+
+  private async spawnCodexAndManage(config: CodexSpawnConfig): Promise<AgentChatRun> {
+    const { runKey, workingDir, stdinContent, isResume, claudeSessionId, env, model, effort } = config;
+
+    const runId = `run-${runKey}-${Date.now()}`;
+    const shell: BaseRun = {
+      runId,
+      process: null,
+      status: 'running',
+      events: [],
+      listeners: new Set(),
+      startedAt: Date.now(),
+      assistantText: '',
+      contentBlocks: [],
+      toolCalls: [],
+      claudeSessionId,
+    };
+
+    const run = this.createRun(
+      {
+        runKey,
+        workingDir,
+        stdinContent,
+        isResume,
+        claudeSessionId,
+        extraCliArgs: [],
+        env,
+      },
+      shell,
+    );
+    this.runs.set(runKey, run);
+
+    const args = ['exec'];
+    if (isResume && claudeSessionId) {
+      args.push('resume', claudeSessionId);
+    }
+    args.push('--json', '--skip-git-repo-check');
+    if (model) {
+      args.push('-m', model);
+    }
+    args.push('-c', `model_reasoning_effort="${effort}"`);
+
+    const child = spawnCodex(args, {
+      cwd: workingDir,
+      shell: false,
+      env,
+      windowsHide: true,
+    });
+    run.process = child;
+
+    child.stdin!.write(stdinContent);
+    child.stdin!.end();
+
+    const lineBuffer = new LineBuffer();
+    let sawAssistantOutput = false;
+    let doneEmitted = false;
+    let stderrBuf = '';
+
+    const handleCodexLine = (line: string) => {
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        return;
+      }
+
+      if (parsed.type === 'thread.started' && typeof parsed.thread_id === 'string') {
+        run.claudeSessionId = parsed.thread_id;
+        return;
+      }
+
+      if (parsed.type === 'item.completed') {
+        const item = parsed.item as Record<string, unknown> | undefined;
+        if (!item || item.type !== 'agent_message') return;
+        const text = this.extractCodexAgentText(item);
+        if (!text) return;
+        sawAssistantOutput = true;
+        this.trackAndEmit(run, { type: 'text_delta', text });
+        return;
+      }
+
+      if (parsed.type === 'turn.completed' && !doneEmitted) {
+        doneEmitted = true;
+        this.trackAndEmit(run, { type: 'done' });
+      }
+    };
+
+    child.stdout!.on('data', (chunk: Buffer) => {
+      const text = chunk.toString('utf-8');
+      const lines = lineBuffer.feed(text);
+      for (const line of lines) {
+        handleCodexLine(line);
+      }
+    });
+
+    child.stderr!.on('data', (chunk: Buffer) => {
+      stderrBuf += chunk.toString('utf-8');
+      if (stderrBuf.length > 8_000) {
+        stderrBuf = stderrBuf.slice(-8_000);
+      }
+    });
+
+    child.on('close', async (code) => {
+      run.process = null;
+
+      const remaining = lineBuffer.flush();
+      if (remaining) {
+        handleCodexLine(remaining);
+      }
+
+      const aborted = run.status === 'stopped';
+      const codexParser = new ClaudeStreamParser();
+      codexParser.sessionId = run.claudeSessionId || null;
+
+      await this.onProcessClose(run, aborted, codexParser);
+      await this.persistAfterClose(run, aborted);
+
+      const failedWithoutOutput = !aborted && code !== 0 && !sawAssistantOutput;
+      if (failedWithoutOutput) {
+        const details = stderrBuf.trim();
+        this.trackAndEmit(
+          run,
+          { type: 'error', message: `Codex exited with code ${code}${details ? `: ${details}` : ''}` },
+        );
+      }
+
+      if (!doneEmitted) {
+        this.trackAndEmit(run, { type: 'done' });
+      }
+
+      if (run.status === 'running') {
+        run.status = failedWithoutOutput ? 'failed' : 'completed';
+      }
+      run.completedAt = Date.now();
+    });
+
+    child.on('error', async (err) => {
+      run.process = null;
+      this.trackAndEmit(run, { type: 'error', message: `Failed to spawn codex: ${err.message}` });
+      this.trackAndEmit(run, { type: 'done' });
+      run.status = 'failed';
+      run.completedAt = Date.now();
+      await this.persistAfterClose(run, false);
+    });
+
+    return run;
+  }
+
   private async loadAgent(agentId: string): Promise<Agent> {
     const agentsData = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
     const agent = agentsData.agents.find(a => a.id === agentId && !a.archived);
@@ -689,6 +921,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       sessionTitle: diskSession.title,
       provider: diskSession.provider,
       model: diskSession.model,
+      effort: diskSession.effort,
       messages: [...diskSession.messages],
     };
   }
@@ -704,6 +937,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       claudeSessionId: run.claudeSessionId,
       provider: run.provider,
       model: run.model,
+      effort: run.effort,
       createdAt: new Date(run.startedAt).toISOString(),
       updatedAt: now,
       parentSessionId: run.parentSessionId,
@@ -1038,11 +1272,28 @@ async function _legacyBuildPreloadedContextSection(contextIds: string[] | undefi
 
 const globalForAC = globalThis as unknown as {
   __agentChatManager?: AgentChatManager;
+  __agentChatManagerRev?: number;
 };
+
+const AGENT_CHAT_MANAGER_REV = 2;
+
+// In dev, replace stale singleton exactly once per revision.
+if (
+  process.env.NODE_ENV !== 'production'
+  && globalForAC.__agentChatManager
+  && globalForAC.__agentChatManagerRev !== AGENT_CHAT_MANAGER_REV
+) {
+  const staleManager = globalForAC.__agentChatManager as AgentChatManager & { dispose?: () => void };
+  if (typeof staleManager.dispose === 'function') {
+    staleManager.dispose();
+  }
+  globalForAC.__agentChatManager = undefined;
+}
 
 export const agentChatManager =
   globalForAC.__agentChatManager ?? new AgentChatManager();
 
 if (process.env.NODE_ENV !== 'production') {
   globalForAC.__agentChatManager = agentChatManager;
+  globalForAC.__agentChatManagerRev = AGENT_CHAT_MANAGER_REV;
 }

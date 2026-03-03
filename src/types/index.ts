@@ -104,6 +104,9 @@ export type ProviderId =
 /** 推理努力等级 */
 export type EffortLevel = 'low' | 'medium' | 'high';
 
+/** OpenAI/Codex 推理努力等级 */
+export type OpenAIReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
+
 /** Claude Code 配置 */
 export interface ClaudeSettings {
   /** AI 供应商 */
@@ -124,6 +127,8 @@ export interface ClaudeSettings {
   skipPermissions?: boolean;
   /** 推理努力等级（low/medium/high），默认 high */
   effortLevel?: EffortLevel;
+  /** OpenAI/Codex 推理努力等级（low/medium/high/xhigh），默认 xhigh */
+  openaiReasoningEffort?: OpenAIReasoningEffort;
   /** 每次对话最大 agentic 轮次，0 = 不限制 */
   maxTurns?: number;
   /** 新建 Agent 时是否默认暴露提示词路径（默认 true） */

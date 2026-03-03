@@ -25,6 +25,10 @@ interface ChatInputProps {
   modelOptions?: Array<{ value: string; label: string }>;
   modelValue?: string;
   onModelChange?: (model: string) => void;
+  effortOptions?: Array<{ value: string; label: string }>;
+  effortValue?: string;
+  onEffortChange?: (effort: string) => void;
+  effortLabel?: string;
 }
 
 export const ChatInput = memo(function ChatInput({
@@ -44,6 +48,10 @@ export const ChatInput = memo(function ChatInput({
   modelOptions,
   modelValue,
   onModelChange,
+  effortOptions,
+  effortValue,
+  onEffortChange,
+  effortLabel,
 }: ChatInputProps) {
   const [input, setInput] = useState('');
   const [pendingImages, setPendingImages] = useState<string[]>([]);
@@ -156,6 +164,24 @@ export const ChatInput = memo(function ChatInput({
               title="选择模型"
             >
               {modelOptions.map((opt) => (
+                <option key={opt.value} value={opt.value} className="bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {onEffortChange && effortOptions && effortOptions.length > 0 && (
+          <label className="flex items-center gap-1 rounded-full border border-zinc-200 bg-white/80 px-2 py-0.5 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-300">
+            <span className="whitespace-nowrap font-medium">{effortLabel || '推理档位'}</span>
+            <select
+              value={effortValue ?? ''}
+              onChange={(e) => onEffortChange(e.target.value)}
+              disabled={isStreaming}
+              className="min-w-[96px] rounded-sm bg-transparent text-xs font-medium text-zinc-900 outline-none dark:text-zinc-100"
+              title={effortLabel || '选择推理档位'}
+            >
+              {effortOptions.map((opt) => (
                 <option key={opt.value} value={opt.value} className="bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
                   {opt.label}
                 </option>

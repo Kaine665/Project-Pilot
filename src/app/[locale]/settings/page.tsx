@@ -15,7 +15,54 @@ import {
   SettingsDataSection,
   SettingsPrivacySection,
 } from '@/components/settings-sections';
-import type { ProviderId, ClaudeAuthMode, EffortLevel } from '@/types';
+import type { ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort } from '@/types';
+
+type OAuthAuthState = 'authenticated' | 'not_authenticated' | 'unknown';
+const OPENAI_REASONING_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
+
+interface OpenAIModelCatalogItem {
+  id: string;
+  model: string;
+  displayName: string;
+  isDefault?: boolean;
+  defaultReasoningEffort: OpenAIReasoningEffort;
+  supportedReasoningEfforts: OpenAIReasoningEffort[];
+}
+
+function normalizeOAuthAuthState(data: unknown): OAuthAuthState {
+  if (data && typeof data === 'object') {
+    const payload = data as Record<string, unknown>;
+    if (payload.authState === 'authenticated' || payload.authState === 'not_authenticated' || payload.authState === 'unknown') {
+      return payload.authState;
+    }
+    if (payload.authenticated === true) return 'authenticated';
+    if (payload.authenticated === false) return 'not_authenticated';
+  }
+  return 'unknown';
+}
+
+function isOpenAIReasoningEffort(value: unknown): value is OpenAIReasoningEffort {
+  return typeof value === 'string' && OPENAI_REASONING_EFFORTS.includes(value as OpenAIReasoningEffort);
+}
+
+function resolveOpenAIEffortForModel(
+  model: OpenAIModelCatalogItem | null,
+  desired: OpenAIReasoningEffort,
+): { effort: OpenAIReasoningEffort; fallbacked: boolean } {
+  const supported = Array.isArray(model?.supportedReasoningEfforts) && model!.supportedReasoningEfforts.length > 0
+    ? model!.supportedReasoningEfforts
+    : OPENAI_REASONING_EFFORTS;
+  if (supported.includes(desired)) {
+    return { effort: desired, fallbacked: false };
+  }
+  if (supported.includes('high')) {
+    return { effort: 'high', fallbacked: true };
+  }
+  if (model?.defaultReasoningEffort && supported.includes(model.defaultReasoningEffort)) {
+    return { effort: model.defaultReasoningEffort, fallbacked: true };
+  }
+  return { effort: supported[0] || 'high', fallbacked: true };
+}
 
 export default function SettingsPage() {
   const t = useTranslations('settings');
@@ -35,6 +82,11 @@ export default function SettingsPage() {
   const [customModel, setCustomModel] = useState('');
   const [skipPermissions, setSkipPermissions] = useState(true);
   const [effortLevel, setEffortLevel] = useState<EffortLevel>('high');
+  const [openaiReasoningEffort, setOpenaiReasoningEffort] = useState<OpenAIReasoningEffort>('xhigh');
+  const [openaiReasoningFallbackNotice, setOpenaiReasoningFallbackNotice] = useState('');
+  const [openaiModels, setOpenaiModels] = useState<OpenAIModelCatalogItem[]>([]);
+  const [openaiModelsLoading, setOpenaiModelsLoading] = useState(false);
+  const [openaiModelsLoadFailed, setOpenaiModelsLoadFailed] = useState(false);
   const [maxTurns, setMaxTurns] = useState(0);
   const [defaultExposePromptPath, setDefaultExposePromptPath] = useState(true);
   const [baseUrl, setBaseUrl] = useState('');
@@ -91,6 +143,7 @@ export default function SettingsPage() {
     providerId: ProviderId,
     incomingModel?: string,
     libraryMap?: Partial<Record<ProviderId, string[]>>,
+    openaiCatalog?: OpenAIModelCatalogItem[],
   ) => {
     const p = getProviderPreset(providerId);
     const library = (libraryMap?.[providerId] || []).map((m) => m.trim());
@@ -105,6 +158,12 @@ export default function SettingsPage() {
       setCustomModel(saved);
       return;
     }
+    if (providerId === 'openai' && Array.isArray(openaiCatalog) && openaiCatalog.length > 0) {
+      const preferred = openaiCatalog.find((m) => m.isDefault) || openaiCatalog[0];
+      setModel(preferred.id);
+      setCustomModel('');
+      return;
+    }
     if (p.models.length > 0) {
       setModel(p.models[0].id);
       setCustomModel('');
@@ -116,6 +175,15 @@ export default function SettingsPage() {
 
   const modelSelectOptions = useMemo(() => {
     const options = preset.models.map((m) => ({ value: m.id, label: m.label }));
+    if (provider === 'openai') {
+      for (const row of openaiModels) {
+        const id = row.id.trim();
+        if (!id) continue;
+        if (!options.some((option) => option.value === id)) {
+          options.push({ value: id, label: row.displayName || id });
+        }
+      }
+    }
     const presetIds = new Set(options.map((o) => o.value));
     const extra = (providerModelLibrary[provider] || [])
       .map((id) => id.trim())
@@ -124,7 +192,7 @@ export default function SettingsPage() {
     options.push(...extra);
     options.push({ value: '__custom__', label: t('customModel') });
     return options;
-  }, [preset, providerModelLibrary, provider, t]);
+  }, [preset, providerModelLibrary, provider, t, openaiModels]);
 
   const isPresetModel = useMemo(
     () => modelSelectOptions.some((o) => o.value === model && o.value !== '__custom__'),
@@ -143,6 +211,10 @@ export default function SettingsPage() {
         setAuthMode(data.claude.authMode);
         setSkipPermissions(data.claude.skipPermissions !== false);
         setEffortLevel(data.claude.effortLevel || 'high');
+        const loadedOpenAIEffort = isOpenAIReasoningEffort(data.claude.openaiReasoningEffort)
+          ? data.claude.openaiReasoningEffort
+          : 'xhigh';
+        setOpenaiReasoningEffort(loadedOpenAIEffort);
         setMaxTurns(data.claude.maxTurns || 0);
         setDefaultExposePromptPath(data.claude.defaultExposePromptPath !== false);
         setBaseUrl(data.claude.baseUrl || '');
@@ -169,6 +241,18 @@ export default function SettingsPage() {
           : {};
         setProviderModelLibrary(incomingLibrary);
         applyProviderModelState(loadedProvider, incomingModels[loadedProvider], incomingLibrary);
+
+        if (!isOpenAIReasoningEffort(data.claude.openaiReasoningEffort)) {
+          fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              claude: {
+                openaiReasoningEffort: 'xhigh',
+              },
+            }),
+          }).catch(() => {});
+        }
       }
     } catch (err) {
       console.error('Failed to load settings:', err);
@@ -210,6 +294,91 @@ export default function SettingsPage() {
     setLoginPending(false);
   }, [provider, authMode]);
 
+  useEffect(() => {
+    if (provider !== 'openai') {
+      setOpenaiModelsLoading(false);
+      setOpenaiModelsLoadFailed(false);
+      setOpenaiReasoningFallbackNotice('');
+      return;
+    }
+
+    let cancelled = false;
+    setOpenaiModelsLoading(true);
+    setOpenaiModelsLoadFailed(false);
+
+    (async () => {
+      try {
+        const res = await fetch('/api/settings/openai-models', { cache: 'no-store' });
+        const data = await res.json();
+        if (!res.ok || !data?.ok || !Array.isArray(data?.models)) {
+          throw new Error('failed to load openai models');
+        }
+        if (cancelled) return;
+
+        const mapped: OpenAIModelCatalogItem[] = data.models
+          .map((row: unknown) => {
+            if (!row || typeof row !== 'object') return null;
+            const model = row as Record<string, unknown>;
+            const id = typeof model.id === 'string' ? model.id.trim() : '';
+            if (!id) return null;
+            const displayName = typeof model.displayName === 'string' ? model.displayName : id;
+            const defaultReasoningEffort = isOpenAIReasoningEffort(model.defaultReasoningEffort)
+              ? model.defaultReasoningEffort
+              : 'high';
+            const supportedReasoningEfforts = Array.isArray(model.supportedReasoningEfforts)
+              ? model.supportedReasoningEfforts.filter(isOpenAIReasoningEffort)
+              : [];
+            return {
+              id,
+              model: typeof model.model === 'string' ? model.model : id,
+              displayName,
+              isDefault: model.isDefault === true,
+              defaultReasoningEffort,
+              supportedReasoningEfforts: supportedReasoningEfforts.length > 0 ? supportedReasoningEfforts : OPENAI_REASONING_EFFORTS,
+            } as OpenAIModelCatalogItem;
+          })
+          .filter((item: OpenAIModelCatalogItem | null): item is OpenAIModelCatalogItem => !!item);
+
+        setOpenaiModels(mapped);
+      } catch {
+        if (!cancelled) {
+          setOpenaiModelsLoadFailed(true);
+        }
+      } finally {
+        if (!cancelled) {
+          setOpenaiModelsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [provider]);
+
+  useEffect(() => {
+    if (provider !== 'openai') {
+      return;
+    }
+
+    const effectiveModel = (model === '__custom__' ? customModel : model).trim();
+    let currentModel = openaiModels.find((item) => item.id === effectiveModel || item.model === effectiveModel) || null;
+
+    if (!effectiveModel && openaiModels.length > 0) {
+      const fallbackModel = openaiModels.find((item) => item.isDefault) || openaiModels[0];
+      setModel(fallbackModel.id);
+      setCustomModel('');
+      setCurrentProviderModel(fallbackModel.id);
+      currentModel = fallbackModel;
+    }
+
+    const resolved = resolveOpenAIEffortForModel(currentModel, openaiReasoningEffort);
+    if (resolved.effort !== openaiReasoningEffort) {
+      setOpenaiReasoningEffort(resolved.effort);
+    }
+    setOpenaiReasoningFallbackNotice(resolved.fallbacked ? t('openaiReasoningFallbackHigh') : '');
+  }, [provider, model, customModel, openaiModels, openaiReasoningEffort, setCurrentProviderModel, t]);
+
   const navItems = useMemo(() => [
     { id: 'ai', icon: Brain, label: t('aiConfig') },
     { id: 'claude', icon: Wrench, label: t('claudeCodeConfig') },
@@ -217,6 +386,15 @@ export default function SettingsPage() {
     { id: 'data', icon: Database, label: t('dataManagement') },
     { id: 'privacy', icon: Eye, label: t('privacy') },
   ], [t]);
+  const openaiReasoningOptions = useMemo(
+    () => [
+      { value: 'low' as OpenAIReasoningEffort, label: t('openaiReasoningLow') },
+      { value: 'medium' as OpenAIReasoningEffort, label: t('openaiReasoningMedium') },
+      { value: 'high' as OpenAIReasoningEffort, label: t('openaiReasoningHigh') },
+      { value: 'xhigh' as OpenAIReasoningEffort, label: t('openaiReasoningXhigh') },
+    ],
+    [t],
+  );
 
   const handleProviderChange = (newProvider: ProviderId) => {
     const currentEffectiveModel = (model === '__custom__' ? customModel : model).trim();
@@ -232,7 +410,7 @@ export default function SettingsPage() {
 
     setProvider(newProvider);
     const p = getProviderPreset(newProvider);
-    applyProviderModelState(newProvider, providerModels[newProvider], providerModelLibrary);
+    applyProviderModelState(newProvider, providerModels[newProvider], providerModelLibrary, openaiModels);
     if (!p.supportsOAuth) {
       setAuthMode('api_key');
     }
@@ -289,13 +467,14 @@ export default function SettingsPage() {
           providerModels: nextProviderModels,
           providerModelLibrary: nextModelLibrary,
           model: effectiveModel,
+          openaiReasoningEffort,
         },
       }),
     });
     if (!res.ok) {
       throw new Error('Failed to persist model settings');
     }
-  }, [provider]);
+  }, [provider, openaiReasoningEffort]);
 
   const handleTestConnection = async () => {
     const effectiveModel = (model === '__custom__' ? customModel : model).trim();
@@ -367,6 +546,7 @@ export default function SettingsPage() {
             providerModels: nextProviderModels,
             providerModelLibrary: nextModelLibrary,
             model: effectiveModel,
+            openaiReasoningEffort,
             skipPermissions, effortLevel, maxTurns, defaultExposePromptPath, baseUrl,
           },
           general: { telemetry },
@@ -391,6 +571,8 @@ export default function SettingsPage() {
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const pollOAuthState = useCallback(async (rounds = 60, intervalMs = 1500) => {
+    let sawUnknownState = false;
+
     for (let i = 0; i < rounds; i++) {
       let processAliveSnapshot = false;
       try {
@@ -413,12 +595,19 @@ export default function SettingsPage() {
 
         if (statusRes.ok) {
           const statusData = await statusRes.json();
-          if (statusData?.authenticated) {
+          const authState = normalizeOAuthAuthState(statusData);
+          if (authState === 'authenticated') {
             setOauthStatus('authenticated');
             setOauthFlowMessage(t('oauthFlowCompleted'));
             setLoginPending(false);
             setOauthProcessAlive(false);
             return true;
+          }
+          if (authState === 'unknown') {
+            sawUnknownState = true;
+            if (typeof statusData?.rawOutput === 'string' && statusData.rawOutput.trim()) {
+              console.warn('[OAuth] auth status unknown during polling', statusData.rawOutput);
+            }
           }
         }
       } catch (err) {
@@ -432,7 +621,7 @@ export default function SettingsPage() {
     }
 
     setOauthStatus('not_authenticated');
-    setOauthFlowMessage(t('oauthFlowNotFinished'));
+    setOauthFlowMessage(sawUnknownState ? t('oauthFlowStatusUnknown') : t('oauthFlowNotFinished'));
     setLoginPending(false);
     setOauthProcessAlive(false);
     return false;
@@ -443,9 +632,19 @@ export default function SettingsPage() {
     try {
       const res = await fetch(`/api/settings/auth-status?provider=${provider}`);
       const data = await res.json();
-      const authenticated = !!data?.authenticated;
+      const authState = normalizeOAuthAuthState(data);
+      const authenticated = authState === 'authenticated';
       setOauthStatus(authenticated ? 'authenticated' : 'not_authenticated');
-      setOauthFlowMessage(authenticated ? t('oauthFlowCompleted') : t('oauthFlowNotAuthenticated'));
+      if (authenticated) {
+        setOauthFlowMessage(t('oauthFlowCompleted'));
+      } else if (authState === 'unknown') {
+        setOauthFlowMessage(t('oauthFlowStatusUnknown'));
+        if (typeof data?.rawOutput === 'string' && data.rawOutput.trim()) {
+          console.warn('[OAuth] auth status unknown', data.rawOutput);
+        }
+      } else {
+        setOauthFlowMessage(t('oauthFlowNotAuthenticated'));
+      }
       if (authenticated) {
         setLoginPending(false);
         setOauthProcessAlive(false);
@@ -499,19 +698,13 @@ export default function SettingsPage() {
     setOauthFlowMessage(t('oauthFlowStarting'));
     setOauthProcessAlive(false);
 
-    let popup: Window | null = null;
+    const popupRef: { current: Window | null } = { current: null };
     let startedPolling = false;
-    try {
-      // Open a controllable tab synchronously first, then navigate it after URL is ready.
-      popup = window.open('about:blank', '_blank');
-    } catch {
-      popup = null;
-    }
 
     const openOrNavigate = (url: string): boolean => {
       try {
-        if (popup && !popup.closed) {
-          popup.location.replace(url);
+        if (popupRef.current && !popupRef.current.closed) {
+          popupRef.current.location.replace(url);
           return true;
         }
       } catch {
@@ -519,7 +712,7 @@ export default function SettingsPage() {
       }
       const newPopup = window.open(url, '_blank');
       if (newPopup) {
-        popup = newPopup;
+        popupRef.current = newPopup;
         return true;
       }
       return false;
@@ -530,36 +723,103 @@ export default function SettingsPage() {
       return openOrNavigate(url);
     };
 
+    const hasCode = (value: unknown): boolean => {
+      return typeof value === 'string' && value.trim().length > 0;
+    };
+
+    const buildLoginPayload = (force?: boolean) => JSON.stringify({
+      provider,
+      force: typeof force === 'boolean' ? force : provider === 'openai',
+      openaiLoginMode: provider === 'openai' ? 'browser' : undefined,
+    });
+
     try {
       const loginRes = await fetch('/api/settings/auth-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider }),
+        body: buildLoginPayload(),
       });
-      const loginData = await loginRes.json();
+      const loginData = await loginRes.json() as Record<string, unknown>;
 
       if (!loginRes.ok) {
         setOauthStatus('not_authenticated');
         setOauthFlowMessage(typeof loginData?.error === 'string' ? loginData.error : t('oauthFlowStartFailed'));
-        if (popup && !popup.closed) popup.close();
+        if (popupRef.current && !popupRef.current.closed) popupRef.current.close();
         return;
       }
 
+      let effectiveLoginData = loginData;
       if (loginData?.alreadyAuthenticated) {
-        setOauthStatus('authenticated');
-        setOauthFlowMessage(t('oauthFlowCompleted'));
-        if (popup && !popup.closed) popup.close();
-        return;
+        if (provider !== 'openai') {
+          setOauthStatus('authenticated');
+          setOauthFlowMessage(t('oauthAlreadyAuthenticated'));
+          if (popupRef.current && !popupRef.current.closed) popupRef.current.close();
+          return;
+        }
+
+        try {
+          const confirmRes = await fetch(`/api/settings/auth-status?provider=${provider}`);
+          const confirmData = await confirmRes.json() as Record<string, unknown>;
+          const confirmState = normalizeOAuthAuthState(confirmData);
+          if (confirmState === 'authenticated') {
+            setOauthStatus('authenticated');
+            setOauthFlowMessage(t('oauthAlreadyAuthenticated'));
+            if (popupRef.current && !popupRef.current.closed) popupRef.current.close();
+            return;
+          }
+
+          setOauthStatus('not_authenticated');
+          setOauthFlowMessage(t('oauthFlowStateMismatchContinue'));
+          if (typeof confirmData?.rawOutput === 'string' && confirmData.rawOutput.trim()) {
+            console.warn('[OAuth] OpenAI status mismatch after alreadyAuthenticated', confirmData.rawOutput);
+          }
+
+          const retryRes = await fetch('/api/settings/auth-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: buildLoginPayload(true),
+          });
+          const retryData = await retryRes.json() as Record<string, unknown>;
+          if (!retryRes.ok) {
+            setOauthStatus('not_authenticated');
+            setOauthFlowMessage(typeof retryData?.error === 'string' ? retryData.error : t('oauthFlowStartFailed'));
+            if (popupRef.current && !popupRef.current.closed) popupRef.current.close();
+            return;
+          }
+
+          effectiveLoginData = retryData;
+          if (effectiveLoginData?.alreadyAuthenticated) {
+            setOauthStatus('not_authenticated');
+            setOauthFlowMessage(t('oauthFlowStatusUnknown'));
+            if (popupRef.current && !popupRef.current.closed) popupRef.current.close();
+            return;
+          }
+        } catch (err) {
+          console.error('OAuth mismatch verification failed:', err);
+          setOauthStatus('not_authenticated');
+          setOauthFlowMessage(t('oauthFlowStatusUnknown'));
+          if (popupRef.current && !popupRef.current.closed) popupRef.current.close();
+          return;
+        }
       }
 
-      if (typeof loginData?.loginUrl === 'string' && loginData.loginUrl.startsWith('http')) {
-        setOauthLoginUrl(loginData.loginUrl);
+      if (typeof effectiveLoginData?.loginUrl === 'string' && effectiveLoginData.loginUrl.startsWith('http')) {
+        setOauthLoginUrl(effectiveLoginData.loginUrl);
       }
-      if (typeof loginData?.loginCode === 'string') {
-        setOauthLoginCode(loginData.loginCode);
+      if (typeof effectiveLoginData?.loginCode === 'string') {
+        setOauthLoginCode(effectiveLoginData.loginCode);
       }
 
-      let opened = tryOpenLoginUrl(loginData?.loginUrl);
+      let opened = false;
+      if (provider !== 'openai') {
+        opened = tryOpenLoginUrl(effectiveLoginData?.loginUrl);
+      } else {
+        opened = tryOpenLoginUrl(effectiveLoginData?.loginUrl);
+        if (!opened && hasCode(effectiveLoginData?.loginCode)) {
+          const openaiUrl = 'https://auth.openai.com/codex/device';
+          opened = openOrNavigate(openaiUrl);
+        }
+      }
 
       if (!opened) {
         for (let i = 0; i < 15; i++) {
@@ -574,24 +834,31 @@ export default function SettingsPage() {
             setOauthLoginCode(pollData.loginCode);
           }
           setOauthProcessAlive(!!pollData?.processAlive);
-
-          opened = tryOpenLoginUrl(pollData?.loginUrl);
+          if (provider !== 'openai') {
+            opened = tryOpenLoginUrl(pollData?.loginUrl);
+          } else {
+            opened = tryOpenLoginUrl(pollData?.loginUrl);
+            if (!opened && hasCode(pollData?.loginCode)) {
+              const openaiUrl = 'https://auth.openai.com/codex/device';
+              opened = openOrNavigate(openaiUrl);
+            }
+          }
           if (opened || !pollData?.processAlive) break;
         }
       }
 
-      if (!opened && provider === 'openai') {
-        opened = openOrNavigate('https://auth.openai.com/codex/device');
-      }
-
-      if (!opened && popup && !popup.closed) {
-        popup.close();
+      if (!opened && popupRef.current && !popupRef.current.closed) {
+        popupRef.current.close();
       }
       if (!opened) {
-        const manualUrl = provider === 'openai'
-          ? 'https://auth.openai.com/codex/device'
-          : 'https://claude.ai/login';
-        setOauthFlowMessage(`${t('oauthOpenManually')}: ${manualUrl}`);
+        if (provider === 'openai' && !hasCode(oauthLoginCode) && !hasCode(effectiveLoginData?.loginCode)) {
+          setOauthFlowMessage(t('oauthFlowWaiting'));
+        } else {
+          const manualUrl = provider === 'openai'
+            ? 'https://auth.openai.com/codex/device'
+            : 'https://claude.ai/login';
+          setOauthFlowMessage(`${t('oauthOpenManually')}: ${manualUrl}`);
+        }
       } else {
         setOauthFlowMessage(t('oauthFlowWaiting'));
       }
@@ -603,14 +870,14 @@ export default function SettingsPage() {
       console.error('Failed to trigger login:', err);
       setOauthStatus('not_authenticated');
       setOauthFlowMessage(t('oauthFlowStartFailed'));
-      if (popup && !popup.closed) popup.close();
+      if (popupRef.current && !popupRef.current.closed) popupRef.current.close();
     } finally {
       if (!startedPolling) {
         setLoginPending(false);
         setOauthProcessAlive(false);
       }
     }
-  }, [loginPending, pollOAuthState, provider, t]);
+  }, [loginPending, oauthLoginCode, pollOAuthState, provider, t]);
 
   const switchLocale = (newLocale: string) => {
     router.push(pathname, { locale: newLocale });
@@ -739,6 +1006,11 @@ export default function SettingsPage() {
                 t={t} tActions={tActions} btnActive={btnActive} btnInactive={btnInactive}
                 provider={provider} authMode={authMode} apiKey={apiKey}
                 model={model} customModel={customModel} baseUrl={baseUrl}
+                openaiReasoningEffort={openaiReasoningEffort}
+                openaiReasoningOptions={openaiReasoningOptions}
+                openaiModelsLoading={openaiModelsLoading}
+                openaiModelsLoadFailed={openaiModelsLoadFailed}
+                openaiReasoningFallbackNotice={openaiReasoningFallbackNotice}
                 oauthStatus={oauthStatus}
                 oauthLoginUrl={oauthLoginUrl}
                 oauthLoginCode={oauthLoginCode}
@@ -752,6 +1024,7 @@ export default function SettingsPage() {
                 onProviderChange={handleProviderChange} onAuthModeChange={setAuthMode}
                 onApiKeyChange={setCurrentProviderApiKey} onModelChange={handleModelChange}
                 onCustomModelChange={handleCustomModelChange} onBaseUrlChange={setBaseUrl}
+                onOpenAIReasoningEffortChange={setOpenaiReasoningEffort}
                 onOauthCodeInputChange={setOauthCodeInput}
                 onSubmitOAuthCode={submitOAuthCode}
                 onCheckOAuthStatus={checkOAuthStatus} onTriggerOAuthLogin={triggerOAuthLogin}

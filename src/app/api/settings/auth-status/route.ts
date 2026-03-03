@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { execClaude } from '@/lib/claude-cli';
 import { execCodex } from '@/lib/codex-cli';
-import { parseAuthStatusText } from '@/lib/oauth-status';
+import { parseAuthState, type AuthState } from '@/lib/oauth-status';
 import type { ProviderId } from '@/types';
 
 /**
@@ -12,6 +12,12 @@ function parseProvider(value: string | null): ProviderId {
   if (value === 'openai') return 'openai';
   if (value === 'anthropic') return 'anthropic';
   return 'anthropic';
+}
+
+function boolToAuthState(value: boolean | undefined): AuthState {
+  if (value === true) return 'authenticated';
+  if (value === false) return 'not_authenticated';
+  return 'unknown';
 }
 
 export async function GET(req: Request) {
@@ -26,17 +32,21 @@ export async function GET(req: Request) {
       });
 
       const raw = `${stdout}${stderr}`.trim();
+      const authState = parseAuthState(raw);
       return NextResponse.json({
         provider,
-        authenticated: parseAuthStatusText(raw),
+        authState,
+        authenticated: authState === 'authenticated',
         rawOutput: raw,
       });
     } catch (err) {
       const e = err as Error & { stdout?: string; stderr?: string };
       const raw = `${e.stdout ?? ''}${e.stderr ?? ''}`.trim();
+      const authState = parseAuthState(raw || e.message || '');
       return NextResponse.json({
         provider,
-        authenticated: parseAuthStatusText(raw),
+        authState,
+        authenticated: authState === 'authenticated',
         rawOutput: raw || e.message || 'Unknown error',
       });
     }
@@ -49,18 +59,19 @@ export async function GET(req: Request) {
     });
 
     const raw = (stdout || stderr || '').trim();
-    let isLoggedIn = false;
+    let authState: AuthState = 'unknown';
 
     try {
       const parsed = JSON.parse(raw) as { loggedIn?: boolean; authenticated?: boolean };
-      isLoggedIn = !!(parsed.loggedIn ?? parsed.authenticated);
+      authState = boolToAuthState(parsed.loggedIn ?? parsed.authenticated);
     } catch {
-      isLoggedIn = parseAuthStatusText(`${stdout}${stderr}`);
+      authState = parseAuthState(`${stdout}${stderr}`);
     }
 
     return NextResponse.json({
       provider,
-      authenticated: isLoggedIn,
+      authState,
+      authenticated: authState === 'authenticated',
       rawOutput: raw,
     });
   } catch (err) {
@@ -71,15 +82,19 @@ export async function GET(req: Request) {
     if (raw) {
       try {
         const parsed = JSON.parse(raw) as { loggedIn?: boolean; authenticated?: boolean };
+        const authState = boolToAuthState(parsed.loggedIn ?? parsed.authenticated);
         return NextResponse.json({
           provider,
-          authenticated: !!(parsed.loggedIn ?? parsed.authenticated),
+          authState,
+          authenticated: authState === 'authenticated',
           rawOutput: raw,
         });
       } catch {
+        const authState = parseAuthState(raw);
         return NextResponse.json({
           provider,
-          authenticated: parseAuthStatusText(raw),
+          authState,
+          authenticated: authState === 'authenticated',
           rawOutput: raw,
         });
       }
@@ -87,6 +102,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       provider,
+      authState: 'unknown' as const,
       authenticated: false,
       error: e.message || 'Unknown error',
     });

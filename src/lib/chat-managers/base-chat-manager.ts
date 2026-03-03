@@ -95,6 +95,16 @@ export abstract class BaseChatManager<TRun extends BaseRun> {
   }
 
   /**
+   * Release manager resources (used by dev hot-reload singleton reset).
+   */
+  dispose(): void {
+    if (this.sweepTimer) {
+      clearInterval(this.sweepTimer);
+      this.sweepTimer = null;
+    }
+  }
+
+  /**
    * Stop a running process.
    * Sends SIGTERM and calls the onStop hook for subclass-specific cleanup.
    */

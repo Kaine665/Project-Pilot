@@ -12,7 +12,7 @@ import { SaveKnowledgeDialog } from '@/components/save-knowledge-dialog';
 import { SessionDropdown } from '@/components/session-dropdown';
 import { GuestAgentOverlay } from '@/components/guest-agent-overlay';
 import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
-import type { Agent, ProviderId } from '@/types';
+import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
 import type { ChatMessage, ChatToolCall, ChatSSEEvent, ContentBlock } from '@/types';
 
 // Session list item (no messages)
@@ -37,6 +37,41 @@ interface AgentChatPanelProps {
 
 type IndexedSSEEvent = ChatSSEEvent & { _idx: number };
 type ModelSelectOption = { value: string; label: string };
+
+interface OpenAIModelCatalogItem {
+  id: string;
+  model: string;
+  displayName: string;
+  isDefault?: boolean;
+  defaultReasoningEffort: OpenAIReasoningEffort;
+  supportedReasoningEfforts: OpenAIReasoningEffort[];
+}
+
+const OPENAI_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
+
+function isOpenAIReasoningEffort(value: unknown): value is OpenAIReasoningEffort {
+  return typeof value === 'string' && OPENAI_EFFORTS.includes(value as OpenAIReasoningEffort);
+}
+
+function resolveEffortForOpenAIModel(
+  model: OpenAIModelCatalogItem | null,
+  desired: OpenAIReasoningEffort,
+): { effort: OpenAIReasoningEffort; fallbacked: boolean } {
+  const supported = Array.isArray(model?.supportedReasoningEfforts) && model!.supportedReasoningEfforts.length > 0
+    ? model!.supportedReasoningEfforts
+    : OPENAI_EFFORTS;
+
+  if (supported.includes(desired)) {
+    return { effort: desired, fallbacked: false };
+  }
+  if (supported.includes('high')) {
+    return { effort: 'high', fallbacked: true };
+  }
+  if (model?.defaultReasoningEffort && supported.includes(model.defaultReasoningEffort)) {
+    return { effort: model.defaultReasoningEffort, fallbacked: true };
+  }
+  return { effort: supported[0] || 'high', fallbacked: true };
+}
 
 const PROVIDER_LABELS: Record<ProviderId, string> = {
   anthropic: 'Anthropic',
@@ -80,11 +115,16 @@ export function AgentChatPanel({
   const [sessionTitle, setSessionTitle] = useState(hasProject ? t('chat.newSession') : '新会话');
   const [chatProvider, setChatProvider] = useState<ProviderId>('anthropic');
   const [chatModel, setChatModel] = useState('claude-sonnet-4-5-20250929');
+  const [chatEffort, setChatEffort] = useState<OpenAIReasoningEffort>('xhigh');
+  const [chatEffortFallbackNotice, setChatEffortFallbackNotice] = useState('');
   const [chatModelOptions, setChatModelOptions] = useState<ModelSelectOption[]>([
     { value: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5' },
   ]);
   const [providerModelsMap, setProviderModelsMap] = useState<Partial<Record<ProviderId, string>>>({});
   const [providerModelLibraryMap, setProviderModelLibraryMap] = useState<Partial<Record<ProviderId, string[]>>>({});
+  const [openaiModels, setOpenaiModels] = useState<OpenAIModelCatalogItem[]>([]);
+  const [openaiModelsLoading, setOpenaiModelsLoading] = useState(false);
+  const [openaiModelsLoadFailed, setOpenaiModelsLoadFailed] = useState(false);
 
   // Guest Agent（旁听 Agent）
   const [guestAgent, setGuestAgent] = useState<Agent | null>(null);
@@ -107,6 +147,7 @@ export function AgentChatPanel({
   const lastEventIdxRef = useRef<number>(-1);
   const finalizingRef = useRef(false);
   const sessionIdRef = useRef<string | null>(null);
+  const initTokenRef = useRef(0);
   const doSendRef = useRef<(text: string, images?: string[]) => void>(() => {});
 
   // Keep ref in sync
@@ -142,11 +183,21 @@ export function AgentChatPanel({
     () => PROVIDER_REGISTRY.map((p) => ({ value: p.id, label: PROVIDER_LABELS[p.id] || p.id })),
     [],
   );
+  const effortOptions = useMemo(
+    () => [
+      { value: 'low', label: t('settings.openaiReasoningLow') },
+      { value: 'medium', label: t('settings.openaiReasoningMedium') },
+      { value: 'high', label: t('settings.openaiReasoningHigh') },
+      { value: 'xhigh', label: t('settings.openaiReasoningXhigh') },
+    ],
+    [t],
+  );
 
   const buildModelOptionsForProvider = useCallback((
     providerId: ProviderId,
     modelsMap: Partial<Record<ProviderId, string>>,
     libraryMap: Partial<Record<ProviderId, string[]>>,
+    openaiCatalog: OpenAIModelCatalogItem[],
     fallbackModel?: string,
   ): ModelSelectOption[] => {
     const preset = getProviderPreset(providerId);
@@ -163,6 +214,19 @@ export function AgentChatPanel({
       if (!modelId) continue;
       if (!optionMap.has(modelId)) {
         optionMap.set(modelId, modelId);
+      }
+    }
+
+    if (providerId === 'openai') {
+      for (const model of openaiCatalog) {
+        const id = typeof model.id === 'string' ? model.id.trim() : '';
+        if (!id) continue;
+        const label = typeof model.displayName === 'string' && model.displayName.trim()
+          ? model.displayName.trim()
+          : id;
+        if (!optionMap.has(id)) {
+          optionMap.set(id, label);
+        }
       }
     }
 
@@ -197,6 +261,9 @@ export function AgentChatPanel({
         const incomingModelLibrary = (claude.providerModelLibrary && typeof claude.providerModelLibrary === 'object')
           ? { ...claude.providerModelLibrary as Partial<Record<ProviderId, string[]>> }
           : {};
+        const incomingOpenAIEffort = isOpenAIReasoningEffort(claude.openaiReasoningEffort)
+          ? claude.openaiReasoningEffort
+          : 'xhigh';
 
         if (!incomingProviderModels[provider] && typeof claude.model === 'string' && claude.model.trim()) {
           incomingProviderModels[provider] = claude.model.trim();
@@ -210,6 +277,7 @@ export function AgentChatPanel({
           provider,
           incomingProviderModels,
           incomingModelLibrary,
+          [],
           fallbackModel,
         );
         const preferred = (incomingProviderModels[provider] || fallbackModel || options[0]?.value || '').trim();
@@ -220,6 +288,7 @@ export function AgentChatPanel({
         setChatProvider(provider);
         setChatModelOptions(options);
         setChatModel(selected);
+        setChatEffort(incomingOpenAIEffort);
       } catch {
         // ignore
       }
@@ -231,11 +300,72 @@ export function AgentChatPanel({
   }, [buildModelOptionsForProvider]);
 
   useEffect(() => {
+    if (chatProvider !== 'openai') {
+      setOpenaiModelsLoadFailed(false);
+      setOpenaiModelsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setOpenaiModelsLoading(true);
+    setOpenaiModelsLoadFailed(false);
+
+    (async () => {
+      try {
+        const res = await fetch('/api/settings/openai-models', { cache: 'no-store' });
+        const data = await res.json();
+        if (!res.ok || !data?.ok || !Array.isArray(data?.models)) {
+          throw new Error('openai models request failed');
+        }
+        if (cancelled) return;
+
+        const models: OpenAIModelCatalogItem[] = data.models
+          .map((row: unknown) => {
+            if (!row || typeof row !== 'object') return null;
+            const model = row as Record<string, unknown>;
+            const id = typeof model.id === 'string' ? model.id.trim() : '';
+            if (!id) return null;
+            const displayName = typeof model.displayName === 'string' ? model.displayName : id;
+            const defaultEffort = isOpenAIReasoningEffort(model.defaultReasoningEffort)
+              ? model.defaultReasoningEffort
+              : 'high';
+            const supported = Array.isArray(model.supportedReasoningEfforts)
+              ? model.supportedReasoningEfforts.filter(isOpenAIReasoningEffort)
+              : [];
+            return {
+              id,
+              model: typeof model.model === 'string' ? model.model : id,
+              displayName,
+              isDefault: model.isDefault === true,
+              defaultReasoningEffort: defaultEffort,
+              supportedReasoningEfforts: supported.length > 0 ? supported : OPENAI_EFFORTS,
+            } as OpenAIModelCatalogItem;
+          })
+          .filter((item: OpenAIModelCatalogItem | null): item is OpenAIModelCatalogItem => !!item);
+
+        setOpenaiModels(models);
+      } catch {
+        if (cancelled) return;
+        setOpenaiModelsLoadFailed(true);
+      } finally {
+        if (!cancelled) {
+          setOpenaiModelsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chatProvider]);
+
+  useEffect(() => {
     const fallbackModel = (providerModelsMap[chatProvider] || '').trim();
     const options = buildModelOptionsForProvider(
       chatProvider,
       providerModelsMap,
       providerModelLibraryMap,
+      openaiModels,
       fallbackModel,
     );
 
@@ -250,7 +380,22 @@ export function AgentChatPanel({
       }
       return options[0]?.value || '';
     });
-  }, [chatProvider, providerModelsMap, providerModelLibraryMap, buildModelOptionsForProvider]);
+  }, [chatProvider, providerModelsMap, providerModelLibraryMap, buildModelOptionsForProvider, openaiModels]);
+
+  useEffect(() => {
+    if (chatProvider !== 'openai') {
+      setChatEffortFallbackNotice('');
+      return;
+    }
+
+    const modelId = chatModel.trim();
+    const matchedModel = openaiModels.find((model) => model.id === modelId || model.model === modelId) || null;
+    const resolved = resolveEffortForOpenAIModel(matchedModel, chatEffort);
+    if (resolved.effort !== chatEffort) {
+      setChatEffort(resolved.effort);
+    }
+    setChatEffortFallbackNotice(resolved.fallbacked ? t('settings.openaiReasoningFallbackHigh') : '');
+  }, [chatProvider, chatModel, chatEffort, openaiModels, t]);
 
   // Fetch session list
   const fetchSessionList = useCallback(async (agentId: string, pk?: string | null) => {
@@ -273,11 +418,12 @@ export function AgentChatPanel({
   }, []);
 
   // Load a session's full data (messages)
-  const loadSessionData = useCallback(async (sid: string) => {
+  const loadSessionData = useCallback(async (sid: string, token?: number) => {
     try {
       const res = await fetch(`/api/agent-chat/sessions/${sid}`, { cache: 'no-store' });
       if (!res.ok) return;
       const data = await res.json();
+      if (token !== undefined && initTokenRef.current !== token) return;
       const restored: ChatMessage[] = (data.messages ?? []).map(
         (m: { role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }, i: number) => ({
           id: `restored-${i}`,
@@ -289,6 +435,20 @@ export function AgentChatPanel({
       );
       setMessages(restored);
       setSessionTitle(data.title ?? '新会话');
+      if (typeof data.provider === 'string' && PROVIDER_REGISTRY.some((p) => p.id === data.provider)) {
+        setChatProvider(data.provider as ProviderId);
+      }
+      if (typeof data.model === 'string' && data.model.trim()) {
+        const restoredModel = data.model.trim();
+        setChatModel(restoredModel);
+        if (typeof data.provider === 'string' && PROVIDER_REGISTRY.some((p) => p.id === data.provider)) {
+          const providerId = data.provider as ProviderId;
+          setProviderModelsMap((prev) => ({ ...prev, [providerId]: restoredModel }));
+        }
+      }
+      if (isOpenAIReasoningEffort(data.effort)) {
+        setChatEffort(data.effort);
+      }
     } catch {
       // ignore
     }
@@ -480,6 +640,7 @@ export function AgentChatPanel({
     setStreamingBlocks([]);
     setErrorMsg(null);
     setSessionId(null);
+    sessionIdRef.current = null;
     setSessionTitle(hasProject ? t('chat.newSession') : '新会话');
     setSessionList([]);
     blocksRef.current = [];
@@ -498,6 +659,10 @@ export function AgentChatPanel({
 
   // Initialize: load sessions and auto-select
   useEffect(() => {
+    let cancelled = false;
+    const token = ++initTokenRef.current;
+    const isStale = () => cancelled || initTokenRef.current !== token;
+
     resetState();
 
     // In project mode without projectKey, nothing to load
@@ -506,24 +671,26 @@ export function AgentChatPanel({
     // Plain mode with null initialSessionId → new empty session
     if (!hasProject && initialSessionId === null) return;
 
-    let cancelled = false;
-
     (async () => {
       const sessions: SessionListItem[] = await fetchSessionList(agent.id, projectKey);
-      if (cancelled) return;
+      if (isStale()) return;
 
       if (!hasProject && initialSessionId) {
         // Load the specific session requested by parent (agents page)
         const target = sessions.find(s => s.id === initialSessionId);
+        sessionIdRef.current = initialSessionId;
         setSessionId(initialSessionId);
         setSessionTitle(target?.title ?? '会话');
-        await loadSessionData(initialSessionId);
+        await loadSessionData(initialSessionId, token);
+        if (isStale()) return;
       } else if (sessions.length > 0) {
         // Auto-select latest
         const latest = sessions[0];
+        sessionIdRef.current = latest.id;
         setSessionId(latest.id);
         setSessionTitle(latest.title);
-        await loadSessionData(latest.id);
+        await loadSessionData(latest.id, token);
+        if (isStale()) return;
       }
 
       // Check if a run is still live in memory
@@ -532,12 +699,16 @@ export function AgentChatPanel({
         : sessions.map(s => s.id);
 
       for (const sid of sessionIdsToCheck) {
+        if (isStale()) return;
         const statusRes = await fetch(`/api/agent-chat/status?sessionId=${sid}`, { cache: 'no-store' });
         const statusData = await statusRes.json();
-        if (!cancelled && statusData.status === 'running') {
+        if (!isStale() && statusData.status === 'running') {
           const title = sessions.find(s => s.id === sid)?.title ?? '会话';
+          sessionIdRef.current = sid;
           setSessionId(sid);
           setSessionTitle(title);
+          await loadSessionData(sid, token);
+          if (isStale()) return;
           if (Array.isArray(statusData.messages) && statusData.messages.length > 0) {
             const restored: ChatMessage[] = statusData.messages.map(
               (m: { role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }, i: number) => ({
@@ -562,6 +733,9 @@ export function AgentChatPanel({
 
     return () => {
       cancelled = true;
+      if (initTokenRef.current === token) {
+        initTokenRef.current += 1;
+      }
       if (streamAbortRef.current) {
         streamAbortRef.current.abort();
         streamAbortRef.current = null;
@@ -598,6 +772,9 @@ export function AgentChatPanel({
     if (isStreaming) return;
     if (hasProject && !projectKey) return;
 
+    // Cancel background init loaders to avoid stale session data overriding active chat.
+    initTokenRef.current += 1;
+
     const imagesToSend = images ?? [];
     const imageAttachments = imagesToSend.map(url => {
       const [header, data] = url.split(',');
@@ -629,6 +806,7 @@ export function AgentChatPanel({
     if (!targetSessionId) {
       targetSessionId = `agent-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const quickTitle = text.trim().slice(0, 10) || (hasProject ? t('chat.newSession') : '新会话');
+      sessionIdRef.current = targetSessionId;
       setSessionId(targetSessionId);
       setSessionTitle(quickTitle);
       // Insert into session list immediately so it appears in history
@@ -652,6 +830,7 @@ export function AgentChatPanel({
           projectKey: projectKey ?? undefined,
           providerOverride: chatProvider,
           modelOverride: chatModel || undefined,
+          effortOverride: chatProvider === 'openai' ? chatEffort : undefined,
           images: imageAttachments.length > 0 ? imageAttachments : undefined,
           initialTitle: text.trim().slice(0, 10) || undefined,
         }),
@@ -670,7 +849,7 @@ export function AgentChatPanel({
       setErrorMsg(msg);
       setIsStreaming(false);
     }
-  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, chatProvider, chatModel, connectToStream, onSessionChange, t]);
+  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, chatProvider, chatModel, chatEffort, connectToStream, onSessionChange, t]);
 
   // Keep doSendRef in sync (avoid stale closure in event listener)
   useEffect(() => {
@@ -727,10 +906,12 @@ export function AgentChatPanel({
   // Switch to a new (empty) session
   const handleNewSession = useCallback(() => {
     if (isStreaming) return;
+    initTokenRef.current += 1;
     if (streamAbortRef.current) {
       streamAbortRef.current.abort();
       streamAbortRef.current = null;
     }
+    sessionIdRef.current = null;
     setSessionId(null);
     setSessionTitle(hasProject ? t('chat.newSession') : '新会话');
     setMessages([]);
@@ -742,10 +923,13 @@ export function AgentChatPanel({
   // Switch to an existing session
   const handleSwitchSession = useCallback(async (target: SessionListItem) => {
     if (isStreaming) return;
+    initTokenRef.current += 1;
+    const token = initTokenRef.current;
     if (streamAbortRef.current) {
       streamAbortRef.current.abort();
       streamAbortRef.current = null;
     }
+    sessionIdRef.current = target.id;
     setSessionId(target.id);
     setSessionTitle(target.title);
     setMessages([]);
@@ -761,7 +945,7 @@ export function AgentChatPanel({
         body: JSON.stringify({ action: 'markAsRead' }),
       }).catch(() => {});
     }
-    await loadSessionData(target.id);
+    await loadSessionData(target.id, token);
   }, [isStreaming, loadSessionData]);
 
   const handleSaveAsKnowledge = useCallback((_messageId: string, content: string) => {
@@ -895,10 +1079,27 @@ export function AgentChatPanel({
             modelOptions={chatModelOptions}
             modelValue={chatModel}
             onModelChange={setChatModel}
+            effortLabel={chatProvider === 'openai' ? t('settings.openaiReasoningMode') : undefined}
+            effortOptions={chatProvider === 'openai' ? effortOptions : undefined}
+            effortValue={chatProvider === 'openai' ? chatEffort : undefined}
+            onEffortChange={chatProvider === 'openai' ? ((value) => setChatEffort(value as OpenAIReasoningEffort)) : undefined}
             guestAgents={guestAgents}
             showGuestPicker={showGuestPicker}
             onSelectGuest={handleSelectGuest}
           />
+          {chatProvider === 'openai' && (
+            <div className="mt-2 space-y-1">
+              {openaiModelsLoading && (
+                <p className="text-xs text-zinc-500">{t('settings.openaiModelsLoading')}</p>
+              )}
+              {openaiModelsLoadFailed && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">{t('settings.openaiModelsLoadFailed')}</p>
+              )}
+              {chatEffortFallbackNotice && (
+                <p className="text-xs text-zinc-500">{chatEffortFallbackNotice}</p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Guest Agent Overlay */}
@@ -1011,10 +1212,27 @@ export function AgentChatPanel({
           modelOptions={chatModelOptions}
           modelValue={chatModel}
           onModelChange={setChatModel}
+          effortLabel={chatProvider === 'openai' ? t('settings.openaiReasoningMode') : undefined}
+          effortOptions={chatProvider === 'openai' ? effortOptions : undefined}
+          effortValue={chatProvider === 'openai' ? chatEffort : undefined}
+          onEffortChange={chatProvider === 'openai' ? ((value) => setChatEffort(value as OpenAIReasoningEffort)) : undefined}
           guestAgents={guestAgents}
           showGuestPicker={showGuestPicker}
           onSelectGuest={handleSelectGuest}
         />
+        {chatProvider === 'openai' && (
+          <div className="mt-2 space-y-1 px-0.5">
+            {openaiModelsLoading && (
+              <p className="text-xs text-zinc-500">{t('settings.openaiModelsLoading')}</p>
+            )}
+            {openaiModelsLoadFailed && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">{t('settings.openaiModelsLoadFailed')}</p>
+            )}
+            {chatEffortFallbackNotice && (
+              <p className="text-xs text-zinc-500">{chatEffortFallbackNotice}</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Notifications */}

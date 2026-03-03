@@ -16,15 +16,17 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const provider = parseProvider(searchParams.get('provider'));
   const providerMatches = !loginProvider || loginProvider === provider;
+  const processAlive = !!(loginProcess && !loginProcess.killed && providerMatches);
+  const hasOpenAIDeviceCode = provider === 'openai' && !!capturedLoginCode;
   const loginUrl =
     providerMatches
-      ? (capturedLoginUrl || (provider === 'openai' ? 'https://auth.openai.com/codex/device' : null))
+      ? (capturedLoginUrl || (hasOpenAIDeviceCode ? 'https://auth.openai.com/codex/device' : null))
       : null;
 
   return NextResponse.json({
     provider: loginProvider,
     loginUrl,
     loginCode: providerMatches ? capturedLoginCode : null,
-    processAlive: !!(loginProcess && !loginProcess.killed && providerMatches),
+    processAlive,
   });
 }

@@ -10,10 +10,16 @@ import { getProviderPreset } from '@/lib/provider-registry';
 import { getSettings } from '@/lib/settings-manager';
 import { execClaude } from '@/lib/claude-cli';
 import { execCodex } from '@/lib/codex-cli';
-import { parseAuthStatusText } from '@/lib/oauth-status';
+import { parseAuthState, type AuthState } from '@/lib/oauth-status';
 import type { ProviderId } from '@/types';
 
 const ANTHROPIC_VERSION = '2023-06-01';
+
+function boolToAuthState(value: boolean | undefined): AuthState {
+  if (value === true) return 'authenticated';
+  if (value === false) return 'not_authenticated';
+  return 'unknown';
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -37,16 +43,20 @@ export async function POST(request: NextRequest) {
             timeout: 8_000,
             env: { ...process.env },
           });
-          let authenticated = false;
+          let authState: AuthState = 'unknown';
           try {
             const parsed = JSON.parse(stdout) as { loggedIn?: boolean; authenticated?: boolean };
-            authenticated = !!(parsed.loggedIn ?? parsed.authenticated);
+            authState = boolToAuthState(parsed.loggedIn ?? parsed.authenticated);
           } catch {
-            authenticated = parseAuthStatusText(`${stdout}${stderr}`);
+            authState = parseAuthState(`${stdout}${stderr}`);
           }
-          return authenticated
-            ? NextResponse.json({ ok: true })
-            : NextResponse.json({ ok: false, error: 'Anthropic OAuth 未认证' }, { status: 400 });
+          if (authState === 'authenticated') {
+            return NextResponse.json({ ok: true });
+          }
+          if (authState === 'unknown') {
+            return NextResponse.json({ ok: false, error: 'Anthropic OAuth 状态不确定，请重新登录' }, { status: 400 });
+          }
+          return NextResponse.json({ ok: false, error: 'Anthropic OAuth 未认证' }, { status: 400 });
         } catch (err) {
           return NextResponse.json(
             { ok: false, error: err instanceof Error ? err.message : 'Anthropic OAuth 检查失败' },
@@ -61,10 +71,14 @@ export async function POST(request: NextRequest) {
             timeout: 8_000,
             env: { ...process.env },
           });
-          const authenticated = parseAuthStatusText(`${stdout}${stderr}`);
-          return authenticated
-            ? NextResponse.json({ ok: true })
-            : NextResponse.json({ ok: false, error: 'OpenAI/Codex OAuth 未认证' }, { status: 400 });
+          const authState = parseAuthState(`${stdout}${stderr}`);
+          if (authState === 'authenticated') {
+            return NextResponse.json({ ok: true });
+          }
+          if (authState === 'unknown') {
+            return NextResponse.json({ ok: false, error: 'OpenAI/Codex OAuth 状态不确定，请重新登录' }, { status: 400 });
+          }
+          return NextResponse.json({ ok: false, error: 'OpenAI/Codex OAuth 未认证' }, { status: 400 });
         } catch (err) {
           return NextResponse.json(
             { ok: false, error: err instanceof Error ? err.message : 'OpenAI/Codex OAuth 检查失败' },

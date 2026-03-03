@@ -16,6 +16,7 @@ export interface AgentChatSession {
   claudeSessionId?: string;      // 用于 --resume
   provider?: import('./index').ProviderId; // 本会话最近一次运行使用的 provider
   model?: string;                // 本会话最近一次运行使用的 model id
+  effort?: import('./index').OpenAIReasoningEffort; // OpenAI/Codex 模式下最近一次使用的推理档位
   createdAt: string;
   updatedAt: string;
 

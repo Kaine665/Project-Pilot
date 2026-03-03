@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import type { Theme } from '@/components/theme-provider';
-import type { ProviderId, ClaudeAuthMode, EffortLevel } from '@/types';
+import type { ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort } from '@/types';
 
 // ── Shared props ──
 
@@ -34,6 +34,11 @@ interface AIConfigSectionProps extends TranslationProps {
   model: string;
   customModel: string;
   baseUrl: string;
+  openaiReasoningEffort: OpenAIReasoningEffort;
+  openaiReasoningOptions: Array<{ value: OpenAIReasoningEffort; label: string }>;
+  openaiModelsLoading: boolean;
+  openaiModelsLoadFailed: boolean;
+  openaiReasoningFallbackNotice: string;
   oauthStatus: 'unknown' | 'checking' | 'authenticated' | 'not_authenticated';
   oauthLoginUrl: string;
   oauthLoginCode: string;
@@ -53,6 +58,7 @@ interface AIConfigSectionProps extends TranslationProps {
   onModelChange: (m: string) => void;
   onCustomModelChange: (m: string) => void;
   onBaseUrlChange: (u: string) => void;
+  onOpenAIReasoningEffortChange: (effort: OpenAIReasoningEffort) => void;
   onOauthCodeInputChange: (code: string) => void;
   onSubmitOAuthCode: () => void;
   onCheckOAuthStatus: () => void;
@@ -63,11 +69,13 @@ interface AIConfigSectionProps extends TranslationProps {
 export function SettingsAISection({
   t, btnActive, btnInactive,
   provider, authMode, apiKey, model, customModel, baseUrl,
+  openaiReasoningEffort, openaiReasoningOptions, openaiModelsLoading, openaiModelsLoadFailed, openaiReasoningFallbackNotice,
   oauthStatus, oauthLoginUrl, oauthLoginCode, oauthCodeInput, oauthCodeSubmitting, oauthProcessAlive, oauthFlowMessage, loginPending,
   testState, testMessage,
   preset, isPresetModel, modelSelectOptions,
   onProviderChange, onAuthModeChange, onApiKeyChange,
   onModelChange, onCustomModelChange, onBaseUrlChange,
+  onOpenAIReasoningEffortChange,
   onOauthCodeInputChange, onSubmitOAuthCode,
   onCheckOAuthStatus, onTriggerOAuthLogin,
   onTestConnection,
@@ -295,6 +303,36 @@ export function SettingsAISection({
             />
           )}
           <p className="text-xs text-zinc-500">{t('modelHint')}</p>
+          {provider === 'openai' && (
+            <div className="space-y-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-700">
+              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                {t('openaiReasoningMode')}
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {openaiReasoningOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() => onOpenAIReasoningEffortChange(option.value)}
+                    className={`rounded-md px-3 py-2 text-xs font-medium transition-colors ${
+                      openaiReasoningEffort === option.value ? btnActive : btnInactive
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-zinc-500">{t('openaiReasoningModeHint')}</p>
+              {openaiModelsLoading && (
+                <p className="text-xs text-zinc-500">{t('openaiModelsLoading')}</p>
+              )}
+              {openaiModelsLoadFailed && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">{t('openaiModelsLoadFailed')}</p>
+              )}
+              {openaiReasoningFallbackNotice && (
+                <p className="text-xs text-zinc-500">{openaiReasoningFallbackNotice}</p>
+              )}
+            </div>
+          )}
           <div className="flex items-center gap-2 pt-1">
             <Button variant="outline" size="sm" onClick={onTestConnection} disabled={testState === 'testing'}>
               {testState === 'testing' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}

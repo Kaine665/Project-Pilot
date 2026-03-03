@@ -4,7 +4,7 @@ import type { FlowContext, ImageAttachment, ImageMediaType } from '@/lib/agent-c
 import { getFlowDataPath, getFlowIndexPath, readJsonFile, ensureFlowsMigrated } from '@/lib/file-store';
 import { isValidProjectKey, isValidSessionId } from '@/lib/security';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
-import type { ProviderId } from '@/types';
+import type { OpenAIReasoningEffort, ProviderId } from '@/types';
 
 interface ProjectIndex {
   projects: Array<{ key: string; name: string }>;
@@ -14,11 +14,12 @@ const ALLOWED_IMAGE_TYPES: ImageMediaType[] = ['image/png', 'image/jpeg', 'image
 const MAX_IMAGES = 5;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB per image (base64 decoded)
 const ALLOWED_PROVIDERS: ProviderId[] = PROVIDER_REGISTRY.map((p) => p.id);
+const ALLOWED_OPENAI_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
 
 /**
  * POST /api/agent-chat
  * Start an agent chat conversation.
- * Body: { agentId, message, sessionId?, projectKey?, providerOverride?, modelOverride?, images?: [{mediaType, data}] }
+ * Body: { agentId, message, sessionId?, projectKey?, providerOverride?, modelOverride?, effortOverride?, images?: [{mediaType, data}] }
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -29,6 +30,7 @@ export async function POST(request: NextRequest) {
     projectKey,
     providerOverride,
     modelOverride,
+    effortOverride,
     images,
     initialTitle,
   } = body as {
@@ -38,6 +40,7 @@ export async function POST(request: NextRequest) {
     projectKey?: string;
     providerOverride?: ProviderId;
     modelOverride?: string;
+    effortOverride?: OpenAIReasoningEffort;
     images?: Array<{ mediaType: string; data: string }>;
     initialTitle?: string;
   };
@@ -103,6 +106,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid modelOverride (1-200 chars)' }, { status: 400 });
   }
 
+  const normalizedEffort = typeof effortOverride === 'string' ? effortOverride.trim() as OpenAIReasoningEffort : undefined;
+  if (effortOverride !== undefined && !ALLOWED_OPENAI_EFFORTS.includes(normalizedEffort!)) {
+    return NextResponse.json({ error: 'Invalid effortOverride (low|medium|high|xhigh)' }, { status: 400 });
+  }
+
   const sessionId = requestedSessionId || generateSessionId();
 
   try {
@@ -137,6 +145,7 @@ export async function POST(request: NextRequest) {
       initialTitle,
       normalizedProvider || undefined,
       normalizedModel || undefined,
+      normalizedProvider === 'openai' ? normalizedEffort : undefined,
     );
     return NextResponse.json({ runId, sessionId });
   } catch (err) {

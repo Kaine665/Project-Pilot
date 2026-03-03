@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSettings, saveSettings } from '@/lib/settings-manager';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
-import type { ClaudeAuthMode, ProviderId, EffortLevel, AppSettings } from '@/types';
+import type { ClaudeAuthMode, ProviderId, EffortLevel, OpenAIReasoningEffort, AppSettings } from '@/types';
 
 const VALID_AUTH_MODES: ClaudeAuthMode[] = ['api_key', 'oauth'];
 const VALID_EFFORT_LEVELS: EffortLevel[] = ['low', 'medium', 'high'];
+const VALID_OPENAI_REASONING_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
 const VALID_PROVIDERS: ProviderId[] = PROVIDER_REGISTRY.map((p) => p.id);
 const MASK_PREFIX = '••';
 
@@ -185,6 +186,12 @@ export async function POST(request: NextRequest) {
   if (body.claude?.effortLevel !== undefined && !VALID_EFFORT_LEVELS.includes(body.claude.effortLevel)) {
     return NextResponse.json({ error: 'Invalid effortLevel' }, { status: 400 });
   }
+  if (
+    body.claude?.openaiReasoningEffort !== undefined
+    && !VALID_OPENAI_REASONING_EFFORTS.includes(body.claude.openaiReasoningEffort)
+  ) {
+    return NextResponse.json({ error: 'Invalid openaiReasoningEffort' }, { status: 400 });
+  }
   if (body.claude?.maxTurns !== undefined) {
     const mt = Number(body.claude.maxTurns);
     if (!Number.isFinite(mt) || mt < 0 || mt > 1000) {
@@ -207,6 +214,7 @@ export async function POST(request: NextRequest) {
       ...(body.claude?.baseUrl !== undefined && { baseUrl: body.claude.baseUrl || undefined }),
       ...(body.claude?.skipPermissions !== undefined && { skipPermissions: !!body.claude.skipPermissions }),
       ...(body.claude?.effortLevel !== undefined && { effortLevel: body.claude.effortLevel }),
+      ...(body.claude?.openaiReasoningEffort !== undefined && { openaiReasoningEffort: body.claude.openaiReasoningEffort }),
       ...(body.claude?.maxTurns !== undefined && { maxTurns: Number(body.claude.maxTurns) || 0 }),
     },
     ...(body.general !== undefined && {
