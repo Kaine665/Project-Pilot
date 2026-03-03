@@ -15,6 +15,7 @@ import {
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
 import { writePromptFile } from '@/lib/agent-prompt-store';
 import type { Agent, AgentsData } from '@/types';
+import type { AgentChatSessionsData } from '@/types/agent-chat';
 
 /**
  * POST /api/settings/import
@@ -116,7 +117,27 @@ export async function POST(request: NextRequest) {
       stats.agents = mergedAgents.length;
     }
     if (data.agentChatSessions) {
-      await writeJsonFile(getAgentChatSessionsPath(), data.agentChatSessions);
+      // 合并式导入：按 session ID 去重，保留更新的版本，不丢失已有会话
+      const imported = data.agentChatSessions as AgentChatSessionsData;
+      const importedSessions = Array.isArray(imported.sessions) ? imported.sessions : [];
+      const existing = await readJsonFile<AgentChatSessionsData>(
+        getAgentChatSessionsPath(), { sessions: [] },
+      );
+      const merged = [...existing.sessions];
+
+      for (const incoming of importedSessions) {
+        const idx = merged.findIndex(s => s.id === incoming.id);
+        if (idx >= 0) {
+          // 同 ID 的会话，取 updatedAt 更新的版本
+          if (incoming.updatedAt > merged[idx].updatedAt) {
+            merged[idx] = incoming;
+          }
+        } else {
+          merged.push(incoming);
+        }
+      }
+
+      await writeJsonFile(getAgentChatSessionsPath(), { sessions: merged });
     }
 
     // 写入 flows
