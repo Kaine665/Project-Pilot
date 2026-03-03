@@ -8,8 +8,11 @@
  *   注册：npx tsx src/lib/worktree-ports.ts register <branch> <description>
  *   释放：npx tsx src/lib/worktree-ports.ts release <branch>
  *   查看：npx tsx src/lib/worktree-ports.ts list
+ *   清理：npx tsx src/lib/worktree-ports.ts cleanup <branch> <worktreePath>
  */
 
+import { execSync } from 'child_process';
+import { promises as fsPromises } from 'fs';
 import { getWorktreePortsPath, readJsonFile, modifyJsonFile } from './file-store';
 
 // ── 类型定义 ──
@@ -120,6 +123,90 @@ export async function releasePort(branch: string): Promise<boolean> {
   return found;
 }
 
+// ── Worktree 清理 ──
+
+/** sleep 工具 */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Windows 上带重试的目录删除。
+ * NTFS 文件句柄释放有延迟，.node 原生模块尤其严重。
+ * 策略：用 rd /s /q 删除，失败则等待后重试。
+ */
+async function removeDirectoryWithRetry(dirPath: string, maxRetries = 5): Promise<boolean> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await fsPromises.stat(dirPath);
+    } catch {
+      // 目录已不存在
+      return true;
+    }
+
+    try {
+      if (process.platform === 'win32') {
+        // Windows: rd /s /q 比 Node fs.rm 更可靠地处理长路径和锁
+        execSync(`rd /s /q "${dirPath}"`, { stdio: 'pipe' });
+      } else {
+        await fsPromises.rm(dirPath, { recursive: true, force: true });
+      }
+      return true;
+    } catch {
+      if (attempt < maxRetries) {
+        const waitMs = attempt * 2000; // 2s, 4s, 6s, 8s, 10s
+        console.log(`  Retry ${attempt}/${maxRetries}: directory locked, waiting ${waitMs / 1000}s...`);
+        await sleep(waitMs);
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * 完整清理一个 worktree：释放端口 → 删目录（带重试） → prune → 删分支
+ */
+export async function cleanupWorktree(branch: string, worktreePath: string): Promise<void> {
+  // Step 1: 释放端口
+  const released = await releasePort(branch);
+  console.log(released ? `[1/4] Port released: ${branch}` : `[1/4] Port not found (already released or never registered)`);
+
+  // Step 2: 删除 worktree 目录（带重试）
+  console.log(`[2/4] Removing directory: ${worktreePath}`);
+  const removed = await removeDirectoryWithRetry(worktreePath);
+  if (removed) {
+    console.log(`[2/4] Directory removed`);
+  } else {
+    console.error(`[2/4] FAILED: Could not remove directory after retries.`);
+    console.error(`  Manual cleanup needed: rd /s /q "${worktreePath}"`);
+    // 继续执行后续步骤，不中断
+  }
+
+  // Step 3: git worktree prune（清理 git 中的 worktree 记录）
+  try {
+    execSync('git worktree prune', { stdio: 'pipe' });
+    console.log('[3/4] Git worktree pruned');
+  } catch {
+    console.log('[3/4] Git worktree prune skipped (not in a git repo or already clean)');
+  }
+
+  // Step 4: 删除分支
+  try {
+    execSync(`git branch -d "${branch}"`, { stdio: 'pipe' });
+    console.log(`[4/4] Branch deleted: ${branch}`);
+  } catch {
+    // 分支可能未合并或不存在
+    try {
+      execSync(`git branch -D "${branch}"`, { stdio: 'pipe' });
+      console.log(`[4/4] Branch force-deleted: ${branch}`);
+    } catch {
+      console.log(`[4/4] Branch not found or already deleted: ${branch}`);
+    }
+  }
+
+  console.log('Cleanup complete.');
+}
+
 // ── CLI 入口 ──
 
 async function main() {
@@ -163,8 +250,17 @@ async function main() {
       }
       break;
     }
+    case 'cleanup': {
+      const [branch, worktreePath] = args;
+      if (!branch || !worktreePath) {
+        console.error('Usage: cleanup <branch> <worktreePath>');
+        process.exit(1);
+      }
+      await cleanupWorktree(branch, worktreePath);
+      break;
+    }
     default:
-      console.error('Commands: register, release, list');
+      console.error('Commands: register, release, list, cleanup');
       process.exit(1);
   }
 }
