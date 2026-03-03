@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { execClaude, spawnClaude } from '@/lib/claude-cli';
 import { execCodex, spawnCodex } from '@/lib/codex-cli';
-import { parseAuthStatusText, sanitizeAuthText } from '@/lib/oauth-status';
+import { parseAuthState, sanitizeAuthText } from '@/lib/oauth-status';
 import {
   capturedLoginUrl,
   capturedLoginCode,
@@ -20,7 +20,7 @@ import type { ProviderId } from '@/types';
  */
 
 const LOGIN_URL_REGEX = /https:\/\/[^\s"'<>]+/g;
-const DEVICE_CODE_REGEX = /\b[A-Z0-9]{4,}-[A-Z0-9]{4,}\b/g;
+const DEVICE_CODE_REGEX = /\b[A-Z0-9]{4,}-[A-Z0-9]{4,}(?:-[A-Z0-9]{4,})*\b/g;
 
 function normalizeLoginUrl(url: string): string {
   return url.replace(/[)\].,;]+$/, '');
@@ -40,6 +40,12 @@ function parseProvider(value: unknown): ProviderId {
     return value;
   }
   return 'anthropic';
+}
+
+type OpenAILoginMode = 'browser' | 'device';
+
+function parseOpenAILoginMode(value: unknown): OpenAILoginMode {
+  return value === 'device' ? 'device' : 'browser';
 }
 
 function extractLoginUrl(text: string, provider: 'anthropic' | 'openai'): string | null {
@@ -65,19 +71,53 @@ function extractLoginCode(text: string): string | null {
 
 async function isAlreadyAuthenticated(provider: 'anthropic' | 'openai'): Promise<boolean> {
   if (provider === 'anthropic') {
-    const { stdout } = await execClaude(['auth', 'status', '--json'], {
+    const { stdout, stderr } = await execClaude(['auth', 'status', '--json'], {
       timeout: 5_000,
       env: { ...process.env },
     });
-    const parsed = JSON.parse(stdout) as { loggedIn?: boolean };
-    return !!parsed.loggedIn;
+    try {
+      const parsed = JSON.parse(stdout) as { loggedIn?: boolean; authenticated?: boolean };
+      return !!(parsed.loggedIn ?? parsed.authenticated);
+    } catch {
+      return parseAuthState(`${stdout}\n${stderr}`) === 'authenticated';
+    }
   }
 
   const { stdout, stderr } = await execCodex(['login', 'status'], {
     timeout: 10_000,
     env: { ...process.env },
   });
-  return parseAuthStatusText(`${stdout}\n${stderr}`);
+  return parseAuthState(`${stdout}\n${stderr}`) === 'authenticated';
+}
+
+function formatCommandError(err: unknown): string {
+  const e = err as Error & { stdout?: string; stderr?: string };
+  return sanitizeAuthText(`${e.stdout ?? ''}\n${e.stderr ?? ''}\n${e.message ?? ''}`).trim();
+}
+
+async function forceOpenAILogout(): Promise<{ success: boolean; details?: string }> {
+  let logoutError = '';
+  try {
+    await execCodex(['logout'], {
+      timeout: 10_000,
+      env: { ...process.env },
+    });
+  } catch (err) {
+    logoutError = formatCommandError(err);
+  }
+
+  try {
+    if (await isAlreadyAuthenticated('openai')) {
+      return {
+        success: false,
+        details: logoutError || 'OpenAI session is still authenticated after logout attempt.',
+      };
+    }
+  } catch {
+    // If status check fails, keep best-effort behavior and continue login flow.
+  }
+
+  return { success: true, details: logoutError || undefined };
 }
 
 async function waitForLoginArtifacts(
@@ -105,11 +145,17 @@ async function waitForLoginArtifacts(
 
 export async function POST(req: Request) {
   let provider: ProviderId = 'anthropic';
+  let forceLogin = false;
+  let openaiLoginMode: OpenAILoginMode = 'browser';
   try {
-    const body = await req.json() as { provider?: ProviderId };
+    const body = await req.json() as { provider?: ProviderId; force?: boolean; openaiLoginMode?: OpenAILoginMode };
     provider = parseProvider(body?.provider);
+    forceLogin = body?.force === true;
+    openaiLoginMode = parseOpenAILoginMode(body?.openaiLoginMode);
   } catch {
     provider = 'anthropic';
+    forceLogin = false;
+    openaiLoginMode = 'browser';
   }
 
   if (!isOAuthProvider(provider)) {
@@ -120,17 +166,19 @@ export async function POST(req: Request) {
   }
   const oauthProvider: 'anthropic' | 'openai' = provider;
 
-  try {
-    if (await isAlreadyAuthenticated(oauthProvider)) {
-      return NextResponse.json({
-        success: true,
-        alreadyAuthenticated: true,
-        provider: oauthProvider,
-        message: 'Already authenticated.',
-      });
+  if (!forceLogin) {
+    try {
+      if (await isAlreadyAuthenticated(oauthProvider)) {
+        return NextResponse.json({
+          success: true,
+          alreadyAuthenticated: true,
+          provider: oauthProvider,
+          message: 'Already authenticated.',
+        });
+      }
+    } catch {
+      // Ignore status check failures; continue login flow.
     }
-  } catch {
-    // Ignore status check failures; continue login flow.
   }
 
   if (loginProcess && !loginProcess.killed) {
@@ -153,10 +201,25 @@ export async function POST(req: Request) {
   }
 
   try {
+    if (forceLogin && oauthProvider === 'openai') {
+      const logout = await forceOpenAILogout();
+      if (!logout.success) {
+        return NextResponse.json(
+          {
+            error: 'OpenAI CLI is still logged in. Run `codex logout` and retry.',
+            provider: oauthProvider,
+            details: logout.details ?? 'Unable to clear existing OpenAI session.',
+          },
+          { status: 409 },
+        );
+      }
+    }
+
     setCapturedLoginUrl(null);
     setCapturedLoginCode(null);
     setLoginProvider(oauthProvider);
 
+    const openaiArgs = openaiLoginMode === 'device' ? ['login', '--device-auth'] : ['login'];
     const child = oauthProvider === 'anthropic'
       ? spawnClaude(['auth', 'login'], {
           detached: false,
@@ -165,7 +228,7 @@ export async function POST(req: Request) {
           windowsHide: true,
           env: { ...process.env },
         })
-      : spawnCodex(['login', '--device-auth'], {
+      : spawnCodex(openaiArgs, {
           detached: false,
           stdio: ['pipe', 'pipe', 'pipe'],
           shell: false,
@@ -211,8 +274,24 @@ export async function POST(req: Request) {
       setLoginProcess(null);
     });
 
-    const { loginUrl: rawLoginUrl, loginCode } = await waitForLoginArtifacts(2500, oauthProvider);
+    const waitTimeoutMs = oauthProvider === 'openai' ? 12_000 : 2_500;
+    const { loginUrl: rawLoginUrl, loginCode } = await waitForLoginArtifacts(waitTimeoutMs, oauthProvider);
     if (!rawLoginUrl && !loginCode && exited && exitCode !== 0) {
+      if (oauthProvider === 'openai') {
+        try {
+          if (await isAlreadyAuthenticated('openai')) {
+            return NextResponse.json({
+              success: true,
+              alreadyAuthenticated: true,
+              provider: oauthProvider,
+              message: 'Already authenticated.',
+            });
+          }
+        } catch {
+          // ignore status check failure and fall through to error
+        }
+      }
+
       setCapturedLoginUrl(null);
       setCapturedLoginCode(null);
       return NextResponse.json(
@@ -225,11 +304,40 @@ export async function POST(req: Request) {
       );
     }
 
-    const loginUrl = rawLoginUrl || (oauthProvider === 'openai' ? 'https://auth.openai.com/codex/device' : null);
+    if (oauthProvider === 'openai' && openaiLoginMode === 'device' && !loginCode) {
+      try {
+        if (await isAlreadyAuthenticated('openai')) {
+          return NextResponse.json({
+            success: true,
+            alreadyAuthenticated: true,
+            provider: oauthProvider,
+            message: 'Already authenticated.',
+          });
+        }
+      } catch {
+        // ignore status check failure and return the original error
+      }
+
+      setCapturedLoginUrl(null);
+      setCapturedLoginCode(null);
+      return NextResponse.json(
+        {
+          error: 'OpenAI device code was not received. Please retry login.',
+          provider: oauthProvider,
+          loginMode: openaiLoginMode,
+          details: stderrPreview.trim() || 'missing device code',
+        },
+        { status: 500 },
+      );
+    }
+
+    const loginUrl = rawLoginUrl
+      || (oauthProvider === 'openai' && openaiLoginMode === 'device' && loginCode ? 'https://auth.openai.com/codex/device' : null);
 
     return NextResponse.json({
       success: true,
       provider: oauthProvider,
+      loginMode: oauthProvider === 'openai' ? openaiLoginMode : undefined,
       message: 'Login flow started. Check your browser.',
       loginUrl,
       loginCode,
