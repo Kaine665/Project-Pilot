@@ -46,6 +46,14 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
     label: '设计文档索引',
   });
 
+  // Active tasks board — always present
+  refs.push({
+    type: 'active-tasks',
+    id: '_running',
+    priority: 22,
+    label: '活跃任务看板',
+  });
+
   // Preloaded context entries
   if (agent.contextIds && agent.contextIds.length > 0) {
     for (const cid of agent.contextIds) {
