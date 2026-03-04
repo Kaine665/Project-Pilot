@@ -20,9 +20,15 @@ interface ToolAccumulator {
   inputJson: string;
 }
 
+/** Tools whose is_error should be treated as completed (flow-control tools) */
+const FLOW_CONTROL_TOOLS = new Set(['ExitPlanMode', 'EnterPlanMode']);
+
 export class StreamParser {
   /** Track tool_use blocks being built up from deltas */
   private toolAccumulators = new Map<number, ToolAccumulator>();
+
+  /** Map tool_use id → tool name for resolving status in tool_result events */
+  private toolNames = new Map<string, string>();
 
   /** Claude CLI session ID, captured from system.init or result events */
   sessionId: string | null = null;
@@ -62,6 +68,7 @@ export class StreamParser {
             const input = typeof block.input === 'string'
               ? block.input
               : JSON.stringify(block.input);
+            this.toolNames.set(block.id as string, block.name as string);
             events.push({
               type: 'tool_use_start',
               id: block.id as string,
@@ -111,6 +118,7 @@ export class StreamParser {
         const acc = this.toolAccumulators.get(index);
         if (acc) {
           // Tool input is now complete, emit the tool_use_start event
+          this.toolNames.set(acc.id, acc.name);
           events.push({
             type: 'tool_use_start',
             id: acc.id,
@@ -128,14 +136,19 @@ export class StreamParser {
 
         for (const block of message.content) {
           if (block.type === 'tool_result') {
+            const toolId = block.tool_use_id as string;
             const output = typeof block.content === 'string'
               ? (block.content as string).slice(0, 3000)
               : JSON.stringify(block.content).slice(0, 3000);
+            // Flow-control tools (e.g. ExitPlanMode) return is_error=true
+            // as a signal for user intervention, not an actual failure.
+            const toolName = this.toolNames.get(toolId);
+            const isFlowControl = toolName && FLOW_CONTROL_TOOLS.has(toolName);
             events.push({
               type: 'tool_use_end',
-              id: block.tool_use_id as string,
+              id: toolId,
               output,
-              status: block.is_error ? 'failed' : 'completed',
+              status: (block.is_error && !isFlowControl) ? 'failed' : 'completed',
             });
           }
         }
