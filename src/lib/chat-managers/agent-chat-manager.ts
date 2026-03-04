@@ -413,6 +413,9 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
         if (session) {
           session.archived = archived || undefined; // don't persist false
           found = true;
+          console.log(`[setArchived] ${sessionId} → archived=${session.archived}`);
+        } else {
+          console.warn(`[setArchived] ${sessionId} NOT FOUND in ${data.sessions.length} sessions`);
         }
         return data;
       },

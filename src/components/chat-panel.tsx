@@ -137,7 +137,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 
       if (fullText || toolCalls.length > 0) {
         const assistantMsg: ChatMessage = {
-          id: `msg-${Date.now()}`,
+          id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           role: 'assistant',
           content: fullText,
           timestamp: new Date().toISOString(),
@@ -478,7 +478,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
       sendAbortRef.current = sendAbort;
 
       const userMsg: ChatMessage = {
-        id: `msg-${Date.now()}`,
+        id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         role: 'user',
         content: text.trim(),
         timestamp: new Date().toISOString(),

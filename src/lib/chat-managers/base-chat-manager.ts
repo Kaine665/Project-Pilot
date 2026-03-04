@@ -264,20 +264,18 @@ export abstract class BaseChatManager<TRun extends BaseRun> {
       // Subclass hook (artifacts, titles, knowledge tags, etc.)
       await this.onProcessClose(run, aborted, streamParser);
 
-      // Persist to disk
-      await this.persistAfterClose(run, aborted);
-
-      // Subclass-provided post-persist callback (e.g. conversation index update)
-      if (config.onBeforeEmitDone) {
-        await config.onBeforeEmitDone();
-      }
-
-      // Emit done and finalize status
+      // Emit done BEFORE persist so SSE clients receive completion immediately.
+      // Persistence is fire-and-forget — it doesn't affect the stream.
       this.trackAndEmit(run, { type: 'done' });
       if (run.status === 'running') {
         run.status = code === 0 ? 'completed' : 'failed';
       }
       run.completedAt = Date.now();
+
+      // Persist to disk (async, no need to block the done event)
+      this.persistAfterClose(run, aborted)
+        .then(() => config.onBeforeEmitDone?.())
+        .catch((err) => console.error(`${this.logPrefix} persistAfterClose error:`, err));
     });
 
     // ── error (spawn failure) ──
