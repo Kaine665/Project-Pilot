@@ -36,9 +36,83 @@ interface AgentChatPanelProps {
 
 type IndexedSSEEvent = ChatSSEEvent & { _idx: number };
 
-// Strip <session-title> tags from display text
+// Strip <session-title> tags from display text (fallback cleanup)
 function stripSessionTitleTag(text: string): string {
   return text.replace(/<session-title>[\s\S]*?<\/session-title>\s*/, '');
+}
+
+/**
+ * Streaming filter for <session-title> tags.
+ * Buffers partial tag content and strips completed tags from display text.
+ * Returns only the text that should be shown to the user.
+ */
+function createSessionTitleFilter() {
+  let buffer = '';              // accumulates text inside (or possibly part of) a tag
+  let insideTag = false;        // true when we've seen <session-title> and are waiting for </session-title>
+  let partialOpen = '';         // accumulates a partial opening tag like "<ses" or "<session-ti"
+
+  const OPEN_TAG = '<session-title>';
+  const CLOSE_TAG = '</session-title>';
+
+  return (chunk: string): string => {
+    let output = '';
+    let i = 0;
+
+    while (i < chunk.length) {
+      const ch = chunk[i];
+
+      if (insideTag) {
+        // Inside <session-title>..., looking for </session-title>
+        buffer += ch;
+        if (buffer.endsWith(CLOSE_TAG)) {
+          // Complete tag found — discard entire buffer
+          buffer = '';
+          insideTag = false;
+          // Also strip any trailing whitespace/newlines
+          i++;
+          while (i < chunk.length && (chunk[i] === '\n' || chunk[i] === '\r' || chunk[i] === ' ')) {
+            i++;
+          }
+          continue;
+        }
+        i++;
+        continue;
+      }
+
+      if (partialOpen) {
+        // We had a partial match for <session-title>
+        partialOpen += ch;
+        if (OPEN_TAG.startsWith(partialOpen)) {
+          // Still a valid prefix — keep buffering
+          if (partialOpen === OPEN_TAG) {
+            // Full open tag matched!
+            insideTag = true;
+            buffer = '';
+            partialOpen = '';
+          }
+          i++;
+          continue;
+        }
+        // Not a match — flush the buffered partial as normal output
+        output += partialOpen;
+        partialOpen = '';
+        i++;
+        continue;
+      }
+
+      if (ch === '<') {
+        // Potential start of <session-title>
+        partialOpen = '<';
+        i++;
+        continue;
+      }
+
+      output += ch;
+      i++;
+    }
+
+    return output;
+  };
 }
 
 export function AgentChatPanel({
@@ -224,6 +298,7 @@ export function AgentChatPanel({
 
     const abort = new AbortController();
     streamAbortRef.current = abort;
+    const titleFilter = createSessionTitleFilter();
 
     fetch(`/api/agent-chat/stream?sessionId=${targetSessionId}&since=${since}`, {
       signal: abort.signal,
@@ -267,13 +342,17 @@ export function AgentChatPanel({
           switch (event.type) {
             case 'text_delta': {
               fullTextRef.current += event.text;
-              const lastBlock = blocks[blocks.length - 1];
-              if (lastBlock && lastBlock.type === 'text') {
-                lastBlock.text += event.text;
-              } else {
-                blocks.push({ type: 'text', text: event.text });
+              // Filter out <session-title>...</session-title> from display
+              const displayText = titleFilter(event.text);
+              if (displayText) {
+                const lastBlock = blocks[blocks.length - 1];
+                if (lastBlock && lastBlock.type === 'text') {
+                  lastBlock.text += displayText;
+                } else {
+                  blocks.push({ type: 'text', text: displayText });
+                }
+                chunkHasDisplayEvents = true;
               }
-              chunkHasDisplayEvents = true;
               break;
             }
 
@@ -299,6 +378,14 @@ export function AgentChatPanel({
               }
               break;
             }
+
+            case 'session_title_set':
+              setSessionTitle(event.title);
+              setSessionList(prev => prev.map(s =>
+                s.id === targetSessionId ? { ...s, title: event.title } : s,
+              ));
+              onSessionChange?.();
+              break;
 
             case 'knowledge_draft_created':
               setKnowledgeDrafts(prev => [...prev, { entryId: event.entryId, label: event.label }]);
