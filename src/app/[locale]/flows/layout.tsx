@@ -227,7 +227,7 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   };
 
   const handleNavigateDocs = () => {
-    router.push('/flows/docs');
+    router.push(activeKey ? `/flows/docs/${activeKey}` : '/flows/docs');
   };
 
 
