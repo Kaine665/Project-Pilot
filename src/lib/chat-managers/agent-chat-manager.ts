@@ -523,6 +523,11 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
         ?? (firstUserMsg ? firstUserMsg.slice(0, 30) + '...' : defaultTitle);
     }
 
+    // Emit structured title event so frontend can update immediately
+    if (run.sessionTitle) {
+      this.trackAndEmit(run, { type: 'session_title_set', title: run.sessionTitle });
+    }
+
     // Parse and persist knowledge drafts
     if (run.assistantText) {
       const drafts = parseKnowledgeTags(run.assistantText);
