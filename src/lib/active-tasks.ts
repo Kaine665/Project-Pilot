@@ -1,0 +1,323 @@
+/**
+ * 共享任务看板（Active Tasks Registry）
+ *
+ * 所有正在执行的 Agent 任务的共享注册表。
+ * 每个 Agent 启动任务时注册，完成/失败时注销。
+ * 其他 Agent 启动时读取看板，了解当前并行任务全貌，避免冲突。
+ *
+ * 数据存储在 ~/.project-pilot/data/active-tasks.json
+ *
+ * 使用方式（Agent 在 bash 中调用）：
+ *   注册：npx tsx src/lib/active-tasks.ts register --title "任务标题" [选项]
+ *   完成：npx tsx src/lib/active-tasks.ts complete <taskId>
+ *   失败：npx tsx src/lib/active-tasks.ts fail <taskId>
+ *   心跳：npx tsx src/lib/active-tasks.ts heartbeat <taskId>
+ *   查看：npx tsx src/lib/active-tasks.ts list
+ *   清理：npx tsx src/lib/active-tasks.ts prune
+ */
+
+import { getActiveTasksPath, readJsonFile, modifyJsonFile } from './file-store';
+
+// ── 类型定义 ──
+
+export type ActiveTaskAgentType =
+  | 'self-dev'
+  | 'task-worker'
+  | 'orchestrator-worker'
+  | 'agent-chat';
+
+export type ActiveTaskStatus = 'running' | 'completed' | 'failed';
+
+export interface ActiveTaskEntry {
+  /** 唯一 ID，格式 at-{timestamp}-{random} */
+  id: string;
+  /** Agent 类型 */
+  agentType: ActiveTaskAgentType;
+  /** Agent ID（如 agent-builtin-self-dev） */
+  agentId?: string;
+  /** 关联项目 */
+  projectKey?: string;
+  /** 任务简述 */
+  title: string;
+  /** 涉及的模块/文件范围（帮助判断冲突） */
+  scope?: string[];
+  /** 关联的 git 分支 */
+  branch?: string;
+  /** 任务状态 */
+  status: ActiveTaskStatus;
+  /** 注册时间 */
+  registeredAt: string;
+  /** 最近心跳时间（用于过期检测） */
+  heartbeatAt: string;
+  /** 完成/失败时间 */
+  finishedAt?: string;
+}
+
+export interface ActiveTasksData {
+  tasks: ActiveTaskEntry[];
+}
+
+// ── 常量 ──
+
+const DEFAULT_DATA: ActiveTasksData = { tasks: [] };
+
+/** 超过此时间没有心跳的任务视为过期（小时） */
+const STALE_HOURS = 6;
+
+// ── ID 生成 ──
+
+function generateId(): string {
+  const ts = Date.now();
+  const rand = Math.random().toString(36).slice(2, 6);
+  return `at-${ts}-${rand}`;
+}
+
+// ── 核心函数 ──
+
+/** 读取所有任务 */
+export async function listActiveTasks(): Promise<ActiveTaskEntry[]> {
+  const data = await readJsonFile<ActiveTasksData>(getActiveTasksPath(), DEFAULT_DATA);
+  return data.tasks;
+}
+
+/** 获取所有正在运行的任务（过滤掉已完成和已过期的） */
+export async function listRunningTasks(): Promise<ActiveTaskEntry[]> {
+  const tasks = await listActiveTasks();
+  const now = Date.now();
+  const staleMs = STALE_HOURS * 60 * 60 * 1000;
+  return tasks.filter(t => {
+    if (t.status !== 'running') return false;
+    // 过期检测
+    const heartbeat = new Date(t.heartbeatAt).getTime();
+    if (now - heartbeat > staleMs) return false;
+    return true;
+  });
+}
+
+/** 注册一个新任务 */
+export async function registerTask(
+  params: Omit<ActiveTaskEntry, 'id' | 'status' | 'registeredAt' | 'heartbeatAt'>,
+): Promise<ActiveTaskEntry> {
+  const now = new Date().toISOString();
+  const entry: ActiveTaskEntry = {
+    id: generateId(),
+    status: 'running',
+    registeredAt: now,
+    heartbeatAt: now,
+    ...params,
+  };
+
+  await modifyJsonFile<ActiveTasksData>(
+    getActiveTasksPath(),
+    DEFAULT_DATA,
+    (data) => {
+      data.tasks.push(entry);
+      return data;
+    },
+  );
+
+  return entry;
+}
+
+/** 标记任务完成 */
+export async function completeTask(taskId: string): Promise<boolean> {
+  let found = false;
+  await modifyJsonFile<ActiveTasksData>(
+    getActiveTasksPath(),
+    DEFAULT_DATA,
+    (data) => {
+      const task = data.tasks.find(t => t.id === taskId);
+      if (task && task.status === 'running') {
+        task.status = 'completed';
+        task.finishedAt = new Date().toISOString();
+        found = true;
+      }
+      return data;
+    },
+  );
+  return found;
+}
+
+/** 标记任务失败 */
+export async function failTask(taskId: string): Promise<boolean> {
+  let found = false;
+  await modifyJsonFile<ActiveTasksData>(
+    getActiveTasksPath(),
+    DEFAULT_DATA,
+    (data) => {
+      const task = data.tasks.find(t => t.id === taskId);
+      if (task && task.status === 'running') {
+        task.status = 'failed';
+        task.finishedAt = new Date().toISOString();
+        found = true;
+      }
+      return data;
+    },
+  );
+  return found;
+}
+
+/** 更新心跳 */
+export async function heartbeatTask(taskId: string): Promise<boolean> {
+  let found = false;
+  await modifyJsonFile<ActiveTasksData>(
+    getActiveTasksPath(),
+    DEFAULT_DATA,
+    (data) => {
+      const task = data.tasks.find(t => t.id === taskId);
+      if (task && task.status === 'running') {
+        task.heartbeatAt = new Date().toISOString();
+        found = true;
+      }
+      return data;
+    },
+  );
+  return found;
+}
+
+/** 清理已完成/失败/过期的任务记录 */
+export async function pruneTasks(): Promise<number> {
+  const now = Date.now();
+  const staleMs = STALE_HOURS * 60 * 60 * 1000;
+  let removed = 0;
+
+  await modifyJsonFile<ActiveTasksData>(
+    getActiveTasksPath(),
+    DEFAULT_DATA,
+    (data) => {
+      const before = data.tasks.length;
+      data.tasks = data.tasks.filter(t => {
+        // 保留正在运行且未过期的
+        if (t.status === 'running') {
+          const heartbeat = new Date(t.heartbeatAt).getTime();
+          return now - heartbeat <= staleMs;
+        }
+        // 已完成/失败的全部清理
+        return false;
+      });
+      removed = before - data.tasks.length;
+      return data;
+    },
+  );
+
+  return removed;
+}
+
+// ── CLI 入口 ──
+
+function parseArgs(args: string[]): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg.startsWith('--')) {
+      const key = arg.slice(2);
+      const next = args[i + 1];
+      if (next && !next.startsWith('--')) {
+        result[key] = next;
+        i++;
+      } else {
+        result[key] = 'true';
+      }
+    } else if (!result._positional) {
+      result._positional = arg;
+    }
+  }
+  return result;
+}
+
+async function main() {
+  const [,, command, ...args] = process.argv;
+
+  switch (command) {
+    case 'register': {
+      const opts = parseArgs(args);
+      const title = opts.title;
+      if (!title) {
+        console.error('Usage: register --title "任务标题" [--agent-type TYPE] [--agent-id ID] [--project KEY] [--scope "file1,file2"] [--branch BRANCH]');
+        process.exit(1);
+      }
+      const entry = await registerTask({
+        agentType: (opts['agent-type'] as ActiveTaskAgentType) || 'agent-chat',
+        agentId: opts['agent-id'],
+        projectKey: opts.project,
+        title,
+        scope: opts.scope ? opts.scope.split(',').map(s => s.trim()) : undefined,
+        branch: opts.branch,
+      });
+      console.log(JSON.stringify(entry, null, 2));
+      break;
+    }
+
+    case 'complete': {
+      const taskId = args[0];
+      if (!taskId) {
+        console.error('Usage: complete <taskId>');
+        process.exit(1);
+      }
+      const ok = await completeTask(taskId);
+      console.log(ok ? `Completed: ${taskId}` : `Not found or already finished: ${taskId}`);
+      break;
+    }
+
+    case 'fail': {
+      const taskId = args[0];
+      if (!taskId) {
+        console.error('Usage: fail <taskId>');
+        process.exit(1);
+      }
+      const ok = await failTask(taskId);
+      console.log(ok ? `Failed: ${taskId}` : `Not found or already finished: ${taskId}`);
+      break;
+    }
+
+    case 'heartbeat': {
+      const taskId = args[0];
+      if (!taskId) {
+        console.error('Usage: heartbeat <taskId>');
+        process.exit(1);
+      }
+      const ok = await heartbeatTask(taskId);
+      console.log(ok ? `Heartbeat: ${taskId}` : `Not found: ${taskId}`);
+      break;
+    }
+
+    case 'list': {
+      const tasks = await listActiveTasks();
+      const running = tasks.filter(t => t.status === 'running');
+      const finished = tasks.filter(t => t.status !== 'running');
+
+      console.log(`=== Running (${running.length}) ===`);
+      for (const t of running) {
+        const scope = t.scope ? ` [${t.scope.join(', ')}]` : '';
+        const branch = t.branch ? ` (${t.branch})` : '';
+        console.log(`  ${t.id}  ${t.agentType}  "${t.title}"${scope}${branch}  since ${t.registeredAt}`);
+      }
+      if (finished.length > 0) {
+        console.log(`=== Finished (${finished.length}) ===`);
+        for (const t of finished) {
+          console.log(`  ${t.id}  ${t.status}  "${t.title}"  ${t.finishedAt}`);
+        }
+      }
+      break;
+    }
+
+    case 'prune': {
+      const removed = await pruneTasks();
+      console.log(`Pruned ${removed} task(s)`);
+      break;
+    }
+
+    default:
+      console.error('Commands: register, complete, fail, heartbeat, list, prune');
+      process.exit(1);
+  }
+}
+
+// 作为脚本直接运行时执行 CLI
+const isDirectRun = process.argv[1]?.replace(/\\/g, '/').includes('active-tasks');
+if (isDirectRun) {
+  main().catch(err => {
+    console.error(err.message);
+    process.exit(1);
+  });
+}
