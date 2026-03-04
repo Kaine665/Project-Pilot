@@ -116,7 +116,12 @@ export default function AgentsPage() {
           archived: s.archived,
         };
       });
-      setAllSessions(sessions);
+      // Merge: keep optimistically-inserted local sessions that backend doesn't know about yet
+      setAllSessions(prev => {
+        const remoteIds = new Set(sessions.map((s: AllSessionItem) => s.id));
+        const localOnly = prev.filter(s => !remoteIds.has(s.id));
+        return [...localOnly, ...sessions];
+      });
       // Also update agents cache
       setAgents(agentsData.agents ?? []);
     } catch { /* ignore */ }
@@ -179,12 +184,22 @@ export default function AgentsPage() {
   const handleArchiveToggle = (session: AllSessionItem, e: React.MouseEvent) => {
     e.stopPropagation();
     const newArchived = !session.archived;
+    // Optimistic update
     setAllSessions(prev => prev.map(s => s.id === session.id ? { ...s, archived: newArchived } : s));
     fetch(`/api/agent-chat/sessions/${session.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: newArchived ? 'archive' : 'unarchive' }),
-    }).catch(() => {});
+    }).then(res => {
+      if (!res.ok) {
+        console.error(`Archive toggle failed: ${res.status}`);
+        // Rollback on failure
+        setAllSessions(prev => prev.map(s => s.id === session.id ? { ...s, archived: !newArchived } : s));
+      }
+    }).catch(() => {
+      // Rollback on network error
+      setAllSessions(prev => prev.map(s => s.id === session.id ? { ...s, archived: !newArchived } : s));
+    });
   };
 
   // ── Handlers: Agents tab ──
@@ -646,7 +661,22 @@ export default function AgentsPage() {
                     key={`agent-${selectedAgent.id}`}
                     agent={selectedAgent}
                     initialSessionId={null}
-                    onSessionChange={() => fetchAllSessions()}
+                    onSessionChange={(newSession) => {
+                      if (newSession && selectedAgent) {
+                        setAllSessions(prev => {
+                          if (prev.some(s => s.id === newSession.id)) return prev;
+                          return [{
+                            id: newSession.id,
+                            title: newSession.title,
+                            updatedAt: newSession.updatedAt,
+                            agentId: selectedAgent.id,
+                            agentName: selectedAgent.name,
+                            agentIcon: selectedAgent.icon,
+                          }, ...prev];
+                        });
+                      }
+                      fetchAllSessions();
+                    }}
                   />
                 </div>
               ) : (
@@ -704,6 +734,20 @@ export default function AgentsPage() {
                             prev.map(p => p.key === os.key ? { ...p, sessionId: newSession.id } : p),
                           );
                           syncUrlParams({ session: newSession.id });
+                        }
+                        // Optimistically insert new session into sidebar list
+                        if (newSession) {
+                          setAllSessions(prev => {
+                            if (prev.some(s => s.id === newSession.id)) return prev;
+                            return [{
+                              id: newSession.id,
+                              title: newSession.title,
+                              updatedAt: newSession.updatedAt,
+                              agentId: os.agentId,
+                              agentName: agent.name,
+                              agentIcon: agent.icon,
+                            }, ...prev];
+                          });
                         }
                         // Mark as read if user is actively viewing this session
                         const sid = newSession?.id ?? os.sessionId;

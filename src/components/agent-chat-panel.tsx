@@ -182,7 +182,7 @@ export function AgentChatPanel({
     if (fullText || toolCalls.length > 0) {
       const cleanedText = stripSessionTitleTag(fullText);
       const assistantMsg: ChatMessage = {
-        id: `msg-${Date.now()}`,
+        id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         role: 'assistant',
         content: cleanedText,
         timestamp: new Date().toISOString(),
@@ -334,7 +334,6 @@ export function AgentChatPanel({
         cancelAnimationFrame(rafIdRef.current);
         rafIdRef.current = 0;
       }
-      await new Promise(r => setTimeout(r, 50));
       finalizeStream();
     }).catch((err) => {
       if ((err as Error).name === 'AbortError') return;
@@ -477,7 +476,7 @@ export function AgentChatPanel({
     });
 
     const userMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
+      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       role: 'user',
       content: text.trim(),
       timestamp: new Date().toISOString(),
@@ -752,6 +751,37 @@ export function AgentChatPanel({
   if (!hasProject) {
     return (
       <div className="relative flex h-full flex-col">
+        {/* Header with config toggle */}
+        <div className="flex items-center justify-end border-b border-zinc-100 px-3 py-1 dark:border-zinc-800">
+          <Button
+            size="sm"
+            variant="ghost"
+            className={`h-6 px-1.5 text-xs transition-colors ${
+              showConfig
+                ? 'text-blue-500 dark:text-blue-400'
+                : (sessionConfig.contextIds?.length || sessionConfig.supplementaryPrompt?.trim())
+                  ? 'text-blue-400 dark:text-blue-500'
+                  : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+            }`}
+            onClick={() => setShowConfig(v => !v)}
+            title="会话配置"
+          >
+            <Settings className="h-3 w-3" />
+          </Button>
+        </div>
+
+        {/* Session Config Panel (collapsible) */}
+        {showConfig && (
+          <div className="border-b border-zinc-100 dark:border-zinc-800 max-h-[50%] overflow-hidden">
+            <SessionConfigPanel
+              sessionId={sessionId ?? '_new'}
+              config={sessionConfig}
+              onSave={handleSaveConfig}
+              onClose={() => setShowConfig(false)}
+            />
+          </div>
+        )}
+
         {/* Messages */}
         <div ref={scrollRef} onScroll={handleChatScroll} className="flex-1 space-y-3 overflow-y-auto p-4">
           {messages.length === 0 && !isStreaming ? (

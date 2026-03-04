@@ -45,11 +45,16 @@ export async function PATCH(
   }
 
   if (body.action === 'archive' || body.action === 'unarchive') {
-    const found = await agentChatManager.setArchived(id, body.action === 'archive');
-    if (!found) {
-      return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    try {
+      const found = await agentChatManager.setArchived(id, body.action === 'archive');
+      if (!found) {
+        return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+      }
+      return NextResponse.json({ ok: true });
+    } catch (err) {
+      console.error('[API] setArchived failed:', err);
+      return NextResponse.json({ error: 'Internal error' }, { status: 500 });
     }
-    return NextResponse.json({ ok: true });
   }
 
   if (body.action === 'updateConfig') {
