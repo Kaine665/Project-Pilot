@@ -68,6 +68,18 @@ git worktree prune
 
 > **不要直接 `rm -rf`**。虽然不会损坏仓库，但 `.git/worktrees/` 里会留残余记录，需要 `prune` 清理。
 
+### Windows 文件锁与目录删除
+
+Windows 上删除 worktree 目录经常遇到文件锁（npm 产生的 `.node` 原生模块被系统锁住），导致 `git worktree remove` 或 `rd /s /q` 失败。
+
+ProjectPilot 的 `removeWorktreeDirectory()`（`src/lib/worktree-ports.ts`）采用三级递进策略：
+
+1. **直接删除**：`rd /s /q` 尝试整个目录（快速路径）
+2. **逐个击破**：递归遍历每个文件/子目录，能删就删，被锁就跳过，继续删下一个
+3. **移到垃圾桶**：把删不掉的残留（此时只剩被锁的少量文件）整体 rename 到 `_trashs/`
+
+`_trashs/` 位于项目根目录（与 `develop-static/` 同级），在每次 cleanup 时尝试清理。
+
 ### 完整生命周期
 
 ```bash

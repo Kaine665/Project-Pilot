@@ -133,10 +133,10 @@ export async function releasePort(branch: string): Promise<boolean> {
  * 会被 Windows 锁住文件句柄，导致整个目录删不掉。
  *
  * 策略：
- * 1. 先尝试直接删除整个目录
- * 2. 如果失败，把 node_modules 移到 _trashs/ 统一垃圾桶中
- * 3. 删除剩余的 worktree 目录（此时没有锁了）
- * 4. _trashs/ 目录在每次 cleanup 时尝试清理，或由用户关闭编辑器后手动删除
+ * 1. 先尝试直接删除整个目录（快速路径）
+ * 2. 如果失败，递归遍历逐个删除文件和子目录
+ * 3. 遇到文件锁（EBUSY/EPERM/EACCES）就跳过，继续删别的
+ * 4. 最后把删不掉的残留整体移到 _trashs/
  */
 async function removeWorktreeDirectory(dirPath: string): Promise<boolean> {
   try {
@@ -145,26 +145,62 @@ async function removeWorktreeDirectory(dirPath: string): Promise<boolean> {
     return true; // 已不存在
   }
 
-  // 尝试直接删除
+  // 快速路径：尝试直接删除
   if (await tryRemoveDir(dirPath)) return true;
 
-  // Trash 策略：把 node_modules 移到统一垃圾桶，再删 worktree 目录
-  const nodeModulesPath = path.join(dirPath, 'node_modules');
+  // 精细删除：递归遍历，逐个删，跳过被锁文件
+  console.log('  Direct removal failed, trying incremental deletion...');
+  await incrementalDelete(dirPath);
+
+  // 检查目录是否已空/已删
+  if (await tryRemoveDir(dirPath)) return true;
+
+  // 仍有残留（被锁文件），移到 _trashs/
   const dirName = path.basename(dirPath);
   const trashRoot = path.join(path.dirname(dirPath), '_trashs');
   const trashDest = path.join(trashRoot, `${dirName}_${Date.now()}`);
 
   try {
-    await fsPromises.stat(nodeModulesPath);
     await fsPromises.mkdir(trashRoot, { recursive: true });
-    console.log('  Moving locked node_modules to _trashs/...');
-    await fsPromises.rename(nodeModulesPath, trashDest);
+    console.log('  Moving locked remnants to _trashs/...');
+    await fsPromises.rename(dirPath, trashDest);
+    return true;
   } catch {
-    // node_modules 不存在或移动失败
+    console.log('  Failed to move remnants to _trashs/, directory partially cleaned');
+    return false;
+  }
+}
+
+/**
+ * 递归删除目录内容，遇到文件锁就跳过继续。
+ * 采用后序遍历：先删子文件/子目录，再删父目录。
+ */
+async function incrementalDelete(dirPath: string): Promise<void> {
+  let entries;
+  try {
+    entries = await fsPromises.readdir(dirPath, { withFileTypes: true });
+  } catch {
+    return; // 目录已不存在或无权限
   }
 
-  // 再次尝试删除 worktree 目录
-  return tryRemoveDir(dirPath);
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      await incrementalDelete(fullPath);
+      // 子内容删完后尝试删空目录
+      try {
+        await fsPromises.rmdir(fullPath);
+      } catch {
+        // 目录非空（有被锁文件）或已不存在，跳过
+      }
+    } else {
+      try {
+        await fsPromises.unlink(fullPath);
+      } catch {
+        // 文件被锁，跳过
+      }
+    }
+  }
 }
 
 /** 尝试删除目录，返回是否成功（目录不存在也算成功） */
