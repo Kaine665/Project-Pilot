@@ -47,6 +47,11 @@ export default function SettingsPage() {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'failed'>('idle');
   const [oauthStatus, setOauthStatus] = useState<'unknown' | 'checking' | 'authenticated' | 'not_authenticated'>('unknown');
   const [loginPending, setLoginPending] = useState(false);
+  const [loginUrl, setLoginUrl] = useState<string | null>(null);
+  const [loginProcessAlive, setLoginProcessAlive] = useState(false);
+  const [loginFlowActive, setLoginFlowActive] = useState(false); // 保持显示，不因进程退出而闪退
+  const [oauthCode, setOauthCode] = useState('');
+  const [codeSubmitting, setCodeSubmitting] = useState(false);
 
   // Data management state
   const [dataDir, setDataDir] = useState('');
@@ -191,15 +196,76 @@ export default function SettingsPage() {
   const triggerOAuthLogin = async () => {
     if (loginPending) return;
     setLoginPending(true);
+    setLoginUrl(null);
+    setOauthCode('');
+    setLoginProcessAlive(true);
+    setLoginFlowActive(true);
     try {
-      await fetch('/api/settings/auth-login', { method: 'POST' });
-      setTimeout(() => {
-        checkOAuthStatus();
+      const res = await fetch('/api/settings/auth-login', { method: 'POST' });
+      if (!res.ok) {
         setLoginPending(false);
-      }, 5000);
+        setLoginProcessAlive(false);
+        setLoginFlowActive(false);
+        return;
+      }
     } catch (err) {
       console.error('Failed to trigger login:', err);
       setLoginPending(false);
+      setLoginProcessAlive(false);
+      setLoginFlowActive(false);
+    } finally {
+      setLoginPending(false);
+    }
+  };
+
+  const cancelLoginFlow = () => {
+    setLoginFlowActive(false);
+    setLoginUrl(null);
+    setOauthCode('');
+    setLoginProcessAlive(false);
+  };
+
+  // 轮询 auth-url 获取 OAuth 链接
+  useEffect(() => {
+    if (!loginFlowActive) return;
+    const poll = async () => {
+      try {
+        const res = await fetch('/api/settings/auth-url');
+        const data = await res.json();
+        if (data.loginUrl) setLoginUrl(data.loginUrl);
+        if (!data.processAlive) setLoginProcessAlive(false);
+      } catch {
+        setLoginProcessAlive(false);
+      }
+    };
+    poll();
+    const id = setInterval(poll, 500);
+    return () => clearInterval(id);
+  }, [loginFlowActive]);
+
+  const handleCodeSubmit = async () => {
+    if (!oauthCode.trim() || codeSubmitting) return;
+    setCodeSubmitting(true);
+    try {
+      const res = await fetch('/api/settings/auth-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: oauthCode.trim() }),
+      });
+      if (res.ok) {
+        setOauthCode('');
+        setLoginProcessAlive(false);
+        setLoginFlowActive(false);
+        setLoginUrl(null);
+        await checkOAuthStatus();
+      } else {
+        const err = await res.json();
+        console.error(err?.error || 'Submit failed');
+      }
+    } catch (err) {
+      console.error('Failed to submit code:', err);
+    } finally {
+      setCodeSubmitting(false);
     }
   };
 
@@ -331,11 +397,15 @@ export default function SettingsPage() {
                 provider={provider} authMode={authMode} apiKey={apiKey}
                 model={model} customModel={customModel} baseUrl={baseUrl}
                 oauthStatus={oauthStatus} loginPending={loginPending}
+                loginUrl={loginUrl} loginFlowActive={loginFlowActive}
+                oauthCode={oauthCode} codeSubmitting={codeSubmitting}
                 preset={preset} isPresetModel={isPresetModel} modelSelectOptions={modelSelectOptions}
                 onProviderChange={handleProviderChange} onAuthModeChange={setAuthMode}
                 onApiKeyChange={setApiKey} onModelChange={setModel}
                 onCustomModelChange={setCustomModel} onBaseUrlChange={setBaseUrl}
                 onCheckOAuthStatus={checkOAuthStatus} onTriggerOAuthLogin={triggerOAuthLogin}
+                onOauthCodeChange={setOauthCode} onCodeSubmit={handleCodeSubmit}
+                onCancelLoginFlow={cancelLoginFlow}
               />
             )}
 

@@ -411,7 +411,12 @@
     "oauthChecking": "检查中...",
     "oauthLogin": "使用 Claude 登录",
     "oauthCheckStatus": "检查状态",
-    "oauthHint": "将打开浏览器进行 Claude Pro/Max 认证",
+    "oauthHint": "点击后获取链接，复制到浏览器打开，获取 code 后粘贴回下方输入框",
+    "oauthWaiting": "正在等待授权链接...",
+    "oauthOpenUrl": "在浏览器中打开以下链接完成授权：",
+    "oauthPasteCode": "授权完成后，粘贴授权码或完整回调 URL：",
+    "oauthCodePlaceholder": "粘贴授权码或回调 URL（含 ?code= 的链接）",
+    "oauthSubmitFailed": "提交失败，请重新点击「使用 Claude 登录」后尽快粘贴授权码",
     "provider": "AI 供应商",
     "providers": {
       "anthropic": "Anthropic",

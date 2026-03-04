@@ -1,19 +1,28 @@
 import { NextResponse } from 'next/server';
-import { spawn, type ChildProcess } from 'child_process';
+import { spawn } from 'child_process';
+import {
+  loginProcess as currentProcess,
+  setLoginProcess,
+  setCapturedLoginUrl,
+} from '@/lib/auth-login-state';
+
+/** 从 claude auth login 输出中提取 OAuth URL */
+function extractOAuthUrl(text: string): string | null {
+  // 匹配 "visit: https://..." 或直接 https://claude.ai/oauth/authorize
+  const visitMatch = text.match(/visit:\s*(https:\/\/[^\s]+)/i);
+  if (visitMatch) return visitMatch[1].trim();
+  const urlMatch = text.match(/https:\/\/claude\.ai\/oauth\/authorize\?[^\s]+/);
+  if (urlMatch) return urlMatch[0].trim();
+  return null;
+}
 
 /**
  * POST /api/settings/auth-login
- * 触发 Claude CLI OAuth 登录（打开浏览器）。
- *
- * 防重复：同一时间只允许一个 login 进程。
- * Windows：windowsHide 隐藏控制台窗口。
+ * 启动 claude auth login（不自动打开浏览器），捕获输出的 OAuth URL。
+ * 用户复制 URL 到浏览器打开，获取 code 后粘贴回前端。
  */
-
-let loginProcess: ChildProcess | null = null;
-
 export async function POST() {
-  // 防重复：如果已有进程在跑，直接返回
-  if (loginProcess && !loginProcess.killed) {
+  if (currentProcess && !currentProcess.killed) {
     return NextResponse.json({
       success: true,
       message: 'Login already in progress.',
@@ -21,24 +30,41 @@ export async function POST() {
   }
 
   try {
-    const child = spawn('claude', ['login'], {
-      detached: true,
-      stdio: 'ignore',
-      shell: false,
-      windowsHide: true,
+    setCapturedLoginUrl(null);
+    // BROWSER=echo 阻止自动打开浏览器，URL 会输出到 stdout
+    const env = { ...process.env, BROWSER: 'echo' };
+    const child = spawn('claude', ['auth', 'login'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      shell: process.platform === 'win32',
+      env,
     });
-    child.unref();
 
-    loginProcess = child;
-    child.on('exit', () => { loginProcess = null; });
-    child.on('error', () => { loginProcess = null; });
+    setLoginProcess(child);
+
+    let buffer = '';
+    const collect = (chunk: Buffer) => {
+      buffer += chunk.toString();
+      const url = extractOAuthUrl(buffer);
+      if (url) setCapturedLoginUrl(url);
+    };
+
+    child.stdout?.on('data', collect);
+    child.stderr?.on('data', collect);
+
+    child.on('exit', () => {
+      setLoginProcess(null);
+    });
+    child.on('error', () => {
+      setLoginProcess(null);
+    });
 
     return NextResponse.json({
       success: true,
-      message: 'Login flow started. Check your browser.',
+      message: 'Login started. Poll /api/settings/auth-url for the link.',
     });
   } catch (err) {
-    loginProcess = null;
+    setLoginProcess(null);
+    setCapturedLoginUrl(null);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Failed to start login' },
       { status: 500 },
