@@ -27,6 +27,7 @@ export async function GET(
  *   { action: 'markAsRead' }
  *   { action: 'archive' }
  *   { action: 'unarchive' }
+ *   { action: 'updateConfig', config: SessionConfig }
  */
 export async function PATCH(
   request: NextRequest,
@@ -45,6 +46,15 @@ export async function PATCH(
 
   if (body.action === 'archive' || body.action === 'unarchive') {
     const found = await agentChatManager.setArchived(id, body.action === 'archive');
+    if (!found) {
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  if (body.action === 'updateConfig') {
+    const config = body.config ?? {};
+    const found = await agentChatManager.updateConfig(id, config);
     if (!found) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }

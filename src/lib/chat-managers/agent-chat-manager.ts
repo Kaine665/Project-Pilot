@@ -41,9 +41,9 @@ import {
   buildAgentToolArgs,
 } from '@/lib/settings-manager';
 import type { ChatSSEEvent, ContentBlock, Agent, AgentsData } from '@/types';
-import type { AgentChatSession, AgentChatSessionsData } from '@/types/agent-chat';
+import type { AgentChatSession, AgentChatSessionsData, SessionConfig } from '@/types/agent-chat';
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
-import type { ResourceRef, FlowContextRef, ReferenceTurnsRef } from '@/types/resource';
+import type { ResourceRef, InlineTextRef, FlowContextRef, ReferenceTurnsRef } from '@/types/resource';
 import { resourceRegistry } from '@/lib/resource-registry';
 import '@/lib/resource-loaders'; // side-effect: registers all loaders
 import { migrateAgentToResources } from '@/lib/resource-migration';
@@ -70,6 +70,8 @@ export interface AgentChatRun extends BaseRun {
   projectKey?: string;
   sessionTitle?: string;
   messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }>;
+  // Session-level config (supplementary context & prompt)
+  config?: SessionConfig;
   // Guest Agent
   parentSessionId?: string;
   importedTurnIndices?: number[];
@@ -111,6 +113,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     flowContext?: FlowContext,
     images?: ImageAttachment[],
     initialTitle?: string,
+    initialConfig?: SessionConfig,
   ): Promise<string> {
     const agent = await this.loadAgent(agentId);
 
@@ -136,14 +139,17 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     const dataUrls = images?.map(img => `data:${img.mediaType};base64,${img.data}`);
     messages.push({ role: 'user', content: message, images: dataUrls?.length ? dataUrls : undefined });
 
+    // Resolve session config: initialConfig (from API) > existing run/disk config
+    const sessionConfig = initialConfig ?? existing?.config;
+
     // Build prompt
     let stdinContent: string;
     if (isResume) {
       stdinContent = message;
     } else if (flowContext) {
-      stdinContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext);
+      stdinContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext, sessionConfig);
     } else {
-      stdinContent = await buildAgentChatPrompt(agent, message);
+      stdinContent = await buildAgentChatPrompt(agent, message, sessionConfig);
     }
 
     // Write images to temp files
@@ -195,6 +201,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       sessionTitle: existing?.sessionTitle ?? initialTitle,
       messages,
       tempPaths,
+      config: sessionConfig,
     };
 
     const run = await this.spawnAndManage(config);
@@ -413,6 +420,30 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     return found;
   }
 
+  async updateConfig(sessionId: string, config: SessionConfig): Promise<boolean> {
+    // Update in-memory run if present
+    const run = this.runs.get(sessionId);
+    if (run) {
+      run.config = config;
+    }
+    // Persist to disk
+    let found = false;
+    await modifyJsonFile<AgentChatSessionsData>(
+      getAgentChatSessionsPath(),
+      DEFAULT_SESSIONS_DATA,
+      (data) => {
+        const session = data.sessions.find(s => s.id === sessionId);
+        if (session) {
+          session.config = config;
+          session.updatedAt = new Date().toISOString();
+          found = true;
+        }
+        return data;
+      },
+    );
+    return found;
+  }
+
   async listGuestSessions(parentSessionId: string): Promise<Omit<AgentChatSession, 'messages'>[]> {
     const data = await readJsonFile<AgentChatSessionsData>(
       getAgentChatSessionsPath(),
@@ -439,6 +470,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     sessionTitle?: string;
     messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }>;
     tempPaths: string[];
+    config?: SessionConfig;
     parentSessionId?: string;
     importedTurnIndices?: number[];
   };
@@ -452,6 +484,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       projectKey: d.projectKey,
       sessionTitle: d.sessionTitle,
       messages: d.messages,
+      config: d.config,
       parentSessionId: d.parentSessionId,
       importedTurnIndices: d.importedTurnIndices,
       _tempImagePaths: d.tempPaths,
@@ -567,6 +600,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       claudeSessionId: diskSession.claudeSessionId,
       sessionTitle: diskSession.title,
       messages: [...diskSession.messages],
+      config: diskSession.config,
     };
   }
 
@@ -581,6 +615,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       claudeSessionId: run.claudeSessionId,
       createdAt: new Date(run.startedAt).toISOString(),
       updatedAt: now,
+      config: run.config,
       parentSessionId: run.parentSessionId,
       importedTurnIndices: run.importedTurnIndices,
     };
@@ -593,6 +628,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
         if (idx >= 0) {
           session.createdAt = data.sessions[idx].createdAt;
           session.archived = data.sessions[idx].archived; // preserve archive state
+          session.config = session.config ?? data.sessions[idx].config; // preserve config
           // Increment unread count (agent replied)
           session.unreadCount = (data.sessions[idx].unreadCount || 0) + 1;
           data.sessions[idx] = session;
@@ -748,13 +784,39 @@ async function createDesignDoc(draft: DocTag): Promise<string | null> {
  * via migrateAgentToResources().
  *
  * Extra refs (e.g. flow-context, reference-turns) can be appended.
+ * Session-level config (contextIds, supplementaryPrompt) is merged as extra refs.
  */
 async function buildResourcePrompt(
   agent: Agent,
   extraRefs?: ResourceRef[],
+  sessionConfig?: SessionConfig,
 ): Promise<string> {
   const baseRefs = agent.defaultResources ?? migrateAgentToResources(agent);
-  const allRefs = extraRefs ? [...baseRefs, ...extraRefs] : baseRefs;
+  const merged: ResourceRef[] = [...baseRefs];
+  if (extraRefs) merged.push(...extraRefs);
+
+  // Merge session-level config into resource refs
+  if (sessionConfig) {
+    // Session context IDs → context refs (priority 35, after agent's 30)
+    if (sessionConfig.contextIds?.length) {
+      for (const cid of sessionConfig.contextIds) {
+        merged.push({ type: 'context', id: cid, priority: 35 });
+      }
+    }
+    // Session supplementary prompt → inline-text ref (priority 5, right after system prompt)
+    if (sessionConfig.supplementaryPrompt?.trim()) {
+      const promptRef: InlineTextRef = {
+        type: 'inline-text',
+        id: '_session-supplementary',
+        priority: 5,
+        label: '会话补充提示词',
+        inlineContent: sessionConfig.supplementaryPrompt.trim(),
+      };
+      merged.push(promptRef);
+    }
+  }
+
+  const allRefs = merged;
 
   // Resolve system prompt: prefer .md file, fallback to inline, then auto-generated
   const resolved = await resolveSystemPrompt(agent.id, agent.systemPrompt);
@@ -774,8 +836,8 @@ async function buildResourcePrompt(
 
 // ── Prompt Builders (powered by Resource Registry) ──
 
-async function buildAgentChatPrompt(agent: Agent, message: string): Promise<string> {
-  const resourcePrompt = await buildResourcePrompt(agent);
+async function buildAgentChatPrompt(agent: Agent, message: string, sessionConfig?: SessionConfig): Promise<string> {
+  const resourcePrompt = await buildResourcePrompt(agent, undefined, sessionConfig);
 
   return `${resourcePrompt}
 
@@ -788,6 +850,7 @@ async function buildAgentChatPromptWithFlowContext(
   agent: Agent,
   message: string,
   flowContext: FlowContext,
+  sessionConfig?: SessionConfig,
 ): Promise<string> {
   const { projectKey, projectName, flowDataPath } = flowContext;
 
@@ -801,7 +864,7 @@ async function buildAgentChatPromptWithFlowContext(
     flowDataPath,
   };
 
-  const resourcePrompt = await buildResourcePrompt(agent, [flowRef]);
+  const resourcePrompt = await buildResourcePrompt(agent, [flowRef], sessionConfig);
 
   return `${resourcePrompt}
 

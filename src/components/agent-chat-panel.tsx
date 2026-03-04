@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Loader2, Maximize2, Minimize2, Bot, Sparkles, Plus, MessageSquare, Trash2 } from 'lucide-react';
+import { Loader2, Maximize2, Minimize2, Bot, Sparkles, Plus, MessageSquare, Trash2, Settings } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from '@/i18n/routing';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,9 @@ import { ChatNotificationBanners } from '@/components/chat-notification-banners'
 import { SaveKnowledgeDialog } from '@/components/save-knowledge-dialog';
 import { SessionDropdown } from '@/components/session-dropdown';
 import { GuestAgentOverlay } from '@/components/guest-agent-overlay';
+import { SessionConfigPanel } from '@/components/session-config-panel';
 import type { Agent } from '@/types';
+import type { SessionConfig } from '@/types/agent-chat';
 import type { ChatMessage, ChatToolCall, ChatSSEEvent, ContentBlock } from '@/types';
 
 // Session list item (no messages)
@@ -77,6 +79,10 @@ export function AgentChatPanel({
   // Save as knowledge dialog
   const [saveDialogContent, setSaveDialogContent] = useState<string | null>(null);
 
+  // Session config
+  const [sessionConfig, setSessionConfig] = useState<SessionConfig>({});
+  const [showConfig, setShowConfig] = useState(false);
+
   const streamAbortRef = useRef<AbortController | null>(null);
   const blocksRef = useRef<ContentBlock[]>([]);
   const rafIdRef = useRef<number>(0);
@@ -136,7 +142,7 @@ export function AgentChatPanel({
     }
   }, []);
 
-  // Load a session's full data (messages)
+  // Load a session's full data (messages + config)
   const loadSessionData = useCallback(async (sid: string) => {
     try {
       const res = await fetch(`/api/agent-chat/sessions/${sid}`, { cache: 'no-store' });
@@ -153,6 +159,7 @@ export function AgentChatPanel({
       );
       setMessages(restored);
       setSessionTitle(data.title ?? '新会话');
+      setSessionConfig(data.config ?? {});
     } catch {
       // ignore
     }
@@ -516,6 +523,8 @@ export function AgentChatPanel({
           projectKey: projectKey ?? undefined,
           images: imageAttachments.length > 0 ? imageAttachments : undefined,
           initialTitle: text.trim().slice(0, 10) || undefined,
+          config: (sessionConfig.contextIds?.length || sessionConfig.supplementaryPrompt?.trim())
+            ? sessionConfig : undefined,
         }),
       });
 
@@ -532,7 +541,7 @@ export function AgentChatPanel({
       setErrorMsg(msg);
       setIsStreaming(false);
     }
-  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, connectToStream, onSessionChange, t]);
+  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, connectToStream, onSessionChange, t, sessionConfig]);
 
   // Keep doSendRef in sync (avoid stale closure in event listener)
   useEffect(() => {
@@ -587,6 +596,24 @@ export function AgentChatPanel({
   };
 
   // Switch to a new (empty) session
+  // Save session config
+  const handleSaveConfig = useCallback(async (config: SessionConfig) => {
+    setSessionConfig(config);
+    setShowConfig(false);
+    // Persist to backend if session exists on disk
+    if (sessionId) {
+      try {
+        await fetch(`/api/agent-chat/sessions/${sessionId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'updateConfig', config }),
+        });
+      } catch {
+        // ignore — config is already in local state for next message
+      }
+    }
+  }, [sessionId]);
+
   const handleNewSession = useCallback(() => {
     if (isStreaming) return;
     if (streamAbortRef.current) {
@@ -596,6 +623,8 @@ export function AgentChatPanel({
     setSessionId(null);
     setSessionTitle(hasProject ? t('chat.newSession') : '新会话');
     setMessages([]);
+    setSessionConfig({});
+    setShowConfig(false);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
@@ -807,6 +836,22 @@ export function AgentChatPanel({
           )}
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
+          {/* Session config toggle */}
+          <Button
+            size="sm"
+            variant="ghost"
+            className={`h-6 px-1.5 text-xs transition-colors ${
+              showConfig
+                ? 'text-blue-500 dark:text-blue-400'
+                : (sessionConfig.contextIds?.length || sessionConfig.supplementaryPrompt?.trim())
+                  ? 'text-blue-400 dark:text-blue-500'
+                  : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+            }`}
+            onClick={() => setShowConfig(v => !v)}
+            title="会话配置"
+          >
+            <Settings className="h-3 w-3" />
+          </Button>
           {!isFull && sessionId && (
             <Button
               size="sm"
@@ -839,6 +884,18 @@ export function AgentChatPanel({
           )}
         </div>
       </div>
+
+      {/* Session Config Panel (collapsible) */}
+      {showConfig && (
+        <div className="border-b border-zinc-100 dark:border-zinc-800 max-h-[50%] overflow-hidden">
+          <SessionConfigPanel
+            sessionId={sessionId ?? '_new'}
+            config={sessionConfig}
+            onSave={handleSaveConfig}
+            onClose={() => setShowConfig(false)}
+          />
+        </div>
+      )}
 
       {/* Messages */}
       <div ref={scrollRef} onScroll={handleChatScroll} className="flex-1 space-y-3 overflow-y-auto p-3">
