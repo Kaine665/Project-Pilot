@@ -48,6 +48,7 @@ import { resourceRegistry } from '@/lib/resource-registry';
 import '@/lib/resource-loaders'; // side-effect: registers all loaders
 import { migrateAgentToResources } from '@/lib/resource-migration';
 import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
+import { checkSessionHealth, buildGuardMessage } from './session-health-guard';
 
 // ── Types ──
 
@@ -77,6 +78,8 @@ export interface AgentChatRun extends BaseRun {
   importedTurnIndices?: number[];
   // Temp image paths (for cleanup)
   _tempImagePaths?: string[];
+  // Health guard retry count (prevents recursive guard triggers)
+  _guardRetryCount?: number;
 }
 
 // ── Helpers ──
@@ -496,6 +499,37 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
 
   protected async persistAfterClose(run: AgentChatRun, _aborted: boolean): Promise<void> {
     await this.persistSession(run);
+
+    // ── Session Health Guard ──
+    // Trigger a lightweight check when a session ends abnormally.
+    // Fire-and-forget: guard errors must not affect the main flow.
+    if (
+      (run.status === 'failed' || run.status === 'stopped')
+      && !(run._guardRetryCount && run._guardRetryCount >= 1)
+    ) {
+      const tailText = run.assistantText.slice(-100);
+      checkSessionHealth({
+        sessionId: run.sessionId,
+        agentId: run.agentId,
+        status: run.status,
+        tailText,
+        guardRetryCount: run._guardRetryCount ?? 0,
+      }).then(async (result) => {
+        if (!result?.abnormal) return;
+
+        // Bump guard retry count on disk before resuming
+        await this.incrementGuardRetryCount(run.sessionId);
+
+        // Resume the session with the guard's error description
+        const guardMsg = buildGuardMessage(run.status, result.reason);
+        try {
+          await this.start(run.sessionId, run.agentId, guardMsg);
+          console.log(`${this.logPrefix} Health guard resumed session ${run.sessionId}`);
+        } catch (err) {
+          console.error(`${this.logPrefix} Health guard failed to resume session:`, err);
+        }
+      }).catch(err => console.error(`${this.logPrefix} Health guard error:`, err));
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -609,7 +643,28 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       sessionTitle: diskSession.title,
       messages: [...diskSession.messages],
       config: diskSession.config,
+      _guardRetryCount: diskSession.guardRetryCount,
     };
+  }
+
+  private async incrementGuardRetryCount(sessionId: string): Promise<void> {
+    // Update in-memory run
+    const run = this.runs.get(sessionId);
+    if (run) {
+      run._guardRetryCount = (run._guardRetryCount ?? 0) + 1;
+    }
+    // Persist to disk
+    await modifyJsonFile<AgentChatSessionsData>(
+      getAgentChatSessionsPath(),
+      DEFAULT_SESSIONS_DATA,
+      (data) => {
+        const session = data.sessions.find(s => s.id === sessionId);
+        if (session) {
+          session.guardRetryCount = (session.guardRetryCount ?? 0) + 1;
+        }
+        return data;
+      },
+    );
   }
 
   private async persistSession(run: AgentChatRun): Promise<void> {
@@ -624,6 +679,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       createdAt: new Date(run.startedAt).toISOString(),
       updatedAt: now,
       config: run.config,
+      guardRetryCount: run._guardRetryCount,
       parentSessionId: run.parentSessionId,
       importedTurnIndices: run.importedTurnIndices,
     };
@@ -637,6 +693,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
           session.createdAt = data.sessions[idx].createdAt;
           session.archived = data.sessions[idx].archived; // preserve archive state
           session.config = session.config ?? data.sessions[idx].config; // preserve config
+          session.guardRetryCount = session.guardRetryCount ?? data.sessions[idx].guardRetryCount; // preserve guard count
           // Increment unread count (agent replied)
           session.unreadCount = (data.sessions[idx].unreadCount || 0) + 1;
           data.sessions[idx] = session;

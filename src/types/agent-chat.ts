@@ -41,6 +41,9 @@ export interface AgentChatSession {
   /** 会话级别的可选配置（追加上下文、补充提示词） */
   config?: SessionConfig;
 
+  /** 健康检查守卫已自动干预的次数（防止递归，达到上限后不再触发） */
+  guardRetryCount?: number;
+
   // ── Guest Agent（旁听 Agent）字段 ──
 
   /** 宿主会话 ID（仅 guest 会话有此字段） */
