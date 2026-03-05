@@ -4,14 +4,12 @@
  * Extends BaseChatManager with:
  * - Multi-session support (sessionId-indexed)
  * - Image attachment handling (temp files + --image args)
- * - AI-generated session titles (<session-title> tag)
- * - Knowledge draft extraction (<save-knowledge> tag)
- * - Design doc extraction (<save-doc> tag)
+ * - AgentAction processing (tag parse → execute → strip via actionRegistry)
  * - Guest Agent (spectator mode with imported turns)
  * - Session CRUD (list, load, delete, persisted to agent-chat-sessions.json)
  */
 
-import { readFile, writeFile, unlink, mkdir } from 'fs/promises';
+import { writeFile, unlink } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
@@ -22,17 +20,10 @@ import {
   getAgentChatSessionsPath,
   getAgentsPath,
   getPromptFilePath,
-  getContextIndexPath,
-  getContextFilePath,
-  getContextDir,
-  getDesignDocsDir,
-  getDesignDocsIndexPath,
-  getDesignDocFilePath,
   readJsonFile,
   modifyJsonFile,
 } from '@/lib/file-store';
 import { resolveSystemPrompt } from '@/lib/agent-prompt-store';
-import type { ContextIndexData, ContextEntry, DocsIndexData, DocEntry } from '@/types';
 import {
   buildClaudeEnv,
   buildClaudeModelArgs,
@@ -45,7 +36,9 @@ import type { AgentChatSession, AgentChatSessionsData, SessionConfig } from '@/t
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
 import type { ResourceRef, InlineTextRef, FlowContextRef, ReferenceTurnsRef } from '@/types/resource';
 import { resourceRegistry } from '@/lib/resource-registry';
-import '@/lib/resource-loaders'; // side-effect: registers all loaders
+import '@/lib/resource-loaders'; // side-effect: registers non-action loaders
+import '@/lib/agent-actions';    // side-effect: registers actions + their loaders
+import { actionRegistry } from '@/lib/agent-actions';
 import { migrateAgentToResources } from '@/lib/resource-migration';
 import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
 import { checkSessionHealth, buildGuardMessage } from './session-health-guard';
@@ -85,15 +78,6 @@ export interface AgentChatRun extends BaseRun {
 // ── Helpers ──
 
 const DEFAULT_SESSIONS_DATA: AgentChatSessionsData = { sessions: [] };
-
-function extractSessionTitle(text: string): string | null {
-  const match = text.match(/<session-title>([\s\S]*?)<\/session-title>/);
-  return match ? match[1].trim() : null;
-}
-
-function stripSessionTitle(text: string): string {
-  return text.replace(/<session-title>[\s\S]*?<\/session-title>\s*/, '');
-}
 
 export function generateSessionId(): string {
   return `agent-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -548,52 +532,35 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       }
     }
 
-    // Extract session title
-    if (!run.sessionTitle && run.assistantText) {
-      const aiTitle = extractSessionTitle(run.assistantText);
-      const firstUserMsg = run.messages.find(m => m.role === 'user')?.content;
-      const defaultTitle = run.parentSessionId ? '旁听会话' : '新会话';
-      run.sessionTitle = aiTitle
-        ?? (firstUserMsg ? firstUserMsg.slice(0, 30) + '...' : defaultTitle);
-    }
+    // Process all agent actions: parse tags, execute side-effects, strip tags
+    if (run.assistantText) {
+      const actionCtx = {
+        sessionId: run.sessionId,
+        agentId: run.agentId,
+        emit: (event: ChatSSEEvent) => this.trackAndEmit(run, event),
+        setSessionTitle: (title: string) => { if (!run.sessionTitle) run.sessionTitle = title; },
+      };
 
-    // Emit structured title event so frontend can update immediately
-    if (run.sessionTitle) {
+      const cleaned = await actionRegistry.processResponse(run.assistantText, actionCtx);
+
+      // Fallback title if no AI-generated title was set
+      if (!run.sessionTitle) {
+        const firstUserMsg = run.messages.find(m => m.role === 'user')?.content;
+        const defaultTitle = run.parentSessionId ? '旁听会话' : '新会话';
+        run.sessionTitle = firstUserMsg ? firstUserMsg.slice(0, 30) + '...' : defaultTitle;
+      }
+
+      // Emit structured title event so frontend can update immediately
       this.trackAndEmit(run, { type: 'session_title_set', title: run.sessionTitle });
-    }
 
-    // Parse and persist knowledge drafts
-    if (run.assistantText) {
-      const drafts = parseKnowledgeTags(run.assistantText);
-      for (const draft of drafts) {
-        const entryId = await createDraftContextEntry(draft, run.sessionId);
-        if (entryId) {
-          this.trackAndEmit(run, { type: 'knowledge_draft_created', entryId, label: draft.label });
-        }
-      }
-    }
-
-    // Parse and persist design doc drafts
-    if (run.assistantText) {
-      const docDrafts = parseDocTags(run.assistantText);
-      for (const draft of docDrafts) {
-        const docId = await createDesignDoc(draft);
-        if (docId) {
-          this.trackAndEmit(run, { type: 'doc_created', docId, title: draft.title, projectKey: draft.project });
-        }
-      }
-    }
-
-    // Save assistant message (strip title + knowledge tags + doc tags)
-    if (run.assistantText) {
-      const cleaned = stripDocTags(stripKnowledgeTags(stripSessionTitle(run.assistantText)));
       // Also clean contentBlocks text entries
       const cleanedBlocks = run.contentBlocks.map(block => {
         if (block.type === 'text') {
-          return { ...block, text: stripDocTags(stripKnowledgeTags(stripSessionTitle(block.text))) };
+          return { ...block, text: actionRegistry.stripAll(block.text) };
         }
         return block;
       }).filter(block => !(block.type === 'text' && !block.text.trim()));
+
       run.messages.push({
         role: 'assistant',
         content: cleaned,
@@ -704,138 +671,6 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
         return data;
       },
     );
-  }
-}
-
-// ── Knowledge Tag Helpers ──
-
-interface KnowledgeTag {
-  label: string;
-  description: string;
-  format: 'json' | 'markdown' | 'text';
-  content: string;
-}
-
-function parseKnowledgeTags(text: string): KnowledgeTag[] {
-  const regex = /<save-knowledge\s+label="([^"]+)"\s+description="([^"]+)"\s+format="(text|json|markdown)">([\s\S]*?)<\/save-knowledge>/g;
-  const results: KnowledgeTag[] = [];
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    results.push({
-      label: match[1].trim(),
-      description: match[2].trim(),
-      format: match[3] as 'json' | 'markdown' | 'text',
-      content: match[4].trim(),
-    });
-  }
-  return results;
-}
-
-function stripKnowledgeTags(text: string): string {
-  return text.replace(/<save-knowledge[\s\S]*?<\/save-knowledge>/g, '').trim();
-}
-
-async function createDraftContextEntry(draft: KnowledgeTag, sessionId: string): Promise<string | null> {
-  try {
-    const now = new Date().toISOString();
-    const id = `ctx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const extMap = { json: 'json', markdown: 'md', text: 'txt' };
-    const fileName = `knowledge-${id}.${extMap[draft.format]}`;
-
-    const entry: ContextEntry = {
-      id,
-      label: draft.label,
-      description: draft.description,
-      fileName,
-      format: draft.format,
-      status: 'draft',
-      sourceAgentSessionId: sessionId,
-      producedAt: now,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    const contextDir = getContextDir();
-    await mkdir(contextDir, { recursive: true });
-    await writeFile(getContextFilePath(fileName), draft.content, 'utf-8');
-
-    await modifyJsonFile<ContextIndexData>(
-      getContextIndexPath(),
-      { entries: [] },
-      (data) => { data.entries.push(entry); return data; },
-    );
-
-    return id;
-  } catch (err) {
-    console.error('[AgentChat] Failed to create draft context entry:', err);
-    return null;
-  }
-}
-
-// ── Design Doc Tag Helpers ──
-
-interface DocTag {
-  project: string;
-  title: string;
-  description: string;
-  content: string;
-}
-
-function parseDocTags(text: string): DocTag[] {
-  const regex = /<save-doc\s+project="([^"]+)"\s+title="([^"]+)"\s+description="([^"]+)">([\s\S]*?)<\/save-doc>/g;
-  const results: DocTag[] = [];
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    results.push({
-      project: match[1].trim(),
-      title: match[2].trim(),
-      description: match[3].trim(),
-      content: match[4].trim(),
-    });
-  }
-  return results;
-}
-
-function stripDocTags(text: string): string {
-  return text.replace(/<save-doc[\s\S]*?<\/save-doc>/g, '').trim();
-}
-
-async function createDesignDoc(draft: DocTag): Promise<string | null> {
-  try {
-    const now = new Date().toISOString();
-    const docId = `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const fileName = `${docId}.md`;
-
-    const entry: DocEntry = {
-      id: docId,
-      title: draft.title,
-      description: draft.description,
-      fileName,
-      projectKey: draft.project,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    const docsDir = getDesignDocsDir();
-    await mkdir(docsDir, { recursive: true });
-    await writeFile(getDesignDocFilePath(fileName), draft.content, 'utf-8');
-
-    await modifyJsonFile<DocsIndexData>(
-      getDesignDocsIndexPath(),
-      { projects: {} },
-      (data) => {
-        if (!data.projects[entry.projectKey]) {
-          data.projects[entry.projectKey] = [];
-        }
-        data.projects[entry.projectKey].push(entry);
-        return data;
-      },
-    );
-
-    return docId;
-  } catch (err) {
-    console.error('[AgentChat] Failed to create design doc:', err);
-    return null;
   }
 }
 
@@ -963,53 +798,6 @@ async function buildGuestAgentPrompt(
 ---
 
 用户消息：${message}`;
-}
-
-// ── Legacy Helpers (deprecated — kept for reference, no longer called) ──
-
-/** @deprecated Use buildResourcePrompt() instead */
-async function _legacyBuildContextSection(): Promise<string> {
-  const data = await readJsonFile<ContextIndexData>(getContextIndexPath(), { entries: [] });
-  const activeEntries = data.entries.filter(e => !e.status || e.status === 'active');
-  if (activeEntries.length === 0) return '';
-
-  const tableHeader = '| 标签 | 描述 | 文件路径 | 原始文件路径 |\n|------|------|---------|------------|';
-  const toRow = (e: { label: string; description: string; fileName: string; sourcePath?: string }) => {
-    const filePath = getContextFilePath(e.fileName);
-    const sourceCol = e.sourcePath ? `\`${e.sourcePath}\`` : '-';
-    return `| ${e.label} | ${e.description} | \`${filePath}\` | ${sourceCol} |`;
-  };
-
-  const groups = [...new Set(activeEntries.map(e => e.group).filter((g): g is string => !!g))].sort();
-  const ungrouped = activeEntries.filter(e => !e.group);
-
-  let md = '\n\n## 可用上下文信息\n\n以下是用户配置的上下文信息索引。需要时可通过 bash 的 cat 命令读取具体文件内容。\n';
-  if (ungrouped.length > 0) {
-    md += `\n${tableHeader}\n${ungrouped.map(toRow).join('\n')}\n`;
-  }
-  for (const group of groups) {
-    const groupEntries = data.entries.filter(e => e.group === group);
-    md += `\n### ${group}\n${tableHeader}\n${groupEntries.map(toRow).join('\n')}\n`;
-  }
-  return md;
-}
-
-/** @deprecated Use buildResourcePrompt() instead */
-async function _legacyBuildPreloadedContextSection(contextIds: string[] | undefined): Promise<string> {
-  if (!contextIds || contextIds.length === 0) return '';
-  const data = await readJsonFile<ContextIndexData>(getContextIndexPath(), { entries: [] });
-  const entries = data.entries.filter(e => contextIds.includes(e.id) && (!e.status || e.status === 'active'));
-  if (entries.length === 0) return '';
-  const sections: string[] = [];
-  for (const entry of entries) {
-    try {
-      const filePath = getContextFilePath(entry.fileName);
-      const content = await readFile(filePath, 'utf-8');
-      sections.push(`### ${entry.label}\n\n${content.trim()}`);
-    } catch { /* skip */ }
-  }
-  if (sections.length === 0) return '';
-  return `\n\n## Agent 预加载上下文\n\n以下上下文已由配置自动加载，无需手动读取：\n\n${sections.join('\n\n---\n\n')}\n`;
 }
 
 // ── Singleton ──
