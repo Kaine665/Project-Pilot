@@ -16,11 +16,11 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB per image (base64 decoded)
 /**
  * POST /api/agent-chat
  * Start an agent chat conversation.
- * Body: { agentId, message, sessionId?, projectKey?, images?: [{mediaType, data}], config?: SessionConfig }
+ * Body: { agentId, message, sessionId?, projectKey?, images?: [{mediaType, data}], config?: SessionConfig, parentSessionId? }
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { agentId, message, sessionId: requestedSessionId, projectKey, images, initialTitle, config } = body as {
+  const { agentId, message, sessionId: requestedSessionId, projectKey, images, initialTitle, config, parentSessionId } = body as {
     agentId: string;
     message: string;
     sessionId?: string;
@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
     images?: Array<{ mediaType: string; data: string }>;
     initialTitle?: string;
     config?: SessionConfig;
+    parentSessionId?: string;
   };
 
   // 🔒 Security: validate required fields
@@ -106,7 +107,7 @@ export async function POST(request: NextRequest) {
       };
     }
 
-    const runId = await agentChatManager.start(sessionId, agentId, message, flowContext, validatedImages, initialTitle, config);
+    const runId = await agentChatManager.start(sessionId, agentId, message, flowContext, validatedImages, initialTitle, config, parentSessionId);
     return NextResponse.json({ runId, sessionId });
   } catch (err) {
     return NextResponse.json(
