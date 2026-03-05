@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useState, useRef, useCallback } from 'react';
+import { memo, useState, useRef, useCallback, useEffect } from 'react';
 import { Send, Square, X, Paperclip, UserPlus } from 'lucide-react';
 import type { Agent } from '@/types';
 
@@ -17,6 +17,8 @@ interface ChatInputProps {
   guestAgents?: Agent[];
   showGuestPicker?: boolean;
   onSelectGuest?: (agent: Agent) => void;
+  /** Key for persisting draft text in localStorage (e.g. sessionId). If omitted, no draft persistence. */
+  draftKey?: string;
 }
 
 export const ChatInput = memo(function ChatInput({
@@ -29,13 +31,48 @@ export const ChatInput = memo(function ChatInput({
   guestAgents,
   showGuestPicker = false,
   onSelectGuest,
+  draftKey,
 }: ChatInputProps) {
-  const [input, setInput] = useState('');
+  const draftStorageKey = draftKey ? `pp:draft:${draftKey}` : null;
+  const [input, setInput] = useState(() => {
+    if (!draftStorageKey) return '';
+    try { return localStorage.getItem(draftStorageKey) ?? ''; } catch { return ''; }
+  });
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [pendingFiles, setPendingFiles] = useState<Array<{ name: string; content: string }>>([]);
   const [guestPickerOpen, setGuestPickerOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Persist draft text to localStorage (debounced)
+  useEffect(() => {
+    if (!draftStorageKey) return;
+    const timer = setTimeout(() => {
+      try {
+        if (input) localStorage.setItem(draftStorageKey, input);
+        else localStorage.removeItem(draftStorageKey);
+      } catch { /* quota exceeded — ignore */ }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [input, draftStorageKey]);
+
+  // Restore draft when draftKey changes (e.g. switching sessions)
+  useEffect(() => {
+    if (!draftStorageKey) return;
+    try {
+      const saved = localStorage.getItem(draftStorageKey) ?? '';
+      setInput(saved);
+      // Restore textarea height for saved content
+      if (saved && textareaRef.current && !fullWidth) {
+        requestAnimationFrame(() => {
+          const el = textareaRef.current;
+          if (!el) return;
+          el.style.height = 'auto';
+          el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+        });
+      }
+    } catch { /* ignore */ }
+  }, [draftStorageKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
@@ -54,6 +91,7 @@ export const ChatInput = memo(function ChatInput({
     if (!fullText.trim() && pendingImages.length === 0) return;
     onSubmit(fullText, [...pendingImages], [...pendingFiles]);
     setInput('');
+    if (draftStorageKey) try { localStorage.removeItem(draftStorageKey); } catch { /* ignore */ }
     setPendingImages([]);
     setPendingFiles([]);
     // Reset textarea height

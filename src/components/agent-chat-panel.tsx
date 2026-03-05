@@ -927,6 +927,7 @@ export function AgentChatPanel({
             guestAgents={guestAgents}
             showGuestPicker={showGuestPicker}
             onSelectGuest={handleSelectGuest}
+            draftKey={sessionId ?? undefined}
           />
         </div>
 
@@ -1064,6 +1065,7 @@ export function AgentChatPanel({
           guestAgents={guestAgents}
           showGuestPicker={showGuestPicker}
           onSelectGuest={handleSelectGuest}
+          draftKey={sessionId ?? undefined}
         />
       </div>
 
