@@ -72,6 +72,10 @@ export const ChatBubble = memo(function ChatBubble({
     setTimeout(() => setCopied(false), 1500);
   };
 
+  // AskUserQuestion tool calls are rendered outside the bubble for prominence
+  const isAskUserQuestion = (block: ContentBlock) =>
+    block.type === 'tool_call' && block.toolCall.toolName === 'AskUserQuestion';
+
   const renderBlocks = (blocksToRender: ContentBlock[]) => {
     const lastTextIdx = blocksToRender.reduce(
       (acc, b, i) => (b.type === 'text' ? i : acc),
@@ -101,6 +105,8 @@ export const ChatBubble = memo(function ChatBubble({
           </div>
         );
       }
+      // AskUserQuestion rendered outside the bubble — skip here
+      if (isAskUserQuestion(block)) return null;
       return (
         <div key={block.toolCall.id} className="my-1.5">
           <ToolCallCard toolCall={block.toolCall} />
@@ -108,6 +114,10 @@ export const ChatBubble = memo(function ChatBubble({
       );
     });
   };
+
+  // Collect AskUserQuestion blocks to render outside the bubble
+  const askUserBlocks = (blocks ?? message.contentBlocks ?? [])
+    .filter(isAskUserQuestion) as Array<ContentBlock & { type: 'tool_call' }>;
 
   const renderImages = () => {
     if (!isUser || !message.images || message.images.length === 0) return null;
@@ -181,6 +191,15 @@ export const ChatBubble = memo(function ChatBubble({
             </div>
           )}
         </div>
+
+        {/* AskUserQuestion cards — rendered outside the bubble for prominence */}
+        {askUserBlocks.length > 0 && (
+          <div className="mt-1.5">
+            {askUserBlocks.map((block) => (
+              <ToolCallCard key={block.toolCall.id} toolCall={block.toolCall} />
+            ))}
+          </div>
+        )}
 
         {/* Retry button for failed sends (user messages) */}
         {hasSendError && isUser && onRetry && showActions && (
