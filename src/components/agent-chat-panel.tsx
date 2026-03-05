@@ -570,7 +570,15 @@ export function AgentChatPanel({
       images: imagesToSend.length > 0 ? imagesToSend : undefined,
     };
 
-    setMessages((prev) => [...prev, userMsg]);
+    setMessages((prev) => {
+      // Fold duplicate: if the last message is an unanswered user message with identical content,
+      // replace it instead of appending (handles manual resend after network/auth errors)
+      const last = prev[prev.length - 1];
+      if (last?.role === 'user' && last.content === userMsg.content) {
+        return [...prev.slice(0, -1), userMsg];
+      }
+      return [...prev, userMsg];
+    });
     setAutoScroll(true);
     setIsStreaming(true);
     blocksRef.current = [];
