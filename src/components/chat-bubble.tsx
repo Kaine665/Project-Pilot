@@ -1,7 +1,7 @@
 'use client';
 
-import { memo, useState } from 'react';
-import { Bot, User, GitBranch, BookMarked, Copy, Check, Trash2, RefreshCw } from 'lucide-react';
+import { memo, useState, useMemo } from 'react';
+import { Bot, User, GitBranch, BookMarked, Copy, Check, Trash2, RefreshCw, ClipboardList } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { ToolCallCard } from '@/components/tool-call-card';
 import { FormattedText } from '@/components/formatted-text';
@@ -30,6 +30,8 @@ interface ChatBubbleProps {
   onRetry?: () => void;
   /** Whether this message had a send failure */
   hasSendError?: boolean;
+  /** Callback to view plan content in side panel */
+  onViewPlan?: (content: string) => void;
 }
 
 export const ChatBubble = memo(function ChatBubble({
@@ -45,6 +47,7 @@ export const ChatBubble = memo(function ChatBubble({
   isLastAssistant,
   onRetry,
   hasSendError,
+  onViewPlan,
 }: ChatBubbleProps) {
   const t = useTranslations();
   const isUser = message.role === 'user';
@@ -59,6 +62,22 @@ export const ChatBubble = memo(function ChatBubble({
     streamingBlocks ??
     message.contentBlocks ??
     null;
+
+  // Detect plan file write in tool calls
+  const planWriteContent = useMemo(() => {
+    const allBlocks = blocks ?? message.contentBlocks ?? [];
+    for (const b of allBlocks) {
+      if (b.type === 'tool_call' && b.toolCall.toolName === 'Write') {
+        try {
+          const parsed = typeof b.toolCall.input === 'string'
+            ? JSON.parse(b.toolCall.input)
+            : b.toolCall.input;
+          if (parsed?.file_path?.includes('.claude/plans/')) return parsed.content as string;
+        } catch { /* ignore */ }
+      }
+    }
+    return null;
+  }, [blocks, message.contentBlocks]);
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -189,6 +208,17 @@ export const ChatBubble = memo(function ChatBubble({
             <div className="mt-1.5 rounded border border-green-200 bg-green-50 px-2 py-1 text-xs text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
               {t('chat.planExtracted')}
             </div>
+          )}
+
+          {/* Plan file write badge */}
+          {planWriteContent && onViewPlan && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onViewPlan(planWriteContent); }}
+              className="mt-1.5 flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700 transition-colors hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/40"
+            >
+              <ClipboardList className="h-3 w-3" />
+              <span>查看计划</span>
+            </button>
           )}
         </div>
 
