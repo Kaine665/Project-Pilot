@@ -101,6 +101,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     images?: ImageAttachment[],
     initialTitle?: string,
     initialConfig?: SessionConfig,
+    parentSessionId?: string,
   ): Promise<string> {
     const agent = await this.loadAgent(agentId);
 
@@ -189,6 +190,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       messages,
       tempPaths,
       config: sessionConfig,
+      parentSessionId: parentSessionId ?? existing?.parentSessionId,
     };
 
     const run = await this.spawnAndManage(config);

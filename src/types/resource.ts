@@ -13,6 +13,7 @@ export type ResourceType =
   | 'context-index'               // Global context index table (AI cats on demand)
   | 'design-docs-index'           // Design docs index table (AI cats on demand)
   | 'active-tasks'                // Shared active tasks board (parallel awareness)
+  | 'available-agents'            // Callable agents list (sub-agent invocation)
   | 'system-prompt'               // Agent system prompt text
   | 'todo-list'                   // Pending todo items
   | 'inline-text'                 // Inline text snippet (content stored in ref)
@@ -37,6 +38,7 @@ export interface ResourceRef {
    * - context-index: '_all'
    * - design-docs-index: '_all'
    * - active-tasks: '_running'
+   * - available-agents: '_callable'
    * - flow-context: '_snapshot'
    * - reference-turns: '_imported'
    */

@@ -13,6 +13,7 @@ import type { ResourceRef } from '@/types/resource';
  *   agent.systemPrompt / fallback  → system-prompt ref (priority 0)
  *   context-index                  → always included (priority 20)
  *   design-docs-index              → always included (priority 25)
+ *   subAgent capability             → available-agents ref (priority 18)
  *   agent.contextIds               → context refs (priority 30 each)
  *   todoRead capability            → todo-list ref (priority 40)
  *   knowledge-instructions         → always included (priority 80)
@@ -53,6 +54,16 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
     priority: 22,
     label: '活跃任务看板',
   });
+
+  // Available agents list (only when agent has subAgent capability)
+  if (agent.capabilities?.subAgent) {
+    refs.push({
+      type: 'available-agents',
+      id: '_callable',
+      priority: 18,
+      label: '可调用 Agent',
+    });
+  }
 
   // Preloaded context entries
   if (agent.contextIds && agent.contextIds.length > 0) {
