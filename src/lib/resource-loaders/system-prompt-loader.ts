@@ -30,6 +30,9 @@ export class SystemPromptLoader implements ResourceLoader {
       text += `\n\n---\n\n> 你的系统提示词文件路径：\`${promptFilePath}\`\n> 你可以通过 Read 工具查看或 Edit 工具修改它。修改后下次对话生效。`;
     }
 
+    // AskUserQuestion tool constraint — ensure AI stops after asking
+    text += `\n\n**重要约束**：当你调用 AskUserQuestion 工具后，必须立即结束当前回复。不要猜测用户的选择，不要在同一轮继续执行其他操作。等待用户在下一轮消息中给出选择后再继续。`;
+
     return {
       ref,
       content: text,

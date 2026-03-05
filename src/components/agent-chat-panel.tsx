@@ -166,11 +166,17 @@ export function AgentChatPanel({
   const finalizingRef = useRef(false);
   const sessionIdRef = useRef<string | null>(null);
   const doSendRef = useRef<(text: string, images?: string[]) => void>(() => {});
+  const isStreamingRef = useRef(false);
+  const pendingAnswerRef = useRef<string | null>(null);
 
-  // Keep ref in sync
+  // Keep refs in sync
   useEffect(() => {
     sessionIdRef.current = sessionId;
   }, [sessionId]);
+
+  useEffect(() => {
+    isStreamingRef.current = isStreaming;
+  }, [isStreaming]);
 
   // Stable streaming message object
   const streamingMessage = useMemo<ChatMessage>(() => ({
@@ -295,6 +301,13 @@ export function AgentChatPanel({
 
     // Notify parent to refresh sidebar sessions
     onSessionChange?.();
+
+    // Auto-send queued AskUserQuestion answer from the previous turn
+    const pendingAnswer = pendingAnswerRef.current;
+    pendingAnswerRef.current = null;
+    if (pendingAnswer) {
+      setTimeout(() => doSendRef.current(pendingAnswer), 300);
+    }
   }, [agent.id, projectKey, fetchSessionList, onSessionChange]);
 
   // Connect to SSE stream
@@ -634,11 +647,18 @@ export function AgentChatPanel({
     doSendRef.current = doSend;
   }, [doSend]);
 
-  // Listen for AskUserQuestion answers dispatched via custom event
+  // Listen for AskUserQuestion answers dispatched via custom event.
+  // If streaming is still in progress, queue the answer and send it
+  // once the current turn finishes (via finalizeStream).
   useEffect(() => {
     const handler = (e: Event) => {
       const answer = (e as CustomEvent<{ answer: string }>).detail?.answer;
-      if (answer) {
+      if (!answer) return;
+
+      // If streaming is active, queue the answer for later
+      if (isStreamingRef.current) {
+        pendingAnswerRef.current = answer;
+      } else {
         doSendRef.current(answer);
       }
     };

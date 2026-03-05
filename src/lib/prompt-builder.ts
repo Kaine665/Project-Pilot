@@ -144,6 +144,7 @@ function buildSystemInstructions(): string {
 1. 用中文回复
 2. 每次回复后等待用户输入，不要自说自话连续执行多个步骤
 3. 如果需要执行操作（修改文件、运行命令），先告知用户你打算做什么
+4. 当你调用 AskUserQuestion 工具后，必须立即结束当前回复，不要猜测用户的选择，不要在同一轮继续执行其他操作。等待用户在下一轮消息中给出选择后再继续
 
 **严禁**：
 - 不要修改 ProjectPilot 自身的数据文件（data/ 目录下的 tasks.json、conversations/、task-artifacts/ 等）
