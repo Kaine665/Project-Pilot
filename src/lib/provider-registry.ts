@@ -48,6 +48,7 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
     editableBaseUrl: false,
     editableModel: true,
     apiKeyPlaceholder: 'sk-ant-api03-...',
+    useApiKeyForAuth: true,
   },
 
   // ── OpenAI / Codex ──
@@ -80,6 +81,7 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
     editableBaseUrl: false,
     editableModel: true,
     apiKeyPlaceholder: 'sk-...',
+    useApiKeyForAuth: true,
     extraEnv: {
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
       API_TIMEOUT_MS: '600000',
@@ -114,6 +116,7 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
     editableBaseUrl: false,
     editableModel: true,
     apiKeyPlaceholder: 'your-zhipu-api-key',
+    useApiKeyForAuth: true,
     extraEnv: {
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
       API_TIMEOUT_MS: '3000000',

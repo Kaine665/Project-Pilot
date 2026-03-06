@@ -86,6 +86,12 @@ export interface ProcessRun extends BaseRun {
   session: ChatSession;
 }
 
+interface ProcessDomainData {
+  taskId: string;
+  conversationId: string;
+  session: ChatSession;
+}
+
 // ── Default factory ──
 
 const DEFAULT_SESSION = (taskId: string, conversationId: string): ChatSession => ({
@@ -231,14 +237,7 @@ class ProcessManager extends BaseChatManager<ProcessRun> {
     const modelArgs = await buildClaudeModelArgs();
     const maxTurnsArgs = await buildClaudeMaxTurnsArgs();
 
-    // Store context for createRun
-    this._pendingStartData = {
-      taskId,
-      conversationId: effectiveConvId,
-      session,
-    };
-
-    const config: SpawnConfig = {
+    const config: SpawnConfig<ProcessDomainData> = {
       runKey: taskId,
       workingDir,
       stdinContent,
@@ -252,6 +251,11 @@ class ProcessManager extends BaseChatManager<ProcessRun> {
         ...resumeArgs,
       ],
       env: claudeEnv,
+      domainData: {
+        taskId,
+        conversationId: effectiveConvId,
+        session,
+      },
     };
 
     // ── Sync flow task status → doing ──
@@ -284,14 +288,8 @@ class ProcessManager extends BaseChatManager<ProcessRun> {
   // Protected: BaseChatManager abstract implementations
   // ═══════════════════════════════════════════════════════════════════════
 
-  private _pendingStartData!: {
-    taskId: string;
-    conversationId: string;
-    session: ChatSession;
-  };
-
-  protected createRun(config: SpawnConfig, shell: BaseRun): ProcessRun {
-    const d = this._pendingStartData;
+  protected createRun(config: SpawnConfig<ProcessDomainData>, shell: BaseRun): ProcessRun {
+    const d = config.domainData;
     return {
       ...shell,
       taskId: d.taskId,
