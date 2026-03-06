@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSettings, saveSettings } from '@/lib/settings-manager';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
-import type { ClaudeAuthMode, ProviderId, EffortLevel, AppSettings } from '@/types';
+import type { ClaudeAuthMode, ProviderId, EffortLevel, OpenAIReasoningEffort, AppSettings } from '@/types';
 
 const VALID_AUTH_MODES: ClaudeAuthMode[] = ['api_key', 'oauth'];
 const VALID_EFFORT_LEVELS: EffortLevel[] = ['low', 'medium', 'high'];
+const VALID_OPENAI_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
 const VALID_PROVIDERS: ProviderId[] = PROVIDER_REGISTRY.map((p) => p.id);
 
 /**
@@ -14,13 +15,22 @@ const VALID_PROVIDERS: ProviderId[] = PROVIDER_REGISTRY.map((p) => p.id);
 export async function GET() {
   const settings = await getSettings();
 
+  const maskKey = (key: string) => key.length > 4 ? '••••••••' + key.slice(-4) : '••••';
+
   const masked: AppSettings = {
     ...settings,
     claude: { ...settings.claude },
   };
   if (masked.claude.apiKey) {
-    const key = masked.claude.apiKey;
-    masked.claude.apiKey = key.length > 4 ? '••••••••' + key.slice(-4) : '••••';
+    masked.claude.apiKey = maskKey(masked.claude.apiKey);
+  }
+  // 脱敏 per-provider API Keys
+  if (masked.claude.providerApiKeys) {
+    const maskedKeys: Partial<Record<ProviderId, string>> = {};
+    for (const [pid, key] of Object.entries(masked.claude.providerApiKeys)) {
+      if (key) maskedKeys[pid as ProviderId] = maskKey(key);
+    }
+    masked.claude.providerApiKeys = maskedKeys;
   }
 
   return NextResponse.json(masked);
@@ -69,6 +79,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'maxTurns must be 0-1000' }, { status: 400 });
     }
   }
+  if (body.claude?.openaiReasoningEffort !== undefined
+    && !VALID_OPENAI_EFFORTS.includes(body.claude.openaiReasoningEffort)) {
+    return NextResponse.json({ error: 'Invalid openaiReasoningEffort' }, { status: 400 });
+  }
+  // providerApiKeys: Record<ProviderId, string>
+  if (body.claude?.providerApiKeys !== undefined) {
+    if (typeof body.claude.providerApiKeys !== 'object' || body.claude.providerApiKeys === null) {
+      return NextResponse.json({ error: 'providerApiKeys must be an object' }, { status: 400 });
+    }
+    for (const [pid, val] of Object.entries(body.claude.providerApiKeys)) {
+      if (!VALID_PROVIDERS.includes(pid as ProviderId)) {
+        return NextResponse.json({ error: `Invalid provider in providerApiKeys: ${pid}` }, { status: 400 });
+      }
+      if (val !== null && val !== '' && typeof val !== 'string') {
+        return NextResponse.json({ error: 'providerApiKeys values must be strings' }, { status: 400 });
+      }
+    }
+  }
+  // providerModels: Record<ProviderId, string>
+  if (body.claude?.providerModels !== undefined) {
+    if (typeof body.claude.providerModels !== 'object' || body.claude.providerModels === null) {
+      return NextResponse.json({ error: 'providerModels must be an object' }, { status: 400 });
+    }
+  }
+  // providerModelLibrary: Record<ProviderId, string[]>
+  if (body.claude?.providerModelLibrary !== undefined) {
+    if (typeof body.claude.providerModelLibrary !== 'object' || body.claude.providerModelLibrary === null) {
+      return NextResponse.json({ error: 'providerModelLibrary must be an object' }, { status: 400 });
+    }
+    for (const arr of Object.values(body.claude.providerModelLibrary)) {
+      if (!Array.isArray(arr) || (arr as unknown[]).length > 200) {
+        return NextResponse.json({ error: 'providerModelLibrary values must be arrays (max 200)' }, { status: 400 });
+      }
+    }
+  }
 
   // general 字段验证
   if (body.general?.telemetry !== undefined && typeof body.general.telemetry !== 'boolean') {
@@ -96,7 +141,7 @@ export async function POST(request: NextRequest) {
     version: current.version,
   };
 
-  // API Key 特殊处理
+  // API Key 特殊处理（legacy flat key）
   if (body.claude?.apiKey !== undefined) {
     const newKey = body.claude.apiKey;
     if (newKey === '' || newKey === null) {
@@ -106,6 +151,47 @@ export async function POST(request: NextRequest) {
     } else {
       updated.claude.apiKey = newKey;
     }
+  }
+
+  // Per-provider API Keys 处理
+  if (body.claude?.providerApiKeys !== undefined) {
+    const merged = { ...current.claude.providerApiKeys };
+    for (const [pid, val] of Object.entries(body.claude.providerApiKeys as Record<string, string | null>)) {
+      if (val === null || val === '') {
+        delete merged[pid as ProviderId];
+      } else if (typeof val === 'string' && val.startsWith('••')) {
+        // 掩码回传，保留原值
+      } else {
+        merged[pid as ProviderId] = val as string;
+      }
+    }
+    updated.claude.providerApiKeys = Object.keys(merged).length > 0 ? merged : undefined;
+
+    // 同步 legacy flat apiKey：当 anthropic 的 scoped key 更新时，同步到 flat field
+    if (merged.anthropic) {
+      updated.claude.apiKey = merged.anthropic;
+    }
+  }
+
+  // Per-provider models
+  if (body.claude?.providerModels !== undefined) {
+    updated.claude.providerModels = {
+      ...current.claude.providerModels,
+      ...body.claude.providerModels,
+    };
+  }
+
+  // Per-provider model library
+  if (body.claude?.providerModelLibrary !== undefined) {
+    updated.claude.providerModelLibrary = {
+      ...current.claude.providerModelLibrary,
+      ...body.claude.providerModelLibrary,
+    };
+  }
+
+  // OpenAI reasoning effort
+  if (body.claude?.openaiReasoningEffort !== undefined) {
+    updated.claude.openaiReasoningEffort = body.claude.openaiReasoningEffort;
   }
 
   await saveSettings(updated);

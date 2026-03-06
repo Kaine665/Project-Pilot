@@ -14,6 +14,7 @@ import {
 } from '@/lib/file-store';
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
 import { writePromptFile } from '@/lib/agent-prompt-store';
+import { invalidateAgentsCache } from '@/app/api/agents/route';
 import type { Agent, AgentsData } from '@/types';
 import type { AgentChatSessionsData } from '@/types/agent-chat';
 
@@ -114,6 +115,7 @@ export async function POST(request: NextRequest) {
         }
       }
       await writeJsonFile(getAgentsPath(), { agents: mergedAgents });
+      invalidateAgentsCache();
       stats.agents = mergedAgents.length;
     }
     if (data.agentChatSessions) {

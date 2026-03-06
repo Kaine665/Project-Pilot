@@ -89,10 +89,12 @@ export type ClaudeModel = 'claude-opus-4-6' | 'claude-sonnet-4-5-20250929' | 'cl
  */
 export type ProviderId =
   | 'anthropic'
+  | 'openai'
   | 'deepseek'
   | 'qwen'
   | 'zhipu'
   | 'minimax'
+  | 'kimi'
   | 'openrouter'
   | 'ollama'
   | 'custom';
@@ -100,11 +102,15 @@ export type ProviderId =
 /** 推理努力等级 */
 export type EffortLevel = 'low' | 'medium' | 'high';
 
+/** OpenAI 推理努力等级（Codex 支持 xhigh） */
+export type OpenAIReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
+
 /** Claude Code 配置 */
 export interface ClaudeSettings {
   /** AI 供应商 */
   provider: ProviderId;
   authMode: ClaudeAuthMode;
+  /** @deprecated 使用 providerApiKeys[provider] 代替 */
   apiKey?: string;
   /** 模型 ID（自由字符串，供应商不同格式不同） */
   model: string;
@@ -117,6 +123,14 @@ export interface ClaudeSettings {
   maxTurns?: number;
   /** 新建 Agent 时是否默认暴露提示词路径（默认 true） */
   defaultExposePromptPath?: boolean;
+  /** 每供应商 API Key 映射 */
+  providerApiKeys?: Partial<Record<ProviderId, string>>;
+  /** 每供应商当前选中的模型 ID */
+  providerModels?: Partial<Record<ProviderId, string>>;
+  /** 每供应商的模型历史库（用户曾成功使用/手动添加的模型列表） */
+  providerModelLibrary?: Partial<Record<ProviderId, string[]>>;
+  /** OpenAI 推理努力等级 */
+  openaiReasoningEffort?: OpenAIReasoningEffort;
 }
 
 /** 通用设置 */

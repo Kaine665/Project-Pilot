@@ -14,6 +14,7 @@ import {
   readJsonFile,
 } from '@/lib/file-store';
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import { invalidateAgentsCache } from '@/app/api/agents/route';
 import type { AgentsData } from '@/types';
 import type { AgentChatSessionsData } from '@/types/agent-chat';
 
@@ -126,6 +127,7 @@ export async function POST(request: NextRequest) {
         }
       }
       await writeJsonFile(getAgentsPath(), agentsData);
+      invalidateAgentsCache();
     }
 
     return NextResponse.json({

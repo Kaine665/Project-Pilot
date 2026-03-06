@@ -1,48 +1,66 @@
-import { NextResponse } from 'next/server';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
+import { NextRequest, NextResponse } from 'next/server';
+import { execClaude } from '@/lib/claude-cli';
+import { parseAuthState, type AuthState } from '@/lib/oauth-status';
+import type { ProviderId } from '@/types';
 
 /**
- * GET /api/settings/auth-status
- * 检查 Claude CLI OAuth 登录状态。
+ * GET /api/settings/auth-status?provider=anthropic
+ * 检查 CLI OAuth 登录状态。
  *
- * Claude CLI 默认输出 JSON（如 {"loggedIn": true}），优先解析 JSON。
- * Windows 下使用 exec（走 shell）以正确解析 npm 全局的 claude.cmd。
+ * - anthropic: `claude auth status --json`
+ * - openai: `codex login status` (当 codex-cli 可用时)
+ * - 其他: 不支持 OAuth，返回 unknown
  */
-export async function GET() {
-  try {
-    const cmd = 'claude auth status';
-    const { stdout, stderr } = await execAsync(cmd, {
-      timeout: 15_000,
-      env: { ...process.env },
-    });
+export async function GET(request: NextRequest) {
+  const provider = (request.nextUrl.searchParams.get('provider') ?? 'anthropic') as ProviderId;
 
-    const raw = (stdout + stderr).trim();
-    let isLoggedIn = false;
-
+  if (provider === 'openai') {
+    // OpenAI Codex OAuth 检查 — 动态导入避免未安装时报错
     try {
-      // 优先解析整行 JSON；若有前后缀则尝试提取 { ... }
-      let jsonStr = raw;
-      const braceMatch = raw.match(/\{[\s\S]*\}/);
-      if (braceMatch) jsonStr = braceMatch[0];
-      const json = JSON.parse(jsonStr);
-      isLoggedIn = json.loggedIn === true;
-    } catch {
-      const output = raw.toLowerCase();
-      isLoggedIn =
-        output.includes('logged in') ||
-        output.includes('loggedin') ||
-        output.includes('authenticated');
+      const { execCodex } = await import('@/lib/codex-cli');
+      const { stdout, stderr } = await execCodex(['login', 'status'], { timeout: 15_000 });
+      const raw = (stdout + stderr).trim();
+      const authState: AuthState = parseAuthState(raw);
+      return NextResponse.json({
+        provider,
+        authState,
+        authenticated: authState === 'authenticated',
+        rawOutput: raw,
+      });
+    } catch (err) {
+      return NextResponse.json({
+        provider,
+        authState: 'unknown' as AuthState,
+        authenticated: false,
+        error: err instanceof Error ? err.message : 'Codex CLI not available',
+      });
     }
+  }
 
+  if (provider !== 'anthropic') {
     return NextResponse.json({
-      authenticated: isLoggedIn,
+      provider,
+      authState: 'unknown' as AuthState,
+      authenticated: false,
+      error: `OAuth not supported for provider: ${provider}`,
+    });
+  }
+
+  // Anthropic: claude auth status
+  try {
+    const { stdout, stderr } = await execClaude(['auth', 'status', '--json'], { timeout: 15_000 });
+    const raw = (stdout + stderr).trim();
+    const authState: AuthState = parseAuthState(raw);
+    return NextResponse.json({
+      provider,
+      authState,
+      authenticated: authState === 'authenticated',
       rawOutput: raw,
     });
   } catch (err) {
     return NextResponse.json({
+      provider,
+      authState: 'unknown' as AuthState,
       authenticated: false,
       error: err instanceof Error ? err.message : 'Unknown error',
     });

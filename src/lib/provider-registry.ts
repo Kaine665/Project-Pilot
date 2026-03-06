@@ -20,7 +20,7 @@ export interface ProviderPreset {
   baseUrl?: string;
   /** 推荐模型列表（第一个为默认值） */
   models: ModelOption[];
-  /** 是否支持 OAuth 登录（仅 Anthropic 官方） */
+  /** 是否支持 OAuth 登录（Anthropic / OpenAI） */
   supportsOAuth: boolean;
   /** 是否需要用户自填 baseUrl（custom / ollama） */
   editableBaseUrl: boolean;
@@ -30,6 +30,8 @@ export interface ProviderPreset {
   apiKeyPlaceholder?: string;
   /** 第三方供应商需要的额外环境变量 */
   extraEnv?: Record<string, string>;
+  /** 是否使用 API Key（而非 OAuth）进行认证。默认 true for 第三方，false for 官方 */
+  useApiKeyForAuth?: boolean;
 }
 
 export const PROVIDER_REGISTRY: ProviderPreset[] = [
@@ -46,6 +48,23 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
     editableBaseUrl: false,
     editableModel: true,
     apiKeyPlaceholder: 'sk-ant-api03-...',
+  },
+
+  // ── OpenAI / Codex ──
+  {
+    id: 'openai',
+    nameKey: 'settings.providers.openai',
+    models: [
+      { id: 'gpt-5.3-codex', label: 'GPT-5.3 Codex' },
+      { id: 'gpt-5.2-codex', label: 'GPT-5.2 Codex' },
+      { id: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max' },
+      { id: 'gpt-5.2', label: 'GPT-5.2' },
+      { id: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini' },
+    ],
+    supportsOAuth: true,
+    editableBaseUrl: false,
+    editableModel: true,
+    apiKeyPlaceholder: 'sk-...',
   },
 
   // ── 中国厂商（原生 Anthropic 兼容端点） ──
@@ -69,14 +88,14 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
   {
     id: 'qwen',
     nameKey: 'settings.providers.qwen',
-    baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+    baseUrl: 'https://coding.dashscope.aliyuncs.com/apps/anthropic',
     models: [
       { id: 'qwen3-coder-plus', label: 'Qwen3 Coder Plus' },
       { id: 'qwen3-coder', label: 'Qwen3 Coder' },
       { id: 'qwen-plus', label: 'Qwen Plus' },
     ],
     supportsOAuth: false,
-    editableBaseUrl: false,
+    editableBaseUrl: true,
     editableModel: true,
     apiKeyPlaceholder: 'sk-...',
     extraEnv: {
@@ -103,14 +122,30 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
   {
     id: 'minimax',
     nameKey: 'settings.providers.minimax',
-    baseUrl: 'https://api.minimaxi.com/v1',
+    baseUrl: 'https://api.minimax.chat/anthropic',
     models: [
       { id: 'MiniMax-M2.5', label: 'MiniMax M2.5' },
     ],
     supportsOAuth: false,
-    editableBaseUrl: false,
+    editableBaseUrl: true,
     editableModel: true,
     apiKeyPlaceholder: 'your-minimax-api-key',
+    extraEnv: {
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+    },
+  },
+
+  {
+    id: 'kimi',
+    nameKey: 'settings.providers.kimi',
+    baseUrl: 'https://api.kimi.com/coding/v1',
+    models: [
+      { id: 'kimi-latest', label: 'Kimi Latest' },
+    ],
+    supportsOAuth: false,
+    editableBaseUrl: false,
+    editableModel: true,
+    apiKeyPlaceholder: 'your-kimi-api-key',
     extraEnv: {
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
     },

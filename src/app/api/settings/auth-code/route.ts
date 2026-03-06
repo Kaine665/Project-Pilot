@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { loginProcess } from '@/lib/auth-login-state';
+import { loginProcess, loginProvider } from '@/lib/auth-login-state';
 
 /**
  * 从用户输入中提取授权码。
@@ -31,6 +31,14 @@ export async function POST(req: Request) {
   const extracted = extractCode(code ?? '');
   if (!extracted) {
     return NextResponse.json({ error: 'code is required' }, { status: 400 });
+  }
+
+  // Manual code submission only works for Anthropic OAuth flow
+  if (loginProvider && loginProvider !== 'anthropic') {
+    return NextResponse.json(
+      { error: `Manual code submission is not supported for ${loginProvider}. Use the device code flow instead.` },
+      { status: 400 },
+    );
   }
 
   if (!loginProcess || loginProcess.killed) {
