@@ -13,7 +13,7 @@
 
 import path from 'path';
 import fs from 'fs';
-import { spawn } from 'child_process';
+import { spawnClaude } from '@/lib/claude-cli';
 import { BaseChatManager } from './base-chat-manager';
 import type { BaseRun, SpawnConfig } from './types';
 import type { StreamParser } from '@/lib/claude-stream-parser';
@@ -497,7 +497,7 @@ class ProcessManager extends BaseChatManager<ProcessRun> {
     const permissionArgs = await buildClaudePermissionArgs('branching');
     const branchEnv = await buildClaudeEnv();
     const branchModelArgs = await buildClaudeModelArgs();
-    const claude = spawn('claude', [
+    const claude = spawnClaude([
       '-p',
       '--verbose',
       '--output-format', 'stream-json',
@@ -510,8 +510,8 @@ class ProcessManager extends BaseChatManager<ProcessRun> {
     });
     run.process = claude;
 
-    claude.stdin.write(prompt);
-    claude.stdin.end();
+    claude.stdin!.write(prompt);
+    claude.stdin!.end();
 
     // Auto-status: todo → doing
     if (task.status === 'todo') {
@@ -531,7 +531,7 @@ class ProcessManager extends BaseChatManager<ProcessRun> {
     const lineBuffer = new LineBuffer();
     const streamParser = new StreamParserClass();
 
-    claude.stdout.on('data', (chunk: Buffer) => {
+    claude.stdout!.on('data', (chunk: Buffer) => {
       const text = chunk.toString('utf-8');
       const lines = lineBuffer.feed(text);
       for (const line of lines) {
@@ -542,7 +542,7 @@ class ProcessManager extends BaseChatManager<ProcessRun> {
       }
     });
 
-    claude.stderr.on('data', (chunk: Buffer) => {
+    claude.stderr!.on('data', (chunk: Buffer) => {
       const text = chunk.toString('utf-8');
       if (text.includes('Error') || text.includes('error')) {
         this.trackAndEmit(run, { type: 'error', message: text.trim() });

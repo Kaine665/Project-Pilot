@@ -13,7 +13,8 @@
  * 5. merge     — 合并分支（需用户确认）
  */
 
-import { spawn, type ChildProcess } from 'child_process';
+import { type ChildProcess } from 'child_process';
+import { spawnClaude } from '@/lib/claude-cli';
 import path from 'path';
 import { StreamParser, LineBuffer } from '@/lib/claude-stream-parser';
 import {
@@ -356,7 +357,7 @@ class OrchestratorManager {
     const env = await buildClaudeEnv();
     const modelArgs = await buildClaudeModelArgs();
 
-    const claude = spawn('claude', [
+    const claude = spawnClaude([
       '-p',
       '--output-format', 'stream-json',
       ...modelArgs,
@@ -495,7 +496,7 @@ class OrchestratorManager {
     const modelArgs = await buildClaudeModelArgs();
     const maxTurnsArgs = await buildClaudeMaxTurnsArgs();
 
-    const claude = spawn('claude', [
+    const claude = spawnClaude([
       '-p',
       '--verbose',
       '--output-format', 'stream-json',
@@ -610,7 +611,7 @@ class OrchestratorManager {
     const anyCwd = runtime.session.workers[0]?.worktreePath
       ?? process.cwd();
 
-    const claude = spawn('claude', [
+    const claude = spawnClaude([
       '-p',
       '--output-format', 'stream-json',
       ...modelArgs,

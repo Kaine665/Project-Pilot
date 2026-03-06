@@ -10,7 +10,7 @@
  * - Fires at most once per session (guardRetryCount >= 1 → skip)
  */
 
-import { spawn } from 'child_process';
+import { spawnClaude } from '@/lib/claude-cli';
 import { buildClaudeEnv, buildClaudeModelArgs } from '@/lib/settings-manager';
 import { StreamParser, LineBuffer } from '@/lib/claude-stream-parser';
 import type { RunStatus } from './types';
@@ -138,7 +138,7 @@ function callClaudeLightweight(prompt: string): Promise<string> {
       return reject(err);
     }
 
-    const claude = spawn('claude', [
+    const claude = spawnClaude([
       '-p',
       '--output-format', 'stream-json',
       ...modelArgs,

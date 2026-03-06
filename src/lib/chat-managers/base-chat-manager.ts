@@ -16,7 +16,7 @@
  *   - logPrefix            — customize console log prefix
  */
 
-import { spawn } from 'child_process';
+import { spawnClaude } from '@/lib/claude-cli';
 import { StreamParser, LineBuffer } from '@/lib/claude-stream-parser';
 import { detectDangerousCommand } from '@/lib/danger-detector';
 import type { ChatSSEEvent, ChatToolCall, ContentBlock } from '@/types';
@@ -198,7 +198,7 @@ export abstract class BaseChatManager<TRun extends BaseRun> {
     // ── Build CLI args ──
     // Note: auth env, model, maxTurns, permissions, tools, resume, image
     // args are all pre-built by the subclass and passed in extraCliArgs.
-    const claude = spawn('claude', [
+    const claude = spawnClaude([
       '-p',
       '--verbose',
       '--output-format', 'stream-json',
@@ -211,14 +211,14 @@ export abstract class BaseChatManager<TRun extends BaseRun> {
     run.process = claude;
 
     // ── Write stdin ──
-    claude.stdin.write(stdinContent);
-    claude.stdin.end();
+    claude.stdin!.write(stdinContent);
+    claude.stdin!.end();
 
     // ── stdout parsing ──
     const lineBuffer = new LineBuffer();
     const streamParser = new StreamParser();
 
-    claude.stdout.on('data', (chunk: Buffer) => {
+    claude.stdout!.on('data', (chunk: Buffer) => {
       const text = chunk.toString('utf-8');
       const lines = lineBuffer.feed(text);
       for (const line of lines) {
@@ -230,7 +230,7 @@ export abstract class BaseChatManager<TRun extends BaseRun> {
     });
 
     // ── stderr ──
-    claude.stderr.on('data', (chunk: Buffer) => {
+    claude.stderr!.on('data', (chunk: Buffer) => {
       const text = chunk.toString('utf-8');
       if (text.includes('Error') || text.includes('error')) {
         this.trackAndEmit(run, { type: 'error', message: text.trim() });
