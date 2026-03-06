@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import type { Theme } from '@/components/theme-provider';
-import type { ProviderId, ClaudeAuthMode, EffortLevel } from '@/types';
+import type { ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort } from '@/types';
 
 // ── Shared props ──
 
@@ -34,12 +34,16 @@ interface AIConfigSectionProps extends TranslationProps {
   model: string;
   customModel: string;
   baseUrl: string;
+  openaiReasoningEffort: OpenAIReasoningEffort;
+  openaiReasoningOptions: Array<{ value: OpenAIReasoningEffort; label: string }>;
   oauthStatus: 'unknown' | 'checking' | 'authenticated' | 'not_authenticated';
   loginPending: boolean;
   loginUrl: string | null;
   loginFlowActive: boolean;
   oauthCode: string;
   codeSubmitting: boolean;
+  testState: 'idle' | 'testing' | 'success' | 'failed';
+  testMessage: string;
   preset: { supportsOAuth?: boolean; apiKeyPlaceholder?: string; editableBaseUrl?: boolean; baseUrl?: string; models: Array<{ id: string; label: string }> };
   isPresetModel: boolean;
   modelSelectOptions: Array<{ value: string; label: string }>;
@@ -49,21 +53,27 @@ interface AIConfigSectionProps extends TranslationProps {
   onModelChange: (m: string) => void;
   onCustomModelChange: (m: string) => void;
   onBaseUrlChange: (u: string) => void;
+  onOpenAIReasoningEffortChange: (effort: OpenAIReasoningEffort) => void;
   onCheckOAuthStatus: () => void;
   onTriggerOAuthLogin: () => void;
   onOauthCodeChange: (v: string) => void;
   onCodeSubmit: () => void;
   onCancelLoginFlow: () => void;
+  onTestConnection: () => void;
 }
 
 export function SettingsAISection({
   t, tActions, btnActive, btnInactive,
   provider, authMode, apiKey, model, customModel, baseUrl,
+  openaiReasoningEffort, openaiReasoningOptions,
   oauthStatus, loginPending, loginUrl, loginFlowActive, oauthCode, codeSubmitting,
+  testState, testMessage,
   preset, isPresetModel, modelSelectOptions,
   onProviderChange, onAuthModeChange, onApiKeyChange,
   onModelChange, onCustomModelChange, onBaseUrlChange,
+  onOpenAIReasoningEffortChange,
   onCheckOAuthStatus, onTriggerOAuthLogin, onOauthCodeChange, onCodeSubmit, onCancelLoginFlow,
+  onTestConnection,
 }: AIConfigSectionProps) {
   return (
     <>
@@ -284,6 +294,50 @@ export function SettingsAISection({
             />
           )}
           <p className="text-xs text-zinc-500">{t('modelHint')}</p>
+
+          {/* OpenAI Reasoning Effort (only for openai provider) */}
+          {provider === 'openai' && (
+            <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                {t('openaiReasoningMode')}
+              </label>
+              <div className="flex gap-2">
+                {openaiReasoningOptions.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => onOpenAIReasoningEffortChange(opt.value)}
+                    className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                      openaiReasoningEffort === opt.value ? btnActive : btnInactive
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Connection Test */}
+          <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800">
+            <div className="flex items-center gap-3">
+              <Button variant="outline" size="sm" onClick={onTestConnection} disabled={testState === 'testing'}>
+                {testState === 'testing' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                {t('testConnection')}
+              </Button>
+              {testState === 'success' && (
+                <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                  <Check className="h-3 w-3" />
+                  {testMessage}
+                </span>
+              )}
+              {testState === 'failed' && (
+                <span className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
+                  <X className="h-3 w-3" />
+                  {testMessage}
+                </span>
+              )}
+            </div>
+          </div>
         </CardContent>
       </Card>
 

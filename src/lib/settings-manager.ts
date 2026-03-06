@@ -80,10 +80,10 @@ export function getProviderScopedModel(claude: ClaudeSettings, provider?: Provid
  *   - FORCE_COLOR / CLAUDECODE: 始终覆盖
  *   - CLAUDE_CODE_EFFORT_LEVEL: 非 high 时注入
  */
-export async function buildClaudeEnv(): Promise<NodeJS.ProcessEnv> {
+export async function buildClaudeEnv(providerOverride?: ProviderId, effortOverride?: string): Promise<NodeJS.ProcessEnv> {
   const settings = await getSettings();
   const claude = settings.claude;
-  const provider = claude.provider ?? 'anthropic';
+  const provider = providerOverride ?? claude.provider ?? 'anthropic';
   const preset = getProviderPreset(provider);
 
   const env: NodeJS.ProcessEnv = { ...process.env };
@@ -123,9 +123,10 @@ export async function buildClaudeEnv(): Promise<NodeJS.ProcessEnv> {
     }
   }
 
-  // 推理努力等级
-  if (claude.effortLevel && claude.effortLevel !== 'high' && !process.env.CLAUDE_CODE_EFFORT_LEVEL) {
-    env.CLAUDE_CODE_EFFORT_LEVEL = claude.effortLevel;
+  // 推理努力等级（per-chat override > 全局设置）
+  const effort = effortOverride ?? claude.effortLevel;
+  if (effort && effort !== 'high' && !process.env.CLAUDE_CODE_EFFORT_LEVEL) {
+    env.CLAUDE_CODE_EFFORT_LEVEL = effort;
   }
 
   env.FORCE_COLOR = '0';
@@ -138,7 +139,8 @@ export async function buildClaudeEnv(): Promise<NodeJS.ProcessEnv> {
  * 构造 --model CLI 参数。
  * 返回 ['--model', modelId] 或 []。
  */
-export async function buildClaudeModelArgs(): Promise<string[]> {
+export async function buildClaudeModelArgs(modelOverride?: string): Promise<string[]> {
+  if (modelOverride) return ['--model', modelOverride];
   const settings = await getSettings();
   const model = getProviderScopedModel(settings.claude);
   if (!model) return [];

@@ -31,7 +31,9 @@ import {
   buildAgentPermissionArgs,
   buildAgentToolArgs,
 } from '@/lib/settings-manager';
-import type { ChatSSEEvent, ContentBlock, Agent, AgentsData } from '@/types';
+import { getProviderScopedApiKey, getProviderScopedModel, getSettings } from '@/lib/settings-manager';
+import { getProviderPreset } from '@/lib/provider-registry';
+import type { ChatSSEEvent, ContentBlock, Agent, AgentsData, ProviderId } from '@/types';
 import type { AgentChatSession, AgentChatSessionsData, SessionConfig } from '@/types/agent-chat';
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
 import type { ResourceRef, InlineTextRef, FlowContextRef, ReferenceTurnsRef } from '@/types/resource';
@@ -116,6 +118,9 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     initialTitle?: string,
     initialConfig?: SessionConfig,
     parentSessionId?: string,
+    providerOverride?: ProviderId,
+    modelOverride?: string,
+    effortOverride?: string,
   ): Promise<string> {
     const agent = await this.loadAgent(agentId);
 
@@ -170,9 +175,9 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       }
     }
 
-    // Build CLI args
-    const chatEnv = await buildClaudeEnv();
-    const chatModelArgs = await buildClaudeModelArgs();
+    // Build CLI args (apply per-chat overrides when provided)
+    const chatEnv = await buildClaudeEnv(providerOverride, effortOverride);
+    const chatModelArgs = await buildClaudeModelArgs(modelOverride);
     const chatMaxTurnsArgs = await buildClaudeMaxTurnsArgs();
     const chatPermArgs = await buildAgentPermissionArgs('executing', agent.capabilities);
     const chatToolArgs = buildAgentToolArgs(agent.capabilities);

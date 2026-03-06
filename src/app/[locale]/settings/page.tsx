@@ -15,7 +15,13 @@ import {
   SettingsDataSection,
   SettingsPrivacySection,
 } from '@/components/settings-sections';
-import type { ProviderId, ClaudeAuthMode, EffortLevel } from '@/types';
+import type { ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort } from '@/types';
+
+const OPENAI_REASONING_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
+
+function isOpenAIReasoningEffort(value: unknown): value is OpenAIReasoningEffort {
+  return typeof value === 'string' && OPENAI_REASONING_EFFORTS.includes(value as OpenAIReasoningEffort);
+}
 
 export default function SettingsPage() {
   const t = useTranslations('settings');
@@ -25,14 +31,19 @@ export default function SettingsPage() {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
 
-  // Form state
+  // Form state — per-provider maps
   const [provider, setProvider] = useState<ProviderId>('anthropic');
   const [authMode, setAuthMode] = useState<ClaudeAuthMode>('api_key');
-  const [apiKey, setApiKey] = useState('');
+  const [providerApiKeys, setProviderApiKeys] = useState<Partial<Record<ProviderId, string>>>({});
+  const [providerModels, setProviderModels] = useState<Partial<Record<ProviderId, string>>>({});
+  const [providerModelLibrary, setProviderModelLibrary] = useState<Partial<Record<ProviderId, string[]>>>({});
   const [model, setModel] = useState('claude-sonnet-4-5-20250929');
   const [customModel, setCustomModel] = useState('');
   const [skipPermissions, setSkipPermissions] = useState(true);
   const [effortLevel, setEffortLevel] = useState<EffortLevel>('high');
+  const [openaiReasoningEffort, setOpenaiReasoningEffort] = useState<OpenAIReasoningEffort>('xhigh');
+  const [openaiModels, setOpenaiModels] = useState<Array<{ id: string; displayName: string }>>([]);
+  const [openaiModelsLoading, setOpenaiModelsLoading] = useState(false);
   const [maxTurns, setMaxTurns] = useState(0);
   const [defaultExposePromptPath, setDefaultExposePromptPath] = useState(true);
   const [baseUrl, setBaseUrl] = useState('');
@@ -49,9 +60,11 @@ export default function SettingsPage() {
   const [loginPending, setLoginPending] = useState(false);
   const [loginUrl, setLoginUrl] = useState<string | null>(null);
   const [loginProcessAlive, setLoginProcessAlive] = useState(false);
-  const [loginFlowActive, setLoginFlowActive] = useState(false); // 保持显示，不因进程退出而闪退
+  const [loginFlowActive, setLoginFlowActive] = useState(false);
   const [oauthCode, setOauthCode] = useState('');
   const [codeSubmitting, setCodeSubmitting] = useState(false);
+  const [testState, setTestState] = useState<'idle' | 'testing' | 'success' | 'failed'>('idle');
+  const [testMessage, setTestMessage] = useState('');
 
   // Data management state
   const [dataDir, setDataDir] = useState('');
@@ -64,16 +77,89 @@ export default function SettingsPage() {
 
   const preset = useMemo(() => getProviderPreset(provider), [provider]);
 
-  const isPresetModel = useMemo(
-    () => preset.models.some((m) => m.id === model),
-    [preset, model],
-  );
+  // Derived: current provider's API key
+  const apiKey = providerApiKeys[provider] || '';
+
+  const setCurrentProviderApiKey = useCallback((value: string) => {
+    setProviderApiKeys((prev) => ({ ...prev, [provider]: value }));
+  }, [provider]);
+
+  const setCurrentProviderModel = useCallback((value: string) => {
+    const trimmed = value.trim();
+    setProviderModels((prev) => {
+      const next = { ...prev };
+      if (trimmed) {
+        next[provider] = trimmed;
+      } else {
+        delete next[provider];
+      }
+      return next;
+    });
+  }, [provider]);
+
+  const applyProviderModelState = useCallback((
+    providerId: ProviderId,
+    incomingModel?: string,
+    libraryMap?: Partial<Record<ProviderId, string[]>>,
+  ) => {
+    const p = getProviderPreset(providerId);
+    const library = (libraryMap?.[providerId] || []).map((m) => m.trim());
+    const saved = (incomingModel || '').trim();
+    if (saved && (p.models.some((m) => m.id === saved) || library.includes(saved))) {
+      setModel(saved);
+      setCustomModel('');
+      return;
+    }
+    if (saved) {
+      setModel('__custom__');
+      setCustomModel(saved);
+      return;
+    }
+    if (p.models.length > 0) {
+      setModel(p.models[0].id);
+      setCustomModel('');
+      return;
+    }
+    setModel('__custom__');
+    setCustomModel('');
+  }, []);
 
   const modelSelectOptions = useMemo(() => {
     const options = preset.models.map((m) => ({ value: m.id, label: m.label }));
+    const knownIds = new Set(options.map((o) => o.value));
+    // Merge OpenAI catalog models (when provider is openai)
+    if (provider === 'openai') {
+      for (const m of openaiModels) {
+        if (m.id && !knownIds.has(m.id)) {
+          options.push({ value: m.id, label: m.displayName || m.id });
+          knownIds.add(m.id);
+        }
+      }
+    }
+    // Merge model library
+    const extra = (providerModelLibrary[provider] || [])
+      .map((id) => id.trim())
+      .filter((id) => id && !knownIds.has(id))
+      .map((id) => ({ value: id, label: id }));
+    options.push(...extra);
     options.push({ value: '__custom__', label: t('customModel') });
     return options;
-  }, [preset, t]);
+  }, [preset, providerModelLibrary, provider, t, openaiModels]);
+
+  const isPresetModel = useMemo(
+    () => modelSelectOptions.some((o) => o.value === model && o.value !== '__custom__'),
+    [modelSelectOptions, model],
+  );
+
+  const openaiReasoningOptions = useMemo(
+    () => [
+      { value: 'low' as OpenAIReasoningEffort, label: t('openaiReasoningLow') },
+      { value: 'medium' as OpenAIReasoningEffort, label: t('openaiReasoningMedium') },
+      { value: 'high' as OpenAIReasoningEffort, label: t('openaiReasoningHigh') },
+      { value: 'xhigh' as OpenAIReasoningEffort, label: t('openaiReasoningXhigh') },
+    ],
+    [t],
+  );
 
   // Load settings on mount
   const fetchSettings = useCallback(async () => {
@@ -82,32 +168,53 @@ export default function SettingsPage() {
       const res = await fetch('/api/settings');
       if (res.ok) {
         const data = await res.json();
-        setProvider(data.claude.provider || 'anthropic');
+        const loadedProvider = (data.claude.provider || 'anthropic') as ProviderId;
+        setProvider(loadedProvider);
         setAuthMode(data.claude.authMode);
-        setApiKey(data.claude.apiKey || '');
         setSkipPermissions(data.claude.skipPermissions !== false);
         setEffortLevel(data.claude.effortLevel || 'high');
+        setOpenaiReasoningEffort(
+          isOpenAIReasoningEffort(data.claude.openaiReasoningEffort)
+            ? data.claude.openaiReasoningEffort
+            : 'xhigh'
+        );
         setMaxTurns(data.claude.maxTurns || 0);
         setDefaultExposePromptPath(data.claude.defaultExposePromptPath !== false);
         setBaseUrl(data.claude.baseUrl || '');
         setTelemetry(data.general?.telemetry || false);
 
-        const savedModel = data.claude.model || '';
-        const p = getProviderPreset(data.claude.provider || 'anthropic');
-        if (p.models.some((m: { id: string }) => m.id === savedModel)) {
-          setModel(savedModel);
-          setCustomModel('');
-        } else {
-          setModel('__custom__');
-          setCustomModel(savedModel);
+        // Per-provider API keys (backward compat: fill from flat apiKey if needed)
+        const incomingKeys = (data.claude.providerApiKeys && typeof data.claude.providerApiKeys === 'object')
+          ? { ...data.claude.providerApiKeys as Partial<Record<ProviderId, string>> }
+          : {};
+        if (!incomingKeys[loadedProvider] && data.claude.apiKey) {
+          incomingKeys[loadedProvider] = data.claude.apiKey;
         }
+        setProviderApiKeys(incomingKeys);
+
+        // Per-provider models (backward compat: fill from flat model if needed)
+        const incomingModels = (data.claude.providerModels && typeof data.claude.providerModels === 'object')
+          ? { ...data.claude.providerModels as Partial<Record<ProviderId, string>> }
+          : {};
+        if (!incomingModels[loadedProvider] && data.claude.model) {
+          incomingModels[loadedProvider] = data.claude.model;
+        }
+        setProviderModels(incomingModels);
+
+        // Per-provider model library
+        const incomingLibrary = (data.claude.providerModelLibrary && typeof data.claude.providerModelLibrary === 'object')
+          ? { ...data.claude.providerModelLibrary as Partial<Record<ProviderId, string[]>> }
+          : {};
+        setProviderModelLibrary(incomingLibrary);
+
+        applyProviderModelState(loadedProvider, incomingModels[loadedProvider], incomingLibrary);
       }
     } catch (err) {
       console.error('Failed to load settings:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [applyProviderModelState]);
 
   // Load data info
   const fetchDataInfo = useCallback(async () => {
@@ -128,6 +235,44 @@ export default function SettingsPage() {
     if (activeSection === 'data') fetchDataInfo();
   }, [activeSection, fetchDataInfo]);
 
+  // Reset test state when config changes
+  useEffect(() => {
+    setTestState('idle');
+    setTestMessage('');
+  }, [provider, authMode, model, customModel, baseUrl, apiKey]);
+
+  // Fetch OpenAI model catalog when provider is openai
+  useEffect(() => {
+    if (provider !== 'openai') {
+      setOpenaiModelsLoading(false);
+      setOpenaiModels([]);
+      return;
+    }
+    let cancelled = false;
+    setOpenaiModelsLoading(true);
+    (async () => {
+      try {
+        const res = await fetch('/api/settings/openai-models', { cache: 'no-store' });
+        const data = await res.json();
+        if (cancelled) return;
+        if (res.ok && data?.ok && Array.isArray(data.models)) {
+          const mapped = data.models
+            .filter((r: unknown) => r && typeof r === 'object' && typeof (r as Record<string, unknown>).id === 'string')
+            .map((r: Record<string, unknown>) => ({
+              id: (r.id as string).trim(),
+              displayName: typeof r.displayName === 'string' ? r.displayName : (r.id as string).trim(),
+            }));
+          setOpenaiModels(mapped);
+        }
+      } catch {
+        // ignore — fallback to static preset models
+      } finally {
+        if (!cancelled) setOpenaiModelsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [provider]);
+
   const navItems = useMemo(() => [
     { id: 'ai', icon: Brain, label: t('aiConfig') },
     { id: 'claude', icon: Wrench, label: t('claudeCodeConfig') },
@@ -137,38 +282,116 @@ export default function SettingsPage() {
   ], [t]);
 
   const handleProviderChange = (newProvider: ProviderId) => {
+    // Save current model to per-provider map before switching
+    const currentEffectiveModel = (model === '__custom__' ? customModel : model).trim();
+    setProviderModels((prev) => {
+      const next = { ...prev };
+      if (currentEffectiveModel) {
+        next[provider] = currentEffectiveModel;
+      } else {
+        delete next[provider];
+      }
+      return next;
+    });
+
     setProvider(newProvider);
+    applyProviderModelState(newProvider, providerModels[newProvider], providerModelLibrary);
     const p = getProviderPreset(newProvider);
-    if (p.models.length > 0) {
-      setModel(p.models[0].id);
-      setCustomModel('');
-    } else {
-      setModel('__custom__');
-      setCustomModel('');
-    }
-    if (newProvider !== 'anthropic') {
+    if (!p.supportsOAuth) {
       setAuthMode('api_key');
     }
     setBaseUrl('');
   };
 
+  const handleModelChange = (nextModel: string) => {
+    setModel(nextModel);
+    if (nextModel !== '__custom__') {
+      setCustomModel('');
+      setCurrentProviderModel(nextModel);
+    } else if (!customModel.trim()) {
+      setCurrentProviderModel('');
+    }
+  };
+
+  const handleCustomModelChange = (nextCustomModel: string) => {
+    setCustomModel(nextCustomModel);
+    setCurrentProviderModel(nextCustomModel);
+  };
+
+  const addModelToLibrary = useCallback((providerId: ProviderId, modelId: string) => {
+    const trimmed = modelId.trim();
+    if (!trimmed) return providerModelLibrary;
+    const presetForProvider = getProviderPreset(providerId);
+    if (presetForProvider.models.some((m) => m.id === trimmed)) return providerModelLibrary;
+    const current = providerModelLibrary[providerId] || [];
+    if (current.includes(trimmed)) return providerModelLibrary;
+    return { ...providerModelLibrary, [providerId]: [...current, trimmed] };
+  }, [providerModelLibrary]);
+
+  const handleTestConnection = async () => {
+    const effectiveModel = (model === '__custom__' ? customModel : model).trim();
+    if (!effectiveModel) {
+      setTestState('failed');
+      setTestMessage(t('modelRequired'));
+      return;
+    }
+    setTestState('testing');
+    setTestMessage('');
+    try {
+      const res = await fetch('/api/settings/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, authMode, apiKey, model: effectiveModel, baseUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setTestState('failed');
+        setTestMessage(typeof data.error === 'string' ? data.error : t('testFailed'));
+        return;
+      }
+      // Save model to library on successful test
+      const nextProviderModels = { ...providerModels, [provider]: effectiveModel };
+      const nextModelLibrary = addModelToLibrary(provider, effectiveModel);
+      setProviderModels(nextProviderModels);
+      setProviderModelLibrary(nextModelLibrary);
+      setTestState('success');
+      setTestMessage(`${t('testSuccess')} · ${t('saved')}`);
+    } catch (err) {
+      setTestState('failed');
+      setTestMessage(err instanceof Error ? err.message : t('testFailed'));
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setSaveStatus('idle');
-    const effectiveModel = model === '__custom__' ? customModel : model;
+    const effectiveModel = (model === '__custom__' ? customModel : model).trim();
+    const nextProviderModels: Partial<Record<ProviderId, string>> = { ...providerModels };
+    if (effectiveModel) {
+      nextProviderModels[provider] = effectiveModel;
+    } else {
+      delete nextProviderModels[provider];
+    }
+    const nextModelLibrary = addModelToLibrary(provider, effectiveModel);
     try {
       const res = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           claude: {
-            provider, authMode, apiKey, model: effectiveModel,
+            provider, authMode, apiKey, providerApiKeys,
+            providerModels: nextProviderModels,
+            providerModelLibrary: nextModelLibrary,
+            model: effectiveModel,
+            openaiReasoningEffort,
             skipPermissions, effortLevel, maxTurns, defaultExposePromptPath, baseUrl,
           },
           general: { telemetry },
         }),
       });
       if (res.ok) {
+        setProviderModels(nextProviderModels);
+        setProviderModelLibrary(nextModelLibrary);
         setSaveStatus('saved');
         setTimeout(() => setSaveStatus('idle'), 3000);
         fetchSettings();
@@ -185,7 +408,7 @@ export default function SettingsPage() {
   const checkOAuthStatus = async () => {
     setOauthStatus('checking');
     try {
-      const res = await fetch('/api/settings/auth-status');
+      const res = await fetch(`/api/settings/auth-status?provider=${provider}`);
       const data = await res.json();
       setOauthStatus(data.authenticated ? 'authenticated' : 'not_authenticated');
     } catch {
@@ -201,7 +424,11 @@ export default function SettingsPage() {
     setLoginProcessAlive(true);
     setLoginFlowActive(true);
     try {
-      const res = await fetch('/api/settings/auth-login', { method: 'POST' });
+      const res = await fetch('/api/settings/auth-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider }),
+      });
       if (!res.ok) {
         setLoginPending(false);
         setLoginProcessAlive(false);
@@ -230,7 +457,7 @@ export default function SettingsPage() {
     if (!loginFlowActive) return;
     const poll = async () => {
       try {
-        const res = await fetch('/api/settings/auth-url');
+        const res = await fetch(`/api/settings/auth-url?provider=${provider}`);
         const data = await res.json();
         if (data.loginUrl) setLoginUrl(data.loginUrl);
         if (!data.processAlive) setLoginProcessAlive(false);
@@ -241,7 +468,7 @@ export default function SettingsPage() {
     poll();
     const id = setInterval(poll, 500);
     return () => clearInterval(id);
-  }, [loginFlowActive]);
+  }, [loginFlowActive, provider]);
 
   const handleCodeSubmit = async () => {
     if (!oauthCode.trim() || codeSubmitting) return;
@@ -396,16 +623,23 @@ export default function SettingsPage() {
                 t={t} tActions={tActions} btnActive={btnActive} btnInactive={btnInactive}
                 provider={provider} authMode={authMode} apiKey={apiKey}
                 model={model} customModel={customModel} baseUrl={baseUrl}
+                openaiReasoningEffort={openaiReasoningEffort}
+                openaiReasoningOptions={openaiReasoningOptions}
                 oauthStatus={oauthStatus} loginPending={loginPending}
                 loginUrl={loginUrl} loginFlowActive={loginFlowActive}
                 oauthCode={oauthCode} codeSubmitting={codeSubmitting}
+                testState={testState} testMessage={testMessage}
                 preset={preset} isPresetModel={isPresetModel} modelSelectOptions={modelSelectOptions}
                 onProviderChange={handleProviderChange} onAuthModeChange={setAuthMode}
-                onApiKeyChange={setApiKey} onModelChange={setModel}
-                onCustomModelChange={setCustomModel} onBaseUrlChange={setBaseUrl}
+                onApiKeyChange={setCurrentProviderApiKey}
+                onModelChange={handleModelChange}
+                onCustomModelChange={handleCustomModelChange}
+                onBaseUrlChange={setBaseUrl}
+                onOpenAIReasoningEffortChange={setOpenaiReasoningEffort}
                 onCheckOAuthStatus={checkOAuthStatus} onTriggerOAuthLogin={triggerOAuthLogin}
                 onOauthCodeChange={setOauthCode} onCodeSubmit={handleCodeSubmit}
                 onCancelLoginFlow={cancelLoginFlow}
+                onTestConnection={handleTestConnection}
               />
             )}
 
