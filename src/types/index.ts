@@ -324,6 +324,8 @@ export type ChatSSEEvent =
   | { type: 'session_title_set'; title: string }
   | { type: 'knowledge_draft_created'; entryId: string; label: string }
   | { type: 'doc_created'; docId: string; title: string; projectKey: string }
+  | { type: 'task_suspended'; taskId: string; title: string }
+  | { type: 'task_completed'; taskId: string }
   | { type: 'error'; message: string }
   | { type: 'done' };
 
@@ -526,6 +528,35 @@ export interface TodoItem {
 
 export interface TodosData {
   todos: TodoItem[];
+}
+
+// ==================== Suspended Tasks（跨会话任务交接） ====================
+
+export type SuspendedTaskStatus = 'suspended' | 'resumed' | 'completed';
+
+export interface SuspendedTask {
+  id: string;                    // suspend-{timestamp}-{random}
+  title: string;                 // 任务简述
+  projectKey?: string;           // 关联项目
+  agentId: string;               // 挂起时的 Agent
+  sessionId: string;             // 挂起时的会话 ID
+
+  // 交接内容（Agent 生成）
+  progress: string;              // 当前进度
+  blockReason: string;           // 阻塞原因
+  nextSteps: string;             // 恢复建议 / 下一步
+  context?: string;              // 补充上下文（相关文件、分支等）
+
+  // 状态
+  status: SuspendedTaskStatus;
+  suspendedAt: string;
+  resumedAt?: string;
+  resumedBy?: string;            // 接续的会话 ID
+  completedAt?: string;
+}
+
+export interface SuspendedTasksData {
+  tasks: SuspendedTask[];
 }
 
 // ==================== Flow Project ====================

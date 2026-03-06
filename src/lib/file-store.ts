@@ -177,6 +177,10 @@ export function getActiveTasksPath(): string {
   return path.join(DATA_DIR, 'active-tasks.json');
 }
 
+export function getSuspendedTasksPath(): string {
+  return path.join(DATA_DIR, 'suspended-tasks.json');
+}
+
 // ── Prompt 文件路径函数 ──
 
 export function getPromptsDir(): string {

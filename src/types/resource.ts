@@ -21,7 +21,10 @@ export type ResourceType =
   | 'doc-save-instructions'       // Static: design doc save instructions
   | 'session-title-instructions'  // Static: session title generation instructions
   | 'flow-context'                // Project flow context (for flow-bound chats)
-  | 'reference-turns';            // Imported conversation turns (guest agent)
+  | 'reference-turns'             // Imported conversation turns (guest agent)
+  | 'suspended-tasks'             // Cross-session suspended tasks board
+  | 'suspend-task-instructions'   // Static: suspend task action instructions
+  | 'complete-suspended-task-instructions'; // Static: complete suspended task (tag-only, no instructions)
 
 // ── ResourceRef ──
 
@@ -41,6 +44,7 @@ export interface ResourceRef {
    * - available-agents: '_callable'
    * - flow-context: '_snapshot'
    * - reference-turns: '_imported'
+   * - suspended-tasks: '_suspended'
    */
   id: string;
   /** Sort priority — lower values appear earlier in prompt. Default: 50 */
