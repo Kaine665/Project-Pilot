@@ -186,7 +186,7 @@ class ProcessManager extends BaseChatManager<ProcessRun> {
     );
 
     const userMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
+      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       role: 'user',
       content: message,
       timestamp: new Date().toISOString(),
@@ -303,7 +303,7 @@ class ProcessManager extends BaseChatManager<ProcessRun> {
   protected async persistAfterClose(run: ProcessRun, aborted: boolean): Promise<void> {
     if (run.assistantText || run.contentBlocks.length > 0) {
       const assistantMsg: ChatMessage = {
-        id: `msg-${Date.now()}`,
+        id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         role: 'assistant',
         content: run.assistantText,
         timestamp: new Date().toISOString(),

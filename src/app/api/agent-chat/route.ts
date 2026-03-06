@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { agentChatManager, generateSessionId } from '@/lib/agent-chat-manager';
 import type { FlowContext, ImageAttachment, ImageMediaType } from '@/lib/agent-chat-manager';
+import type { SessionConfig } from '@/types/agent-chat';
 import { getFlowDataPath, getFlowIndexPath, readJsonFile, ensureFlowsMigrated } from '@/lib/file-store';
 import { isValidProjectKey, isValidSessionId } from '@/lib/security';
 
@@ -15,17 +16,18 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB per image (base64 decoded)
 /**
  * POST /api/agent-chat
  * Start an agent chat conversation.
- * Body: { agentId, message, sessionId?, projectKey?, images?: [{mediaType, data}] }
+ * Body: { agentId, message, sessionId?, projectKey?, images?: [{mediaType, data}], config?: SessionConfig }
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { agentId, message, sessionId: requestedSessionId, projectKey, images, initialTitle } = body as {
+  const { agentId, message, sessionId: requestedSessionId, projectKey, images, initialTitle, config } = body as {
     agentId: string;
     message: string;
     sessionId?: string;
     projectKey?: string;
     images?: Array<{ mediaType: string; data: string }>;
     initialTitle?: string;
+    config?: SessionConfig;
   };
 
   // 🔒 Security: validate required fields
@@ -104,7 +106,7 @@ export async function POST(request: NextRequest) {
       };
     }
 
-    const runId = await agentChatManager.start(sessionId, agentId, message, flowContext, validatedImages, initialTitle);
+    const runId = await agentChatManager.start(sessionId, agentId, message, flowContext, validatedImages, initialTitle, config);
     return NextResponse.json({ runId, sessionId });
   } catch (err) {
     return NextResponse.json(

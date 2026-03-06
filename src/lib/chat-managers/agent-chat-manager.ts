@@ -4,14 +4,12 @@
  * Extends BaseChatManager with:
  * - Multi-session support (sessionId-indexed)
  * - Image attachment handling (temp files + --image args)
- * - AI-generated session titles (<session-title> tag)
- * - Knowledge draft extraction (<save-knowledge> tag)
- * - Design doc extraction (<save-doc> tag)
+ * - AgentAction processing (tag parse → execute → strip via actionRegistry)
  * - Guest Agent (spectator mode with imported turns)
  * - Session CRUD (list, load, delete, persisted to agent-chat-sessions.json)
  */
 
-import { readFile, writeFile, unlink, mkdir } from 'fs/promises';
+import { writeFile, unlink } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
@@ -22,17 +20,10 @@ import {
   getAgentChatSessionsPath,
   getAgentsPath,
   getPromptFilePath,
-  getContextIndexPath,
-  getContextFilePath,
-  getContextDir,
-  getDesignDocsDir,
-  getDesignDocsIndexPath,
-  getDesignDocFilePath,
   readJsonFile,
   modifyJsonFile,
 } from '@/lib/file-store';
 import { resolveSystemPrompt } from '@/lib/agent-prompt-store';
-import type { ContextIndexData, ContextEntry, DocsIndexData, DocEntry } from '@/types';
 import {
   buildClaudeEnv,
   buildClaudeModelArgs,
@@ -41,13 +32,16 @@ import {
   buildAgentToolArgs,
 } from '@/lib/settings-manager';
 import type { ChatSSEEvent, ContentBlock, Agent, AgentsData } from '@/types';
-import type { AgentChatSession, AgentChatSessionsData } from '@/types/agent-chat';
+import type { AgentChatSession, AgentChatSessionsData, SessionConfig } from '@/types/agent-chat';
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
-import type { ResourceRef, FlowContextRef, ReferenceTurnsRef } from '@/types/resource';
+import type { ResourceRef, InlineTextRef, FlowContextRef, ReferenceTurnsRef } from '@/types/resource';
 import { resourceRegistry } from '@/lib/resource-registry';
-import '@/lib/resource-loaders'; // side-effect: registers all loaders
+import '@/lib/resource-loaders'; // side-effect: registers non-action loaders
+import '@/lib/agent-actions';    // side-effect: registers actions + their loaders
+import { actionRegistry } from '@/lib/agent-actions';
 import { migrateAgentToResources } from '@/lib/resource-migration';
 import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
+import { checkSessionHealth, buildGuardMessage } from './session-health-guard';
 
 // ── Types ──
 
@@ -70,25 +64,20 @@ export interface AgentChatRun extends BaseRun {
   projectKey?: string;
   sessionTitle?: string;
   messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }>;
+  // Session-level config (supplementary context & prompt)
+  config?: SessionConfig;
   // Guest Agent
   parentSessionId?: string;
   importedTurnIndices?: number[];
   // Temp image paths (for cleanup)
   _tempImagePaths?: string[];
+  // Health guard retry count (prevents recursive guard triggers)
+  _guardRetryCount?: number;
 }
 
 // ── Helpers ──
 
 const DEFAULT_SESSIONS_DATA: AgentChatSessionsData = { sessions: [] };
-
-function extractSessionTitle(text: string): string | null {
-  const match = text.match(/<session-title>([\s\S]*?)<\/session-title>/);
-  return match ? match[1].trim() : null;
-}
-
-function stripSessionTitle(text: string): string {
-  return text.replace(/<session-title>[\s\S]*?<\/session-title>\s*/, '');
-}
 
 export function generateSessionId(): string {
   return `agent-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -111,6 +100,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     flowContext?: FlowContext,
     images?: ImageAttachment[],
     initialTitle?: string,
+    initialConfig?: SessionConfig,
   ): Promise<string> {
     const agent = await this.loadAgent(agentId);
 
@@ -136,14 +126,17 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     const dataUrls = images?.map(img => `data:${img.mediaType};base64,${img.data}`);
     messages.push({ role: 'user', content: message, images: dataUrls?.length ? dataUrls : undefined });
 
+    // Resolve session config: initialConfig (from API) > existing run/disk config
+    const sessionConfig = initialConfig ?? existing?.config;
+
     // Build prompt
     let stdinContent: string;
     if (isResume) {
       stdinContent = message;
     } else if (flowContext) {
-      stdinContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext);
+      stdinContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext, sessionConfig);
     } else {
-      stdinContent = await buildAgentChatPrompt(agent, message);
+      stdinContent = await buildAgentChatPrompt(agent, message, sessionConfig);
     }
 
     // Write images to temp files
@@ -195,6 +188,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       sessionTitle: existing?.sessionTitle ?? initialTitle,
       messages,
       tempPaths,
+      config: sessionConfig,
     };
 
     const run = await this.spawnAndManage(config);
@@ -396,6 +390,50 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     return found;
   }
 
+  async setArchived(sessionId: string, archived: boolean): Promise<boolean> {
+    let found = false;
+    await modifyJsonFile<AgentChatSessionsData>(
+      getAgentChatSessionsPath(),
+      DEFAULT_SESSIONS_DATA,
+      (data) => {
+        const session = data.sessions.find(s => s.id === sessionId);
+        if (session) {
+          session.archived = archived || undefined; // don't persist false
+          found = true;
+          console.log(`[setArchived] ${sessionId} → archived=${session.archived}`);
+        } else {
+          console.warn(`[setArchived] ${sessionId} NOT FOUND in ${data.sessions.length} sessions`);
+        }
+        return data;
+      },
+    );
+    return found;
+  }
+
+  async updateConfig(sessionId: string, config: SessionConfig): Promise<boolean> {
+    // Update in-memory run if present
+    const run = this.runs.get(sessionId);
+    if (run) {
+      run.config = config;
+    }
+    // Persist to disk
+    let found = false;
+    await modifyJsonFile<AgentChatSessionsData>(
+      getAgentChatSessionsPath(),
+      DEFAULT_SESSIONS_DATA,
+      (data) => {
+        const session = data.sessions.find(s => s.id === sessionId);
+        if (session) {
+          session.config = config;
+          session.updatedAt = new Date().toISOString();
+          found = true;
+        }
+        return data;
+      },
+    );
+    return found;
+  }
+
   async listGuestSessions(parentSessionId: string): Promise<Omit<AgentChatSession, 'messages'>[]> {
     const data = await readJsonFile<AgentChatSessionsData>(
       getAgentChatSessionsPath(),
@@ -422,6 +460,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     sessionTitle?: string;
     messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }>;
     tempPaths: string[];
+    config?: SessionConfig;
     parentSessionId?: string;
     importedTurnIndices?: number[];
   };
@@ -435,6 +474,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       projectKey: d.projectKey,
       sessionTitle: d.sessionTitle,
       messages: d.messages,
+      config: d.config,
       parentSessionId: d.parentSessionId,
       importedTurnIndices: d.importedTurnIndices,
       _tempImagePaths: d.tempPaths,
@@ -443,6 +483,37 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
 
   protected async persistAfterClose(run: AgentChatRun, _aborted: boolean): Promise<void> {
     await this.persistSession(run);
+
+    // ── Session Health Guard ──
+    // Trigger a lightweight check when a session ends abnormally.
+    // Fire-and-forget: guard errors must not affect the main flow.
+    if (
+      (run.status === 'failed' || run.status === 'stopped')
+      && !(run._guardRetryCount && run._guardRetryCount >= 1)
+    ) {
+      const tailText = run.assistantText.slice(-100);
+      checkSessionHealth({
+        sessionId: run.sessionId,
+        agentId: run.agentId,
+        status: run.status,
+        tailText,
+        guardRetryCount: run._guardRetryCount ?? 0,
+      }).then(async (result) => {
+        if (!result?.abnormal) return;
+
+        // Bump guard retry count on disk before resuming
+        await this.incrementGuardRetryCount(run.sessionId);
+
+        // Resume the session with the guard's error description
+        const guardMsg = buildGuardMessage(run.status, result.reason);
+        try {
+          await this.start(run.sessionId, run.agentId, guardMsg);
+          console.log(`${this.logPrefix} Health guard resumed session ${run.sessionId}`);
+        } catch (err) {
+          console.error(`${this.logPrefix} Health guard failed to resume session:`, err);
+        }
+      }).catch(err => console.error(`${this.logPrefix} Health guard error:`, err));
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -461,47 +532,35 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       }
     }
 
-    // Extract session title
-    if (!run.sessionTitle && run.assistantText) {
-      const aiTitle = extractSessionTitle(run.assistantText);
-      const firstUserMsg = run.messages.find(m => m.role === 'user')?.content;
-      const defaultTitle = run.parentSessionId ? '旁听会话' : '新会话';
-      run.sessionTitle = aiTitle
-        ?? (firstUserMsg ? firstUserMsg.slice(0, 30) + '...' : defaultTitle);
-    }
-
-    // Parse and persist knowledge drafts
+    // Process all agent actions: parse tags, execute side-effects, strip tags
     if (run.assistantText) {
-      const drafts = parseKnowledgeTags(run.assistantText);
-      for (const draft of drafts) {
-        const entryId = await createDraftContextEntry(draft, run.sessionId);
-        if (entryId) {
-          this.trackAndEmit(run, { type: 'knowledge_draft_created', entryId, label: draft.label });
-        }
+      const actionCtx = {
+        sessionId: run.sessionId,
+        agentId: run.agentId,
+        emit: (event: ChatSSEEvent) => this.trackAndEmit(run, event),
+        setSessionTitle: (title: string) => { if (!run.sessionTitle) run.sessionTitle = title; },
+      };
+
+      const cleaned = await actionRegistry.processResponse(run.assistantText, actionCtx);
+
+      // Fallback title if no AI-generated title was set
+      if (!run.sessionTitle) {
+        const firstUserMsg = run.messages.find(m => m.role === 'user')?.content;
+        const defaultTitle = run.parentSessionId ? '旁听会话' : '新会话';
+        run.sessionTitle = firstUserMsg ? firstUserMsg.slice(0, 30) + '...' : defaultTitle;
       }
-    }
 
-    // Parse and persist design doc drafts
-    if (run.assistantText) {
-      const docDrafts = parseDocTags(run.assistantText);
-      for (const draft of docDrafts) {
-        const docId = await createDesignDoc(draft);
-        if (docId) {
-          this.trackAndEmit(run, { type: 'doc_created', docId, title: draft.title, projectKey: draft.project });
-        }
-      }
-    }
+      // Emit structured title event so frontend can update immediately
+      this.trackAndEmit(run, { type: 'session_title_set', title: run.sessionTitle });
 
-    // Save assistant message (strip title + knowledge tags + doc tags)
-    if (run.assistantText) {
-      const cleaned = stripDocTags(stripKnowledgeTags(stripSessionTitle(run.assistantText)));
       // Also clean contentBlocks text entries
       const cleanedBlocks = run.contentBlocks.map(block => {
         if (block.type === 'text') {
-          return { ...block, text: stripDocTags(stripKnowledgeTags(stripSessionTitle(block.text))) };
+          return { ...block, text: actionRegistry.stripAll(block.text) };
         }
         return block;
       }).filter(block => !(block.type === 'text' && !block.text.trim()));
+
       run.messages.push({
         role: 'assistant',
         content: cleaned,
@@ -550,7 +609,29 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       claudeSessionId: diskSession.claudeSessionId,
       sessionTitle: diskSession.title,
       messages: [...diskSession.messages],
+      config: diskSession.config,
+      _guardRetryCount: diskSession.guardRetryCount,
     };
+  }
+
+  private async incrementGuardRetryCount(sessionId: string): Promise<void> {
+    // Update in-memory run
+    const run = this.runs.get(sessionId);
+    if (run) {
+      run._guardRetryCount = (run._guardRetryCount ?? 0) + 1;
+    }
+    // Persist to disk
+    await modifyJsonFile<AgentChatSessionsData>(
+      getAgentChatSessionsPath(),
+      DEFAULT_SESSIONS_DATA,
+      (data) => {
+        const session = data.sessions.find(s => s.id === sessionId);
+        if (session) {
+          session.guardRetryCount = (session.guardRetryCount ?? 0) + 1;
+        }
+        return data;
+      },
+    );
   }
 
   private async persistSession(run: AgentChatRun): Promise<void> {
@@ -564,6 +645,8 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       claudeSessionId: run.claudeSessionId,
       createdAt: new Date(run.startedAt).toISOString(),
       updatedAt: now,
+      config: run.config,
+      guardRetryCount: run._guardRetryCount,
       parentSessionId: run.parentSessionId,
       importedTurnIndices: run.importedTurnIndices,
     };
@@ -575,6 +658,9 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
         const idx = data.sessions.findIndex(s => s.id === run.sessionId);
         if (idx >= 0) {
           session.createdAt = data.sessions[idx].createdAt;
+          session.archived = data.sessions[idx].archived; // preserve archive state
+          session.config = session.config ?? data.sessions[idx].config; // preserve config
+          session.guardRetryCount = session.guardRetryCount ?? data.sessions[idx].guardRetryCount; // preserve guard count
           // Increment unread count (agent replied)
           session.unreadCount = (data.sessions[idx].unreadCount || 0) + 1;
           data.sessions[idx] = session;
@@ -588,138 +674,6 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
   }
 }
 
-// ── Knowledge Tag Helpers ──
-
-interface KnowledgeTag {
-  label: string;
-  description: string;
-  format: 'json' | 'markdown' | 'text';
-  content: string;
-}
-
-function parseKnowledgeTags(text: string): KnowledgeTag[] {
-  const regex = /<save-knowledge\s+label="([^"]+)"\s+description="([^"]+)"\s+format="(text|json|markdown)">([\s\S]*?)<\/save-knowledge>/g;
-  const results: KnowledgeTag[] = [];
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    results.push({
-      label: match[1].trim(),
-      description: match[2].trim(),
-      format: match[3] as 'json' | 'markdown' | 'text',
-      content: match[4].trim(),
-    });
-  }
-  return results;
-}
-
-function stripKnowledgeTags(text: string): string {
-  return text.replace(/<save-knowledge[\s\S]*?<\/save-knowledge>/g, '').trim();
-}
-
-async function createDraftContextEntry(draft: KnowledgeTag, sessionId: string): Promise<string | null> {
-  try {
-    const now = new Date().toISOString();
-    const id = `ctx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const extMap = { json: 'json', markdown: 'md', text: 'txt' };
-    const fileName = `knowledge-${id}.${extMap[draft.format]}`;
-
-    const entry: ContextEntry = {
-      id,
-      label: draft.label,
-      description: draft.description,
-      fileName,
-      format: draft.format,
-      status: 'draft',
-      sourceAgentSessionId: sessionId,
-      producedAt: now,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    const contextDir = getContextDir();
-    await mkdir(contextDir, { recursive: true });
-    await writeFile(getContextFilePath(fileName), draft.content, 'utf-8');
-
-    await modifyJsonFile<ContextIndexData>(
-      getContextIndexPath(),
-      { entries: [] },
-      (data) => { data.entries.push(entry); return data; },
-    );
-
-    return id;
-  } catch (err) {
-    console.error('[AgentChat] Failed to create draft context entry:', err);
-    return null;
-  }
-}
-
-// ── Design Doc Tag Helpers ──
-
-interface DocTag {
-  project: string;
-  title: string;
-  description: string;
-  content: string;
-}
-
-function parseDocTags(text: string): DocTag[] {
-  const regex = /<save-doc\s+project="([^"]+)"\s+title="([^"]+)"\s+description="([^"]+)">([\s\S]*?)<\/save-doc>/g;
-  const results: DocTag[] = [];
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    results.push({
-      project: match[1].trim(),
-      title: match[2].trim(),
-      description: match[3].trim(),
-      content: match[4].trim(),
-    });
-  }
-  return results;
-}
-
-function stripDocTags(text: string): string {
-  return text.replace(/<save-doc[\s\S]*?<\/save-doc>/g, '').trim();
-}
-
-async function createDesignDoc(draft: DocTag): Promise<string | null> {
-  try {
-    const now = new Date().toISOString();
-    const docId = `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const fileName = `${docId}.md`;
-
-    const entry: DocEntry = {
-      id: docId,
-      title: draft.title,
-      description: draft.description,
-      fileName,
-      projectKey: draft.project,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    const docsDir = getDesignDocsDir();
-    await mkdir(docsDir, { recursive: true });
-    await writeFile(getDesignDocFilePath(fileName), draft.content, 'utf-8');
-
-    await modifyJsonFile<DocsIndexData>(
-      getDesignDocsIndexPath(),
-      { projects: {} },
-      (data) => {
-        if (!data.projects[entry.projectKey]) {
-          data.projects[entry.projectKey] = [];
-        }
-        data.projects[entry.projectKey].push(entry);
-        return data;
-      },
-    );
-
-    return docId;
-  } catch (err) {
-    console.error('[AgentChat] Failed to create design doc:', err);
-    return null;
-  }
-}
-
 // ── Unified Resource-based Prompt Builder ──
 
 /**
@@ -730,13 +684,39 @@ async function createDesignDoc(draft: DocTag): Promise<string | null> {
  * via migrateAgentToResources().
  *
  * Extra refs (e.g. flow-context, reference-turns) can be appended.
+ * Session-level config (contextIds, supplementaryPrompt) is merged as extra refs.
  */
 async function buildResourcePrompt(
   agent: Agent,
   extraRefs?: ResourceRef[],
+  sessionConfig?: SessionConfig,
 ): Promise<string> {
   const baseRefs = agent.defaultResources ?? migrateAgentToResources(agent);
-  const allRefs = extraRefs ? [...baseRefs, ...extraRefs] : baseRefs;
+  const merged: ResourceRef[] = [...baseRefs];
+  if (extraRefs) merged.push(...extraRefs);
+
+  // Merge session-level config into resource refs
+  if (sessionConfig) {
+    // Session context IDs → context refs (priority 35, after agent's 30)
+    if (sessionConfig.contextIds?.length) {
+      for (const cid of sessionConfig.contextIds) {
+        merged.push({ type: 'context', id: cid, priority: 35 });
+      }
+    }
+    // Session supplementary prompt → inline-text ref (priority 5, right after system prompt)
+    if (sessionConfig.supplementaryPrompt?.trim()) {
+      const promptRef: InlineTextRef = {
+        type: 'inline-text',
+        id: '_session-supplementary',
+        priority: 5,
+        label: '会话补充提示词',
+        inlineContent: sessionConfig.supplementaryPrompt.trim(),
+      };
+      merged.push(promptRef);
+    }
+  }
+
+  const allRefs = merged;
 
   // Resolve system prompt: prefer .md file, fallback to inline, then auto-generated
   const resolved = await resolveSystemPrompt(agent.id, agent.systemPrompt);
@@ -756,8 +736,8 @@ async function buildResourcePrompt(
 
 // ── Prompt Builders (powered by Resource Registry) ──
 
-async function buildAgentChatPrompt(agent: Agent, message: string): Promise<string> {
-  const resourcePrompt = await buildResourcePrompt(agent);
+async function buildAgentChatPrompt(agent: Agent, message: string, sessionConfig?: SessionConfig): Promise<string> {
+  const resourcePrompt = await buildResourcePrompt(agent, undefined, sessionConfig);
 
   return `${resourcePrompt}
 
@@ -770,6 +750,7 @@ async function buildAgentChatPromptWithFlowContext(
   agent: Agent,
   message: string,
   flowContext: FlowContext,
+  sessionConfig?: SessionConfig,
 ): Promise<string> {
   const { projectKey, projectName, flowDataPath } = flowContext;
 
@@ -783,7 +764,7 @@ async function buildAgentChatPromptWithFlowContext(
     flowDataPath,
   };
 
-  const resourcePrompt = await buildResourcePrompt(agent, [flowRef]);
+  const resourcePrompt = await buildResourcePrompt(agent, [flowRef], sessionConfig);
 
   return `${resourcePrompt}
 
@@ -817,53 +798,6 @@ async function buildGuestAgentPrompt(
 ---
 
 用户消息：${message}`;
-}
-
-// ── Legacy Helpers (deprecated — kept for reference, no longer called) ──
-
-/** @deprecated Use buildResourcePrompt() instead */
-async function _legacyBuildContextSection(): Promise<string> {
-  const data = await readJsonFile<ContextIndexData>(getContextIndexPath(), { entries: [] });
-  const activeEntries = data.entries.filter(e => !e.status || e.status === 'active');
-  if (activeEntries.length === 0) return '';
-
-  const tableHeader = '| 标签 | 描述 | 文件路径 | 原始文件路径 |\n|------|------|---------|------------|';
-  const toRow = (e: { label: string; description: string; fileName: string; sourcePath?: string }) => {
-    const filePath = getContextFilePath(e.fileName);
-    const sourceCol = e.sourcePath ? `\`${e.sourcePath}\`` : '-';
-    return `| ${e.label} | ${e.description} | \`${filePath}\` | ${sourceCol} |`;
-  };
-
-  const groups = [...new Set(activeEntries.map(e => e.group).filter((g): g is string => !!g))].sort();
-  const ungrouped = activeEntries.filter(e => !e.group);
-
-  let md = '\n\n## 可用上下文信息\n\n以下是用户配置的上下文信息索引。需要时可通过 bash 的 cat 命令读取具体文件内容。\n';
-  if (ungrouped.length > 0) {
-    md += `\n${tableHeader}\n${ungrouped.map(toRow).join('\n')}\n`;
-  }
-  for (const group of groups) {
-    const groupEntries = data.entries.filter(e => e.group === group);
-    md += `\n### ${group}\n${tableHeader}\n${groupEntries.map(toRow).join('\n')}\n`;
-  }
-  return md;
-}
-
-/** @deprecated Use buildResourcePrompt() instead */
-async function _legacyBuildPreloadedContextSection(contextIds: string[] | undefined): Promise<string> {
-  if (!contextIds || contextIds.length === 0) return '';
-  const data = await readJsonFile<ContextIndexData>(getContextIndexPath(), { entries: [] });
-  const entries = data.entries.filter(e => contextIds.includes(e.id) && (!e.status || e.status === 'active'));
-  if (entries.length === 0) return '';
-  const sections: string[] = [];
-  for (const entry of entries) {
-    try {
-      const filePath = getContextFilePath(entry.fileName);
-      const content = await readFile(filePath, 'utf-8');
-      sections.push(`### ${entry.label}\n\n${content.trim()}`);
-    } catch { /* skip */ }
-  }
-  if (sections.length === 0) return '';
-  return `\n\n## Agent 预加载上下文\n\n以下上下文已由配置自动加载，无需手动读取：\n\n${sections.join('\n\n---\n\n')}\n`;
 }
 
 // ── Singleton ──

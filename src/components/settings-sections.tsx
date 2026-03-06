@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import {
-  Shield, Brain, Wrench, Check, X, Loader2, ExternalLink, Server,
+  Shield, Brain, Wrench, Check, X, Loader2, ExternalLink, Server, Copy,
   Gauge, RotateCw, Eye, Sun, Moon, Monitor,
   Download, Upload, Trash2, FolderOpen, Info, Github,
 } from 'lucide-react';
@@ -36,6 +36,10 @@ interface AIConfigSectionProps extends TranslationProps {
   baseUrl: string;
   oauthStatus: 'unknown' | 'checking' | 'authenticated' | 'not_authenticated';
   loginPending: boolean;
+  loginUrl: string | null;
+  loginFlowActive: boolean;
+  oauthCode: string;
+  codeSubmitting: boolean;
   preset: { supportsOAuth?: boolean; apiKeyPlaceholder?: string; editableBaseUrl?: boolean; baseUrl?: string; models: Array<{ id: string; label: string }> };
   isPresetModel: boolean;
   modelSelectOptions: Array<{ value: string; label: string }>;
@@ -47,16 +51,19 @@ interface AIConfigSectionProps extends TranslationProps {
   onBaseUrlChange: (u: string) => void;
   onCheckOAuthStatus: () => void;
   onTriggerOAuthLogin: () => void;
+  onOauthCodeChange: (v: string) => void;
+  onCodeSubmit: () => void;
+  onCancelLoginFlow: () => void;
 }
 
 export function SettingsAISection({
-  t, btnActive, btnInactive,
+  t, tActions, btnActive, btnInactive,
   provider, authMode, apiKey, model, customModel, baseUrl,
-  oauthStatus, loginPending,
+  oauthStatus, loginPending, loginUrl, loginFlowActive, oauthCode, codeSubmitting,
   preset, isPresetModel, modelSelectOptions,
   onProviderChange, onAuthModeChange, onApiKeyChange,
   onModelChange, onCustomModelChange, onBaseUrlChange,
-  onCheckOAuthStatus, onTriggerOAuthLogin,
+  onCheckOAuthStatus, onTriggerOAuthLogin, onOauthCodeChange, onCodeSubmit, onCancelLoginFlow,
 }: AIConfigSectionProps) {
   return (
     <>
@@ -179,7 +186,56 @@ export function SettingsAISection({
                   {t('oauthCheckStatus')}
                 </Button>
               </div>
-              <p className="text-xs text-zinc-500">{t('oauthHint')}</p>
+
+              {loginFlowActive && (
+                <div className="space-y-2 rounded-md border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
+                  {loginUrl ? (
+                    <>
+                      <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">{t('oauthOpenUrl')}</p>
+                      <div className="flex gap-2">
+                        <Input
+                          readOnly
+                          value={loginUrl}
+                          className="font-mono text-xs"
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => navigator.clipboard.writeText(loginUrl)}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-xs text-zinc-500">{t('oauthWaiting')}</p>
+                  )}
+                  <p className="text-xs text-zinc-500">{t('oauthPasteCode')}</p>
+                  <div className="flex gap-2">
+                    <Input
+                      value={oauthCode}
+                      onChange={(e) => onOauthCodeChange(e.target.value)}
+                      placeholder={t('oauthCodePlaceholder')}
+                      className="font-mono text-xs"
+                    />
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={onCodeSubmit}
+                      disabled={!oauthCode.trim() || codeSubmitting}
+                    >
+                      {codeSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : tActions('submit')}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={onCancelLoginFlow}>
+                      {tActions('cancel')}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {!loginFlowActive && (
+                <p className="text-xs text-zinc-500">{t('oauthHint')}</p>
+              )}
             </div>
           )}
         </CardContent>

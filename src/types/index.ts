@@ -307,6 +307,7 @@ export type ChatSSEEvent =
   | { type: 'branch_merged'; branch: string; targetBranch: string }
   | { type: 'phase_changed'; phase: SessionPhase }
   | { type: 'retry_needed'; attempt: number; maxAttempts: number; retryMessage: string }
+  | { type: 'session_title_set'; title: string }
   | { type: 'knowledge_draft_created'; entryId: string; label: string }
   | { type: 'doc_created'; docId: string; title: string; projectKey: string }
   | { type: 'error'; message: string }
@@ -542,6 +543,13 @@ export interface DocEntry {
 export interface DocsIndexData {
   projects: Record<string, DocEntry[]>;
 }
+
+// ==================== Orchestrator ====================
+
+export type {
+  OrchestratorPhase, SplitPlan, WorkerTask, WorkerResult,
+  OrchestratorSession, OrchestratorSessionsData, OrchestratorSSEEvent,
+} from './orchestrator';
 
 // ==================== Artifacts ====================
 

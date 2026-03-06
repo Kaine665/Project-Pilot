@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Loader2, Maximize2, Minimize2, Bot, Sparkles, Plus, MessageSquare, Trash2 } from 'lucide-react';
+import { Loader2, Maximize2, Minimize2, Bot, Sparkles, Plus, MessageSquare, Trash2, Settings } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from '@/i18n/routing';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,9 @@ import { ChatNotificationBanners } from '@/components/chat-notification-banners'
 import { SaveKnowledgeDialog } from '@/components/save-knowledge-dialog';
 import { SessionDropdown } from '@/components/session-dropdown';
 import { GuestAgentOverlay } from '@/components/guest-agent-overlay';
+import { SessionConfigPanel } from '@/components/session-config-panel';
 import type { Agent } from '@/types';
+import type { SessionConfig } from '@/types/agent-chat';
 import type { ChatMessage, ChatToolCall, ChatSSEEvent, ContentBlock } from '@/types';
 
 // Session list item (no messages)
@@ -36,9 +38,83 @@ interface AgentChatPanelProps {
 
 type IndexedSSEEvent = ChatSSEEvent & { _idx: number };
 
-// Strip <session-title> tags from display text
+// Strip <session-title> tags from display text (fallback cleanup)
 function stripSessionTitleTag(text: string): string {
   return text.replace(/<session-title>[\s\S]*?<\/session-title>\s*/, '');
+}
+
+/**
+ * Streaming filter for <session-title> tags.
+ * Buffers partial tag content and strips completed tags from display text.
+ * Returns only the text that should be shown to the user.
+ */
+function createSessionTitleFilter() {
+  let buffer = '';              // accumulates text inside (or possibly part of) a tag
+  let insideTag = false;        // true when we've seen <session-title> and are waiting for </session-title>
+  let partialOpen = '';         // accumulates a partial opening tag like "<ses" or "<session-ti"
+
+  const OPEN_TAG = '<session-title>';
+  const CLOSE_TAG = '</session-title>';
+
+  return (chunk: string): string => {
+    let output = '';
+    let i = 0;
+
+    while (i < chunk.length) {
+      const ch = chunk[i];
+
+      if (insideTag) {
+        // Inside <session-title>..., looking for </session-title>
+        buffer += ch;
+        if (buffer.endsWith(CLOSE_TAG)) {
+          // Complete tag found — discard entire buffer
+          buffer = '';
+          insideTag = false;
+          // Also strip any trailing whitespace/newlines
+          i++;
+          while (i < chunk.length && (chunk[i] === '\n' || chunk[i] === '\r' || chunk[i] === ' ')) {
+            i++;
+          }
+          continue;
+        }
+        i++;
+        continue;
+      }
+
+      if (partialOpen) {
+        // We had a partial match for <session-title>
+        partialOpen += ch;
+        if (OPEN_TAG.startsWith(partialOpen)) {
+          // Still a valid prefix — keep buffering
+          if (partialOpen === OPEN_TAG) {
+            // Full open tag matched!
+            insideTag = true;
+            buffer = '';
+            partialOpen = '';
+          }
+          i++;
+          continue;
+        }
+        // Not a match — flush the buffered partial as normal output
+        output += partialOpen;
+        partialOpen = '';
+        i++;
+        continue;
+      }
+
+      if (ch === '<') {
+        // Potential start of <session-title>
+        partialOpen = '<';
+        i++;
+        continue;
+      }
+
+      output += ch;
+      i++;
+    }
+
+    return output;
+  };
 }
 
 export function AgentChatPanel({
@@ -77,6 +153,10 @@ export function AgentChatPanel({
   // Save as knowledge dialog
   const [saveDialogContent, setSaveDialogContent] = useState<string | null>(null);
 
+  // Session config
+  const [sessionConfig, setSessionConfig] = useState<SessionConfig>({});
+  const [showConfig, setShowConfig] = useState(false);
+
   const streamAbortRef = useRef<AbortController | null>(null);
   const blocksRef = useRef<ContentBlock[]>([]);
   const rafIdRef = useRef<number>(0);
@@ -86,11 +166,17 @@ export function AgentChatPanel({
   const finalizingRef = useRef(false);
   const sessionIdRef = useRef<string | null>(null);
   const doSendRef = useRef<(text: string, images?: string[]) => void>(() => {});
+  const isStreamingRef = useRef(false);
+  const pendingAnswerRef = useRef<string | null>(null);
 
-  // Keep ref in sync
+  // Keep refs in sync
   useEffect(() => {
     sessionIdRef.current = sessionId;
   }, [sessionId]);
+
+  useEffect(() => {
+    isStreamingRef.current = isStreaming;
+  }, [isStreaming]);
 
   // Stable streaming message object
   const streamingMessage = useMemo<ChatMessage>(() => ({
@@ -136,7 +222,7 @@ export function AgentChatPanel({
     }
   }, []);
 
-  // Load a session's full data (messages)
+  // Load a session's full data (messages + config)
   const loadSessionData = useCallback(async (sid: string) => {
     try {
       const res = await fetch(`/api/agent-chat/sessions/${sid}`, { cache: 'no-store' });
@@ -153,6 +239,7 @@ export function AgentChatPanel({
       );
       setMessages(restored);
       setSessionTitle(data.title ?? '新会话');
+      setSessionConfig(data.config ?? {});
     } catch {
       // ignore
     }
@@ -175,7 +262,7 @@ export function AgentChatPanel({
     if (fullText || toolCalls.length > 0) {
       const cleanedText = stripSessionTitleTag(fullText);
       const assistantMsg: ChatMessage = {
-        id: `msg-${Date.now()}`,
+        id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         role: 'assistant',
         content: cleanedText,
         timestamp: new Date().toISOString(),
@@ -214,6 +301,13 @@ export function AgentChatPanel({
 
     // Notify parent to refresh sidebar sessions
     onSessionChange?.();
+
+    // Auto-send queued AskUserQuestion answer from the previous turn
+    const pendingAnswer = pendingAnswerRef.current;
+    pendingAnswerRef.current = null;
+    if (pendingAnswer) {
+      setTimeout(() => doSendRef.current(pendingAnswer), 300);
+    }
   }, [agent.id, projectKey, fetchSessionList, onSessionChange]);
 
   // Connect to SSE stream
@@ -224,6 +318,7 @@ export function AgentChatPanel({
 
     const abort = new AbortController();
     streamAbortRef.current = abort;
+    const titleFilter = createSessionTitleFilter();
 
     fetch(`/api/agent-chat/stream?sessionId=${targetSessionId}&since=${since}`, {
       signal: abort.signal,
@@ -267,13 +362,17 @@ export function AgentChatPanel({
           switch (event.type) {
             case 'text_delta': {
               fullTextRef.current += event.text;
-              const lastBlock = blocks[blocks.length - 1];
-              if (lastBlock && lastBlock.type === 'text') {
-                lastBlock.text += event.text;
-              } else {
-                blocks.push({ type: 'text', text: event.text });
+              // Filter out <session-title>...</session-title> from display
+              const displayText = titleFilter(event.text);
+              if (displayText) {
+                const lastBlock = blocks[blocks.length - 1];
+                if (lastBlock && lastBlock.type === 'text') {
+                  lastBlock.text += displayText;
+                } else {
+                  blocks.push({ type: 'text', text: displayText });
+                }
+                chunkHasDisplayEvents = true;
               }
-              chunkHasDisplayEvents = true;
               break;
             }
 
@@ -299,6 +398,14 @@ export function AgentChatPanel({
               }
               break;
             }
+
+            case 'session_title_set':
+              setSessionTitle(event.title);
+              setSessionList(prev => prev.map(s =>
+                s.id === targetSessionId ? { ...s, title: event.title } : s,
+              ));
+              onSessionChange?.();
+              break;
 
             case 'knowledge_draft_created':
               setKnowledgeDrafts(prev => [...prev, { entryId: event.entryId, label: event.label }]);
@@ -327,7 +434,6 @@ export function AgentChatPanel({
         cancelAnimationFrame(rafIdRef.current);
         rafIdRef.current = 0;
       }
-      await new Promise(r => setTimeout(r, 50));
       finalizeStream();
     }).catch((err) => {
       if ((err as Error).name === 'AbortError') return;
@@ -470,14 +576,22 @@ export function AgentChatPanel({
     });
 
     const userMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
+      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       role: 'user',
       content: text.trim(),
       timestamp: new Date().toISOString(),
       images: imagesToSend.length > 0 ? imagesToSend : undefined,
     };
 
-    setMessages((prev) => [...prev, userMsg]);
+    setMessages((prev) => {
+      // Fold duplicate: if the last message is an unanswered user message with identical content,
+      // replace it instead of appending (handles manual resend after network/auth errors)
+      const last = prev[prev.length - 1];
+      if (last?.role === 'user' && last.content === userMsg.content) {
+        return [...prev.slice(0, -1), userMsg];
+      }
+      return [...prev, userMsg];
+    });
     setAutoScroll(true);
     setIsStreaming(true);
     blocksRef.current = [];
@@ -516,6 +630,8 @@ export function AgentChatPanel({
           projectKey: projectKey ?? undefined,
           images: imageAttachments.length > 0 ? imageAttachments : undefined,
           initialTitle: text.trim().slice(0, 10) || undefined,
+          config: (sessionConfig.contextIds?.length || sessionConfig.supplementaryPrompt?.trim())
+            ? sessionConfig : undefined,
         }),
       });
 
@@ -532,18 +648,25 @@ export function AgentChatPanel({
       setErrorMsg(msg);
       setIsStreaming(false);
     }
-  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, connectToStream, onSessionChange, t]);
+  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, connectToStream, onSessionChange, t, sessionConfig]);
 
   // Keep doSendRef in sync (avoid stale closure in event listener)
   useEffect(() => {
     doSendRef.current = doSend;
   }, [doSend]);
 
-  // Listen for AskUserQuestion answers dispatched via custom event
+  // Listen for AskUserQuestion answers dispatched via custom event.
+  // If streaming is still in progress, queue the answer and send it
+  // once the current turn finishes (via finalizeStream).
   useEffect(() => {
     const handler = (e: Event) => {
       const answer = (e as CustomEvent<{ answer: string }>).detail?.answer;
-      if (answer) {
+      if (!answer) return;
+
+      // If streaming is active, queue the answer for later
+      if (isStreamingRef.current) {
+        pendingAnswerRef.current = answer;
+      } else {
         doSendRef.current(answer);
       }
     };
@@ -587,6 +710,24 @@ export function AgentChatPanel({
   };
 
   // Switch to a new (empty) session
+  // Save session config
+  const handleSaveConfig = useCallback(async (config: SessionConfig) => {
+    setSessionConfig(config);
+    setShowConfig(false);
+    // Persist to backend if session exists on disk
+    if (sessionId) {
+      try {
+        await fetch(`/api/agent-chat/sessions/${sessionId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'updateConfig', config }),
+        });
+      } catch {
+        // ignore — config is already in local state for next message
+      }
+    }
+  }, [sessionId]);
+
   const handleNewSession = useCallback(() => {
     if (isStreaming) return;
     if (streamAbortRef.current) {
@@ -596,6 +737,8 @@ export function AgentChatPanel({
     setSessionId(null);
     setSessionTitle(hasProject ? t('chat.newSession') : '新会话');
     setMessages([]);
+    setSessionConfig({});
+    setShowConfig(false);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
@@ -723,6 +866,37 @@ export function AgentChatPanel({
   if (!hasProject) {
     return (
       <div className="relative flex h-full flex-col">
+        {/* Header with config toggle */}
+        <div className="flex items-center justify-end border-b border-zinc-100 px-3 py-1 dark:border-zinc-800">
+          <Button
+            size="sm"
+            variant="ghost"
+            className={`h-6 px-1.5 text-xs transition-colors ${
+              showConfig
+                ? 'text-blue-500 dark:text-blue-400'
+                : (sessionConfig.contextIds?.length || sessionConfig.supplementaryPrompt?.trim())
+                  ? 'text-blue-400 dark:text-blue-500'
+                  : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+            }`}
+            onClick={() => setShowConfig(v => !v)}
+            title="会话配置"
+          >
+            <Settings className="h-3 w-3" />
+          </Button>
+        </div>
+
+        {/* Session Config Panel (collapsible) */}
+        {showConfig && (
+          <div className="border-b border-zinc-100 dark:border-zinc-800 max-h-[50%] overflow-hidden">
+            <SessionConfigPanel
+              sessionId={sessionId ?? '_new'}
+              config={sessionConfig}
+              onSave={handleSaveConfig}
+              onClose={() => setShowConfig(false)}
+            />
+          </div>
+        )}
+
         {/* Messages */}
         <div ref={scrollRef} onScroll={handleChatScroll} className="flex-1 space-y-3 overflow-y-auto p-4">
           {messages.length === 0 && !isStreaming ? (
@@ -807,6 +981,22 @@ export function AgentChatPanel({
           )}
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
+          {/* Session config toggle */}
+          <Button
+            size="sm"
+            variant="ghost"
+            className={`h-6 px-1.5 text-xs transition-colors ${
+              showConfig
+                ? 'text-blue-500 dark:text-blue-400'
+                : (sessionConfig.contextIds?.length || sessionConfig.supplementaryPrompt?.trim())
+                  ? 'text-blue-400 dark:text-blue-500'
+                  : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+            }`}
+            onClick={() => setShowConfig(v => !v)}
+            title="会话配置"
+          >
+            <Settings className="h-3 w-3" />
+          </Button>
           {!isFull && sessionId && (
             <Button
               size="sm"
@@ -839,6 +1029,18 @@ export function AgentChatPanel({
           )}
         </div>
       </div>
+
+      {/* Session Config Panel (collapsible) */}
+      {showConfig && (
+        <div className="border-b border-zinc-100 dark:border-zinc-800 max-h-[50%] overflow-hidden">
+          <SessionConfigPanel
+            sessionId={sessionId ?? '_new'}
+            config={sessionConfig}
+            onSave={handleSaveConfig}
+            onClose={() => setShowConfig(false)}
+          />
+        </div>
+      )}
 
       {/* Messages */}
       <div ref={scrollRef} onScroll={handleChatScroll} className="flex-1 space-y-3 overflow-y-auto p-3">

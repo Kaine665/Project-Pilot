@@ -95,7 +95,7 @@ export function GuestAgentOverlay({
     if (fullText || toolCalls.length > 0) {
       const cleanedText = stripSessionTitleTag(fullText);
       const assistantMsg: ChatMessage = {
-        id: `guest-msg-${Date.now()}`,
+        id: `guest-msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         role: 'assistant',
         content: cleanedText,
         timestamp: new Date().toISOString(),
@@ -218,7 +218,7 @@ export function GuestAgentOverlay({
     if (!text.trim() || isStreaming) return;
 
     const userMsg: ChatMessage = {
-      id: `guest-msg-${Date.now()}`,
+      id: `guest-msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       role: 'user',
       content: text.trim(),
       timestamp: new Date().toISOString(),

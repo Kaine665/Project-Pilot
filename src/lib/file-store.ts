@@ -151,8 +151,20 @@ export function getAgentChatSessionsPath(): string {
   return path.join(DATA_DIR, 'agent-chat-sessions.json');
 }
 
+export function getWorktreePortsPath(): string {
+  return path.join(DATA_DIR, 'worktree-ports.json');
+}
+
 export function getTodosPath(): string {
   return path.join(DATA_DIR, 'todos.json');
+}
+
+export function getOrchestratorSessionsPath(): string {
+  return path.join(DATA_DIR, 'orchestrator-sessions.json');
+}
+
+export function getActiveTasksPath(): string {
+  return path.join(DATA_DIR, 'active-tasks.json');
 }
 
 // ── Prompt 文件路径函数 ──
@@ -251,7 +263,7 @@ const SNAPSHOT_DIR = path.join(DATA_DIR, '_snapshots');
 const MAX_SNAPSHOTS = 10;
 
 /** 需要做写入前快照的文件（basename） */
-const SNAPSHOT_TARGETS = new Set(['agents.json']);
+const SNAPSHOT_TARGETS = new Set(['agents.json', 'agent-chat-sessions.json']);
 
 async function snapshotBeforeWrite(filePath: string): Promise<void> {
   const baseName = path.basename(filePath);
@@ -299,14 +311,35 @@ export async function writeJsonFile(filePath: string, data: unknown): Promise<vo
   await fs.rename(tmpPath, filePath);
 }
 
+// ── 进程内写队列 ──
+// 同一文件的 modifyJsonFile 调用在进程内串行化，防止并发 async 操作竞态丢数据
+const writeQueues = new Map<string, Promise<unknown>>();
+
 /**
- * 原子读-改-写操作
+ * 原子读-改-写操作（进程内串行化）
  *
  * 🔒 安全特性：
+ * - 进程内同一文件写操作自动排队，防止并发竞态
  * - 读取时检查文件大小限制（50MB）
  * - 写入前验证序列化后的大小
+ * - 写入前自动快照关键文件（agents.json、agent-chat-sessions.json）
+ * - 使用原子写入（write-to-tmp + rename）防止进程中断导致文件损坏
  */
 export async function modifyJsonFile<T>(
+  filePath: string,
+  defaultValue: T,
+  modifier: (data: T) => T,
+): Promise<T> {
+  const prev = writeQueues.get(filePath) ?? Promise.resolve();
+  const next = prev.then(
+    () => _modifyJsonFileImpl(filePath, defaultValue, modifier),
+    () => _modifyJsonFileImpl(filePath, defaultValue, modifier),
+  );
+  writeQueues.set(filePath, next.catch(() => {}));
+  return next;
+}
+
+async function _modifyJsonFileImpl<T>(
   filePath: string,
   defaultValue: T,
   modifier: (data: T) => T,
@@ -344,7 +377,11 @@ export async function modifyJsonFile<T>(
     throw new Error(`Output JSON too large (max ${MAX_JSON_SIZE} bytes)`);
   }
 
-  await fs.writeFile(filePath, serialized, 'utf-8');
+  // 写入前快照 + 原子写入
+  await snapshotBeforeWrite(filePath);
+  const tmpPath = filePath + `.tmp_${Date.now()}`;
+  await fs.writeFile(tmpPath, serialized, 'utf-8');
+  await fs.rename(tmpPath, filePath);
   return modified;
 }
 

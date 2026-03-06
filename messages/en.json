@@ -410,7 +410,12 @@
     "oauthChecking": "Checking...",
     "oauthLogin": "Login with Claude",
     "oauthCheckStatus": "Check Status",
-    "oauthHint": "Opens your browser for Claude Pro/Max authentication",
+    "oauthHint": "Click to get the link, copy to browser, then paste the code back below",
+    "oauthWaiting": "Waiting for authorization link...",
+    "oauthOpenUrl": "Open the following URL in your browser to authorize:",
+    "oauthPasteCode": "After authorizing, paste the code or full callback URL:",
+    "oauthCodePlaceholder": "Paste code or callback URL (with ?code= in the link)",
+    "oauthSubmitFailed": "Submit failed. Please click \"Login with Claude\" again and paste the code quickly",
     "provider": "AI Provider",
     "providers": {
       "anthropic": "Anthropic",

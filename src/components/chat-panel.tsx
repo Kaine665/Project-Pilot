@@ -90,6 +90,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
     const pendingRetryRef = useRef<string | null>(null);
     // User interrupt: store message to send after current stream finalizes
     const pendingUserMsgRef = useRef<string | null>(null);
+    // AskUserQuestion answer queued during streaming
+    const pendingAnswerRef = useRef<string | null>(null);
     const doSendRef = useRef<(text: string) => void>(() => {});
 
     // Guard against double finalization
@@ -137,7 +139,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 
       if (fullText || toolCalls.length > 0) {
         const assistantMsg: ChatMessage = {
-          id: `msg-${Date.now()}`,
+          id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           role: 'assistant',
           content: fullText,
           timestamp: new Date().toISOString(),
@@ -154,12 +156,22 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
       finalizingRef.current = false;
       onStreamDone?.();
 
-      // User's pending message takes priority over auto-retry
+      // User's pending message takes priority over everything
       const pendingMsg = pendingUserMsgRef.current;
       pendingUserMsgRef.current = null;
       if (pendingMsg) {
         pendingRetryRef.current = null;
+        pendingAnswerRef.current = null;
         setTimeout(() => doSendRef.current(pendingMsg), 300);
+        return;
+      }
+
+      // AskUserQuestion answer queued during streaming
+      const pendingAnswer = pendingAnswerRef.current;
+      pendingAnswerRef.current = null;
+      if (pendingAnswer) {
+        pendingRetryRef.current = null;
+        setTimeout(() => doSendRef.current(pendingAnswer), 300);
         return;
       }
 
@@ -478,7 +490,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
       sendAbortRef.current = sendAbort;
 
       const userMsg: ChatMessage = {
-        id: `msg-${Date.now()}`,
+        id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         role: 'user',
         content: text.trim(),
         timestamp: new Date().toISOString(),
@@ -537,17 +549,22 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
       doSendRef.current = doSend;
     }, [doSend]);
 
-    // Listen for AskUserQuestion answers dispatched via custom event
+    // Listen for AskUserQuestion answers dispatched via custom event.
+    // If streaming is active, queue the answer instead of interrupting.
     useEffect(() => {
       const handler = (e: Event) => {
         const answer = (e as CustomEvent<{ answer: string }>).detail?.answer;
-        if (answer) {
+        if (!answer) return;
+
+        if (isStreaming) {
+          pendingAnswerRef.current = answer;
+        } else {
           doSendRef.current(answer);
         }
       };
       window.addEventListener('ask-user-answer', handler);
       return () => window.removeEventListener('ask-user-answer', handler);
-    }, []);
+    }, [isStreaming]);
 
     // Auto-start: when history finishes loading with 0 messages, send task title
     // Only auto-start for the very first conversation of a task
