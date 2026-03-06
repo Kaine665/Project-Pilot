@@ -12,6 +12,7 @@ import { SaveKnowledgeDialog } from '@/components/save-knowledge-dialog';
 import { SessionDropdown } from '@/components/session-dropdown';
 import { GuestAgentOverlay } from '@/components/guest-agent-overlay';
 import { SessionConfigPanel } from '@/components/session-config-panel';
+import { PlanViewerPanel } from '@/components/plan-viewer-panel';
 import type { Agent } from '@/types';
 import type { SessionConfig } from '@/types/agent-chat';
 import type { ChatMessage, ChatToolCall, ChatSSEEvent, ContentBlock } from '@/types';
@@ -156,6 +157,10 @@ export function AgentChatPanel({
   // Session config
   const [sessionConfig, setSessionConfig] = useState<SessionConfig>({});
   const [showConfig, setShowConfig] = useState(false);
+
+  // Plan viewer
+  const [planContent, setPlanContent] = useState<string | null>(null);
+  const [isPlanOpen, setIsPlanOpen] = useState(false);
 
   const streamAbortRef = useRef<AbortController | null>(null);
   const blocksRef = useRef<ContentBlock[]>([]);
@@ -386,6 +391,17 @@ export function AgentChatPanel({
               toolCallsRef.current.push(tc);
               blocks.push({ type: 'tool_call', toolCall: tc });
               chunkHasDisplayEvents = true;
+
+              // Detect Write to .claude/plans/ → capture plan content
+              if (event.toolName === 'Write') {
+                try {
+                  const parsed = typeof event.input === 'string' ? JSON.parse(event.input) : event.input;
+                  if (parsed?.file_path?.includes('.claude/plans/')) {
+                    setPlanContent(parsed.content);
+                    setIsPlanOpen(true);
+                  }
+                } catch { /* ignore parse errors */ }
+              }
               break;
             }
 
@@ -822,6 +838,25 @@ export function AgentChatPanel({
   const handleDismissDocs = useCallback(() => setDocsSaved([]), []);
   const handleSelectGuest = useCallback((a: Agent) => setGuestAgent(a), []);
 
+  // View plan from a chat bubble badge
+  const handleViewPlan = useCallback((content: string) => {
+    setPlanContent(content);
+    setIsPlanOpen(true);
+  }, []);
+
+  // Plan side panel element (reused across modes)
+  const planPanel = planContent ? (
+    <div
+      className={`shrink-0 overflow-hidden border-l border-zinc-200 transition-[width] duration-200 ease-in-out dark:border-zinc-800 ${
+        isPlanOpen ? 'w-[400px]' : 'w-0 border-l-0'
+      }`}
+    >
+      <div className="h-full w-[400px]">
+        <PlanViewerPanel content={planContent} onClose={() => setIsPlanOpen(false)} />
+      </div>
+    </div>
+  ) : null;
+
   // ── Message list (shared between modes) ──
   const renderMessages = () => (
     <>
@@ -836,6 +871,7 @@ export function AgentChatPanel({
           isLastAssistant={msg.id === lastAssistantId}
           onRetry={handleRetry}
           hasSendError={!!errorMsg && msg.role === 'user' && msg.id === messages[messages.length - 1]?.id}
+          onViewPlan={handleViewPlan}
         />
       ))}
 
@@ -865,7 +901,8 @@ export function AgentChatPanel({
   // ── Plain mode (agents page, no variant/projectKey) ──
   if (!hasProject) {
     return (
-      <div className="relative flex h-full flex-col">
+      <div className="flex h-full">
+      <div className="relative flex h-full flex-1 flex-col min-w-0">
         {/* Header with config toggle */}
         <div className="flex items-center justify-end border-b border-zinc-100 px-3 py-1 dark:border-zinc-800">
           <Button
@@ -948,6 +985,8 @@ export function AgentChatPanel({
           />
         )}
       </div>
+      {planPanel}
+      </div>
     );
   }
 
@@ -963,7 +1002,8 @@ export function AgentChatPanel({
 
   // Chat area shared between sidebar and full modes
   const chatArea = (
-    <div className="relative flex h-full flex-col">
+    <div className="flex h-full">
+    <div className="relative flex h-full flex-1 flex-col min-w-0">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-zinc-100 px-3 py-1.5 dark:border-zinc-800">
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -1096,6 +1136,8 @@ export function AgentChatPanel({
           onClose={() => setSaveDialogContent(null)}
         />
       )}
+    </div>
+    {planPanel}
     </div>
   );
 
