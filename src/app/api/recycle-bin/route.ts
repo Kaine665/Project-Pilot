@@ -11,6 +11,7 @@ import {
   ensureFlowsMigrated,
 } from '@/lib/file-store';
 import { deletePromptFile } from '@/lib/agent-prompt-store';
+import { invalidateAgentsCache } from '@/app/api/agents/route';
 import type { AgentsData, DimensionsData, ProjectIndex } from '@/types';
 
 type RecycleBinCategory = 'project' | 'agent' | 'dimension';
@@ -99,6 +100,7 @@ export async function DELETE(request: NextRequest) {
       }
       agentsData.agents.splice(idx, 1);
       await writeJsonFile(getAgentsPath(), agentsData);
+      invalidateAgentsCache();
       // 清理外置的 prompt 文件
       await deletePromptFile(id);
       break;

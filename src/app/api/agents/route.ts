@@ -7,10 +7,37 @@ import type { Agent, AgentCapabilities, AgentsData } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import type { ResourceRef } from '@/types/resource';
 
+// ── 进程内缓存（同 settings-manager 模式）──
+// agents 数据变化极少，30s TTL 避免每次 GET 都读磁盘 + 跑迁移逻辑。
+// 写操作（POST/PATCH/DELETE）后立即失效缓存。
+
+const AGENTS_CACHE_TTL_MS = 30_000;
+
+/** 元数据缓存（不含 systemPrompt） */
+let _cachedData: AgentsData | null = null;
+/** 带 systemPrompt 的完整列表缓存（供 GET 直接返回） */
+let _cachedWithPrompts: Agent[] | null = null;
+let _cacheTimestamp = 0;
+
 /** 上次成功读取到的 agent 数量，用于写入前校验防止数据丢失 */
 let _lastKnownAgentCount = 0;
 
+/**
+ * 使 agents 缓存失效。
+ * 本模块的写操作 + 外部路由写 agents.json 后都应调用。
+ */
+export function invalidateAgentsCache(): void {
+  _cachedData = null;
+  _cachedWithPrompts = null;
+  _cacheTimestamp = 0;
+}
+
 async function readAgents(): Promise<AgentsData> {
+  const now = Date.now();
+  if (_cachedData && now - _cacheTimestamp < AGENTS_CACHE_TTL_MS) {
+    return _cachedData;
+  }
+
   const data = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
   // ── 内置 Agent 字段迁移 ──
   // 磁盘上的 agents.json 可能是旧版本写入的，缺少后来新增的字段（如 capabilities）。
@@ -57,6 +84,12 @@ async function readAgents(): Promise<AgentsData> {
   // 记录当前 agent 总数（含 archived），供 writeAgents 做丢失检测
   _lastKnownAgentCount = data.agents.length;
 
+  // 写入缓存
+  _cachedData = data;
+  _cacheTimestamp = Date.now();
+  // 元数据变了，prompt 缓存也需要重建
+  _cachedWithPrompts = null;
+
   return data;
 }
 
@@ -74,19 +107,32 @@ async function writeAgents(data: AgentsData): Promise<void> {
     return;
   }
   await writeJsonFile(getAgentsPath(), data);
+  invalidateAgentsCache();
 }
 
 /** GET /api/agents — list all agents (excludes archived by default) */
 export async function GET(request: NextRequest) {
-  const data = await readAgents();
   const includeArchived = request.nextUrl.searchParams.get('includeArchived') === 'true';
-  const agents = includeArchived ? data.agents : data.agents.filter(a => !a.archived);
 
-  // 从 .md 文件填充 systemPrompt（前端仍通过此字段获取 prompt 内容）
-  for (const agent of agents) {
-    agent.systemPrompt = await resolveSystemPrompt(agent.id, agent.systemPrompt);
+  // 尝试用带 prompt 的缓存（避免每次 GET 都 N+1 磁盘 I/O）
+  const now = Date.now();
+  if (_cachedWithPrompts && now - _cacheTimestamp < AGENTS_CACHE_TTL_MS) {
+    const agents = includeArchived ? _cachedWithPrompts : _cachedWithPrompts.filter(a => !a.archived);
+    return NextResponse.json({ agents });
   }
 
+  const data = await readAgents();
+
+  // 批量 resolve prompts 并缓存
+  const agentsWithPrompts = await Promise.all(
+    data.agents.map(async (agent) => ({
+      ...agent,
+      systemPrompt: await resolveSystemPrompt(agent.id, agent.systemPrompt),
+    }))
+  );
+  _cachedWithPrompts = agentsWithPrompts;
+
+  const agents = includeArchived ? agentsWithPrompts : agentsWithPrompts.filter(a => !a.archived);
   return NextResponse.json({ agents });
 }
 

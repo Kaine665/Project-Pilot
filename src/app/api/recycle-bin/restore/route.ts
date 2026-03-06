@@ -7,6 +7,7 @@ import {
   writeJsonFile,
   ensureFlowsMigrated,
 } from '@/lib/file-store';
+import { invalidateAgentsCache } from '@/app/api/agents/route';
 import type { AgentsData, DimensionsData, ProjectIndex } from '@/types';
 
 type RecycleBinCategory = 'project' | 'agent' | 'dimension';
@@ -43,6 +44,7 @@ export async function POST(request: NextRequest) {
       agent.archivedAt = undefined;
       agent.updatedAt = new Date().toISOString();
       await writeJsonFile(getAgentsPath(), agentsData);
+      invalidateAgentsCache();
       break;
     }
 
