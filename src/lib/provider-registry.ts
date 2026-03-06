@@ -30,6 +30,8 @@ export interface ProviderPreset {
   apiKeyPlaceholder?: string;
   /** 第三方供应商需要的额外环境变量 */
   extraEnv?: Record<string, string>;
+  /** 认证方式：true 用 x-api-key header，false/undefined 用 Authorization: Bearer */
+  useApiKeyForAuth?: boolean;
 }
 
 export const PROVIDER_REGISTRY: ProviderPreset[] = [
@@ -46,6 +48,7 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
     editableBaseUrl: false,
     editableModel: true,
     apiKeyPlaceholder: 'sk-ant-api03-...',
+    useApiKeyForAuth: true,
   },
 
   // ── 中国厂商（原生 Anthropic 兼容端点） ──
@@ -61,6 +64,7 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
     editableBaseUrl: false,
     editableModel: true,
     apiKeyPlaceholder: 'sk-...',
+    useApiKeyForAuth: true,
     extraEnv: {
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
       API_TIMEOUT_MS: '600000',
@@ -95,6 +99,7 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
     editableBaseUrl: false,
     editableModel: true,
     apiKeyPlaceholder: 'your-zhipu-api-key',
+    useApiKeyForAuth: true,
     extraEnv: {
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
       API_TIMEOUT_MS: '3000000',
