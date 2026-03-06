@@ -1,15 +1,30 @@
 /**
- * Agent systemPrompt 外置文件 I/O。
+ * Agent systemPrompt 外置文件 I/O + 版本管理 + 运行时副本。
  *
  * 每个 agent 的 systemPrompt 存储在 prompts/{agentId}.md，
  * agents.json 只保留元数据，不再内联 systemPrompt。
+ *
+ * 版本历史：prompts/{agentId}.history/v_YYMMDD_HHmmss.md（最多 20 份）
+ * 运行时副本：prompts/{agentId}.runtime/{sessionId}.md（会话级隔离）
  */
 
 import { promises as fs } from 'fs';
-import { getPromptsDir, getPromptFilePath } from './file-store';
+import path from 'path';
+import {
+  getPromptsDir,
+  getPromptFilePath,
+  getPromptHistoryDir,
+  getPromptRuntimeDir,
+  getPromptRuntimePath,
+} from './file-store';
 
 /** 最大 prompt 文件大小：10MB */
 const MAX_PROMPT_SIZE = 10 * 1024 * 1024;
+
+/** 版本历史最大保留数 */
+const MAX_PROMPT_VERSIONS = 20;
+
+// ── 基础读写 ──
 
 /**
  * 读取 agent 的 systemPrompt 文件。
@@ -33,15 +48,17 @@ export async function readPromptFile(agentId: string): Promise<string | undefine
 
 /**
  * 写入 agent 的 systemPrompt 到 prompts/{agentId}.md。
- * 自动创建 prompts/ 目录。
+ * 写入前自动快照当前版本到 .history/。
  */
 export async function writePromptFile(agentId: string, content: string): Promise<void> {
+  await snapshotPromptVersion(agentId);
   await fs.mkdir(getPromptsDir(), { recursive: true });
   await fs.writeFile(getPromptFilePath(agentId), content, 'utf-8');
 }
 
 /**
  * 删除 agent 的 prompt 文件。
+ * 同时清理 .history/ 和 .runtime/ 目录。
  * 文件不存在时静默成功。
  */
 export async function deletePromptFile(agentId: string): Promise<void> {
@@ -50,6 +67,14 @@ export async function deletePromptFile(agentId: string): Promise<void> {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
       throw error;
+    }
+  }
+  // 清理 .history/ 和 .runtime/ 目录
+  for (const dir of [getPromptHistoryDir(agentId), getPromptRuntimeDir(agentId)]) {
+    try {
+      await fs.rm(dir, { recursive: true, force: true });
+    } catch {
+      // 目录可能不存在，静默跳过
     }
   }
 }
@@ -64,4 +89,129 @@ export async function resolveSystemPrompt(
 ): Promise<string | undefined> {
   const fromFile = await readPromptFile(agentId);
   return fromFile ?? inlinePrompt;
+}
+
+// ── 版本管理 ──
+
+/**
+ * 快照当前正式版到 .history/ 目录。
+ * 文件不存在时静默跳过。整个函数 try/catch 包裹，快照失败不阻塞调用方。
+ */
+export async function snapshotPromptVersion(agentId: string): Promise<void> {
+  const filePath = getPromptFilePath(agentId);
+  try {
+    await fs.stat(filePath);
+  } catch {
+    return; // 文件不存在，无需快照
+  }
+
+  try {
+    const historyDir = getPromptHistoryDir(agentId);
+    await fs.mkdir(historyDir, { recursive: true });
+
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const timestamp = `${String(now.getFullYear()).slice(2)}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const destPath = path.join(historyDir, `v_${timestamp}.md`);
+
+    await fs.copyFile(filePath, destPath);
+
+    // 清理旧版本：只保留最新 MAX_PROMPT_VERSIONS 份
+    const files = (await fs.readdir(historyDir))
+      .filter(f => f.startsWith('v_') && f.endsWith('.md'))
+      .sort(); // 字典序 = 时间序
+    if (files.length > MAX_PROMPT_VERSIONS) {
+      for (const old of files.slice(0, files.length - MAX_PROMPT_VERSIONS)) {
+        await fs.unlink(path.join(historyDir, old)).catch(() => {});
+      }
+    }
+  } catch {
+    // 快照失败不阻塞写入
+  }
+}
+
+/**
+ * 列出版本历史（新→旧）。
+ * 返回版本名数组（如 ['v_260305_091500', 'v_260301_143022']）。
+ */
+export async function listPromptVersions(agentId: string): Promise<string[]> {
+  try {
+    const historyDir = getPromptHistoryDir(agentId);
+    const files = (await fs.readdir(historyDir))
+      .filter(f => f.startsWith('v_') && f.endsWith('.md'))
+      .sort()
+      .reverse();
+    return files.map(f => f.replace('.md', ''));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 读取特定版本的 prompt 内容。
+ * versionName 做 sanitize 防路径穿越。
+ */
+export async function readPromptVersion(
+  agentId: string,
+  versionName: string,
+): Promise<string | undefined> {
+  try {
+    const safe = versionName.replace(/[^a-zA-Z0-9_]/g, '');
+    const filePath = path.join(getPromptHistoryDir(agentId), `${safe}.md`);
+    return await fs.readFile(filePath, 'utf-8');
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 回滚到指定版本。
+ * 调用 writePromptFile，自动快照当前版本后再覆盖。
+ */
+export async function revertToVersion(
+  agentId: string,
+  versionName: string,
+): Promise<boolean> {
+  const content = await readPromptVersion(agentId, versionName);
+  if (content === undefined) return false;
+  await writePromptFile(agentId, content);
+  return true;
+}
+
+// ── 运行时副本 ──
+
+/**
+ * 创建会话级运行时工作副本。
+ * 将正式版复制到 .runtime/{sessionId}.md，返回副本路径。
+ * 正式版不存在时返回 undefined。
+ */
+export async function createRuntimePromptCopy(
+  agentId: string,
+  sessionId: string,
+): Promise<string | undefined> {
+  const content = await readPromptFile(agentId);
+  if (content === undefined) return undefined;
+
+  const runtimeDir = getPromptRuntimeDir(agentId);
+  const runtimePath = getPromptRuntimePath(agentId, sessionId);
+  await fs.mkdir(runtimeDir, { recursive: true });
+  await fs.writeFile(runtimePath, content, 'utf-8');
+  return runtimePath;
+}
+
+/**
+ * 删除会话级运行时工作副本。
+ * 文件不存在时静默成功。
+ */
+export async function deleteRuntimePromptCopy(
+  agentId: string,
+  sessionId: string,
+): Promise<void> {
+  try {
+    await fs.unlink(getPromptRuntimePath(agentId, sessionId));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error;
+    }
+  }
 }

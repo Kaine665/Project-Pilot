@@ -195,6 +195,34 @@ export function getPromptFilePath(agentId: string): string {
   return path.join(DATA_DIR, 'prompts', `${safe}.md`);
 }
 
+export function getPromptHistoryDir(agentId: string): string {
+  const safe = agentId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 100) {
+    throw new Error(`Invalid agent id: ${agentId}`);
+  }
+  return path.join(DATA_DIR, 'prompts', `${safe}.history`);
+}
+
+export function getPromptRuntimeDir(agentId: string): string {
+  const safe = agentId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 100) {
+    throw new Error(`Invalid agent id: ${agentId}`);
+  }
+  return path.join(DATA_DIR, 'prompts', `${safe}.runtime`);
+}
+
+export function getPromptRuntimePath(agentId: string, sessionId: string): string {
+  const safeAgent = agentId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safeAgent || safeAgent.length < 1 || safeAgent.length > 100) {
+    throw new Error(`Invalid agent id: ${agentId}`);
+  }
+  const safeSession = sessionId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safeSession || safeSession.length < 1 || safeSession.length > 200) {
+    throw new Error(`Invalid session id: ${sessionId}`);
+  }
+  return path.join(DATA_DIR, 'prompts', `${safeAgent}.runtime`, `${safeSession}.md`);
+}
+
 // ── Context 路径函数 ──
 // 索引 + 内容文件分离设计（详见 docs/context-system.md）：
 //   index.json  → 元数据，注入 agent prompt（buildContextSection）
