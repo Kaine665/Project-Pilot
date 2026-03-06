@@ -5,20 +5,32 @@
  * sub-tasks to other system-defined Agents.
  *
  * Usage:
+ *   # 同步模式（默认，阻塞等待完成）
  *   npx tsx src/lib/call-agent.ts --agent-id <ID> --message "指令" [options]
  *
+ *   # 异步模式（发起后立即返回 sessionId）
+ *   npx tsx src/lib/call-agent.ts --agent-id <ID> --message "指令" --async [options]
+ *
+ *   # 查询模式（检查异步任务状态和结果）
+ *   npx tsx src/lib/call-agent.ts --poll <sessionId> [--port 4000]
+ *
  * Options:
- *   --agent-id         Required. Target agent ID
- *   --message          Required. The message/task to send
+ *   --agent-id         Required (sync/async). Target agent ID
+ *   --message          Required (sync/async). The message/task to send
+ *   --async            Optional. Fire-and-forget mode, prints sessionId to stdout
+ *   --poll             Optional. Poll a session's status and retrieve result
  *   --project          Optional. Project key for flow context
  *   --parent-session   Optional. Parent session ID for traceability
  *   --port             Optional. Server port (default: 4000 or PROJECT_PILOT_PORT)
- *   --timeout          Optional. Timeout in seconds (default: 300)
+ *   --timeout          Optional. Timeout in seconds (default: 300, sync mode only)
  *   --depth            Optional. Current call depth for recursion guard (default: 0, max: 3)
  *
  * Stdout: Sub-agent's accumulated text response (clean, no SSE framing)
  * Stderr: Diagnostic messages (session lifecycle, errors)
- * Exit code: 0 on success, 1 on error
+ * Exit codes:
+ *   0 — Success (completed, result on stdout)
+ *   1 — Error (failed, stopped, or timeout)
+ *   2 — Still running (--poll mode only)
  */
 
 import http from 'http';
@@ -44,8 +56,16 @@ interface CallAgentOptions {
 
 // ── Core logic ──
 
-async function callAgent(opts: CallAgentOptions): Promise<string> {
-  const { agentId, message, projectKey, parentSessionId, port, timeoutSeconds, depth } = opts;
+/** POST /api/agent-chat — create session and start agent, return sessionId */
+async function startSession(opts: {
+  agentId: string;
+  message: string;
+  projectKey?: string;
+  parentSessionId?: string;
+  port: number;
+  depth: number;
+}): Promise<string> {
+  const { agentId, message, projectKey, parentSessionId, port, depth } = opts;
 
   // Recursion guard
   if (depth > MAX_DEPTH) {
@@ -56,7 +76,6 @@ async function callAgent(opts: CallAgentOptions): Promise<string> {
     );
   }
 
-  // Step 1: POST /api/agent-chat to start the session
   const body = JSON.stringify({
     agentId,
     message,
@@ -90,9 +109,16 @@ async function callAgent(opts: CallAgentOptions): Promise<string> {
     throw new Error('No sessionId returned from POST /api/agent-chat');
   }
 
+  return sessionId;
+}
+
+/** 同步模式：发起 + 等待 SSE 完成 */
+async function callAgent(opts: CallAgentOptions): Promise<string> {
+  const { port, timeoutSeconds, depth } = opts;
+
+  const sessionId = await startSession({ ...opts, depth });
   process.stderr.write(`[call-agent] Session started: ${sessionId} (depth=${depth})\n`);
 
-  // Step 2: GET /api/agent-chat/stream — consume SSE until done
   const fullText = await consumeSSEStream({
     hostname: '127.0.0.1',
     port,
@@ -102,6 +128,78 @@ async function callAgent(opts: CallAgentOptions): Promise<string> {
 
   process.stderr.write(`[call-agent] Session completed. Response length: ${fullText.length} chars\n`);
   return fullText;
+}
+
+// ── Poll logic ──
+
+const POLL_EXIT_RUNNING = 2;
+
+/**
+ * 查询会话状态和结果。
+ * - running → 输出 "RUNNING"，exit 2
+ * - completed → 输出 assistant 最终文本，exit 0
+ * - failed/stopped → 输出错误信息，exit 1
+ * - none（已从内存清除）→ 回退到磁盘读取
+ */
+async function pollSession(sessionId: string, port: number): Promise<void> {
+  // Step 1: 查询内存中的运行状态
+  const statusResult = await httpRequest({
+    method: 'GET',
+    hostname: '127.0.0.1',
+    port,
+    path: `/api/agent-chat/status?sessionId=${encodeURIComponent(sessionId)}`,
+    timeoutMs: POST_TIMEOUT_MS,
+  });
+
+  if (statusResult.statusCode !== 200) {
+    throw new Error(`GET /api/agent-chat/status failed: HTTP ${statusResult.statusCode} — ${statusResult.body}`);
+  }
+
+  const statusData = JSON.parse(statusResult.body);
+  const status: string = statusData.status;
+
+  if (status === 'running') {
+    process.stdout.write('RUNNING');
+    process.exit(POLL_EXIT_RUNNING);
+  }
+
+  if (status === 'failed' || status === 'stopped') {
+    process.stderr.write(`[call-agent] Session ${status}: ${sessionId}\n`);
+    process.exit(1);
+  }
+
+  // status === 'completed' 或 'none'（已从内存清除）→ 从磁盘读取结果
+  const sessionResult = await httpRequest({
+    method: 'GET',
+    hostname: '127.0.0.1',
+    port,
+    path: `/api/agent-chat/sessions/${encodeURIComponent(sessionId)}`,
+    timeoutMs: POST_TIMEOUT_MS,
+  });
+
+  if (sessionResult.statusCode === 404) {
+    throw new Error(`Session not found: ${sessionId}`);
+  }
+  if (sessionResult.statusCode !== 200) {
+    throw new Error(`GET /api/agent-chat/sessions/${sessionId} failed: HTTP ${sessionResult.statusCode}`);
+  }
+
+  const session = JSON.parse(sessionResult.body);
+  const messages: Array<{ role: string; content: string }> = session.messages || [];
+
+  // 找最后一条 assistant 消息
+  const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+
+  if (!lastAssistant) {
+    // 有 session 记录但无 assistant 回复 — 可能还在跑（eagerly saved 但未完成）
+    if (status === 'none') {
+      process.stdout.write('RUNNING');
+      process.exit(POLL_EXIT_RUNNING);
+    }
+    throw new Error(`Session ${sessionId} has no assistant response`);
+  }
+
+  process.stdout.write(lastAssistant.content);
 }
 
 // ── HTTP helpers ──
@@ -253,35 +351,64 @@ function parseArgs(args: string[]): Record<string, string> {
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
+  const port = parseInt(opts['port'] || process.env.PROJECT_PILOT_PORT || String(DEFAULT_PORT), 10);
 
+  // ── Mode: --poll <sessionId> ──
+  const pollSessionId = opts['poll'];
+  if (pollSessionId && pollSessionId !== 'true') {
+    try {
+      await pollSession(pollSessionId, port);
+    } catch (err) {
+      process.stderr.write(`[call-agent] POLL FAILED: ${(err as Error).message}\n`);
+      process.exit(1);
+    }
+    return;
+  }
+
+  // ── Mode: --async / sync (default) ──
   const agentId = opts['agent-id'];
   const message = opts['message'];
+  const isAsync = opts['async'] === 'true';
 
   if (!agentId || !message) {
     process.stderr.write(
-      'Usage: npx tsx src/lib/call-agent.ts --agent-id <ID> --message "指令" ' +
-      '[--project KEY] [--parent-session SID] [--port 4000] [--timeout 300] [--depth 0]\n',
+      'Usage:\n' +
+      '  npx tsx src/lib/call-agent.ts --agent-id <ID> --message "指令" [options]\n' +
+      '  npx tsx src/lib/call-agent.ts --agent-id <ID> --message "指令" --async [options]\n' +
+      '  npx tsx src/lib/call-agent.ts --poll <sessionId> [--port 4000]\n',
     );
     process.exit(1);
   }
 
-  const port = parseInt(opts['port'] || process.env.PROJECT_PILOT_PORT || String(DEFAULT_PORT), 10);
   const timeoutSeconds = parseInt(opts['timeout'] || String(DEFAULT_TIMEOUT_S), 10);
   const depth = parseInt(opts['depth'] || '0', 10);
 
   try {
-    const result = await callAgent({
-      agentId,
-      message,
-      projectKey: opts['project'],
-      parentSessionId: opts['parent-session'],
-      port,
-      timeoutSeconds,
-      depth,
-    });
-
-    // Output ONLY the response text to stdout (no framing, no metadata)
-    process.stdout.write(result);
+    if (isAsync) {
+      // 异步模式：发起后立即返回 sessionId
+      const sessionId = await startSession({
+        agentId,
+        message,
+        projectKey: opts['project'],
+        parentSessionId: opts['parent-session'],
+        port,
+        depth,
+      });
+      process.stderr.write(`[call-agent] Async session started: ${sessionId} (depth=${depth})\n`);
+      process.stdout.write(sessionId);
+    } else {
+      // 同步模式：阻塞等待完成
+      const result = await callAgent({
+        agentId,
+        message,
+        projectKey: opts['project'],
+        parentSessionId: opts['parent-session'],
+        port,
+        timeoutSeconds,
+        depth,
+      });
+      process.stdout.write(result);
+    }
   } catch (err) {
     process.stderr.write(`[call-agent] FAILED: ${(err as Error).message}\n`);
     process.exit(1);
