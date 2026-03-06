@@ -12,6 +12,16 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 
+/**
+ * Strip UTF-8 BOM (byte order mark) and parse JSON.
+ * Some editors (Notepad, VS Code in rare cases) prepend BOM to files,
+ * causing JSON.parse to fail with "Unexpected token".
+ */
+export function parseJsonSafe<T>(raw: string): T {
+  const cleaned = raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw;
+  return JSON.parse(cleaned);
+}
+
 // 默认存到用户目录的隐藏文件夹
 const DEFAULT_DATA_DIR = path.join(os.homedir(), '.project-pilot', 'data');
 
@@ -245,7 +255,7 @@ export async function readJsonFile<T>(filePath: string, defaultValue: T): Promis
     }
 
     const content = await fs.readFile(filePath, 'utf-8');
-    return JSON.parse(content);
+    return parseJsonSafe<T>(content);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     // File not found or empty/corrupt JSON → return default
@@ -296,6 +306,27 @@ async function snapshotBeforeWrite(filePath: string): Promise<void> {
 }
 
 /**
+ * Windows 兼容的 rename：EPERM/EACCES 时自动重试（线性退避）。
+ * Unix 上 rename 是原子操作不受影响；Windows 上目标文件被占用（读取/杀毒扫描）时
+ * rename 会失败，短暂等待后重试即可成功。
+ */
+async function renameWithRetry(src: string, dest: string, retries = 5): Promise<void> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await fs.rename(src, dest);
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if ((code === 'EPERM' || code === 'EACCES') && i < retries - 1) {
+        await new Promise(r => setTimeout(r, 20 * (i + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+/**
  * 写入 JSON 文件，自动创建目录
  * 对关键文件（agents.json）会在写入前自动保存快照
  *
@@ -308,7 +339,7 @@ export async function writeJsonFile(filePath: string, data: unknown): Promise<vo
   const content = JSON.stringify(data, null, 2);
   const tmpPath = filePath + `.tmp_${Date.now()}`;
   await fs.writeFile(tmpPath, content, 'utf-8');
-  await fs.rename(tmpPath, filePath);
+  await renameWithRetry(tmpPath, filePath);
 }
 
 // ── 进程内写队列 ──
@@ -356,7 +387,7 @@ async function _modifyJsonFileImpl<T>(
     }
 
     const content = await fs.readFile(filePath, 'utf-8');
-    data = JSON.parse(content);
+    data = parseJsonSafe<T>(content);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     // File not found → use default, but re-throw size errors
@@ -381,7 +412,7 @@ async function _modifyJsonFileImpl<T>(
   await snapshotBeforeWrite(filePath);
   const tmpPath = filePath + `.tmp_${Date.now()}`;
   await fs.writeFile(tmpPath, serialized, 'utf-8');
-  await fs.rename(tmpPath, filePath);
+  await renameWithRetry(tmpPath, filePath);
   return modified;
 }
 
