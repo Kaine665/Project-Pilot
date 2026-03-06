@@ -41,7 +41,7 @@ export interface BaseRun {
 
 // ── Spawn configuration (built by subclass, consumed by base) ──
 
-export interface SpawnConfig {
+export interface SpawnConfig<TDomain = unknown> {
   /** Key for the runs Map (taskId or sessionId) */
   runKey: string;
   /** Claude working directory */
@@ -58,4 +58,6 @@ export interface SpawnConfig {
   env: NodeJS.ProcessEnv;
   /** Callback after persist, before emitting done */
   onBeforeEmitDone?: () => Promise<void>;
+  /** Domain-specific data passed through to createRun (avoids shared mutable state) */
+  domainData: TDomain;
 }

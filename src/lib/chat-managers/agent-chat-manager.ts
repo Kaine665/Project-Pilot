@@ -75,6 +75,20 @@ export interface AgentChatRun extends BaseRun {
   _guardRetryCount?: number;
 }
 
+// ── Domain data (passed through SpawnConfig to createRun) ──
+
+interface AgentChatDomainData {
+  sessionId: string;
+  agentId: string;
+  projectKey?: string;
+  sessionTitle?: string;
+  messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }>;
+  tempPaths: string[];
+  config?: SessionConfig;
+  parentSessionId?: string;
+  importedTurnIndices?: number[];
+}
+
 // ── Helpers ──
 
 const DEFAULT_SESSIONS_DATA: AgentChatSessionsData = { sessions: [] };
@@ -122,8 +136,8 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
 
     const isResume = !!existing?.claudeSessionId;
 
-    // Build or reuse message history
-    const messages = existing?.messages ?? [];
+    // Build or reuse message history (copy to prevent shared mutation)
+    const messages = existing?.messages ? [...existing.messages] : [];
     const dataUrls = images?.map(img => `data:${img.mediaType};base64,${img.data}`);
     messages.push({ role: 'user', content: message, images: dataUrls?.length ? dataUrls : undefined });
 
@@ -164,7 +178,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     const chatToolArgs = buildAgentToolArgs(agent.capabilities);
     const resumeArgs = isResume ? ['--resume', existing!.claudeSessionId!] : [];
 
-    const config: SpawnConfig = {
+    const config: SpawnConfig<AgentChatDomainData> = {
       runKey: sessionId,
       workingDir: process.cwd(),
       stdinContent,
@@ -179,18 +193,16 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
         ...imageArgs,
       ],
       env: chatEnv,
-    };
-
-    // Attach domain data via a closure — createRun will capture these
-    this._pendingStartData = {
-      sessionId,
-      agentId,
-      projectKey: flowContext?.projectKey ?? existing?.projectKey,
-      sessionTitle: existing?.sessionTitle ?? initialTitle,
-      messages,
-      tempPaths,
-      config: sessionConfig,
-      parentSessionId: parentSessionId ?? existing?.parentSessionId,
+      domainData: {
+        sessionId,
+        agentId,
+        projectKey: flowContext?.projectKey ?? existing?.projectKey,
+        sessionTitle: existing?.sessionTitle ?? initialTitle,
+        messages,
+        tempPaths,
+        config: sessionConfig,
+        parentSessionId: parentSessionId ?? existing?.parentSessionId,
+      },
     };
 
     const run = await this.spawnAndManage(config);
@@ -236,7 +248,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     }
 
     const isResume = !!existing?.claudeSessionId;
-    const messages = existing?.messages ?? [];
+    const messages = existing?.messages ? [...existing.messages] : [];
     messages.push({ role: 'user', content: message });
 
     // Build prompt
@@ -255,7 +267,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     const chatToolArgs = buildAgentToolArgs(agent.capabilities);
     const resumeArgs = isResume ? ['--resume', existing!.claudeSessionId!] : [];
 
-    const config: SpawnConfig = {
+    const config: SpawnConfig<AgentChatDomainData> = {
       runKey: guestSessionId,
       workingDir: process.cwd(),
       stdinContent,
@@ -269,16 +281,15 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
         ...resumeArgs,
       ],
       env: chatEnv,
-    };
-
-    this._pendingStartData = {
-      sessionId: guestSessionId,
-      agentId,
-      sessionTitle: existing?.sessionTitle,
-      messages,
-      tempPaths: [],
-      parentSessionId,
-      importedTurnIndices: turnIndices,
+      domainData: {
+        sessionId: guestSessionId,
+        agentId,
+        sessionTitle: existing?.sessionTitle,
+        messages,
+        tempPaths: [],
+        parentSessionId,
+        importedTurnIndices: turnIndices,
+      },
     };
 
     const run = await this.spawnAndManage(config);
@@ -451,24 +462,8 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
   // Protected: BaseChatManager abstract implementations
   // ═══════════════════════════════════════════════════════════════════════
 
-  /**
-   * Temporary holder for domain data between start() and createRun().
-   * This avoids passing domain data through SpawnConfig generics.
-   */
-  private _pendingStartData!: {
-    sessionId: string;
-    agentId: string;
-    projectKey?: string;
-    sessionTitle?: string;
-    messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }>;
-    tempPaths: string[];
-    config?: SessionConfig;
-    parentSessionId?: string;
-    importedTurnIndices?: number[];
-  };
-
-  protected createRun(config: SpawnConfig, shell: BaseRun): AgentChatRun {
-    const d = this._pendingStartData;
+  protected createRun(config: SpawnConfig<AgentChatDomainData>, shell: BaseRun): AgentChatRun {
+    const d = config.domainData;
     return {
       ...shell,
       sessionId: d.sessionId,

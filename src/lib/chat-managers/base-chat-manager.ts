@@ -116,6 +116,7 @@ export abstract class BaseChatManager<TRun extends BaseRun> {
   /**
    * Create the domain-specific TRun object.
    * Called by spawnAndManage with a pre-built BaseRun shell.
+   * Domain-specific data is passed via config.domainData (avoids shared mutable state).
    */
   protected abstract createRun(config: SpawnConfig, shell: BaseRun): TRun;
 
