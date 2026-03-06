@@ -23,7 +23,7 @@ import {
   readJsonFile,
   modifyJsonFile,
 } from '@/lib/file-store';
-import { resolveSystemPrompt } from '@/lib/agent-prompt-store';
+import { resolveSystemPrompt, createRuntimePromptCopy, deleteRuntimePromptCopy } from '@/lib/agent-prompt-store';
 import {
   buildClaudeEnv,
   buildClaudeModelArgs,
@@ -149,9 +149,9 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     if (isResume) {
       stdinContent = message;
     } else if (flowContext) {
-      stdinContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext, sessionConfig);
+      stdinContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext, sessionConfig, sessionId);
     } else {
-      stdinContent = await buildAgentChatPrompt(agent, message, sessionConfig);
+      stdinContent = await buildAgentChatPrompt(agent, message, sessionConfig, sessionId);
     }
 
     // Write images to temp files
@@ -389,16 +389,25 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
   async deleteSession(sessionId: string): Promise<boolean> {
     this.clear(sessionId);
     let found = false;
+    let deletedAgentId: string | undefined;
     await modifyJsonFile<AgentChatSessionsData>(
       getAgentChatSessionsPath(),
       DEFAULT_SESSIONS_DATA,
       (data) => ({
         sessions: data.sessions.filter(s => {
-          if (s.id === sessionId) { found = true; return false; }
+          if (s.id === sessionId) {
+            found = true;
+            deletedAgentId = s.agentId;
+            return false;
+          }
           return true;
         }),
       }),
     );
+    // 清理运行时 prompt 副本
+    if (found && deletedAgentId) {
+      await deleteRuntimePromptCopy(deletedAgentId, sessionId).catch(() => {});
+    }
     return found;
   }
 
@@ -759,6 +768,7 @@ async function buildResourcePrompt(
   agent: Agent,
   extraRefs?: ResourceRef[],
   sessionConfig?: SessionConfig,
+  sessionId?: string,
 ): Promise<string> {
   const baseRefs = agent.defaultResources ?? migrateAgentToResources(agent);
   const merged: ResourceRef[] = [...baseRefs];
@@ -792,11 +802,18 @@ async function buildResourcePrompt(
   const systemPromptText = resolved
     || `你是一个名为「${agent.name}」的 AI 助手。${agent.description || ''}`;
 
+  // 创建运行时工作副本（仅 exposePromptPath + 有 sessionId 时）
+  let runtimePromptPath: string | undefined;
+  if (agent.capabilities?.exposePromptPath && sessionId) {
+    runtimePromptPath = await createRuntimePromptCopy(agent.id, sessionId);
+  }
+
   const ctx: SystemPromptLoaderContext = {
     agentId: agent.id,
     systemPromptText,
     // exposePromptPath: pass prompt file path if the agent opts in
     promptFilePath: agent.capabilities?.exposePromptPath ? getPromptFilePath(agent.id) : undefined,
+    runtimePromptPath,
   };
 
   const resolvedResources = await resourceRegistry.resolveAll(allRefs, ctx);
@@ -805,8 +822,8 @@ async function buildResourcePrompt(
 
 // ── Prompt Builders (powered by Resource Registry) ──
 
-async function buildAgentChatPrompt(agent: Agent, message: string, sessionConfig?: SessionConfig): Promise<string> {
-  const resourcePrompt = await buildResourcePrompt(agent, undefined, sessionConfig);
+async function buildAgentChatPrompt(agent: Agent, message: string, sessionConfig?: SessionConfig, sessionId?: string): Promise<string> {
+  const resourcePrompt = await buildResourcePrompt(agent, undefined, sessionConfig, sessionId);
 
   return `${resourcePrompt}
 
@@ -820,6 +837,7 @@ async function buildAgentChatPromptWithFlowContext(
   message: string,
   flowContext: FlowContext,
   sessionConfig?: SessionConfig,
+  sessionId?: string,
 ): Promise<string> {
   const { projectKey, projectName, flowDataPath } = flowContext;
 
@@ -833,7 +851,7 @@ async function buildAgentChatPromptWithFlowContext(
     flowDataPath,
   };
 
-  const resourcePrompt = await buildResourcePrompt(agent, [flowRef], sessionConfig);
+  const resourcePrompt = await buildResourcePrompt(agent, [flowRef], sessionConfig, sessionId);
 
   return `${resourcePrompt}
 

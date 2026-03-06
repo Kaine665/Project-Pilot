@@ -94,6 +94,17 @@ export async function POST(request: NextRequest) {
       try {
         await fs.rm(path.join(dataDir, 'conversations'), { recursive: true, force: true });
       } catch { /* ignore */ }
+
+      // 清理所有运行时 prompt 副本（.runtime/ 目录）
+      try {
+        const promptsDir = getPromptsDir();
+        const entries = await fs.readdir(promptsDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isDirectory() && entry.name.endsWith('.runtime')) {
+            await fs.rm(path.join(promptsDir, entry.name), { recursive: true, force: true }).catch(() => {});
+          }
+        }
+      } catch { /* prompts 目录可能不存在 */ }
     }
 
     if (target === 'flows' || target === 'all') {
