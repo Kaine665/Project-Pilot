@@ -181,6 +181,22 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       env: chatEnv,
     };
 
+    // Eagerly persist the user message to disk BEFORE spawning the process.
+    // This guarantees the data is written during the HTTP request (before the
+    // 200 response is sent), so a dev-server restart (next.config.ts change)
+    // cannot kill Node before the write completes.
+    await this.eagerlySaveUserTurn({
+      sessionId,
+      agentId,
+      projectKey: flowContext?.projectKey ?? existing?.projectKey,
+      sessionTitle: existing?.sessionTitle ?? initialTitle,
+      messages,
+      claudeSessionId: existing?.claudeSessionId,
+      config: sessionConfig,
+      parentSessionId: parentSessionId ?? existing?.parentSessionId,
+      importedTurnIndices: undefined,
+    });
+
     // Attach domain data via a closure — createRun will capture these
     this._pendingStartData = {
       sessionId,
@@ -574,6 +590,62 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
   // ═══════════════════════════════════════════════════════════════════════
   // Private helpers
   // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Eagerly write the user's message to disk BEFORE the Claude process starts.
+   * Called synchronously (awaited) inside start() so the write completes during
+   * the HTTP request, before the 200 response is sent. This guarantees the
+   * user turn survives a dev-server restart (next.config.ts change triggers a
+   * full page reload which wipes React state).
+   *
+   * Safety: the modifyJsonFile callback only writes if the stored session has
+   * fewer messages than we have now, guarding against any race with
+   * persistAfterClose on multi-turn resumes.
+   */
+  private async eagerlySaveUserTurn(opts: {
+    sessionId: string;
+    agentId: string;
+    projectKey?: string;
+    sessionTitle?: string;
+    messages: AgentChatRun['messages'];
+    claudeSessionId?: string;
+    config?: import('@/types/agent-chat').SessionConfig;
+    parentSessionId?: string;
+    importedTurnIndices?: number[];
+  }): Promise<void> {
+    const now = new Date().toISOString();
+    await modifyJsonFile<AgentChatSessionsData>(
+      getAgentChatSessionsPath(),
+      DEFAULT_SESSIONS_DATA,
+      (data) => {
+        const idx = data.sessions.findIndex(s => s.id === opts.sessionId);
+        if (idx >= 0) {
+          // Only update if we have more messages than what's already on disk
+          if (data.sessions[idx].messages.length < opts.messages.length) {
+            data.sessions[idx].messages = opts.messages;
+            data.sessions[idx].updatedAt = now;
+          }
+        } else {
+          // First turn of a brand-new session — create it
+          data.sessions.push({
+            id: opts.sessionId,
+            agentId: opts.agentId,
+            projectKey: opts.projectKey,
+            title: opts.sessionTitle ?? '新会话',
+            messages: opts.messages,
+            claudeSessionId: opts.claudeSessionId,
+            createdAt: now,
+            updatedAt: now,
+            config: opts.config,
+            parentSessionId: opts.parentSessionId,
+            importedTurnIndices: opts.importedTurnIndices,
+            unreadCount: 0, // persistAfterClose will increment this when done
+          });
+        }
+        return data;
+      },
+    );
+  }
 
   private async loadAgent(agentId: string): Promise<Agent> {
     const agentsData = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
