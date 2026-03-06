@@ -192,6 +192,7 @@ export function AgentChatPanel({
   const toolCallsRef = useRef<ChatToolCall[]>([]);
   const lastEventIdxRef = useRef<number>(-1);
   const finalizingRef = useRef(false);
+  const streamTargetSessionRef = useRef<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const initTokenRef = useRef(0);
   const doSendRef = useRef<(text: string, images?: string[]) => void>(() => {});
@@ -392,11 +393,15 @@ export function AgentChatPanel({
       rafIdRef.current = 0;
     }
 
+    // Guard: if session has switched, discard accumulated data instead of committing
+    const streamTarget = streamTargetSessionRef.current;
+    const isStaleStream = streamTarget !== null && streamTarget !== sessionIdRef.current;
+
     const fullText = fullTextRef.current;
     const toolCalls = toolCallsRef.current;
     const blocks = blocksRef.current;
 
-    if (fullText || toolCalls.length > 0) {
+    if (!isStaleStream && (fullText || toolCalls.length > 0)) {
       const cleanedText = stripSessionTitleTag(fullText);
       const assistantMsg: ChatMessage = {
         id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -416,6 +421,7 @@ export function AgentChatPanel({
     toolCallsRef.current = [];
     lastEventIdxRef.current = -1;
     streamAbortRef.current = null;
+    streamTargetSessionRef.current = null;
     finalizingRef.current = false;
 
     // Mark current session as read (user was watching the stream)
@@ -453,6 +459,9 @@ export function AgentChatPanel({
       streamAbortRef.current.abort();
     }
 
+    // Track which session this stream belongs to
+    streamTargetSessionRef.current = targetSessionId;
+
     const abort = new AbortController();
     streamAbortRef.current = abort;
     const titleFilter = createSessionTitleFilter();
@@ -471,6 +480,12 @@ export function AgentChatPanel({
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+
+        // Guard: if user switched away from this session, stop processing
+        if (sessionIdRef.current !== targetSessionId) {
+          reader.cancel();
+          break;
+        }
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
