@@ -710,6 +710,16 @@ export default function AgentsPage() {
                   <span className="text-xs text-zinc-400 shrink-0">
                     — {activeSessionAgent.name}
                   </span>
+                  <button
+                    onClick={() => {
+                      // Dispatch a custom event that AgentChatPanel listens for
+                      window.dispatchEvent(new CustomEvent('toggle-session-config'));
+                    }}
+                    className="shrink-0 rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                    title="会话配置"
+                  >
+                    <Settings className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               </div>
             )}

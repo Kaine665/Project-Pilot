@@ -690,6 +690,13 @@ export function AgentChatPanel({
     return () => window.removeEventListener('ask-user-answer', handler);
   }, []);
 
+  // Listen for toggle-session-config event (from parent page header)
+  useEffect(() => {
+    const handler = () => setShowConfig(v => !v);
+    window.addEventListener('toggle-session-config', handler);
+    return () => window.removeEventListener('toggle-session-config', handler);
+  }, []);
+
   // ChatInput submit handler
   const handleChatInputSubmit = useCallback((text: string, images: string[], _files: Array<{ name: string; content: string }>) => {
     doSend(text, images);
@@ -770,6 +777,8 @@ export function AgentChatPanel({
     setSessionId(target.id);
     setSessionTitle(target.title);
     setMessages([]);
+    setSessionConfig({});
+    setShowConfig(false);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
@@ -903,26 +912,7 @@ export function AgentChatPanel({
     return (
       <div className="flex h-full">
       <div className="relative flex h-full flex-1 flex-col min-w-0">
-        {/* Header with config toggle */}
-        <div className="flex items-center justify-end border-b border-zinc-100 px-3 py-1 dark:border-zinc-800">
-          <Button
-            size="sm"
-            variant="ghost"
-            className={`h-6 px-1.5 text-xs transition-colors ${
-              showConfig
-                ? 'text-blue-500 dark:text-blue-400'
-                : (sessionConfig.contextIds?.length || sessionConfig.supplementaryPrompt?.trim())
-                  ? 'text-blue-400 dark:text-blue-500'
-                  : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
-            }`}
-            onClick={() => setShowConfig(v => !v)}
-            title="会话配置"
-          >
-            <Settings className="h-3 w-3" />
-          </Button>
-        </div>
-
-        {/* Session Config Panel (collapsible) */}
+        {/* Session Config Panel (collapsible, toggled from parent page header) */}
         {showConfig && (
           <div className="border-b border-zinc-100 dark:border-zinc-800 max-h-[50%] overflow-hidden">
             <SessionConfigPanel
