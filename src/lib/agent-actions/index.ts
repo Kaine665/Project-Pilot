@@ -11,11 +11,15 @@ import { resourceRegistry } from '../resource-registry';
 import { saveKnowledgeAction } from './save-knowledge';
 import { saveDocAction } from './save-doc';
 import { sessionTitleAction } from './session-title';
+import { suspendTaskAction } from './suspend-task';
+import { completeSuspendedTaskAction } from './complete-suspended-task';
 
 // Register all actions
 actionRegistry.register(saveKnowledgeAction);
 actionRegistry.register(saveDocAction);
 actionRegistry.register(sessionTitleAction);
+actionRegistry.register(suspendTaskAction);
+actionRegistry.register(completeSuspendedTaskAction);
 
 // Generate and register ResourceLoaders for backward compatibility
 for (const loader of actionRegistry.generateAllLoaders()) {

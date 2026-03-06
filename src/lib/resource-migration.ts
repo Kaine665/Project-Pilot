@@ -55,6 +55,14 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
     label: '活跃任务看板',
   });
 
+  // Suspended tasks board — always present
+  refs.push({
+    type: 'suspended-tasks',
+    id: '_suspended',
+    priority: 35,
+    label: '挂起任务看板',
+  });
+
   // Available agents list (only when agent has subAgent capability)
   if (agent.capabilities?.subAgent) {
     refs.push({
@@ -100,6 +108,14 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
     id: '_static',
     priority: 85,
     label: '设计文档保存指令',
+  });
+
+  // Suspend task instructions — always present
+  refs.push({
+    type: 'suspend-task-instructions',
+    id: '_static',
+    priority: 86,
+    label: '任务挂起指令',
   });
 
   // Session title instructions — always present
