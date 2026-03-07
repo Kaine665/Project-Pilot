@@ -4,10 +4,10 @@ import { useState, useEffect } from 'react';
 import { AgentChatPanel } from '@/components/agent-chat-panel';
 import { BUTLER_AGENT_ID } from '@/lib/default-agents';
 import type { Agent } from '@/types';
-import { useFlowsContext } from '../layout';
+import { useProject } from '@/components/project-context';
 
 export default function ButlerPage() {
-  const { activeKey } = useFlowsContext();
+  const { activeKey } = useProject();
   const [butlerAgent, setButlerAgent] = useState<Agent | null>(null);
 
   useEffect(() => {

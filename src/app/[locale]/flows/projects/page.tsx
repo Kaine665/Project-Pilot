@@ -5,10 +5,10 @@ import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { FlowEditor } from '@/components/flow-editor';
 import type { HighlightTarget } from '@/components/flow-editor';
-import { useFlowsContext } from '../layout';
+import { useProject } from '@/components/project-context';
 
 function ProjectsPageInner() {
-  const { projects, activeKey, setActiveKey, fetchProjects } = useFlowsContext();
+  const { projects, activeKey, setActiveKey, fetchProjects } = useProject();
   const activeProject = projects.find(p => p.key === activeKey);
   const searchParams = useSearchParams();
   const t = useTranslations('flows');
