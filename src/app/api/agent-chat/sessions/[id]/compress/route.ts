@@ -91,6 +91,7 @@ ${messagesToCompress.map(m => `[${m.role}]: ${m.content}`).join('\n\n')}
     const summary = await new Promise<string>((resolve, reject) => {
       const child = spawnClaude(['--print', '-p', '-'], {
         stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, CLAUDECODE: '' },
       });
 
       let stdout = '';
