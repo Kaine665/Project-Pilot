@@ -105,7 +105,8 @@ ${messagesToCompress.map(m => `[${m.role}]: ${m.content}`).join('\n\n')}
           if (stallCount >= MAX_STALLS) {
             clearInterval(stallCheck);
             child.kill();
-            reject(new Error('AI 摘要生成停滞，已终止'));
+            // 停滞时返回已收集的输出，而非报错
+            resolve(stdout.trim());
           }
         } else {
           stallCount = 0;
@@ -118,7 +119,8 @@ ${messagesToCompress.map(m => `[${m.role}]: ${m.content}`).join('\n\n')}
       child.on('error', (err) => { clearInterval(stallCheck); reject(err); });
       child.on('close', (code) => {
         clearInterval(stallCheck);
-        if (code !== 0) {
+        // 非零退出但有输出时，仍返回已收集的内容
+        if (code !== 0 && !stdout.trim()) {
           reject(new Error(`claude exited ${code}: ${stderr}`));
         } else {
           resolve(stdout.trim());
