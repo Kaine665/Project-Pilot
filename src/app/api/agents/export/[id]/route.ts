@@ -38,11 +38,13 @@ export async function GET(
   // 返回 JSON 并设置下载 headers
   const safeName = agent.name.replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]/g, '_');
   const fileName = `${safeName}.ppagent`;
+  // filename= 只能用 ASCII，中文放在 filename*= 的 UTF-8 编码中
+  const asciiName = agent.name.replace(/[^a-zA-Z0-9_-]/g, '_') + '.ppagent';
 
   return new NextResponse(JSON.stringify(pkg, null, 2), {
     headers: {
       'Content-Type': 'application/json',
-      'Content-Disposition': `attachment; filename="${fileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+      'Content-Disposition': `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
     },
   });
 }
