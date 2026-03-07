@@ -614,3 +614,22 @@ export interface ArtifactSummary {
   filesChanged: string[];
   artifacts: ArtifactItem[];
 }
+
+// ==================== Inbox（收件箱） ====================
+
+/** 收件箱条目 —— 未结构化的快速记录 */
+export interface InboxItem {
+  id: string;           // 格式: inbox-{timestamp}-{random4}
+  content: string;      // 条目内容（一句话）
+  createdAt: string;    // ISO timestamp
+  status: 'inbox' | 'archived';  // inbox=待整理, archived=已归档到结构化任务
+  archivedTo?: {        // 归档去向（可选）
+    sectionId: string;
+    taskId: string;
+  };
+}
+
+/** 项目收件箱数据 */
+export interface ProjectInbox {
+  items: InboxItem[];
+}
