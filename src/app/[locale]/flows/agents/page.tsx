@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Bot, Plus, Trash2, X, ChevronRight, Minimize2,
   Settings, MessageSquare, Archive, ArchiveRestore,
+  Download, Upload,
 } from 'lucide-react';
 import type { Agent } from '@/types';
 import { AgentChatPanel } from '@/components/agent-chat-panel';
@@ -334,6 +335,57 @@ export default function AgentsPage() {
     } catch { /* ignore */ }
   };
 
+  // ── Export / Import ──
+
+  const handleExport = async (agent: Agent) => {
+    try {
+      const res = await fetch(`/api/agents/export/${agent.id}`);
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const safeName = agent.name.replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]/g, '_');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${safeName}.ppagent`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { /* ignore */ }
+  };
+
+  const handleImport = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.ppagent';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const pkg = JSON.parse(text);
+        const res = await fetch('/api/agents/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(pkg),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          await fetchAgents();
+          handleSelect(data.agent);
+          const msg = data.contextsImported > 0
+            ? `已导入 Agent「${data.agent.name}」及 ${data.contextsImported} 个上下文`
+            : `已导入 Agent「${data.agent.name}」`;
+          alert(msg);
+        } else {
+          const err = await res.json();
+          alert(`导入失败: ${err.error}`);
+        }
+      } catch {
+        alert('导入失败: 文件格式无效');
+      }
+    };
+    input.click();
+  };
+
   // ── Derived state ──
   const selectedAgent = agents.find(a => a.id === selectedAgentId) ?? null;
   const agentViewMode = activePanel?.type === 'agent' ? activePanel.mode : 'chat';
@@ -491,13 +543,22 @@ export default function AgentsPage() {
               <div className="text-xs font-medium text-zinc-400">
                 {agents.length > 0 && `${agents.length} 个 Agent`}
               </div>
-              <button
-                onClick={handleStartCreate}
-                className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                title="新建 Agent"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-0.5">
+                <button
+                  onClick={handleImport}
+                  className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                  title="导入 .ppagent"
+                >
+                  <Upload className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={handleStartCreate}
+                  className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                  title="新建 Agent"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto">
               {agents.length === 0 ? (
@@ -635,6 +696,13 @@ export default function AgentsPage() {
                     title={agentViewMode === 'chat' ? '设置' : '聊天'}
                   >
                     {agentViewMode === 'chat' ? <Settings className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
+                  </button>
+                  <button
+                    onClick={() => handleExport(selectedAgent)}
+                    className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                    title="导出 .ppagent"
+                  >
+                    <Download className="h-4 w-4" />
                   </button>
                   {!selectedAgent.builtIn && (
                     <button
