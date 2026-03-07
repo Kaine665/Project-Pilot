@@ -130,7 +130,8 @@ export async function buildClaudeEnv(providerOverride?: ProviderId, effortOverri
   }
 
   env.FORCE_COLOR = '0';
-  env.CLAUDECODE = '';
+  // 显式移除 CLAUDECODE，防止 Claude CLI 嵌套检测误判
+  delete env.CLAUDECODE;
 
   return env;
 }
