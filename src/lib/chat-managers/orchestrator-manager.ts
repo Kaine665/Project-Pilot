@@ -37,6 +37,8 @@ import {
   readJsonFile,
   modifyJsonFile,
 } from '@/lib/file-store';
+import { resourceRegistry } from '@/lib/resource-registry';
+import type { ResourceRef, InlineTextRef } from '@/types/resource';
 import type {
   OrchestratorSession,
   OrchestratorPhase,
@@ -121,12 +123,19 @@ ${prompt}
 请分析并输出 JSON 格式的拆分计划。`;
 }
 
-function buildWorkerPrompt(
+async function buildWorkerPrompt(
   originalTask: string,
   subTaskTitle: string,
   subTaskDescription: string,
-): string {
-  return `你是一个开发 agent，正在处理一个子任务。
+  projectKey: string,
+): Promise<string> {
+  // Worker 角色定义 + 任务指令（替代 system-prompt loader）
+  const workerSystemPrompt: InlineTextRef = {
+    type: 'inline-text',
+    id: '_worker-system',
+    priority: 0,
+    label: 'Worker 系统提示词',
+    inlineContent: `你是一个开发 agent，正在独立 git worktree 中处理一个子任务。
 
 **原始任务背景：**
 ${originalTask}
@@ -153,7 +162,18 @@ ${originalTask}
 }
 \`\`\`
 
-现在开始执行你的子任务。`;
+现在开始执行你的子任务。`,
+  };
+
+  const refs: ResourceRef[] = [
+    workerSystemPrompt,
+    { type: 'context-index', id: '_all', priority: 20, label: '上下文索引' },
+    { type: 'active-tasks', id: '_running', priority: 22, label: '活跃任务看板' },
+    { type: 'design-docs-index', id: '_all', priority: 25, label: '设计文档索引' },
+  ];
+
+  const resolved = await resourceRegistry.resolveAll(refs, { projectKey });
+  return resourceRegistry.formatAsPrompt(resolved);
 }
 
 function buildSynthesizePrompt(
@@ -512,10 +532,11 @@ class OrchestratorManager {
     runtime.workers.set(worker.id, workerRuntime);
     this.emitEvent(runtime, { type: 'worker_started', workerId: worker.id, title: worker.title });
 
-    const workerPrompt = buildWorkerPrompt(
+    const workerPrompt = await buildWorkerPrompt(
       runtime.session.originalPrompt,
       worker.title,
       worker.description,
+      runtime.session.projectKey,
     );
 
     const env = await buildClaudeEnv();
