@@ -1,12 +1,14 @@
 /**
  * AgentChatManager — Lightweight Claude subprocess manager for Agent conversations.
  *
- * Extends BaseChatManager with:
- * - Multi-session support (sessionId-indexed)
- * - Image attachment handling (temp files + --image args)
- * - AgentAction processing (tag parse → execute → strip via actionRegistry)
- * - Guest Agent (spectator mode with imported turns)
- * - Session CRUD (list, load, delete, persisted to agent-chat-sessions.json)
+ * This class ONLY manages stateful operations that depend on in-memory process
+ * state (this.runs Map). All pure data operations (session CRUD, agent loading)
+ * are in agent-chat-session-store.ts as standalone functions.
+ *
+ * Why: The class instance is cached on globalThis to survive HMR (so running
+ * processes aren't lost). But that means new methods added to the class won't
+ * be available until a server restart. By keeping data operations as standalone
+ * functions, they get proper HMR updates.
  */
 
 import { writeFile, unlink } from 'fs/promises';
@@ -16,14 +18,8 @@ import { randomBytes } from 'crypto';
 import { BaseChatManager } from './base-chat-manager';
 import type { BaseRun, SpawnConfig } from './types';
 import type { StreamParser } from '@/lib/claude-stream-parser';
-import {
-  getAgentChatSessionsPath,
-  getAgentsPath,
-  getPromptFilePath,
-  readJsonFile,
-  modifyJsonFile,
-} from '@/lib/file-store';
-import { resolveSystemPrompt, createRuntimePromptCopy, deleteRuntimePromptCopy } from '@/lib/agent-prompt-store';
+import { getPromptFilePath } from '@/lib/file-store';
+import { resolveSystemPrompt, createRuntimePromptCopy } from '@/lib/agent-prompt-store';
 import {
   buildClaudeEnv,
   buildClaudeModelArgs,
@@ -31,11 +27,9 @@ import {
   buildAgentPermissionArgs,
   buildAgentToolArgs,
 } from '@/lib/settings-manager';
-import { getProviderScopedApiKey, getProviderScopedModel, getSettings } from '@/lib/settings-manager';
 import { getProviderPreset } from '@/lib/provider-registry';
-import type { ChatSSEEvent, ContentBlock, Agent, AgentsData, ProviderId } from '@/types';
-import type { AgentChatSession, AgentChatSessionsData, SessionConfig } from '@/types/agent-chat';
-import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import type { ChatSSEEvent, ContentBlock, Agent, ProviderId } from '@/types';
+import type { AgentChatSession, SessionConfig } from '@/types/agent-chat';
 import type { ResourceRef, InlineTextRef, FlowContextRef, ReferenceTurnsRef } from '@/types/resource';
 import { resourceRegistry } from '@/lib/resource-registry';
 import '@/lib/resource-loaders'; // side-effect: registers non-action loaders
@@ -44,6 +38,20 @@ import { actionRegistry } from '@/lib/agent-actions';
 import { migrateAgentToResources } from '@/lib/resource-migration';
 import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
 import { checkSessionHealth, buildGuardMessage } from './session-health-guard';
+
+// Re-export store functions so existing callers don't break during migration
+export { generateSessionId } from './agent-chat-session-store';
+
+// Import store functions for internal use
+import {
+  loadSession,
+  loadAgent,
+  eagerlySaveUserTurn,
+  persistSessionToDisk,
+  incrementGuardRetryCountOnDisk,
+  deleteSessionFromDisk,
+  updateConfigOnDisk,
+} from './agent-chat-session-store';
 
 // ── Types ──
 
@@ -66,14 +74,10 @@ export interface AgentChatRun extends BaseRun {
   projectKey?: string;
   sessionTitle?: string;
   messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }>;
-  // Session-level config (supplementary context & prompt)
   config?: SessionConfig;
-  // Guest Agent
   parentSessionId?: string;
   importedTurnIndices?: number[];
-  // Temp image paths (for cleanup)
   _tempImagePaths?: string[];
-  // Health guard retry count (prevents recursive guard triggers)
   _guardRetryCount?: number;
 }
 
@@ -91,14 +95,6 @@ interface AgentChatDomainData {
   importedTurnIndices?: number[];
 }
 
-// ── Helpers ──
-
-const DEFAULT_SESSIONS_DATA: AgentChatSessionsData = { sessions: [] };
-
-export function generateSessionId(): string {
-  return `agent-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-}
-
 // ── AgentChatManager ──
 
 class AgentChatManager extends BaseChatManager<AgentChatRun> {
@@ -106,7 +102,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
   protected readonly logPrefix = '[AgentChat]';
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Public: start a conversation
+  // Public: start a conversation (stateful — uses this.runs)
   // ═══════════════════════════════════════════════════════════════════════
 
   async start(
@@ -122,13 +118,13 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     modelOverride?: string,
     effortOverride?: string,
   ): Promise<string> {
-    const agent = await this.loadAgent(agentId);
+    const agent = await loadAgent(agentId);
 
     let existing = this.runs.get(sessionId);
 
     // Hydrate from disk if not in memory
     if (!existing) {
-      const diskSession = await this.loadSession(sessionId);
+      const diskSession = await loadSession(sessionId);
       if (diskSession) {
         existing = this.hydrateFromDisk(diskSession);
         this.runs.set(sessionId, existing);
@@ -141,12 +137,10 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
 
     const isResume = !!existing?.claudeSessionId;
 
-    // Build or reuse message history (copy to prevent shared mutation)
     const messages = existing?.messages ? [...existing.messages] : [];
     const dataUrls = images?.map(img => `data:${img.mediaType};base64,${img.data}`);
     messages.push({ role: 'user', content: message, images: dataUrls?.length ? dataUrls : undefined });
 
-    // Resolve session config: initialConfig (from API) > existing run/disk config
     const sessionConfig = initialConfig ?? existing?.config;
 
     // Build prompt
@@ -175,7 +169,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       }
     }
 
-    // Build CLI args (apply per-chat overrides when provided)
+    // Build CLI args
     const chatEnv = await buildClaudeEnv(providerOverride, effortOverride);
     const chatModelArgs = await buildClaudeModelArgs(modelOverride);
     const chatMaxTurnsArgs = await buildClaudeMaxTurnsArgs();
@@ -210,11 +204,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       },
     };
 
-    // Eagerly persist the user message to disk BEFORE spawning the process.
-    // This guarantees the data is written during the HTTP request (before the
-    // 200 response is sent), so a dev-server restart (next.config.ts change)
-    // cannot kill Node before the write completes.
-    await this.eagerlySaveUserTurn({
+    await eagerlySaveUserTurn({
       sessionId,
       agentId,
       projectKey: flowContext?.projectKey ?? existing?.projectKey,
@@ -231,7 +221,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Public: start a guest (spectator) session
+  // Public: start a guest (spectator) session (stateful — uses this.runs)
   // ═══════════════════════════════════════════════════════════════════════
 
   async startGuest(
@@ -241,13 +231,11 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     parentSessionId: string,
     importedTurnIndices: number[] | 'all',
   ): Promise<string> {
-    // Load host session messages
-    const hostSession = await this.loadSession(parentSessionId);
+    const hostSession = await loadSession(parentSessionId);
     if (!hostSession) {
       throw new Error('Host session not found');
     }
 
-    // Resolve imported turns
     let selectedTurns: Array<{ role: 'user' | 'assistant'; content: string }>;
     let turnIndices: number[];
     if (importedTurnIndices === 'all') {
@@ -261,7 +249,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       }));
     }
 
-    const agent = await this.loadAgent(agentId);
+    const agent = await loadAgent(agentId);
 
     const existing = this.runs.get(guestSessionId);
     if (existing?.status === 'running') {
@@ -272,7 +260,6 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     const messages = existing?.messages ? [...existing.messages] : [];
     messages.push({ role: 'user', content: message });
 
-    // Build prompt
     let stdinContent: string;
     if (isResume) {
       stdinContent = message;
@@ -280,7 +267,6 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       stdinContent = await buildGuestAgentPrompt(agent, message, selectedTurns);
     }
 
-    // Build CLI args
     const chatEnv = await buildClaudeEnv();
     const chatModelArgs = await buildClaudeModelArgs();
     const chatMaxTurnsArgs = await buildClaudeMaxTurnsArgs();
@@ -318,7 +304,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Public: session CRUD (disk-backed)
+  // Public: in-memory state queries (stateful — reads this.runs)
   // ═══════════════════════════════════════════════════════════════════════
 
   getMessages(sessionId: string): Array<{ role: 'user' | 'assistant'; content: string }> {
@@ -351,141 +337,21 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     this.runs.delete(sessionId);
   }
 
-  async loadSession(sessionId: string): Promise<AgentChatSession | null> {
-    const data = await readJsonFile<AgentChatSessionsData>(
-      getAgentChatSessionsPath(),
-      DEFAULT_SESSIONS_DATA,
-    );
-    return data.sessions.find(s => s.id === sessionId) ?? null;
-  }
-
-  async listSessions(agentId: string): Promise<Omit<AgentChatSession, 'messages'>[]> {
-    const data = await readJsonFile<AgentChatSessionsData>(
-      getAgentChatSessionsPath(),
-      DEFAULT_SESSIONS_DATA,
-    );
-    return data.sessions
-      .filter(s => s.agentId === agentId)
-      .map(({ messages: _msgs, ...rest }) => rest)
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-  }
-
-  async listSessionsByProject(agentId: string, projectKey: string): Promise<Omit<AgentChatSession, 'messages'>[]> {
-    const data = await readJsonFile<AgentChatSessionsData>(
-      getAgentChatSessionsPath(),
-      DEFAULT_SESSIONS_DATA,
-    );
-    return data.sessions
-      .filter(s => s.agentId === agentId && s.projectKey === projectKey)
-      .map(({ messages: _msgs, ...rest }) => rest)
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-  }
-
-  async listAllSessions(): Promise<Omit<AgentChatSession, 'messages'>[]> {
-    const data = await readJsonFile<AgentChatSessionsData>(
-      getAgentChatSessionsPath(),
-      DEFAULT_SESSIONS_DATA,
-    );
-    return data.sessions
-      .map(({ messages: _msgs, ...rest }) => rest)
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-  }
+  // ═══════════════════════════════════════════════════════════════════════
+  // Public: hybrid methods (this.runs + disk, delegate disk to store)
+  // ═══════════════════════════════════════════════════════════════════════
 
   async deleteSession(sessionId: string): Promise<boolean> {
     this.clear(sessionId);
-    let found = false;
-    let deletedAgentId: string | undefined;
-    await modifyJsonFile<AgentChatSessionsData>(
-      getAgentChatSessionsPath(),
-      DEFAULT_SESSIONS_DATA,
-      (data) => ({
-        sessions: data.sessions.filter(s => {
-          if (s.id === sessionId) {
-            found = true;
-            deletedAgentId = s.agentId;
-            return false;
-          }
-          return true;
-        }),
-      }),
-    );
-    // 清理运行时 prompt 副本
-    if (found && deletedAgentId) {
-      await deleteRuntimePromptCopy(deletedAgentId, sessionId).catch(() => {});
-    }
-    return found;
-  }
-
-  async markAsRead(sessionId: string): Promise<boolean> {
-    let found = false;
-    await modifyJsonFile<AgentChatSessionsData>(
-      getAgentChatSessionsPath(),
-      DEFAULT_SESSIONS_DATA,
-      (data) => {
-        const session = data.sessions.find(s => s.id === sessionId);
-        if (session) {
-          session.unreadCount = 0;
-          found = true;
-        }
-        return data;
-      },
-    );
-    return found;
-  }
-
-  async setArchived(sessionId: string, archived: boolean): Promise<boolean> {
-    let found = false;
-    await modifyJsonFile<AgentChatSessionsData>(
-      getAgentChatSessionsPath(),
-      DEFAULT_SESSIONS_DATA,
-      (data) => {
-        const session = data.sessions.find(s => s.id === sessionId);
-        if (session) {
-          session.archived = archived || undefined; // don't persist false
-          found = true;
-          console.log(`[setArchived] ${sessionId} → archived=${session.archived}`);
-        } else {
-          console.warn(`[setArchived] ${sessionId} NOT FOUND in ${data.sessions.length} sessions`);
-        }
-        return data;
-      },
-    );
-    return found;
+    return deleteSessionFromDisk(sessionId);
   }
 
   async updateConfig(sessionId: string, config: SessionConfig): Promise<boolean> {
-    // Update in-memory run if present
     const run = this.runs.get(sessionId);
     if (run) {
       run.config = config;
     }
-    // Persist to disk
-    let found = false;
-    await modifyJsonFile<AgentChatSessionsData>(
-      getAgentChatSessionsPath(),
-      DEFAULT_SESSIONS_DATA,
-      (data) => {
-        const session = data.sessions.find(s => s.id === sessionId);
-        if (session) {
-          session.config = config;
-          session.updatedAt = new Date().toISOString();
-          found = true;
-        }
-        return data;
-      },
-    );
-    return found;
-  }
-
-  async listGuestSessions(parentSessionId: string): Promise<Omit<AgentChatSession, 'messages'>[]> {
-    const data = await readJsonFile<AgentChatSessionsData>(
-      getAgentChatSessionsPath(),
-      DEFAULT_SESSIONS_DATA,
-    );
-    return data.sessions
-      .filter(s => s.parentSessionId === parentSessionId)
-      .map(({ messages: _msgs, ...rest }) => rest)
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    return updateConfigOnDisk(sessionId, config);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -509,11 +375,24 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
   }
 
   protected async persistAfterClose(run: AgentChatRun, _aborted: boolean): Promise<void> {
-    await this.persistSession(run);
+    const now = new Date().toISOString();
+    const session: AgentChatSession = {
+      id: run.sessionId,
+      agentId: run.agentId,
+      projectKey: run.projectKey,
+      title: run.sessionTitle ?? '新会话',
+      messages: run.messages,
+      claudeSessionId: run.claudeSessionId,
+      createdAt: new Date(run.startedAt).toISOString(),
+      updatedAt: now,
+      config: run.config,
+      guardRetryCount: run._guardRetryCount,
+      parentSessionId: run.parentSessionId,
+      importedTurnIndices: run.importedTurnIndices,
+    };
+    await persistSessionToDisk(session);
 
     // ── Session Health Guard ──
-    // Trigger a lightweight check when a session ends abnormally.
-    // Fire-and-forget: guard errors must not affect the main flow.
     if (
       (run.status === 'failed' || run.status === 'stopped')
       && !(run._guardRetryCount && run._guardRetryCount >= 1)
@@ -528,10 +407,13 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       }).then(async (result) => {
         if (!result?.abnormal) return;
 
-        // Bump guard retry count on disk before resuming
-        await this.incrementGuardRetryCount(run.sessionId);
+        // Bump guard retry count in memory and on disk
+        const memRun = this.runs.get(run.sessionId);
+        if (memRun) {
+          memRun._guardRetryCount = (memRun._guardRetryCount ?? 0) + 1;
+        }
+        await incrementGuardRetryCountOnDisk(run.sessionId);
 
-        // Resume the session with the guard's error description
         const guardMsg = buildGuardMessage(run.status, result.reason);
         try {
           await this.start(run.sessionId, run.agentId, guardMsg);
@@ -600,81 +482,6 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
   // Private helpers
   // ═══════════════════════════════════════════════════════════════════════
 
-  /**
-   * Eagerly write the user's message to disk BEFORE the Claude process starts.
-   * Called synchronously (awaited) inside start() so the write completes during
-   * the HTTP request, before the 200 response is sent. This guarantees the
-   * user turn survives a dev-server restart (next.config.ts change triggers a
-   * full page reload which wipes React state).
-   *
-   * Safety: the modifyJsonFile callback only writes if the stored session has
-   * fewer messages than we have now, guarding against any race with
-   * persistAfterClose on multi-turn resumes.
-   */
-  private async eagerlySaveUserTurn(opts: {
-    sessionId: string;
-    agentId: string;
-    projectKey?: string;
-    sessionTitle?: string;
-    messages: AgentChatRun['messages'];
-    claudeSessionId?: string;
-    config?: import('@/types/agent-chat').SessionConfig;
-    parentSessionId?: string;
-    importedTurnIndices?: number[];
-  }): Promise<void> {
-    const now = new Date().toISOString();
-    await modifyJsonFile<AgentChatSessionsData>(
-      getAgentChatSessionsPath(),
-      DEFAULT_SESSIONS_DATA,
-      (data) => {
-        const idx = data.sessions.findIndex(s => s.id === opts.sessionId);
-        if (idx >= 0) {
-          // Only update if we have more messages than what's already on disk
-          if (data.sessions[idx].messages.length < opts.messages.length) {
-            data.sessions[idx].messages = opts.messages;
-            data.sessions[idx].updatedAt = now;
-          }
-        } else {
-          // First turn of a brand-new session — create it
-          data.sessions.push({
-            id: opts.sessionId,
-            agentId: opts.agentId,
-            projectKey: opts.projectKey,
-            title: opts.sessionTitle ?? '新会话',
-            messages: opts.messages,
-            claudeSessionId: opts.claudeSessionId,
-            createdAt: now,
-            updatedAt: now,
-            config: opts.config,
-            parentSessionId: opts.parentSessionId,
-            importedTurnIndices: opts.importedTurnIndices,
-            unreadCount: 0, // persistAfterClose will increment this when done
-          });
-        }
-        return data;
-      },
-    );
-  }
-
-  private async loadAgent(agentId: string): Promise<Agent> {
-    const agentsData = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
-    const agent = agentsData.agents.find(a => a.id === agentId && !a.archived);
-    if (!agent) {
-      throw new Error('Agent not found or archived');
-    }
-    // Merge default agent fields (runtime migration)
-    const defaultAgent = DEFAULT_AGENTS.find(a => a.id === agentId);
-    if (defaultAgent) {
-      for (const key of Object.keys(defaultAgent) as Array<keyof Agent>) {
-        if (agent[key] === undefined && defaultAgent[key] !== undefined) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (agent as any)[key] = defaultAgent[key];
-        }
-      }
-    }
-    return agent;
-  }
-
   private hydrateFromDisk(diskSession: AgentChatSession): AgentChatRun {
     return {
       runId: '',
@@ -696,121 +503,10 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       _guardRetryCount: diskSession.guardRetryCount,
     };
   }
-
-  private async incrementGuardRetryCount(sessionId: string): Promise<void> {
-    // Update in-memory run
-    const run = this.runs.get(sessionId);
-    if (run) {
-      run._guardRetryCount = (run._guardRetryCount ?? 0) + 1;
-    }
-    // Persist to disk
-    await modifyJsonFile<AgentChatSessionsData>(
-      getAgentChatSessionsPath(),
-      DEFAULT_SESSIONS_DATA,
-      (data) => {
-        const session = data.sessions.find(s => s.id === sessionId);
-        if (session) {
-          session.guardRetryCount = (session.guardRetryCount ?? 0) + 1;
-        }
-        return data;
-      },
-    );
-  }
-
-  /**
-   * Branch a session: copy messages up to (and including) the given index
-   * into a new session. Returns the new session object.
-   */
-  async branchSession(
-    sourceSessionId: string,
-    branchAtIndex: number,
-  ): Promise<AgentChatSession> {
-    const source = await this.loadSession(sourceSessionId);
-    if (!source) throw new Error('Source session not found');
-
-    if (branchAtIndex < 0 || branchAtIndex >= source.messages.length) {
-      throw new Error('Message index out of range');
-    }
-
-    const branchedMessages = source.messages.slice(0, branchAtIndex + 1);
-    const now = new Date().toISOString();
-    const newId = generateSessionId();
-    const newSession: AgentChatSession = {
-      id: newId,
-      agentId: source.agentId,
-      projectKey: source.projectKey,
-      title: `🌿 ${source.title}`,
-      messages: branchedMessages,
-      createdAt: now,
-      updatedAt: now,
-      config: source.config,
-      unreadCount: 0,
-    };
-
-    await modifyJsonFile<AgentChatSessionsData>(
-      getAgentChatSessionsPath(),
-      DEFAULT_SESSIONS_DATA,
-      (data) => {
-        data.sessions.push(newSession);
-        return data;
-      },
-    );
-
-    return newSession;
-  }
-
-  private async persistSession(run: AgentChatRun): Promise<void> {
-    const now = new Date().toISOString();
-    const session: AgentChatSession = {
-      id: run.sessionId,
-      agentId: run.agentId,
-      projectKey: run.projectKey,
-      title: run.sessionTitle ?? '新会话',
-      messages: run.messages,
-      claudeSessionId: run.claudeSessionId,
-      createdAt: new Date(run.startedAt).toISOString(),
-      updatedAt: now,
-      config: run.config,
-      guardRetryCount: run._guardRetryCount,
-      parentSessionId: run.parentSessionId,
-      importedTurnIndices: run.importedTurnIndices,
-    };
-
-    await modifyJsonFile<AgentChatSessionsData>(
-      getAgentChatSessionsPath(),
-      DEFAULT_SESSIONS_DATA,
-      (data) => {
-        const idx = data.sessions.findIndex(s => s.id === run.sessionId);
-        if (idx >= 0) {
-          session.createdAt = data.sessions[idx].createdAt;
-          session.archived = data.sessions[idx].archived; // preserve archive state
-          session.config = session.config ?? data.sessions[idx].config; // preserve config
-          session.guardRetryCount = session.guardRetryCount ?? data.sessions[idx].guardRetryCount; // preserve guard count
-          // Increment unread count (agent replied)
-          session.unreadCount = (data.sessions[idx].unreadCount || 0) + 1;
-          data.sessions[idx] = session;
-        } else {
-          session.unreadCount = 1;
-          data.sessions.push(session);
-        }
-        return data;
-      },
-    );
-  }
 }
 
 // ── Unified Resource-based Prompt Builder ──
 
-/**
- * Resolve an agent's effective resources and format them into prompt text.
- *
- * If the agent has `defaultResources`, use those directly.
- * Otherwise, derive them from legacy fields (contextIds, todoRead, etc.)
- * via migrateAgentToResources().
- *
- * Extra refs (e.g. flow-context, reference-turns) can be appended.
- * Session-level config (contextIds, supplementaryPrompt) is merged as extra refs.
- */
 async function buildResourcePrompt(
   agent: Agent,
   extraRefs?: ResourceRef[],
@@ -821,15 +517,12 @@ async function buildResourcePrompt(
   const merged: ResourceRef[] = [...baseRefs];
   if (extraRefs) merged.push(...extraRefs);
 
-  // Merge session-level config into resource refs
   if (sessionConfig) {
-    // Session context IDs → context refs (priority 35, after agent's 30)
     if (sessionConfig.contextIds?.length) {
       for (const cid of sessionConfig.contextIds) {
         merged.push({ type: 'context', id: cid, priority: 35 });
       }
     }
-    // Session supplementary prompt → inline-text ref (priority 5, right after system prompt)
     if (sessionConfig.supplementaryPrompt?.trim()) {
       const promptRef: InlineTextRef = {
         type: 'inline-text',
@@ -844,12 +537,10 @@ async function buildResourcePrompt(
 
   const allRefs = merged;
 
-  // Resolve system prompt: prefer .md file, fallback to inline, then auto-generated
   const resolved = await resolveSystemPrompt(agent.id, agent.systemPrompt);
   const systemPromptText = resolved
     || `你是一个名为「${agent.name}」的 AI 助手。${agent.description || ''}`;
 
-  // 创建运行时工作副本（仅 exposePromptPath + 有 sessionId 时）
   let runtimePromptPath: string | undefined;
   if (agent.capabilities?.exposePromptPath && sessionId) {
     runtimePromptPath = await createRuntimePromptCopy(agent.id, sessionId);
@@ -858,7 +549,6 @@ async function buildResourcePrompt(
   const ctx: SystemPromptLoaderContext = {
     agentId: agent.id,
     systemPromptText,
-    // exposePromptPath: pass prompt file path if the agent opts in
     promptFilePath: agent.capabilities?.exposePromptPath ? getPromptFilePath(agent.id) : undefined,
     runtimePromptPath,
   };

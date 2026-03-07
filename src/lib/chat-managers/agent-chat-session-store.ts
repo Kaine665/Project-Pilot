@@ -1,0 +1,311 @@
+/**
+ * Agent Chat Session Store — 纯数据操作函数，不依赖任何实例状态。
+ *
+ * 从 AgentChatManager class 中拆分出来，解决 globalThis 单例导致的 HMR 问题：
+ * - 这些函数作为模块级导出，HMR 可以正常更新
+ * - class 只保留需要 this.runs（进程 Map）的有状态方法
+ *
+ * API routes 应直接 import 这些函数，而不是通过 agentChatManager 单例调用。
+ */
+
+import {
+  getAgentChatSessionsPath,
+  getAgentsPath,
+  readJsonFile,
+  modifyJsonFile,
+} from '@/lib/file-store';
+import { deleteRuntimePromptCopy } from '@/lib/agent-prompt-store';
+import type { Agent, AgentsData, ContentBlock } from '@/types';
+import type { AgentChatSession, AgentChatSessionsData, SessionConfig } from '@/types/agent-chat';
+import { DEFAULT_AGENTS } from '@/lib/default-agents';
+
+// ── Constants ──
+
+const DEFAULT_SESSIONS_DATA: AgentChatSessionsData = { sessions: [] };
+
+// ── ID Generation ──
+
+export function generateSessionId(): string {
+  return `agent-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+// ── Session Read Operations ──
+
+export async function loadSession(sessionId: string): Promise<AgentChatSession | null> {
+  const data = await readJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+  );
+  return data.sessions.find(s => s.id === sessionId) ?? null;
+}
+
+export async function listSessions(agentId: string): Promise<Omit<AgentChatSession, 'messages'>[]> {
+  const data = await readJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+  );
+  return data.sessions
+    .filter(s => s.agentId === agentId)
+    .map(({ messages: _msgs, ...rest }) => rest)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+}
+
+export async function listSessionsByProject(agentId: string, projectKey: string): Promise<Omit<AgentChatSession, 'messages'>[]> {
+  const data = await readJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+  );
+  return data.sessions
+    .filter(s => s.agentId === agentId && s.projectKey === projectKey)
+    .map(({ messages: _msgs, ...rest }) => rest)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+}
+
+export async function listAllSessions(): Promise<Omit<AgentChatSession, 'messages'>[]> {
+  const data = await readJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+  );
+  return data.sessions
+    .map(({ messages: _msgs, ...rest }) => rest)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+}
+
+export async function listGuestSessions(parentSessionId: string): Promise<Omit<AgentChatSession, 'messages'>[]> {
+  const data = await readJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+  );
+  return data.sessions
+    .filter(s => s.parentSessionId === parentSessionId)
+    .map(({ messages: _msgs, ...rest }) => rest)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+}
+
+// ── Session Write Operations ──
+
+export async function markAsRead(sessionId: string): Promise<boolean> {
+  let found = false;
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (data) => {
+      const session = data.sessions.find(s => s.id === sessionId);
+      if (session) {
+        session.unreadCount = 0;
+        found = true;
+      }
+      return data;
+    },
+  );
+  return found;
+}
+
+export async function setArchived(sessionId: string, archived: boolean): Promise<boolean> {
+  let found = false;
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (data) => {
+      const session = data.sessions.find(s => s.id === sessionId);
+      if (session) {
+        session.archived = archived || undefined; // don't persist false
+        found = true;
+        console.log(`[setArchived] ${sessionId} → archived=${session.archived}`);
+      } else {
+        console.warn(`[setArchived] ${sessionId} NOT FOUND in ${data.sessions.length} sessions`);
+      }
+      return data;
+    },
+  );
+  return found;
+}
+
+export async function updateConfigOnDisk(sessionId: string, config: SessionConfig): Promise<boolean> {
+  let found = false;
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (data) => {
+      const session = data.sessions.find(s => s.id === sessionId);
+      if (session) {
+        session.config = config;
+        session.updatedAt = new Date().toISOString();
+        found = true;
+      }
+      return data;
+    },
+  );
+  return found;
+}
+
+export async function deleteSessionFromDisk(sessionId: string): Promise<boolean> {
+  let found = false;
+  let deletedAgentId: string | undefined;
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (data) => ({
+      sessions: data.sessions.filter(s => {
+        if (s.id === sessionId) {
+          found = true;
+          deletedAgentId = s.agentId;
+          return false;
+        }
+        return true;
+      }),
+    }),
+  );
+  // 清理运行时 prompt 副本
+  if (found && deletedAgentId) {
+    await deleteRuntimePromptCopy(deletedAgentId, sessionId).catch(() => {});
+  }
+  return found;
+}
+
+export async function branchSession(
+  sourceSessionId: string,
+  branchAtIndex: number,
+): Promise<AgentChatSession> {
+  const source = await loadSession(sourceSessionId);
+  if (!source) throw new Error('Source session not found');
+
+  if (branchAtIndex < 0 || branchAtIndex >= source.messages.length) {
+    throw new Error('Message index out of range');
+  }
+
+  const branchedMessages = source.messages.slice(0, branchAtIndex + 1);
+  const now = new Date().toISOString();
+  const newId = generateSessionId();
+  const newSession: AgentChatSession = {
+    id: newId,
+    agentId: source.agentId,
+    projectKey: source.projectKey,
+    title: `🌿 ${source.title}`,
+    messages: branchedMessages,
+    createdAt: now,
+    updatedAt: now,
+    config: source.config,
+    unreadCount: 0,
+  };
+
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (data) => {
+      data.sessions.push(newSession);
+      return data;
+    },
+  );
+
+  return newSession;
+}
+
+// ── Internal Helpers (used by AgentChatManager) ──
+
+/**
+ * Eagerly write the user's message to disk BEFORE the Claude process starts.
+ * Guarantees the user turn survives a dev-server restart.
+ */
+export async function eagerlySaveUserTurn(opts: {
+  sessionId: string;
+  agentId: string;
+  projectKey?: string;
+  sessionTitle?: string;
+  messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }>;
+  claudeSessionId?: string;
+  config?: SessionConfig;
+  parentSessionId?: string;
+  importedTurnIndices?: number[];
+}): Promise<void> {
+  const now = new Date().toISOString();
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (data) => {
+      const idx = data.sessions.findIndex(s => s.id === opts.sessionId);
+      if (idx >= 0) {
+        if (data.sessions[idx].messages.length < opts.messages.length) {
+          data.sessions[idx].messages = opts.messages;
+          data.sessions[idx].updatedAt = now;
+        }
+      } else {
+        data.sessions.push({
+          id: opts.sessionId,
+          agentId: opts.agentId,
+          projectKey: opts.projectKey,
+          title: opts.sessionTitle ?? '新会话',
+          messages: opts.messages,
+          claudeSessionId: opts.claudeSessionId,
+          createdAt: now,
+          updatedAt: now,
+          config: opts.config,
+          parentSessionId: opts.parentSessionId,
+          importedTurnIndices: opts.importedTurnIndices,
+          unreadCount: 0,
+        });
+      }
+      return data;
+    },
+  );
+}
+
+/**
+ * Persist a completed run's session to disk.
+ */
+export async function persistSessionToDisk(session: AgentChatSession): Promise<void> {
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (data) => {
+      const idx = data.sessions.findIndex(s => s.id === session.id);
+      if (idx >= 0) {
+        session.createdAt = data.sessions[idx].createdAt;
+        session.archived = data.sessions[idx].archived;
+        session.config = session.config ?? data.sessions[idx].config;
+        session.guardRetryCount = session.guardRetryCount ?? data.sessions[idx].guardRetryCount;
+        session.unreadCount = (data.sessions[idx].unreadCount || 0) + 1;
+        data.sessions[idx] = session;
+      } else {
+        session.unreadCount = 1;
+        data.sessions.push(session);
+      }
+      return data;
+    },
+  );
+}
+
+export async function incrementGuardRetryCountOnDisk(sessionId: string): Promise<void> {
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (data) => {
+      const session = data.sessions.find(s => s.id === sessionId);
+      if (session) {
+        session.guardRetryCount = (session.guardRetryCount ?? 0) + 1;
+      }
+      return data;
+    },
+  );
+}
+
+// ── Agent Loading ──
+
+export async function loadAgent(agentId: string): Promise<Agent> {
+  const agentsData = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
+  const agent = agentsData.agents.find(a => a.id === agentId && !a.archived);
+  if (!agent) {
+    throw new Error('Agent not found or archived');
+  }
+  // Merge default agent fields (runtime migration)
+  const defaultAgent = DEFAULT_AGENTS.find(a => a.id === agentId);
+  if (defaultAgent) {
+    for (const key of Object.keys(defaultAgent) as Array<keyof Agent>) {
+      if (agent[key] === undefined && defaultAgent[key] !== undefined) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (agent as any)[key] = defaultAgent[key];
+      }
+    }
+  }
+  return agent;
+}

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { agentChatManager, generateSessionId } from '@/lib/agent-chat-manager';
+import { agentChatManager, generateSessionId, listGuestSessions } from '@/lib/agent-chat-manager';
 import { isValidSessionId } from '@/lib/security';
 
 /**
@@ -91,7 +91,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'parentSessionId is required' }, { status: 400 });
   }
 
-  const sessions = await agentChatManager.listGuestSessions(parentSessionId);
+  const sessions = await listGuestSessions(parentSessionId);
   return NextResponse.json({ sessions }, {
     headers: { 'Cache-Control': 'no-store' },
   });

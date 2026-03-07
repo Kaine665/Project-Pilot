@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { agentChatManager } from '@/lib/agent-chat-manager';
+import { listSessions, listSessionsByProject, listAllSessions, deleteSessionFromDisk } from '@/lib/agent-chat-manager';
 
 /**
  * GET /api/agent-chat/sessions?agentId=xxx&projectKey=yyy
@@ -11,11 +12,11 @@ export async function GET(request: NextRequest) {
 
   let sessions;
   if (agentId && projectKey) {
-    sessions = await agentChatManager.listSessionsByProject(agentId, projectKey);
+    sessions = await listSessionsByProject(agentId, projectKey);
   } else if (agentId) {
-    sessions = await agentChatManager.listSessions(agentId);
+    sessions = await listSessions(agentId);
   } else {
-    sessions = await agentChatManager.listAllSessions();
+    sessions = await listAllSessions();
   }
 
   return NextResponse.json({ sessions }, {
@@ -33,7 +34,9 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: 'sessionId is required' }, { status: 400 });
   }
 
-  const deleted = await agentChatManager.deleteSession(sessionId);
+  // Clear from in-memory runs + delete from disk
+  agentChatManager.clear(sessionId);
+  const deleted = await deleteSessionFromDisk(sessionId);
   if (!deleted) {
     return NextResponse.json({ error: 'Session not found' }, { status: 404 });
   }

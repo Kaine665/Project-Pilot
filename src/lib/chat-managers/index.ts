@@ -15,7 +15,7 @@ export type { BaseRun, RunStatus, RunStatusInfo, SpawnConfig } from './types';
 export { processManager } from './process-manager';
 export type { ProcessRun } from './process-manager';
 
-// ── AgentChatManager ──
+// ── AgentChatManager (stateful singleton) ──
 export { agentChatManager, generateSessionId } from './agent-chat-manager';
 export type {
   AgentChatRun,
@@ -23,3 +23,18 @@ export type {
   ImageMediaType,
   FlowContext,
 } from './agent-chat-manager';
+
+// ── Session Store (stateless functions, HMR-friendly) ──
+export {
+  loadSession,
+  listSessions,
+  listSessionsByProject,
+  listAllSessions,
+  listGuestSessions,
+  markAsRead,
+  setArchived,
+  updateConfigOnDisk,
+  deleteSessionFromDisk,
+  branchSession,
+  loadAgent,
+} from './agent-chat-session-store';

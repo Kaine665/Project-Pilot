@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { agentChatManager } from '@/lib/agent-chat-manager';
+import { branchSession } from '@/lib/agent-chat-manager';
 
 /**
  * POST /api/agent-chat/sessions/branch
- * Branch a session from a specific message index, creating a new session with
- * messages up to (and including) the specified index.
+ *
+ * 从指定消息索引处分支，创建一个新会话（包含到该索引为止的所有消息）。
+ * 直接调用 store 函数，不依赖 agentChatManager 单例，HMR 友好。
  */
 export async function POST(req: NextRequest) {
   try {
@@ -16,10 +17,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const newSession = await agentChatManager.branchSession(
-      sourceSessionId,
-      branchAtIndex,
-    );
+    const newSession = await branchSession(sourceSessionId, branchAtIndex);
 
     return NextResponse.json({
       sessionId: newSession.id,
