@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Bot, Plus, Trash2, X, ChevronRight, Minimize2,
   Settings, MessageSquare, Archive, ArchiveRestore,
-  Download, Upload,
+  Download, Upload, FileDown,
 } from 'lucide-react';
 import type { Agent } from '@/types';
 import { AgentChatPanel } from '@/components/agent-chat-panel';
@@ -778,6 +778,15 @@ export default function AgentsPage() {
                   <span className="text-xs text-zinc-400 shrink-0">
                     — {activeSessionAgent.name}
                   </span>
+                  <button
+                    onClick={() => {
+                      window.dispatchEvent(new CustomEvent('toggle-session-compress'));
+                    }}
+                    className="shrink-0 rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-blue-500 transition-colors dark:hover:bg-zinc-800 dark:hover:text-blue-400"
+                    title="压缩会话历史"
+                  >
+                    <FileDown className="h-3.5 w-3.5" />
+                  </button>
                   <button
                     onClick={() => {
                       // Dispatch a custom event that AgentChatPanel listens for
