@@ -87,6 +87,7 @@ ${messagesToCompress.map(m => `[${m.role}]: ${m.content}`).join('\n\n')}
 
   try {
     // 用 stdin 传 prompt，避免 Windows 命令行长度限制
+    // 用 stall 检测代替硬超时：每 30s 检查输出是否仍在增长
     const summary = await new Promise<string>((resolve, reject) => {
       const child = spawnClaude(['--print', '-p', '-'], {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -94,16 +95,29 @@ ${messagesToCompress.map(m => `[${m.role}]: ${m.content}`).join('\n\n')}
 
       let stdout = '';
       let stderr = '';
-      const timer = setTimeout(() => {
-        child.kill();
-        reject(new Error('AI 摘要生成超时'));
-      }, 60000);
+      let prevLen = 0;
+      let stallCount = 0;
+      const MAX_STALLS = 2; // 连续 2 次无增长（~60s）才判定停滞
+
+      const stallCheck = setInterval(() => {
+        if (stdout.length === prevLen) {
+          stallCount++;
+          if (stallCount >= MAX_STALLS) {
+            clearInterval(stallCheck);
+            child.kill();
+            reject(new Error('AI 摘要生成停滞，已终止'));
+          }
+        } else {
+          stallCount = 0;
+          prevLen = stdout.length;
+        }
+      }, 30000);
 
       child.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
       child.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
-      child.on('error', (err) => { clearTimeout(timer); reject(err); });
+      child.on('error', (err) => { clearInterval(stallCheck); reject(err); });
       child.on('close', (code) => {
-        clearTimeout(timer);
+        clearInterval(stallCheck);
         if (code !== 0) {
           reject(new Error(`claude exited ${code}: ${stderr}`));
         } else {
