@@ -14,6 +14,7 @@
  */
 
 import { type ChildProcess } from 'child_process';
+import { promises as fs } from 'fs';
 import { spawnClaude } from '@/lib/claude-cli';
 import path from 'path';
 import { StreamParser, LineBuffer } from '@/lib/claude-stream-parser';
@@ -37,6 +38,7 @@ import {
   getOrchestratorSessionsPath,
   getAgentsPath,
   getAgentTeamsPath,
+  getOrchestratorMessagesPath,
   readJsonFile,
   modifyJsonFile,
 } from '@/lib/file-store';
@@ -172,7 +174,28 @@ function buildWorkerTaskInstructions(
   originalTask: string,
   subTaskTitle: string,
   subTaskDescription: string,
+  messagesPath?: string,
 ): string {
+  const commsPart = messagesPath ? `
+
+**跨 Worker 通信：**
+你和其他并行工作的 Worker 共享一个消息文件，可以异步通信。
+
+- 消息文件路径：\`${messagesPath}\`
+- 格式：JSONL（每行一个 JSON 对象）
+- 读取：\`cat "${messagesPath}"\` 查看所有消息
+- 写入：\`echo '{"from":"${subTaskTitle}","type":"info","content":"你的消息"}' >> "${messagesPath}"\`
+
+消息类型：
+- \`info\`：通知其他 Worker 你的进展或发现
+- \`request\`：请求其他 Worker 提供信息或协调
+- \`warning\`：警告可能的冲突或问题
+
+建议在以下时机发送消息：
+1. 发现可能影响其他 Worker 的改动时
+2. 修改了共享文件（如类型定义、配置文件）时
+3. 需要其他 Worker 的输出作为输入时` : '';
+
   return `你正在独立 git worktree 中处理一个编排子任务。
 
 **原始任务背景：**
@@ -186,7 +209,7 @@ ${originalTask}
 1. 只完成你被分配的子任务，不要越界处理其他部分
 2. 所有代码改动都在当前工作目录中进行
 3. 完成后用 git commit 提交你的改动
-4. 完成后输出结果摘要
+4. 完成后输出结果摘要${commsPart}
 
 **完成后请用以下格式输出结果：**
 
@@ -209,14 +232,34 @@ ${originalTask}
  * 有 Agent 绑定时：使用 Agent 的 systemPrompt + defaultResources，追加任务指令。
  * 无 Agent 绑定时：使用通用 Worker prompt + 基础资源注入（向后兼容）。
  */
+/** 读取已有的跨 Worker 消息（启动时注入给 Worker） */
+async function readExistingMessages(messagesPath: string): Promise<string> {
+  try {
+    const raw = await fs.readFile(messagesPath, 'utf-8');
+    const lines = raw.trim().split('\n').filter(Boolean);
+    if (lines.length === 0) return '';
+    return lines.map(line => {
+      try {
+        const msg = JSON.parse(line);
+        return `[${msg.type || 'info'}] ${msg.from || '?'}: ${msg.content || ''}`;
+      } catch {
+        return line;
+      }
+    }).join('\n');
+  } catch {
+    return '';
+  }
+}
+
 async function buildWorkerPrompt(
   originalTask: string,
   subTaskTitle: string,
   subTaskDescription: string,
   projectKey: string,
   agent?: Agent,
+  messagesPath?: string,
 ): Promise<string> {
-  const taskInstructions = buildWorkerTaskInstructions(originalTask, subTaskTitle, subTaskDescription);
+  const taskInstructions = buildWorkerTaskInstructions(originalTask, subTaskTitle, subTaskDescription, messagesPath);
 
   if (agent) {
     // ── Agent 绑定模式：继承 Agent 的完整资源链 ──
@@ -232,6 +275,21 @@ async function buildWorkerPrompt(
       inlineContent: taskInstructions,
     };
     refs.push(taskRef);
+
+    // 注入已有的跨 Worker 消息
+    if (messagesPath) {
+      const existingMsgs = await readExistingMessages(messagesPath);
+      if (existingMsgs) {
+        const msgsRef: InlineTextRef = {
+          type: 'inline-text',
+          id: '_worker-messages',
+          priority: 96,
+          label: '其他 Worker 的消息',
+          inlineContent: `以下是其他并行 Worker 发送的消息，供你参考：\n\n${existingMsgs}`,
+        };
+        refs.push(msgsRef);
+      }
+    }
 
     // 解析 Agent 的 systemPrompt（文件优先）
     const systemPromptText = await resolveSystemPrompt(agent.id, agent.systemPrompt)
@@ -260,6 +318,21 @@ async function buildWorkerPrompt(
     { type: 'active-tasks', id: '_running', priority: 22, label: '活跃任务看板' },
     { type: 'design-docs-index', id: '_all', priority: 25, label: '设计文档索引' },
   ];
+
+  // 注入已有的跨 Worker 消息
+  if (messagesPath) {
+    const existingMsgs = await readExistingMessages(messagesPath);
+    if (existingMsgs) {
+      const msgsRef: InlineTextRef = {
+        type: 'inline-text',
+        id: '_worker-messages',
+        priority: 96,
+        label: '其他 Worker 的消息',
+        inlineContent: `以下是其他并行 Worker 发送的消息，供你参考：\n\n${existingMsgs}`,
+      };
+      refs.push(msgsRef);
+    }
+  }
 
   const resolved = await resourceRegistry.resolveAll(refs, { projectKey });
   return resourceRegistry.formatAsPrompt(resolved);
@@ -665,12 +738,19 @@ class OrchestratorManager {
     // 加载绑定的 Agent（如果有 agentId）
     const agent = worker.agentId ? await loadAgentForWorker(worker.agentId) : undefined;
 
+    // 跨 Worker 通信：确保消息文件目录存在
+    const messagesPath = getOrchestratorMessagesPath(runtime.session.id);
+    try {
+      await fs.mkdir(path.dirname(messagesPath), { recursive: true });
+    } catch { /* ignore */ }
+
     const workerPrompt = await buildWorkerPrompt(
       runtime.session.originalPrompt,
       worker.title,
       worker.description,
       runtime.session.projectKey,
       agent,
+      messagesPath,
     );
 
     const env = await buildClaudeEnv();

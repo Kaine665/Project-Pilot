@@ -177,6 +177,12 @@ export function getAgentTeamsPath(): string {
   return path.join(DATA_DIR, 'agent-teams.json');
 }
 
+/** 编排会话的跨 Worker 消息文件（JSONL 格式，追加写） */
+export function getOrchestratorMessagesPath(orchId: string): string {
+  const safeId = orchId.replace(/[^a-zA-Z0-9_-]/g, '');
+  return path.join(DATA_DIR, 'orchestrations', `${safeId}-messages.jsonl`);
+}
+
 export function getActiveTasksPath(): string {
   return path.join(DATA_DIR, 'active-tasks.json');
 }
