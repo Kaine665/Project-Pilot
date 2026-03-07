@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { agentChatManager } from '@/lib/agent-chat-manager';
+import { loadSession, markAsRead, setArchived, updateConfigOnDisk } from '@/lib/agent-chat-manager';
 
 /**
  * GET /api/agent-chat/sessions/[id]
@@ -11,7 +12,7 @@ export async function GET(
 ) {
   const { id } = await params;
 
-  const session = await agentChatManager.loadSession(id);
+  const session = await loadSession(id);
   if (!session) {
     return NextResponse.json({ error: 'Session not found' }, { status: 404 });
   }
@@ -37,7 +38,7 @@ export async function PATCH(
   const body = await request.json().catch(() => ({}));
 
   if (body.action === 'markAsRead') {
-    const found = await agentChatManager.markAsRead(id);
+    const found = await markAsRead(id);
     if (!found) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
@@ -46,7 +47,7 @@ export async function PATCH(
 
   if (body.action === 'archive' || body.action === 'unarchive') {
     try {
-      const found = await agentChatManager.setArchived(id, body.action === 'archive');
+      const found = await setArchived(id, body.action === 'archive');
       if (!found) {
         return NextResponse.json({ error: 'Session not found' }, { status: 404 });
       }
@@ -59,6 +60,7 @@ export async function PATCH(
 
   if (body.action === 'updateConfig') {
     const config = body.config ?? {};
+    // Update in-memory run if present + persist to disk
     const found = await agentChatManager.updateConfig(id, config);
     if (!found) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
