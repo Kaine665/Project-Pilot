@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Loader2, Maximize2, Minimize2, Bot, Sparkles, Plus, MessageSquare, Trash2, Settings } from 'lucide-react';
+import { Loader2, Maximize2, Minimize2, Bot, Sparkles, Plus, MessageSquare, Trash2, Settings, FileDown } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from '@/i18n/routing';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { SessionDropdown } from '@/components/session-dropdown';
 import { GuestAgentOverlay } from '@/components/guest-agent-overlay';
 import { SessionConfigPanel } from '@/components/session-config-panel';
 import { PlanViewerPanel } from '@/components/plan-viewer-panel';
+import { SessionCompressDialog } from '@/components/session-compress-dialog';
 import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
 import type { SessionConfig } from '@/types/agent-chat';
@@ -176,6 +177,10 @@ export function AgentChatPanel({
 
   // Save as knowledge dialog
   const [saveDialogContent, setSaveDialogContent] = useState<string | null>(null);
+
+  // Session compression
+  const [compressDialogOpen, setCompressDialogOpen] = useState(false);
+  const [compressDismissed, setCompressDismissed] = useState(false);
 
   // Session config
   const [sessionConfig, setSessionConfig] = useState<SessionConfig>({});
@@ -929,6 +934,7 @@ export function AgentChatPanel({
     setMessages([]);
     setSessionConfig({});
     setShowConfig(false);
+    setCompressDismissed(false);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
@@ -948,6 +954,7 @@ export function AgentChatPanel({
     setMessages([]);
     setSessionConfig({});
     setShowConfig(false);
+    setCompressDismissed(false);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
@@ -965,6 +972,13 @@ export function AgentChatPanel({
 
   const handleSaveAsKnowledge = useCallback((_messageId: string, content: string) => {
     setSaveDialogContent(content);
+  }, []);
+
+  // Compress: confirm handler
+  const handleCompressConfirm = useCallback((compressedMessages: ChatMessage[]) => {
+    setMessages(compressedMessages);
+    setCompressDialogOpen(false);
+    // TODO: 未来需要调 API 持久化压缩后的消息
   }, []);
 
   // Delete a single message from the conversation
@@ -1038,6 +1052,28 @@ export function AgentChatPanel({
   // ── Message list (shared between modes) ──
   const renderMessages = () => (
     <>
+      {/* 自动压缩提示条 */}
+      {messages.length > 20 && !compressDismissed && !isStreaming && (
+        <div className="mb-2 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs dark:border-amber-800 dark:bg-amber-950/30">
+          <FileDown className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+          <span className="flex-1 text-amber-700 dark:text-amber-400">
+            会话较长（{messages.length}条消息），建议压缩历史以延长上下文
+          </span>
+          <button
+            onClick={() => setCompressDialogOpen(true)}
+            className="rounded px-2 py-0.5 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/50"
+          >
+            压缩
+          </button>
+          <button
+            onClick={() => setCompressDismissed(true)}
+            className="rounded px-2 py-0.5 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          >
+            忽略
+          </button>
+        </div>
+      )}
+
       {messages.map((msg) => (
         <ChatBubble
           key={msg.id}
@@ -1154,6 +1190,14 @@ export function AgentChatPanel({
             onClose={() => setSaveDialogContent(null)}
           />
         )}
+
+        {/* Session compress dialog */}
+        <SessionCompressDialog
+          open={compressDialogOpen}
+          onClose={() => setCompressDialogOpen(false)}
+          messages={messages}
+          onConfirm={handleCompressConfirm}
+        />
       </div>
       {planPanel}
       </div>
@@ -1192,6 +1236,17 @@ export function AgentChatPanel({
           )}
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
+          {/* Compress history */}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-1.5 text-xs text-zinc-400 hover:text-blue-500 dark:hover:text-blue-400 disabled:opacity-30"
+            onClick={() => setCompressDialogOpen(true)}
+            disabled={isStreaming || messages.length < 6}
+            title="压缩会话历史"
+          >
+            <FileDown className="h-3 w-3" />
+          </Button>
           {/* Session config toggle */}
           <Button
             size="sm"
@@ -1255,6 +1310,26 @@ export function AgentChatPanel({
 
       {/* Messages */}
       <div ref={scrollRef} onScroll={handleChatScroll} className="flex-1 space-y-3 overflow-y-auto p-3">
+        {/* 会话过长自动提示 */}
+        {messages.length >= 20 && !compressDismissed && !isStreaming && (
+          <div className="flex items-center justify-between rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
+            <span>会话较长（{messages.length} 条消息），建议压缩历史以延长上下文</span>
+            <div className="flex items-center gap-1.5 ml-2 shrink-0">
+              <button
+                onClick={() => setCompressDialogOpen(true)}
+                className="rounded bg-amber-600 px-2 py-0.5 text-white hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-500"
+              >
+                压缩
+              </button>
+              <button
+                onClick={() => setCompressDismissed(true)}
+                className="text-amber-500 hover:text-amber-700 dark:hover:text-amber-300"
+              >
+                忽略
+              </button>
+            </div>
+          </div>
+        )}
         {messages.length === 0 && !isStreaming ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
             <Sparkles className="h-8 w-8 stroke-1" />
@@ -1317,6 +1392,14 @@ export function AgentChatPanel({
           onClose={() => setSaveDialogContent(null)}
         />
       )}
+
+      {/* Session compress dialog */}
+      <SessionCompressDialog
+        open={compressDialogOpen}
+        onClose={() => setCompressDialogOpen(false)}
+        messages={messages}
+        onConfirm={handleCompressConfirm}
+      />
     </div>
     {planPanel}
     </div>
