@@ -987,16 +987,25 @@ class OrchestratorManager {
 
           if (conflictFiles.length > 0) {
             console.warn(`[Orch] Conflict detected merging ${worker.gitBranch}: ${conflictFiles.join(', ')}`);
+            this.emitEvent(runtime, {
+              type: 'orch_error',
+              message: `合并冲突: ${worker.gitBranch} — 文件: ${conflictFiles.join(', ')}，策略: ${conflictStrategy}`,
+            });
 
-            if (conflictStrategy === 'ai-resolve' && resolverAgentId) {
-              // AI 解决冲突：启动 Resolver Agent 处理冲突文件
+            if (conflictStrategy === 'ai-resolve') {
+              // AI 解决冲突：优先用 Team 指定的 resolverAgent，否则用 Worker 自身的 agent，否则无 agent 模式
+              const effectiveResolverId = resolverAgentId || worker.agentId;
               const resolved = await this.resolveConflictsWithAI(
-                runtime, worker, conflictFiles, resolverAgentId, projectPath,
+                runtime, worker, conflictFiles, effectiveResolverId, projectPath,
               );
               if (resolved) {
                 mergedBranches.push(worker.gitBranch);
               } else {
                 console.error(`[Orch] AI conflict resolution failed for ${worker.gitBranch}`);
+                this.emitEvent(runtime, {
+                  type: 'orch_error',
+                  message: `AI 冲突解决失败: ${worker.gitBranch}`,
+                });
               }
             } else if (conflictStrategy === 'manual') {
               // 手动解决：报告冲突，跳过此分支
@@ -1056,12 +1065,13 @@ class OrchestratorManager {
   /**
    * AI 冲突解决：启动 Resolver Agent 读取冲突文件的 diff，生成合并后的内容。
    * 成功时返回 true（冲突已解决并 commit），失败时返回 false（已 abort）。
+   * resolverAgentId 为 undefined 时使用无 agent 模式。
    */
   private async resolveConflictsWithAI(
     runtime: OrchestrationRuntime,
     worker: WorkerTask,
     conflictFiles: string[],
-    resolverAgentId: string,
+    resolverAgentId: string | undefined,
     projectPath: string,
   ): Promise<boolean> {
     try {
@@ -1102,7 +1112,7 @@ ${conflictContents.join('\n\n')}
 确保解决后的代码同时保留两个分支的有效改动，不要丢失任何功能。`;
 
       // 启动 Resolver Agent（同步等待结果）
-      const agent = await loadAgentForWorker(resolverAgentId);
+      const agent = resolverAgentId ? await loadAgentForWorker(resolverAgentId) : undefined;
       const env = await buildClaudeEnv();
       const modelArgs = await buildClaudeModelArgs();
 
