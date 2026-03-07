@@ -202,16 +202,25 @@ export function AgentChatPanel({
   const initTokenRef = useRef(0);
   const doSendRef = useRef<(text: string, images?: string[]) => void>(() => {});
   const isStreamingRef = useRef(false);
-  const pendingAnswerRef = useRef<string | null>(null);
+  const pendingAnswerRef = useRef<{ answer: string; targetSessionId: string } | null>(null);
 
-  // Keep refs in sync
-  useEffect(() => {
-    sessionIdRef.current = sessionId;
-  }, [sessionId]);
+  // Sync sessionId to both state and ref atomically (avoids stale ref between renders)
+  const setSessionIdSync = useCallback((id: string | null) => {
+    setSessionId(id);
+    sessionIdRef.current = id;
+  }, []);
 
   useEffect(() => {
     isStreamingRef.current = isStreaming;
   }, [isStreaming]);
+
+  // Abort any in-flight stream when the component unmounts (e.g. agent view → session view switch)
+  useEffect(() => {
+    return () => {
+      streamAbortRef.current?.abort();
+      pendingAnswerRef.current = null;
+    };
+  }, []);
 
   // Stable streaming message object
   const streamingMessage = useMemo<ChatMessage>(() => ({
@@ -451,10 +460,10 @@ export function AgentChatPanel({
     onSessionChange?.();
 
     // Auto-send queued AskUserQuestion answer from the previous turn
-    const pendingAnswer = pendingAnswerRef.current;
+    const pending = pendingAnswerRef.current;
     pendingAnswerRef.current = null;
-    if (pendingAnswer) {
-      setTimeout(() => doSendRef.current(pendingAnswer), 300);
+    if (pending && pending.targetSessionId === sessionIdRef.current) {
+      setTimeout(() => doSendRef.current(pending.answer), 300);
     }
   }, [agent.id, projectKey, fetchSessionList, onSessionChange]);
 
@@ -617,7 +626,7 @@ export function AgentChatPanel({
     setIsStreaming(false);
     setStreamingBlocks([]);
     setErrorMsg(null);
-    setSessionId(null);
+    setSessionIdSync(null);
     setSessionTitle(hasProject ? t('chat.newSession') : '新会话');
     setSessionList([]);
     blocksRef.current = [];
@@ -632,7 +641,7 @@ export function AgentChatPanel({
       streamAbortRef.current.abort();
       streamAbortRef.current = null;
     }
-  }, [hasProject, t]);
+  }, [hasProject, t, setSessionIdSync]);
 
   // Initialize: load sessions and auto-select
   useEffect(() => {
@@ -655,16 +664,14 @@ export function AgentChatPanel({
       if (!hasProject && initialSessionId) {
         // Load the specific session requested by parent (agents page)
         const target = sessions.find(s => s.id === initialSessionId);
-        sessionIdRef.current = initialSessionId;
-        setSessionId(initialSessionId);
+        setSessionIdSync(initialSessionId);
         setSessionTitle(target?.title ?? '会话');
         await loadSessionData(initialSessionId, token);
         if (isStale()) return;
       } else if (sessions.length > 0) {
         // Auto-select latest
         const latest = sessions[0];
-        sessionIdRef.current = latest.id;
-        setSessionId(latest.id);
+        setSessionIdSync(latest.id);
         setSessionTitle(latest.title);
         await loadSessionData(latest.id, token);
         if (isStale()) return;
@@ -681,8 +688,7 @@ export function AgentChatPanel({
         const statusData = await statusRes.json();
         if (!isStale() && statusData.status === 'running') {
           const title = sessions.find(s => s.id === sid)?.title ?? '会话';
-          sessionIdRef.current = sid;
-          setSessionId(sid);
+          setSessionIdSync(sid);
           setSessionTitle(title);
           await loadSessionData(sid, token);
           if (isStale()) return;
@@ -791,7 +797,7 @@ export function AgentChatPanel({
     if (!targetSessionId) {
       targetSessionId = `agent-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const quickTitle = text.trim().slice(0, 10) || (hasProject ? t('chat.newSession') : '新会话');
-      setSessionId(targetSessionId);
+      setSessionIdSync(targetSessionId);
       setSessionTitle(quickTitle);
       // Insert into session list immediately so it appears in history
       const newItem: SessionListItem = {
@@ -835,7 +841,7 @@ export function AgentChatPanel({
       setErrorMsg(msg);
       setIsStreaming(false);
     }
-  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, chatProvider, chatModel, chatEffort, connectToStream, onSessionChange, t, sessionConfig]);
+  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, chatProvider, chatModel, chatEffort, connectToStream, onSessionChange, t, sessionConfig, setSessionIdSync]);
 
   // Keep doSendRef in sync (avoid stale closure in event listener)
   useEffect(() => {
@@ -847,12 +853,15 @@ export function AgentChatPanel({
   // once the current turn finishes (via finalizeStream).
   useEffect(() => {
     const handler = (e: Event) => {
+      // Only the visible panel should handle the answer (agents page mounts multiple hidden instances)
+      if (scrollRef.current?.offsetParent === null) return;
+
       const answer = (e as CustomEvent<{ answer: string }>).detail?.answer;
       if (!answer) return;
 
-      // If streaming is active, queue the answer for later
+      // If streaming is active, queue the answer bound to the current session
       if (isStreamingRef.current) {
-        pendingAnswerRef.current = answer;
+        pendingAnswerRef.current = { answer, targetSessionId: sessionIdRef.current! };
       } else {
         doSendRef.current(answer);
       }
@@ -940,7 +949,7 @@ export function AgentChatPanel({
       streamAbortRef.current.abort();
       streamAbortRef.current = null;
     }
-    setSessionId(null);
+    setSessionIdSync(null);
     setSessionTitle(hasProject ? t('chat.newSession') : '新会话');
     setMessages([]);
     setSessionConfig({});
@@ -949,7 +958,7 @@ export function AgentChatPanel({
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
-  }, [isStreaming, hasProject, t]);
+  }, [isStreaming, hasProject, t, setSessionIdSync]);
 
   // Switch to an existing session
   const handleSwitchSession = useCallback(async (target: SessionListItem) => {
@@ -960,7 +969,7 @@ export function AgentChatPanel({
       streamAbortRef.current.abort();
       streamAbortRef.current = null;
     }
-    setSessionId(target.id);
+    setSessionIdSync(target.id);
     setSessionTitle(target.title);
     setMessages([]);
     setSessionConfig({});
@@ -969,6 +978,8 @@ export function AgentChatPanel({
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
+    // Clear any queued answer from the previous session's AskUserQuestion
+    pendingAnswerRef.current = null;
     // Mark as read
     if (target.unreadCount) {
       setSessionList(prev => prev.map(s => s.id === target.id ? { ...s, unreadCount: 0 } : s));
@@ -979,7 +990,7 @@ export function AgentChatPanel({
       }).catch(() => {});
     }
     await loadSessionData(target.id, token);
-  }, [isStreaming, loadSessionData]);
+  }, [isStreaming, loadSessionData, setSessionIdSync]);
 
   const handleSaveAsKnowledge = useCallback((_messageId: string, content: string) => {
     setSaveDialogContent(content);
