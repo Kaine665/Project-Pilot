@@ -173,6 +173,10 @@ export function getOrchestratorSessionsPath(): string {
   return path.join(DATA_DIR, 'orchestrator-sessions.json');
 }
 
+export function getAgentTeamsPath(): string {
+  return path.join(DATA_DIR, 'agent-teams.json');
+}
+
 export function getActiveTasksPath(): string {
   return path.join(DATA_DIR, 'active-tasks.json');
 }

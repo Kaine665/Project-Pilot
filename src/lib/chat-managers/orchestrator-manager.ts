@@ -35,6 +35,7 @@ import {
 import {
   getOrchestratorSessionsPath,
   getAgentsPath,
+  getAgentTeamsPath,
   readJsonFile,
   modifyJsonFile,
 } from '@/lib/file-store';
@@ -44,6 +45,7 @@ import { migrateAgentToResources } from '@/lib/resource-migration';
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
 import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
 import type { ResourceRef, InlineTextRef } from '@/types/resource';
+import type { AgentTeam, AgentTeamsData } from '@/types/agent-team';
 import type {
   OrchestratorSession,
   OrchestratorPhase,
@@ -85,7 +87,20 @@ interface OrchestrationRuntime {
 
 // ── Prompt Builders ──
 
-function buildSplitPrompt(prompt: string): string {
+function buildSplitPrompt(prompt: string, team?: AgentTeam): string {
+  const teamSection = team ? `
+**可用团队成员：**
+${team.members.map(m => `- agentId: "${m.agentId}" | 角色: ${m.role} | 职责: ${m.responsibilities}${m.filePatterns?.length ? ` | 擅长文件: ${m.filePatterns.join(', ')}` : ''}`).join('\n')}
+
+请为每个子任务分配最合适的团队成员（在 agentId 字段中填写对应的 agentId）。
+分配时根据成员的角色、职责和擅长文件来匹配。
+尽量避免让不同成员的子任务修改同一个文件——如果必须重叠，将这些任务设为 sequence 关系。
+` : '';
+
+  const agentIdField = team
+    ? `\n      "agentId": "分配给哪个团队成员的 agentId",`
+    : '';
+
   return `你是一个任务分解专家。用户给你一个复合开发任务，你需要将它拆分成可以并行或串行执行的子任务。
 
 **规则：**
@@ -96,7 +111,7 @@ function buildSplitPrompt(prompt: string): string {
 5. 如果某个子任务必须等另一个完成后才能开始（如：先建数据库 Schema，再写 API 层），用 dependsOn 声明依赖关系
 6. dependsOn 引用的是其他任务的 branchSlug。没有依赖的任务省略该字段或传空数组
 7. 确保依赖关系不形成环（A→B→A 是非法的）
-
+${teamSection}
 **输出格式（必须是有效的 JSON）：**
 
 \`\`\`json:split-plan
@@ -108,7 +123,7 @@ function buildSplitPrompt(prompt: string): string {
       "description": "详细描述，包括要修改哪些文件、实现什么功能",
       "branchSlug": "kebab-case-branch-name",
       "estimatedComplexity": "low|medium|high",
-      "dependsOn": ["another-branch-slug"]
+      "dependsOn": ["another-branch-slug"],${agentIdField}
     }
   ],
   "expectedOutcome": "完成后的预期效果"
@@ -321,9 +336,20 @@ class OrchestratorManager {
     projectKey: string,
     projectPath: string,
     prompt: string,
+    teamId?: string,
   ): Promise<string> {
     const orchId = `orch-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const baseBranch = detectDefaultBranch(projectPath);
+
+    // 加载 Team 配置（如果指定）
+    let team: AgentTeam | undefined;
+    if (teamId) {
+      const teamsData = await readJsonFile<AgentTeamsData>(getAgentTeamsPath(), { teams: [] });
+      team = teamsData.teams.find(t => t.id === teamId && !t.archived);
+      if (!team) {
+        throw new Error(`Team not found: ${teamId}`);
+      }
+    }
 
     const session: OrchestratorSession = {
       id: orchId,
@@ -332,6 +358,7 @@ class OrchestratorManager {
       phase: 'pending',
       workers: [],
       baseBranch,
+      teamId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -347,7 +374,7 @@ class OrchestratorManager {
     await this.persistSession(session);
 
     // Start split phase (fire-and-forget, events stream to listeners)
-    this.runSplitPhase(runtime, projectPath, prompt);
+    this.runSplitPhase(runtime, projectPath, prompt, team);
 
     return orchId;
   }
@@ -454,10 +481,11 @@ class OrchestratorManager {
     runtime: OrchestrationRuntime,
     projectPath: string,
     prompt: string,
+    team?: AgentTeam,
   ): Promise<void> {
     await this.transitionPhase(runtime, 'splitting');
 
-    const splitPrompt = buildSplitPrompt(prompt);
+    const splitPrompt = buildSplitPrompt(prompt, team);
     const env = await buildClaudeEnv();
     const modelArgs = await buildClaudeModelArgs();
 

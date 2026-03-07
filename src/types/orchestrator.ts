@@ -68,6 +68,8 @@ export interface OrchestratorSession {
   workers: WorkerTask[];
   synthesisResult?: string;
   baseBranch: string;
+  /** 关联的 Agent Team ID（可选） */
+  teamId?: string;
   mergeStatus?: 'pending' | 'completed' | 'conflict';
   errorMessage?: string;
   createdAt: string;
