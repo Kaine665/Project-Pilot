@@ -34,10 +34,15 @@ import {
 } from '@/lib/security';
 import {
   getOrchestratorSessionsPath,
+  getAgentsPath,
   readJsonFile,
   modifyJsonFile,
 } from '@/lib/file-store';
 import { resourceRegistry } from '@/lib/resource-registry';
+import { resolveSystemPrompt } from '@/lib/agent-prompt-store';
+import { migrateAgentToResources } from '@/lib/resource-migration';
+import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
 import type { ResourceRef, InlineTextRef } from '@/types/resource';
 import type {
   OrchestratorSession,
@@ -48,7 +53,7 @@ import type {
   WorkerResult,
   SplitPlan,
 } from '@/types/orchestrator';
-import type { ChatSSEEvent } from '@/types';
+import type { ChatSSEEvent, Agent, AgentsData } from '@/types';
 
 // ── Constants ──
 
@@ -123,19 +128,36 @@ ${prompt}
 请分析并输出 JSON 格式的拆分计划。`;
 }
 
-async function buildWorkerPrompt(
+/**
+ * 加载 Agent 对象（合并内置默认值）。找不到时返回 undefined。
+ */
+async function loadAgentForWorker(agentId: string): Promise<Agent | undefined> {
+  const data = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
+  const agent = data.agents.find(a => a.id === agentId && !a.archived);
+  if (!agent) return undefined;
+
+  // 合并内置 Agent 的默认字段
+  const defaultAgent = DEFAULT_AGENTS.find(a => a.id === agentId);
+  if (defaultAgent) {
+    for (const key of Object.keys(defaultAgent) as Array<keyof Agent>) {
+      if (agent[key] === undefined && defaultAgent[key] !== undefined) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (agent as any)[key] = defaultAgent[key];
+      }
+    }
+  }
+  return agent;
+}
+
+/**
+ * Worker 子任务指令片段（追加在 Agent prompt 之后，或作为通用 Worker 的完整 prompt）。
+ */
+function buildWorkerTaskInstructions(
   originalTask: string,
   subTaskTitle: string,
   subTaskDescription: string,
-  projectKey: string,
-): Promise<string> {
-  // Worker 角色定义 + 任务指令（替代 system-prompt loader）
-  const workerSystemPrompt: InlineTextRef = {
-    type: 'inline-text',
-    id: '_worker-system',
-    priority: 0,
-    label: 'Worker 系统提示词',
-    inlineContent: `你是一个开发 agent，正在独立 git worktree 中处理一个子任务。
+): string {
+  return `你正在独立 git worktree 中处理一个编排子任务。
 
 **原始任务背景：**
 ${originalTask}
@@ -162,7 +184,58 @@ ${originalTask}
 }
 \`\`\`
 
-现在开始执行你的子任务。`,
+现在开始执行你的子任务。`;
+}
+
+/**
+ * 构建 Worker prompt。
+ *
+ * 有 Agent 绑定时：使用 Agent 的 systemPrompt + defaultResources，追加任务指令。
+ * 无 Agent 绑定时：使用通用 Worker prompt + 基础资源注入（向后兼容）。
+ */
+async function buildWorkerPrompt(
+  originalTask: string,
+  subTaskTitle: string,
+  subTaskDescription: string,
+  projectKey: string,
+  agent?: Agent,
+): Promise<string> {
+  const taskInstructions = buildWorkerTaskInstructions(originalTask, subTaskTitle, subTaskDescription);
+
+  if (agent) {
+    // ── Agent 绑定模式：继承 Agent 的完整资源链 ──
+    const baseRefs = agent.defaultResources ?? migrateAgentToResources(agent);
+    const refs: ResourceRef[] = [...baseRefs];
+
+    // 追加任务指令（priority 95，排在所有 Agent 资源之后）
+    const taskRef: InlineTextRef = {
+      type: 'inline-text',
+      id: '_worker-task',
+      priority: 95,
+      label: '编排子任务指令',
+      inlineContent: taskInstructions,
+    };
+    refs.push(taskRef);
+
+    // 解析 Agent 的 systemPrompt（文件优先）
+    const systemPromptText = await resolveSystemPrompt(agent.id, agent.systemPrompt)
+      || `你是一个名为「${agent.name}」的 AI 助手。${agent.description || ''}`;
+
+    const ctx: SystemPromptLoaderContext = {
+      agentId: agent.id,
+      systemPromptText,
+    };
+    const resolved = await resourceRegistry.resolveAll(refs, ctx);
+    return resourceRegistry.formatAsPrompt(resolved);
+  }
+
+  // ── 通用模式（无 Agent 绑定，向后兼容） ──
+  const workerSystemPrompt: InlineTextRef = {
+    type: 'inline-text',
+    id: '_worker-system',
+    priority: 0,
+    label: 'Worker 系统提示词',
+    inlineContent: `你是一个开发 agent。\n\n${taskInstructions}`,
   };
 
   const refs: ResourceRef[] = [
@@ -479,6 +552,7 @@ class OrchestratorManager {
           worktreePath,
           status: 'pending',
           dependsOn: [], // 第二步填充
+          agentId: task.agentId,
           eventCount: 0,
         };
 
@@ -532,11 +606,15 @@ class OrchestratorManager {
     runtime.workers.set(worker.id, workerRuntime);
     this.emitEvent(runtime, { type: 'worker_started', workerId: worker.id, title: worker.title });
 
+    // 加载绑定的 Agent（如果有 agentId）
+    const agent = worker.agentId ? await loadAgentForWorker(worker.agentId) : undefined;
+
     const workerPrompt = await buildWorkerPrompt(
       runtime.session.originalPrompt,
       worker.title,
       worker.description,
       runtime.session.projectKey,
+      agent,
     );
 
     const env = await buildClaudeEnv();
