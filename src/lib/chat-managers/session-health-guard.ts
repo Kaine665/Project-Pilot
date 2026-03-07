@@ -145,7 +145,7 @@ function callClaudeLightweight(prompt: string): Promise<string> {
     ], {
       cwd: process.cwd(),
       shell: false,
-      env: { ...env, CLAUDECODE: '' },
+      env,
     });
 
     const lineBuffer = new LineBuffer();

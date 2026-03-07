@@ -597,7 +597,7 @@ class OrchestratorManager {
     ], {
       cwd: projectPath,
       shell: true,
-      env: { ...env, CLAUDECODE: '' },
+      env,
     });
 
     runtime.splitProcess = claude;
@@ -767,7 +767,7 @@ class OrchestratorManager {
     ], {
       cwd: worker.worktreePath,
       shell: true,
-      env: { ...env, CLAUDECODE: '' },
+      env,
     });
 
     workerRuntime.process = claude;
@@ -903,7 +903,7 @@ class OrchestratorManager {
     ], {
       cwd: anyCwd,
       shell: true,
-      env: { ...env, CLAUDECODE: '' },
+      env,
     });
 
     runtime.synthesizeProcess = claude;
@@ -1117,7 +1117,7 @@ ${conflictContents.join('\n\n')}
         ], {
           cwd: projectPath,
           shell: true,
-          env: { ...env, CLAUDECODE: '' },
+          env,
         });
 
         let fullText = '';
