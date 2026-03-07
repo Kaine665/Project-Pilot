@@ -30,6 +30,7 @@ import {
   safeGitCheckout,
   safeGitMerge,
   safeGitDeleteBranch,
+  safeGitExec,
   detectDefaultBranch,
 } from '@/lib/security';
 import {
@@ -291,6 +292,33 @@ ${summaries}
 3. 下一步建议（如果有）
 
 请用中文输出总结报告。`;
+}
+
+// ── Conflict Detection ──
+
+/**
+ * 试探性合并检测冲突。返回冲突文件列表（空 = 无冲突）。
+ * 检测后自动 abort，不影响工作目录状态。
+ */
+function tryMergeDetectConflicts(branch: string, workingDir: string): string[] {
+  try {
+    safeGitExec(['merge', '--no-commit', '--no-ff', branch], { cwd: workingDir });
+    // 无冲突，abort 试探性合并
+    safeGitExec(['merge', '--abort'], { cwd: workingDir });
+    return [];
+  } catch {
+    // 合并失败，检查冲突文件
+    try {
+      const output = safeGitExec(['diff', '--name-only', '--diff-filter=U'], { cwd: workingDir });
+      const files = output.trim().split('\n').filter(Boolean);
+      // abort 试探性合并
+      try { safeGitExec(['merge', '--abort'], { cwd: workingDir }); } catch { /* ignore */ }
+      return files;
+    } catch {
+      try { safeGitExec(['merge', '--abort'], { cwd: workingDir }); } catch { /* ignore */ }
+      return ['(unknown files)'];
+    }
+  }
 }
 
 // ── Result Extractors ──
@@ -844,6 +872,18 @@ class OrchestratorManager {
   ): Promise<void> {
     await this.transitionPhase(runtime, 'merging');
 
+    // 加载 Team 冲突策略
+    let conflictStrategy: 'fail' | 'ai-resolve' | 'manual' = 'fail';
+    let resolverAgentId: string | undefined;
+    if (runtime.session.teamId) {
+      const teamsData = await readJsonFile<AgentTeamsData>(getAgentTeamsPath(), { teams: [] });
+      const team = teamsData.teams.find(t => t.id === runtime.session.teamId);
+      if (team?.conflictPolicy) {
+        conflictStrategy = team.conflictPolicy.strategy;
+        resolverAgentId = team.conflictPolicy.resolverAgentId;
+      }
+    }
+
     const mergedBranches: string[] = [];
 
     try {
@@ -860,10 +900,39 @@ class OrchestratorManager {
             // Worktree may already be removed
           }
 
-          safeGitMerge(worker.gitBranch, projectPath, `merge: ${worker.title}`);
-          mergedBranches.push(worker.gitBranch);
+          // 试探性合并检测冲突
+          const conflictFiles = tryMergeDetectConflicts(worker.gitBranch, projectPath);
 
-          // Clean up branch after successful merge
+          if (conflictFiles.length > 0) {
+            console.warn(`[Orch] Conflict detected merging ${worker.gitBranch}: ${conflictFiles.join(', ')}`);
+
+            if (conflictStrategy === 'ai-resolve' && resolverAgentId) {
+              // AI 解决冲突：启动 Resolver Agent 处理冲突文件
+              const resolved = await this.resolveConflictsWithAI(
+                runtime, worker, conflictFiles, resolverAgentId, projectPath,
+              );
+              if (resolved) {
+                mergedBranches.push(worker.gitBranch);
+              } else {
+                console.error(`[Orch] AI conflict resolution failed for ${worker.gitBranch}`);
+              }
+            } else if (conflictStrategy === 'manual') {
+              // 手动解决：报告冲突，跳过此分支
+              this.emitEvent(runtime, {
+                type: 'orch_error',
+                message: `合并冲突（需手动解决）: ${worker.gitBranch} — 冲突文件: ${conflictFiles.join(', ')}`,
+              });
+            } else {
+              // fail 策略：报告冲突并跳过
+              console.error(`[Orch] Skipping conflicted branch ${worker.gitBranch}`);
+            }
+          } else {
+            // 无冲突，正常合并
+            safeGitMerge(worker.gitBranch, projectPath, `merge: ${worker.title}`);
+            mergedBranches.push(worker.gitBranch);
+          }
+
+          // Clean up branch after merge attempt
           try {
             safeGitDeleteBranch(worker.gitBranch, projectPath);
           } catch {
@@ -872,7 +941,6 @@ class OrchestratorManager {
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           console.error(`[Orch] Failed to merge ${worker.gitBranch}: ${msg}`);
-          // Don't fail the whole merge — continue with other branches
         }
       }
 
@@ -900,6 +968,140 @@ class OrchestratorManager {
       runtime.session.mergeStatus = 'conflict';
       await this.transitionPhase(runtime, 'failed', `Merge failed: ${msg}`);
       this.emitEvent(runtime, { type: 'orch_done' });
+    }
+  }
+
+  /**
+   * AI 冲突解决：启动 Resolver Agent 读取冲突文件的 diff，生成合并后的内容。
+   * 成功时返回 true（冲突已解决并 commit），失败时返回 false（已 abort）。
+   */
+  private async resolveConflictsWithAI(
+    runtime: OrchestrationRuntime,
+    worker: WorkerTask,
+    conflictFiles: string[],
+    resolverAgentId: string,
+    projectPath: string,
+  ): Promise<boolean> {
+    try {
+      // 尝试合并（保留冲突标记）
+      try {
+        safeGitExec(['merge', worker.gitBranch, '--no-ff', '--no-commit'], { cwd: projectPath });
+      } catch {
+        // merge 会返回非零退出码，这是预期的
+      }
+
+      // 读取冲突文件内容
+      const conflictContents: string[] = [];
+      for (const file of conflictFiles) {
+        try {
+          const content = safeGitExec(['diff', file], { cwd: projectPath });
+          conflictContents.push(`### ${file}\n\`\`\`diff\n${content}\n\`\`\``);
+        } catch {
+          conflictContents.push(`### ${file}\n(无法读取 diff)`);
+        }
+      }
+
+      // 构建 Resolver prompt
+      const resolverPrompt = `你是一个代码合并冲突解决专家。以下文件在合并两个分支时出现了冲突。
+
+**合并的分支：** ${worker.gitBranch}
+**任务描述：** ${worker.title} — ${worker.description}
+
+**冲突文件：**
+
+${conflictContents.join('\n\n')}
+
+请为每个冲突文件输出解决后的完整文件内容。使用以下格式：
+
+\`\`\`resolved:文件路径
+完整的文件内容
+\`\`\`
+
+确保解决后的代码同时保留两个分支的有效改动，不要丢失任何功能。`;
+
+      // 启动 Resolver Agent（同步等待结果）
+      const agent = await loadAgentForWorker(resolverAgentId);
+      const env = await buildClaudeEnv();
+      const modelArgs = await buildClaudeModelArgs();
+
+      // 预构建 prompt（避免在 Promise 回调中 await）
+      const finalPrompt = agent
+        ? await buildWorkerPrompt(resolverPrompt, 'Conflict Resolution', resolverPrompt, runtime.session.projectKey, agent)
+        : resolverPrompt;
+
+      const resolverResult = await new Promise<string>((resolve, reject) => {
+        const claude = spawnClaude([
+          '-p',
+          '--output-format', 'stream-json',
+          ...modelArgs,
+        ], {
+          cwd: projectPath,
+          shell: true,
+          env: { ...env, CLAUDECODE: '' },
+        });
+
+        let fullText = '';
+        const lineBuffer = new LineBuffer();
+        const streamParser = new StreamParser();
+
+        claude.stdin?.write(finalPrompt);
+        claude.stdin?.end();
+
+        claude.stdout?.on('data', (chunk: Buffer) => {
+          for (const line of lineBuffer.feed(chunk.toString('utf-8'))) {
+            for (const event of streamParser.parse(line)) {
+              if (event.type === 'text_delta') fullText += event.text;
+            }
+          }
+        });
+
+        claude.on('close', (code) => {
+          const remaining = lineBuffer.flush();
+          if (remaining) {
+            for (const event of streamParser.parse(remaining)) {
+              if (event.type === 'text_delta') fullText += event.text;
+            }
+          }
+          if (code === 0) resolve(fullText);
+          else reject(new Error(`Resolver exited with code ${code}`));
+        });
+        claude.on('error', reject);
+      });
+
+      // 解析 resolved 文件并写入
+      const resolvedRegex = /```resolved:(.+?)\n([\s\S]*?)```/g;
+      let match: RegExpExecArray | null;
+      let filesResolved = 0;
+
+      while ((match = resolvedRegex.exec(resolverResult)) !== null) {
+        const filePath = match[1].trim();
+        const content = match[2];
+        try {
+          const fs = await import('fs/promises');
+          const fullPath = path.join(projectPath, filePath);
+          await fs.writeFile(fullPath, content, 'utf-8');
+          safeGitExec(['add', filePath], { cwd: projectPath });
+          filesResolved++;
+        } catch (writeErr) {
+          console.error(`[Orch] Failed to write resolved file ${filePath}:`, writeErr);
+        }
+      }
+
+      if (filesResolved > 0) {
+        // 提交合并
+        safeGitExec(['commit', '--no-edit', '-m', `merge: ${worker.title} (AI conflict resolved)`], { cwd: projectPath });
+        return true;
+      } else {
+        // 没有成功解析出任何文件，abort
+        safeGitExec(['merge', '--abort'], { cwd: projectPath });
+        return false;
+      }
+    } catch (err) {
+      console.error(`[Orch] AI conflict resolution error:`, err);
+      try {
+        safeGitExec(['merge', '--abort'], { cwd: projectPath });
+      } catch { /* ignore */ }
+      return false;
     }
   }
 
