@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Play, Users, Zap, Clock, ChevronRight } from 'lucide-react';
+import { Play, Users, Zap, Clock, ChevronRight, FolderPlus, Folder } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useProject } from '@/components/project-context';
 import { TeamManager } from '@/components/orchestrator/team-manager';
@@ -21,6 +21,8 @@ export default function OrchestratorPage() {
   const [launching, setLaunching] = useState(false);
   const [activeOrchId, setActiveOrchId] = useState<string | null>(null);
   const [history, setHistory] = useState<OrchestratorSession[]>([]);
+  const [createMode, setCreateMode] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
 
   // 加载 teams
   const fetchTeams = useCallback(async () => {
@@ -50,22 +52,30 @@ export default function OrchestratorPage() {
 
   // 发起编排
   const handleLaunch = async () => {
-    if (!activeKey || !prompt.trim()) return;
+    if (!prompt.trim()) return;
+    if (!createMode && !activeKey) return;
+    if (createMode && !newProjectName.trim()) return;
     setLaunching(true);
     try {
+      const payload: Record<string, unknown> = {
+        prompt: prompt.trim(),
+        ...(selectedTeamId ? { teamId: selectedTeamId } : {}),
+      };
+      if (createMode) {
+        payload.newProject = { name: newProjectName.trim() };
+      } else {
+        payload.projectKey = activeKey;
+      }
       const res = await fetch('/api/orchestrator', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectKey: activeKey,
-          prompt: prompt.trim(),
-          ...(selectedTeamId ? { teamId: selectedTeamId } : {}),
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (data.orchestrationId) {
         setActiveOrchId(data.orchestrationId);
         setPrompt('');
+        setNewProjectName('');
         fetchHistory();
       }
     } catch { /* ignore */ } finally {
@@ -78,15 +88,6 @@ export default function OrchestratorPage() {
     if (!activeOrchId) return null;
     return history.find(s => s.id === activeOrchId) ?? null;
   }, [activeOrchId, history]);
-
-  // 没有选择项目
-  if (!activeKey) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-zinc-400">
-        {t('noProject')}
-      </div>
-    );
-  }
 
   return (
     <div className="flex h-full flex-col">
@@ -118,6 +119,48 @@ export default function OrchestratorPage() {
               <div className="p-4 border-b border-zinc-100 dark:border-zinc-800 space-y-3">
                 <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('launchOrch')}</h3>
 
+                {/* 项目模式切换 */}
+                <div className="flex rounded-md border border-zinc-300 dark:border-zinc-600 text-xs overflow-hidden">
+                  <button
+                    onClick={() => setCreateMode(false)}
+                    className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 transition-colors ${
+                      !createMode
+                        ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                        : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                    }`}
+                  >
+                    <Folder className="h-3 w-3" />
+                    {t('useExistingProject')}
+                  </button>
+                  <button
+                    onClick={() => setCreateMode(true)}
+                    className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 transition-colors ${
+                      createMode
+                        ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                        : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                    }`}
+                  >
+                    <FolderPlus className="h-3 w-3" />
+                    {t('createNewProject')}
+                  </button>
+                </div>
+
+                {/* 创建新项目时显示名称输入 */}
+                {createMode && (
+                  <input
+                    type="text"
+                    value={newProjectName}
+                    onChange={e => setNewProjectName(e.target.value)}
+                    placeholder={t('newProjectNamePlaceholder')}
+                    className="w-full rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:focus:border-zinc-400"
+                  />
+                )}
+
+                {/* 未选择已有项目时的提示 */}
+                {!createMode && !activeKey && (
+                  <p className="text-xs text-amber-500">{t('noProject')}</p>
+                )}
+
                 {/* Team 选择 */}
                 <select
                   value={selectedTeamId}
@@ -141,7 +184,7 @@ export default function OrchestratorPage() {
 
                 <button
                   onClick={handleLaunch}
-                  disabled={launching || !prompt.trim()}
+                  disabled={launching || !prompt.trim() || (createMode ? !newProjectName.trim() : !activeKey)}
                   className="flex w-full items-center justify-center gap-1.5 rounded-md bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
                 >
                   <Play className="h-4 w-4" />
