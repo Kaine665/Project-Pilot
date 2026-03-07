@@ -1128,7 +1128,8 @@ export function AgentChatPanel({
         <ChatBubble
           key={msg.id}
           message={msg}
-          showActions={!isStreaming}
+          showActions
+          isStreaming={isStreaming}
           onSaveAsKnowledge={handleSaveAsKnowledge}
           onDelete={handleDeleteMessage}
           onRegenerate={handleRegenerate}
