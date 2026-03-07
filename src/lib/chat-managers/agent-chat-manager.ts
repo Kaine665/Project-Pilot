@@ -717,6 +717,48 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     );
   }
 
+  /**
+   * Branch a session: copy messages up to (and including) the given index
+   * into a new session. Returns the new session object.
+   */
+  async branchSession(
+    sourceSessionId: string,
+    branchAtIndex: number,
+  ): Promise<AgentChatSession> {
+    const source = await this.loadSession(sourceSessionId);
+    if (!source) throw new Error('Source session not found');
+
+    if (branchAtIndex < 0 || branchAtIndex >= source.messages.length) {
+      throw new Error('Message index out of range');
+    }
+
+    const branchedMessages = source.messages.slice(0, branchAtIndex + 1);
+    const now = new Date().toISOString();
+    const newId = generateSessionId();
+    const newSession: AgentChatSession = {
+      id: newId,
+      agentId: source.agentId,
+      projectKey: source.projectKey,
+      title: `🌿 ${source.title}`,
+      messages: branchedMessages,
+      createdAt: now,
+      updatedAt: now,
+      config: source.config,
+      unreadCount: 0,
+    };
+
+    await modifyJsonFile<AgentChatSessionsData>(
+      getAgentChatSessionsPath(),
+      DEFAULT_SESSIONS_DATA,
+      (data) => {
+        data.sessions.push(newSession);
+        return data;
+      },
+    );
+
+    return newSession;
+  }
+
   private async persistSession(run: AgentChatRun): Promise<void> {
     const now = new Date().toISOString();
     const session: AgentChatSession = {

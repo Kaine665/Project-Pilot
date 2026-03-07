@@ -1009,6 +1009,33 @@ export function AgentChatPanel({
     setMessages(prev => prev.filter(m => m.id !== messageId));
   }, []);
 
+  // Branch: create a new session from this message and switch to it
+  const handleBranch = useCallback(async (messageId: string) => {
+    if (isStreaming || !sessionId) return;
+    // messageId is "restored-{index}" or "msg-{timestamp}-{random}" — extract index from messages array
+    const msgIndex = messages.findIndex(m => m.id === messageId);
+    if (msgIndex < 0) return;
+    try {
+      const res = await fetch('/api/agent-chat/sessions/branch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceSessionId: sessionId, branchAtIndex: msgIndex }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const newItem: SessionListItem = {
+        id: data.sessionId,
+        title: data.title,
+        updatedAt: new Date().toISOString(),
+        unreadCount: 0,
+      };
+      setSessionList(prev => [newItem, ...prev]);
+      handleSwitchSession(newItem);
+    } catch {
+      // ignore
+    }
+  }, [isStreaming, sessionId, messages, handleSwitchSession]);
+
   // Regenerate: remove the last assistant message and resend the last user message
   const handleRegenerate = useCallback(() => {
     if (isStreaming) return;
@@ -1105,6 +1132,7 @@ export function AgentChatPanel({
           onSaveAsKnowledge={handleSaveAsKnowledge}
           onDelete={handleDeleteMessage}
           onRegenerate={handleRegenerate}
+          onBranch={handleBranch}
           isLastAssistant={msg.id === lastAssistantId}
           onRetry={handleRetry}
           hasSendError={!!errorMsg && msg.role === 'user' && msg.id === messages[messages.length - 1]?.id}
