@@ -878,9 +878,11 @@ export function AgentChatPanel({
   }, []);
 
   // Listen for toggle-session-compress event (from parent page header)
-  // Only respond if this panel is visible (agents page mounts multiple hidden instances)
+  // Only respond if sessionId matches (prevents butler panel from also opening)
   useEffect(() => {
-    const handler = () => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.sessionId && detail.sessionId !== sessionIdRef.current) return;
       if (scrollRef.current?.offsetParent === null) return;
       if (messages.length >= 6 && !isStreaming) setCompressDialogOpen(true);
     };
