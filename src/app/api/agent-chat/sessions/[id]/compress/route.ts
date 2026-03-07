@@ -4,7 +4,7 @@ import {
   modifyJsonFile,
   readJsonFile,
 } from '@/lib/file-store';
-import { execClaude } from '@/lib/claude-cli';
+import { spawnClaude } from '@/lib/claude-cli';
 import type { AgentChatSession, AgentChatSessionsData } from '@/types/agent-chat';
 
 const DEFAULT_SESSIONS_DATA: AgentChatSessionsData = { sessions: [] };
@@ -86,12 +86,35 @@ ${messagesToCompress.map(m => `[${m.role}]: ${m.content}`).join('\n\n')}
 请直接输出摘要内容，不要加任何前缀或解释。摘要应该是第三人称叙述，概括对话的要点。`;
 
   try {
-    const { stdout } = await execClaude(
-      ['--print', '-p', prompt],
-      { timeout: 30000 },
-    );
+    // 用 stdin 传 prompt，避免 Windows 命令行长度限制
+    const summary = await new Promise<string>((resolve, reject) => {
+      const child = spawnClaude(['--print', '-p', '-'], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
 
-    const summary = stdout.trim();
+      let stdout = '';
+      let stderr = '';
+      const timer = setTimeout(() => {
+        child.kill();
+        reject(new Error('AI 摘要生成超时'));
+      }, 60000);
+
+      child.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
+      child.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
+      child.on('error', (err) => { clearTimeout(timer); reject(err); });
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        if (code !== 0) {
+          reject(new Error(`claude exited ${code}: ${stderr}`));
+        } else {
+          resolve(stdout.trim());
+        }
+      });
+
+      child.stdin?.write(prompt);
+      child.stdin?.end();
+    });
+
     if (!summary) {
       return NextResponse.json(
         { error: 'AI 返回了空摘要' },
