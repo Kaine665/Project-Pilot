@@ -23,6 +23,8 @@ export interface SplitPlan {
     estimatedComplexity?: 'low' | 'medium' | 'high';
     /** 依赖的其他任务的 branchSlug 列表。为空或省略表示无依赖，可立即执行 */
     dependsOn?: string[];
+    /** AI 分配的 Agent ID（来自 Team 配置），用于 Worker-Agent 绑定 */
+    agentId?: string;
   }>;
   expectedOutcome: string;
 }
@@ -39,6 +41,8 @@ export interface WorkerTask {
   status: 'pending' | 'running' | 'completed' | 'failed' | 'stopped';
   /** 依赖的其他 worker 的 ID 列表（由 spawn 阶段从 SplitPlan.dependsOn 映射） */
   dependsOn: string[];
+  /** 绑定的 Agent ID，Worker 将继承该 Agent 的 prompt 和资源链 */
+  agentId?: string;
   claudeSessionId?: string;
   startedAt?: string;
   completedAt?: string;
