@@ -21,6 +21,8 @@ export interface SplitPlan {
     description: string;
     branchSlug: string;
     estimatedComplexity?: 'low' | 'medium' | 'high';
+    /** 依赖的其他任务的 branchSlug 列表。为空或省略表示无依赖，可立即执行 */
+    dependsOn?: string[];
   }>;
   expectedOutcome: string;
 }
@@ -35,6 +37,8 @@ export interface WorkerTask {
   gitBranch: string;
   worktreePath: string;
   status: 'pending' | 'running' | 'completed' | 'failed' | 'stopped';
+  /** 依赖的其他 worker 的 ID 列表（由 spawn 阶段从 SplitPlan.dependsOn 映射） */
+  dependsOn: string[];
   claudeSessionId?: string;
   startedAt?: string;
   completedAt?: string;

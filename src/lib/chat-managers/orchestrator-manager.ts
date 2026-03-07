@@ -79,30 +79,41 @@ interface OrchestrationRuntime {
 // ── Prompt Builders ──
 
 function buildSplitPrompt(prompt: string): string {
-  return `你是一个任务分解专家。用户给你一个复合开发任务，你需要将它拆分成可以并行执行的子任务。
+  return `你是一个任务分解专家。用户给你一个复合开发任务，你需要将它拆分成可以并行或串行执行的子任务。
 
 **规则：**
-1. 每个子任务应该是独立的，可以在独立的 git 分支上完成
-2. 子任务之间不应有代码层面的直接依赖（如修改同一个文件）
+1. 每个子任务应该可以在独立的 git 分支上完成
+2. 子任务之间不应修改同一个文件（有依赖关系的除外——后执行的任务可以基于先完成任务的结果继续）
 3. 每个子任务应该足够具体，一个 AI agent 可以独立完成
 4. 生成 2-5 个子任务
+5. 如果某个子任务必须等另一个完成后才能开始（如：先建数据库 Schema，再写 API 层），用 dependsOn 声明依赖关系
+6. dependsOn 引用的是其他任务的 branchSlug。没有依赖的任务省略该字段或传空数组
+7. 确保依赖关系不形成环（A→B→A 是非法的）
 
 **输出格式（必须是有效的 JSON）：**
 
 \`\`\`json:split-plan
 {
-  "analysis": "对任务的整体分析",
+  "analysis": "对任务的整体分析，包括任务间的依赖关系",
   "tasks": [
     {
       "title": "子任务标题",
       "description": "详细描述，包括要修改哪些文件、实现什么功能",
       "branchSlug": "kebab-case-branch-name",
-      "estimatedComplexity": "low|medium|high"
+      "estimatedComplexity": "low|medium|high",
+      "dependsOn": ["another-branch-slug"]
     }
   ],
   "expectedOutcome": "完成后的预期效果"
 }
 \`\`\`
+
+**依赖关系示例：**
+- 任务 A（branchSlug: "db-schema"）无依赖 → dependsOn 省略
+- 任务 B（branchSlug: "api-layer"）依赖 A → dependsOn: ["db-schema"]
+- 任务 C（branchSlug: "auth-middleware"）无依赖 → dependsOn 省略
+- 任务 D（branchSlug: "frontend"）依赖 B 和 C → dependsOn: ["api-layer", "auth-middleware"]
+执行顺序：A 和 C 并行 → B 等 A 完成后启动 → D 等 B 和 C 都完成后启动
 
 **用户任务：**
 ${prompt}
@@ -424,6 +435,9 @@ class OrchestratorManager {
     const plan = runtime.session.splitPlan!;
     const orchShort = runtime.session.id.slice(-6);
 
+    // 第一步：创建所有 worktree，建立 branchSlug → workerId 映射
+    const slugToWorkerId = new Map<string, string>();
+
     for (const task of plan.tasks) {
       const workerId = `worker-${Date.now()}-${Math.random().toString(36).slice(2, 4)}`;
       const branch = `task/orch-${orchShort}-${task.branchSlug}`;
@@ -434,6 +448,8 @@ class OrchestratorManager {
         validateWorktreePath(worktreePath, projectPath);
         safeGitWorktreeAdd(worktreePath, branch, runtime.session.baseBranch, projectPath);
 
+        slugToWorkerId.set(task.branchSlug, workerId);
+
         const worker: WorkerTask = {
           id: workerId,
           orchestrationId: runtime.session.id,
@@ -442,6 +458,7 @@ class OrchestratorManager {
           gitBranch: branch,
           worktreePath,
           status: 'pending',
+          dependsOn: [], // 第二步填充
           eventCount: 0,
         };
 
@@ -458,14 +475,23 @@ class OrchestratorManager {
       return;
     }
 
+    // 第二步：将 SplitPlan 中的 branchSlug 依赖映射为 workerId 依赖
+    for (const task of plan.tasks) {
+      const workerId = slugToWorkerId.get(task.branchSlug);
+      if (!workerId) continue;
+      const worker = runtime.session.workers.find(w => w.id === workerId);
+      if (!worker) continue;
+
+      worker.dependsOn = (task.dependsOn ?? [])
+        .map(slug => slugToWorkerId.get(slug))
+        .filter((id): id is string => id != null);
+    }
+
     await this.persistSession(runtime.session);
 
-    // Transition to executing and start all workers
+    // 进入执行阶段，只启动无依赖（入度为 0）的 worker
     await this.transitionPhase(runtime, 'executing');
-
-    for (const worker of runtime.session.workers) {
-      this.startWorker(runtime, worker);
-    }
+    this.scheduleReadyWorkers(runtime);
   }
 
   private async startWorker(
@@ -583,12 +609,36 @@ class OrchestratorManager {
     });
   }
 
+  /**
+   * DAG 拓扑调度：找出所有依赖已满足且尚未启动的 worker，立即启动它们。
+   * 在初始执行和每个 worker 完成/失败后调用。
+   */
+  private scheduleReadyWorkers(runtime: OrchestrationRuntime): void {
+    const completedIds = new Set(
+      runtime.session.workers
+        .filter(w => w.status === 'completed' || w.status === 'failed' || w.status === 'stopped')
+        .map(w => w.id),
+    );
+
+    for (const worker of runtime.session.workers) {
+      if (worker.status !== 'pending') continue;
+
+      const depsReady = worker.dependsOn.every(depId => completedIds.has(depId));
+      if (depsReady) {
+        this.startWorker(runtime, worker);
+      }
+    }
+  }
+
   private checkAllWorkersComplete(runtime: OrchestrationRuntime): void {
     const allDone = runtime.session.workers.every(
       w => w.status === 'completed' || w.status === 'failed' || w.status === 'stopped',
     );
     if (allDone) {
       this.runSynthesizePhase(runtime);
+    } else {
+      // 某个 worker 完成了，检查是否有下游 worker 可以启动
+      this.scheduleReadyWorkers(runtime);
     }
   }
 
