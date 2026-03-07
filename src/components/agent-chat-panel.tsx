@@ -996,11 +996,10 @@ export function AgentChatPanel({
     setSaveDialogContent(content);
   }, []);
 
-  // Compress: confirm handler
+  // Compress: confirm handler (持久化已由 dialog 内部完成)
   const handleCompressConfirm = useCallback((compressedMessages: ChatMessage[]) => {
     setMessages(compressedMessages);
     setCompressDialogOpen(false);
-    // TODO: 未来需要调 API 持久化压缩后的消息
   }, []);
 
   // Delete a single message from the conversation
@@ -1217,6 +1216,7 @@ export function AgentChatPanel({
         <SessionCompressDialog
           open={compressDialogOpen}
           onClose={() => setCompressDialogOpen(false)}
+          sessionId={sessionId}
           messages={messages}
           onConfirm={handleCompressConfirm}
         />
@@ -1419,6 +1419,7 @@ export function AgentChatPanel({
       <SessionCompressDialog
         open={compressDialogOpen}
         onClose={() => setCompressDialogOpen(false)}
+        sessionId={sessionId}
         messages={messages}
         onConfirm={handleCompressConfirm}
       />
