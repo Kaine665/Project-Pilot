@@ -41,7 +41,7 @@ export const AskUserQuestionCard = memo(function AskUserQuestionCard({ toolCall 
   let questions: QuestionItem[] = [];
   try {
     const input = JSON.parse(toolCall.input);
-    questions = input.questions || [];
+    questions = Array.isArray(input.questions) ? input.questions : [];
   } catch {
     return null;
   }
