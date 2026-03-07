@@ -273,7 +273,7 @@ export const SessionCompressDialog = memo(function SessionCompressDialog({
                       className={`rounded-md border px-3 py-2 text-sm transition-colors ${
                         isKept
                           ? 'border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/30'
-                          : 'border-zinc-100 bg-zinc-50/50 text-zinc-400 line-through dark:border-zinc-800 dark:bg-zinc-800/30 dark:text-zinc-500'
+                          : 'border-zinc-100 bg-zinc-50/50 text-zinc-400 dark:border-zinc-800 dark:bg-zinc-800/30 dark:text-zinc-500'
                       }`}
                     >
                       <div className="flex items-center gap-1.5 mb-0.5">
