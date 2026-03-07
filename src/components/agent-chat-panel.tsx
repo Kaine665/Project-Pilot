@@ -1011,7 +1011,7 @@ export function AgentChatPanel({
 
   // Branch: create a new session from this message and switch to it
   const handleBranch = useCallback(async (messageId: string) => {
-    if (isStreaming || !sessionId) return;
+    if (!sessionId) return;
     // messageId is "restored-{index}" or "msg-{timestamp}-{random}" — extract index from messages array
     const msgIndex = messages.findIndex(m => m.id === messageId);
     if (msgIndex < 0) return;

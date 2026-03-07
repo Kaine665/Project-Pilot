@@ -271,12 +271,11 @@ export const ChatBubble = memo(function ChatBubble({
               </button>
             )}
 
-            {/* Branch — disabled during streaming */}
+            {/* Branch — always available (safe during streaming) */}
             {onBranch && (
               <button
-                onClick={(e) => { e.stopPropagation(); if (!isStreaming) onBranch(message.id); }}
-                disabled={isStreaming}
-                className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400 disabled:opacity-40 disabled:pointer-events-none"
+                onClick={(e) => { e.stopPropagation(); onBranch(message.id); }}
+                className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
                 title={t('chat.createBranchFrom')}
               >
                 <GitBranch className="h-2.5 w-2.5" />
