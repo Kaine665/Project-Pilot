@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Play, Users, Zap, Clock, ChevronRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useProject } from '@/components/project-context';
@@ -72,6 +72,12 @@ export default function OrchestratorPage() {
       setLaunching(false);
     }
   };
+
+  // 当前选中的编排会话
+  const activeSession = useMemo(() => {
+    if (!activeOrchId) return null;
+    return history.find(s => s.id === activeOrchId) ?? null;
+  }, [activeOrchId, history]);
 
   // 没有选择项目
   if (!activeKey) {
@@ -174,12 +180,16 @@ export default function OrchestratorPage() {
             </div>
 
             {/* 右侧：监控面板 */}
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-hidden flex flex-col">
               {activeOrchId ? (
-                <OrchMonitor
-                  orchId={activeOrchId}
-                  onStop={() => fetchHistory()}
-                />
+                <div className="flex-1 overflow-hidden p-6 pb-0">
+                  <OrchMonitor
+                    orchId={activeOrchId}
+                    onStop={() => fetchHistory()}
+                    originalPrompt={activeSession?.originalPrompt}
+                    onRelaunch={(p) => { setPrompt(p); setActiveOrchId(null); }}
+                  />
+                </div>
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-zinc-400">
                   {t('noHistory')}

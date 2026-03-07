@@ -1,21 +1,28 @@
 'use client';
 
 import { useState, useCallback, useMemo } from 'react';
-import { CheckCircle2, XCircle, Circle, Loader2, Square, ChevronDown, ChevronRight } from 'lucide-react';
+import {
+  CheckCircle2, XCircle, Circle, Loader2, Square,
+  ChevronDown, ChevronRight, GitBranch, AlertTriangle, RotateCcw,
+} from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useOrchestratorStream } from '@/hooks/use-orchestrator-stream';
-import type { OrchestratorPhase, OrchestratorSSEEvent, SplitPlan, WorkerResult } from '@/types/orchestrator';
+import type { OrchestratorPhase, SplitPlan, WorkerResult } from '@/types/orchestrator';
 
 interface OrchMonitorProps {
   orchId: string;
   onStop?: () => void;
+  /** 重新发起编排（复用 prompt） */
+  onRelaunch?: (prompt: string) => void;
+  /** 当前编排的原始 prompt */
+  originalPrompt?: string;
 }
 
 const PHASE_ORDER: OrchestratorPhase[] = [
   'pending', 'splitting', 'spawning', 'executing', 'synthesizing', 'merging', 'completed',
 ];
 
-export function OrchMonitor({ orchId, onStop }: OrchMonitorProps) {
+export function OrchMonitor({ orchId, onStop, onRelaunch, originalPrompt }: OrchMonitorProps) {
   const t = useTranslations('orchestrator');
   const { events, phase, isConnected } = useOrchestratorStream(orchId);
 
@@ -49,14 +56,23 @@ export function OrchMonitor({ orchId, onStop }: OrchMonitorProps) {
     return evt?.type === 'orch_synthesis_completed' ? evt.summary : null;
   }, [events]);
 
-  const errorMessage = useMemo(() => {
-    const evt = [...events].reverse().find(e => e.type === 'orch_error');
-    return evt?.type === 'orch_error' ? evt.message : null;
+  // 合并结果
+  const mergedBranches = useMemo(() => {
+    const evt = events.find(e => e.type === 'orch_merge_completed');
+    return evt?.type === 'orch_merge_completed' ? evt.branches : null;
   }, [events]);
+
+  // 收集所有错误事件
+  const errorEvents = useMemo(() => {
+    return events.filter(e => e.type === 'orch_error').map(e => e.type === 'orch_error' ? e.message : '');
+  }, [events]);
+
+  const lastError = errorEvents.length > 0 ? errorEvents[errorEvents.length - 1] : null;
 
   const isDone = phase === 'completed' || phase === 'failed';
   const needsSplitConfirm = phase === 'splitting' && splitPlan !== null;
-  const needsMergeConfirm = phase === 'merging';
+  // 后端在 synthesizing 阶段等 confirmMerge，综合完成后才能确认合并
+  const needsMergeConfirm = phase === 'synthesizing' && synthesisResult !== null;
 
   const handleAction = useCallback(async (action: string) => {
     try {
@@ -69,73 +85,196 @@ export function OrchMonitor({ orchId, onStop }: OrchMonitorProps) {
   }, [orchId]);
 
   return (
-    <div className="space-y-6">
-      {/* 状态栏 */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className={`inline-block h-2 w-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-zinc-300'}`} />
-          <span className="text-xs text-zinc-500">{isConnected ? t('connected') : t('disconnected')}</span>
-          <span className="text-xs text-zinc-400">|</span>
-          <span className="text-xs text-zinc-500">{t('eventCount', { count: events.length })}</span>
+    <div className="flex h-full flex-col">
+      {/* 滚动内容区 */}
+      <div className="flex-1 overflow-y-auto space-y-6 pb-4">
+        {/* 状态栏 */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className={`inline-block h-2 w-2 rounded-full ${isConnected ? 'bg-green-500' : isDone ? 'bg-zinc-300' : 'bg-amber-400 animate-pulse'}`} />
+            <span className="text-xs text-zinc-500">{isConnected ? t('connected') : t('disconnected')}</span>
+            <span className="text-xs text-zinc-400">|</span>
+            <span className="text-xs text-zinc-500">{t('eventCount', { count: events.length })}</span>
+          </div>
         </div>
-        {!isDone && (
-          <button
-            onClick={() => { handleAction('stop'); onStop?.(); }}
-            className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-          >
-            <Square className="h-3 w-3" />
-            {t('stop')}
-          </button>
+
+        {/* 阶段进度 */}
+        <PhaseIndicator currentPhase={phase} />
+
+        {/* 错误信息 */}
+        {lastError && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+            <div className="flex items-center gap-2 mb-1">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span className="font-medium">错误</span>
+            </div>
+            {lastError}
+            {errorEvents.length > 1 && (
+              <p className="text-xs mt-2 text-red-500">共 {errorEvents.length} 个错误</p>
+            )}
+          </div>
+        )}
+
+        {/* Split Plan 展示 */}
+        {splitPlan && <SplitPlanView plan={splitPlan} needsConfirm={needsSplitConfirm} onConfirm={() => handleAction('confirm-split')} />}
+
+        {/* Worker 卡片 */}
+        {workerStates.size > 0 && (
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('workers')}</h3>
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+              {Array.from(workerStates.entries()).map(([id, w]) => (
+                <WorkerCard key={id} workerId={id} title={w.title} status={w.status} result={w.result} error={w.error} eventCount={w.eventCount} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 综合结果 */}
+        {synthesisResult && (
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('synthesis')}</h3>
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 text-sm whitespace-pre-wrap dark:border-zinc-700 dark:bg-zinc-900">
+              {synthesisResult}
+            </div>
+          </div>
+        )}
+
+        {/* 合并结果 */}
+        {mergedBranches && (
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">合并结果</h3>
+            <div className="space-y-1.5">
+              {mergedBranches.map(branch => (
+                <div key={branch} className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                  <GitBranch className="h-4 w-4" />
+                  <span className="font-mono text-xs">{branch}</span>
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                </div>
+              ))}
+              {/* 显示未合并的分支（从 splitPlan 对比） */}
+              {splitPlan && splitPlan.tasks
+                .filter(task => !mergedBranches.some(b => b.includes(task.branchSlug)))
+                .map(task => (
+                  <div key={task.branchSlug} className="flex items-center gap-2 text-sm text-red-500 dark:text-red-400">
+                    <GitBranch className="h-4 w-4" />
+                    <span className="font-mono text-xs">{task.branchSlug}</span>
+                    <XCircle className="h-3.5 w-3.5" />
+                    <span className="text-xs text-zinc-400">未合并</span>
+                  </div>
+                ))
+              }
+            </div>
+          </div>
         )}
       </div>
 
-      {/* 阶段进度 */}
-      <PhaseIndicator currentPhase={phase} />
+      {/* ── 底部操作栏 ── */}
+      <ActionBar
+        phase={phase}
+        isDone={isDone}
+        needsSplitConfirm={needsSplitConfirm}
+        needsMergeConfirm={needsMergeConfirm}
+        onAction={handleAction}
+        onStop={() => { handleAction('stop'); onStop?.(); }}
+        onRelaunch={onRelaunch && originalPrompt ? () => onRelaunch(originalPrompt) : undefined}
+      />
+    </div>
+  );
+}
 
-      {/* 错误信息 */}
-      {errorMessage && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-          {errorMessage}
-        </div>
-      )}
+// ── 底部操作栏 ──
 
-      {/* Split Plan 展示 */}
-      {splitPlan && <SplitPlanView plan={splitPlan} needsConfirm={needsSplitConfirm} onConfirm={() => handleAction('confirm-split')} />}
+function ActionBar({ phase, isDone, needsSplitConfirm, needsMergeConfirm, onAction, onStop, onRelaunch }: {
+  phase: OrchestratorPhase;
+  isDone: boolean;
+  needsSplitConfirm: boolean;
+  needsMergeConfirm: boolean;
+  onAction: (action: string) => void;
+  onStop: () => void;
+  onRelaunch?: () => void;
+}) {
+  const t = useTranslations('orchestrator');
+  const [confirming, setConfirming] = useState<string | null>(null);
 
-      {/* Worker 卡片 */}
-      {workerStates.size > 0 && (
-        <div className="space-y-3">
-          <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('workers')}</h3>
-          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
-            {Array.from(workerStates.entries()).map(([id, w]) => (
-              <WorkerCard key={id} workerId={id} title={w.title} status={w.status} result={w.result} error={w.error} eventCount={w.eventCount} />
-            ))}
-          </div>
-        </div>
-      )}
+  const handleConfirmAction = (action: string) => {
+    setConfirming(action);
+    onAction(action);
+    setTimeout(() => setConfirming(null), 2000);
+  };
 
-      {/* Merge 确认 */}
-      {needsMergeConfirm && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
-          <p className="text-sm text-amber-700 dark:text-amber-400 mb-3">合并阶段需要确认</p>
+  // 没有需要显示的操作时不渲染操作栏
+  const hasVisibleAction = needsSplitConfirm || needsMergeConfirm || isDone || (!isDone && phase !== 'pending');
+  if (!hasVisibleAction) return null;
+
+  return (
+    <div className="shrink-0 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 px-4 py-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        {/* 拆分确认 */}
+        {needsSplitConfirm && (
           <button
-            onClick={() => handleAction('confirm-merge')}
-            className="rounded-md bg-amber-600 px-4 py-2 text-sm text-white hover:bg-amber-700"
+            onClick={() => handleConfirmAction('confirm-split')}
+            disabled={confirming === 'confirm-split'}
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
           >
-            {t('confirmMerge')}
+            {confirming === 'confirm-split' ? '...' : t('confirmSplit')}
           </button>
-        </div>
-      )}
+        )}
 
-      {/* 综合结果 */}
-      {synthesisResult && (
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('synthesis')}</h3>
-          <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 text-sm whitespace-pre-wrap dark:border-zinc-700 dark:bg-zinc-900">
-            {synthesisResult}
-          </div>
-        </div>
-      )}
+        {/* 合并确认 */}
+        {needsMergeConfirm && (
+          <button
+            onClick={() => handleConfirmAction('confirm-merge')}
+            disabled={confirming === 'confirm-merge'}
+            className="rounded-md bg-amber-600 px-4 py-2 text-sm text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
+          >
+            {confirming === 'confirm-merge' ? '...' : t('confirmMerge')}
+          </button>
+        )}
+
+        {/* 进行中阶段的提示 */}
+        {!isDone && !needsSplitConfirm && !needsMergeConfirm && (
+          <span className="text-xs text-zinc-400 flex items-center gap-1.5">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            {t(`phases.${phase}`)}...
+          </span>
+        )}
+
+        {/* 完成后的操作 */}
+        {isDone && onRelaunch && (
+          <button
+            onClick={onRelaunch}
+            className="flex items-center gap-1.5 rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            重新发起
+          </button>
+        )}
+
+        {/* 右侧：停止 / 状态 */}
+        <div className="flex-1" />
+        {!isDone && (
+          <button
+            onClick={onStop}
+            className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+          >
+            <Square className="h-3.5 w-3.5" />
+            {t('stop')}
+          </button>
+        )}
+        {phase === 'completed' && (
+          <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            {t('phases.completed')}
+          </span>
+        )}
+        {phase === 'failed' && (
+          <span className="flex items-center gap-1 text-xs text-red-500">
+            <XCircle className="h-3.5 w-3.5" />
+            {t('phases.failed')}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -191,7 +330,7 @@ function SplitPlanView({ plan, needsConfirm, onConfirm }: { plan: SplitPlan; nee
     <div className="space-y-3">
       <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-1 text-sm font-medium text-zinc-700 dark:text-zinc-300">
         {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        {t('splitPlan')}
+        {t('splitPlan')}（{plan.tasks.length} 个子任务）
       </button>
 
       {expanded && (
@@ -219,8 +358,8 @@ function SplitPlanView({ plan, needsConfirm, onConfirm }: { plan: SplitPlan; nee
                   )}
                 </div>
                 <p className="text-xs text-zinc-500 mb-2">{task.description}</p>
-                <div className="flex gap-3 text-xs text-zinc-400">
-                  <span>branch: {task.branchSlug}</span>
+                <div className="flex gap-3 text-xs text-zinc-400 flex-wrap">
+                  <span className="flex items-center gap-1"><GitBranch className="h-3 w-3" />{task.branchSlug}</span>
                   {task.agentId && <span>{t('assignedAgent')}: {task.agentId}</span>}
                   {task.dependsOn && task.dependsOn.length > 0
                     ? <span>{t('dependencies')}: {task.dependsOn.join(', ')}</span>
@@ -236,7 +375,7 @@ function SplitPlanView({ plan, needsConfirm, onConfirm }: { plan: SplitPlan; nee
             <span className="font-medium">{t('expectedOutcome')}：</span>{plan.expectedOutcome}
           </div>
 
-          {/* 确认按钮 */}
+          {/* 确认按钮（也在底部操作栏有，这里保留方便滚动时操作） */}
           {needsConfirm && (
             <button
               onClick={onConfirm}
@@ -263,6 +402,7 @@ function WorkerCard({ workerId, title, status, result, error, eventCount }: {
 }) {
   const t = useTranslations('orchestrator');
   const statusKey = status as 'pending' | 'running' | 'completed' | 'failed' | 'stopped';
+  const [showFiles, setShowFiles] = useState(false);
 
   return (
     <div className={`rounded-lg border p-3 ${
@@ -284,10 +424,32 @@ function WorkerCard({ workerId, title, status, result, error, eventCount }: {
         <span>{t('eventCount', { count: eventCount })}</span>
       </div>
       {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
-      {result?.summary && <p className="text-xs text-zinc-600 mt-1 dark:text-zinc-400">{result.summary}</p>}
+      {result?.summary && <p className="text-xs text-zinc-600 mt-2 dark:text-zinc-400">{result.summary}</p>}
       {result?.filesChanged && result.filesChanged.length > 0 && (
-        <div className="text-xs text-zinc-400 mt-1">
-          {result.filesChanged.length} files changed
+        <div className="mt-2">
+          <button
+            onClick={() => setShowFiles(!showFiles)}
+            className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 flex items-center gap-1"
+          >
+            {showFiles ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            {result.filesChanged.length} 个文件变更
+          </button>
+          {showFiles && (
+            <div className="mt-1 space-y-0.5 pl-3.5">
+              {result.filesChanged.map((f, i) => (
+                <p key={i} className="text-xs text-zinc-400 font-mono">
+                  <span className={
+                    f.action === 'created' ? 'text-green-500' :
+                    f.action === 'deleted' ? 'text-red-500' :
+                    'text-amber-500'
+                  }>
+                    {f.action === 'created' ? '+' : f.action === 'deleted' ? '-' : '~'}
+                  </span>
+                  {' '}{f.path}
+                </p>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
