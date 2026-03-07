@@ -268,7 +268,7 @@ export const SessionCompressDialog = memo(function SessionCompressDialog({
                   return (
                     <div
                       key={msg.id}
-                      className={`rounded-md border px-3 py-2 text-xs transition-colors ${
+                      className={`rounded-md border px-3 py-2 text-sm transition-colors ${
                         isKept
                           ? 'border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/30'
                           : 'border-zinc-100 bg-zinc-50/50 text-zinc-400 line-through dark:border-zinc-800 dark:bg-zinc-800/30 dark:text-zinc-500'
@@ -327,7 +327,7 @@ export const SessionCompressDialog = memo(function SessionCompressDialog({
                   return (
                     <div
                       key={msg.id}
-                      className={`rounded-md border px-3 py-2 text-xs ${
+                      className={`rounded-md border px-3 py-2 text-sm ${
                         isSummary
                           ? 'border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/30'
                           : 'border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/30'
@@ -394,7 +394,7 @@ export const SessionCompressDialog = memo(function SessionCompressDialog({
                             if (e.key === 'Escape') cancelEdit();
                             if (e.key === 'Enter' && e.ctrlKey) saveEdit();
                           }}
-                          className="mt-1 w-full min-h-[80px] max-h-[200px] rounded border border-zinc-300 bg-white p-2 text-xs text-zinc-700 outline-none focus:border-blue-400 resize-y dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:focus:border-blue-500"
+                          className="mt-1 w-full min-h-[80px] max-h-[200px] rounded border border-zinc-300 bg-white p-2 text-sm text-zinc-700 outline-none focus:border-blue-400 resize-y dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:focus:border-blue-500"
                         />
                       ) : (
                         <p
