@@ -868,6 +868,13 @@ export function AgentChatPanel({
     return () => window.removeEventListener('toggle-session-config', handler);
   }, []);
 
+  // Listen for toggle-session-compress event (from parent page header)
+  useEffect(() => {
+    const handler = () => { if (messages.length >= 6 && !isStreaming) setCompressDialogOpen(true); };
+    window.addEventListener('toggle-session-compress', handler);
+    return () => window.removeEventListener('toggle-session-compress', handler);
+  }, [messages.length, isStreaming]);
+
   // ChatInput submit handler
   const handleChatInputSubmit = useCallback((text: string, images: string[], _files: Array<{ name: string; content: string }>) => {
     doSend(text, images);
