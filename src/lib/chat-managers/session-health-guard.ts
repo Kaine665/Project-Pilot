@@ -140,6 +140,7 @@ function callClaudeLightweight(prompt: string): Promise<string> {
 
     const claude = spawnClaude([
       '-p',
+      '--verbose',
       '--output-format', 'stream-json',
       ...modelArgs,
     ], {
