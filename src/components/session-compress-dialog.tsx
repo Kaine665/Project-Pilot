@@ -3,6 +3,7 @@
 import { memo, useState, useEffect, useCallback, useRef } from 'react';
 import { FileDown, X, Loader2, AlertCircle, ChevronDown, ChevronRight, Pencil, Check } from 'lucide-react';
 import * as Dialog from '@radix-ui/react-dialog';
+import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import type { ChatMessage } from '@/types';
 
 // ── Props ──
@@ -239,6 +240,7 @@ export const SessionCompressDialog = memo(function SessionCompressDialog({
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" />
         <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[90vw] max-w-4xl -translate-x-1/2 -translate-y-1/2 rounded-xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+          <VisuallyHidden.Root><Dialog.Title>压缩会话历史</Dialog.Title></VisuallyHidden.Root>
           {/* Header */}
           <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-700">
             <div className="flex items-center gap-2">
