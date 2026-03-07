@@ -448,6 +448,29 @@ async function _modifyJsonFileImpl<T>(
   return modified;
 }
 
+// ── Inbox 路径函数 ──
+
+export function getInboxPath(projectKey: string): string {
+  const safe = projectKey.replace(/[^a-zA-Z0-9_-]/g, '');
+
+  // 🔒 Security: prevent empty filename or invalid project keys
+  if (!safe || safe.length < 1 || safe.length > 100) {
+    throw new Error(`Invalid project key: ${projectKey}`);
+  }
+
+  return path.join(DATA_DIR, 'flows', `${safe}_inbox.json`);
+}
+
+/** 读取项目收件箱数据，不存在时返回空列表 */
+export async function readInbox(projectKey: string): Promise<import('@/types').ProjectInbox> {
+  return readJsonFile<import('@/types').ProjectInbox>(getInboxPath(projectKey), { items: [] });
+}
+
+/** 写入项目收件箱数据（原子写入） */
+export async function writeInbox(projectKey: string, data: import('@/types').ProjectInbox): Promise<void> {
+  await writeJsonFile(getInboxPath(projectKey), data);
+}
+
 /**
  * 通知数据已变更（供 MCP Server 写入后触发 UI 刷新）
  */

@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages } from 'next-intl/server';
 import { ThemeProvider } from '@/components/theme-provider';
+import { ProjectProvider } from '@/components/project-context';
 import '../globals.css';
 
 const inter = Inter({
@@ -43,7 +44,9 @@ export default async function LocaleLayout({
       <body className={`${inter.variable} font-sans antialiased`}>
         <ThemeProvider>
           <NextIntlClientProvider messages={messages}>
-            {children}
+            <ProjectProvider>
+              {children}
+            </ProjectProvider>
           </NextIntlClientProvider>
         </ThemeProvider>
       </body>

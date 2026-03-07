@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
-import { GitBranch, Settings, Sparkles } from 'lucide-react';
+import { GitBranch, Settings, Sparkles, ChevronDown } from 'lucide-react';
 import { Link, usePathname, useRouter } from '@/i18n/routing';
 import { cn } from '@/lib/utils';
 import { LanguageSwitcher } from './language-switcher';
+import { useProject } from './project-context';
 
 const getNavItems = (t: ReturnType<typeof useTranslations>) => [
   { href: '/flows' as const, label: t('nav.projects'), icon: GitBranch },
@@ -59,6 +60,7 @@ export function TopNav({ children, plannerOpen }: { children?: React.ReactNode; 
           })}
         </nav>
       </div>
+      <ProjectSwitcher />
       <div className="flex items-center gap-2">
         <button
           onClick={handleOpenPlanner}
@@ -77,5 +79,64 @@ export function TopNav({ children, plannerOpen }: { children?: React.ReactNode; 
         {children}
       </div>
     </header>
+  );
+}
+
+function ProjectSwitcher() {
+  const { projects, activeKey, setActiveKey } = useProject();
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const activeProject = projects.find(p => p.key === activeKey);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 transition-colors dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-200"
+      >
+        <span className="max-w-[200px] truncate">
+          {activeProject ? activeProject.name : '无项目'}
+        </span>
+        <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 min-w-[180px] max-w-[280px] rounded-md border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+          {projects.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-zinc-400">无项目</div>
+          ) : (
+            projects.map(p => (
+              <button
+                key={p.key}
+                onClick={() => {
+                  setActiveKey(p.key);
+                  setOpen(false);
+                }}
+                className={cn(
+                  'flex w-full items-center px-3 py-1.5 text-sm transition-colors text-left',
+                  p.key === activeKey
+                    ? 'bg-zinc-100 text-zinc-900 font-medium dark:bg-zinc-800 dark:text-zinc-100'
+                    : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-200',
+                )}
+              >
+                <span className="truncate">{p.name}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
   );
 }

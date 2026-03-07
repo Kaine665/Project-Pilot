@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
 import { TopNav } from '@/components/top-nav';
 import { AgentChatPanel } from '@/components/agent-chat-panel';
+import { useProject, type ProjectEntry } from '@/components/project-context';
 import { FolderKanban, Plus, Trash2, Network, GripVertical, Bot, Layers, BookOpen, FileText, ListTodo, ChevronRight } from 'lucide-react';
 import { BUTLER_AGENT_ID } from '@/lib/default-agents';
 import type { Agent } from '@/types';
@@ -24,22 +24,11 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-interface ProjectEntry {
-  key: string;
-  name: string;
-  description?: string;
-}
-
 interface FlowsContextValue {
-  projects: ProjectEntry[];
-  activeKey: string | null;
-  setActiveKey: (key: string) => void;
-  fetchProjects: () => Promise<ProjectEntry[]>;
   highlightSectionId: string | null;
   setHighlightSectionId: (id: string | null) => void;
 }
 
-import { createContext, useContext } from 'react';
 const FlowsContext = createContext<FlowsContextValue | null>(null);
 export function useFlowsContext() {
   const ctx = useContext(FlowsContext);
@@ -48,29 +37,10 @@ export function useFlowsContext() {
 }
 
 export default function FlowsLayout({ children }: { children: React.ReactNode }) {
-  const searchParams = useSearchParams();
-  const projectParam = searchParams.get('project');
+  const { projects, activeKey, setActiveKey, fetchProjects } = useProject();
   const router = useRouter();
   const pathname = usePathname();
-  const [projects, setProjects] = useState<ProjectEntry[]>([]);
-  const [activeKeyRaw, setActiveKeyRaw] = useState<string | null>(null);
-  const internalKeyChangeRef = useRef(false);
 
-  const setActiveKey = useCallback((key: string) => {
-    internalKeyChangeRef.current = true;
-    setActiveKeyRaw(key);
-    // Sync to URL (replaceState doesn't update Next.js searchParams,
-    // so we use internalKeyChangeRef to prevent the sync effect from resetting)
-    const url = new URL(window.location.href);
-    if (key) {
-      url.searchParams.set('project', key);
-    } else {
-      url.searchParams.delete('project');
-    }
-    window.history.replaceState({}, '', url.toString());
-  }, []);
-
-  const activeKey = activeKeyRaw;
   const [panelOpen, setPanelOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
@@ -105,45 +75,6 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
       setSections([]);
     }
   }, []);
-
-  const fetchProjects = useCallback(async () => {
-    try {
-      const res = await fetch('/api/data/projects');
-      const data = await res.json();
-      const list = data.projects ?? [];
-      setProjects(list);
-      return list;
-    } catch {
-      return [];
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchProjects().then((list: ProjectEntry[]) => {
-      if (list.length > 0 && !activeKey) {
-        if (projectParam && list.some((p: ProjectEntry) => p.key === projectParam)) {
-          setActiveKey(projectParam);
-        } else {
-          setActiveKey(list[0].key);
-        }
-      }
-    });
-  }, [fetchProjects, activeKey, projectParam]);
-
-  useEffect(() => {
-    // Skip sync if the change was initiated internally (via setActiveKey),
-    // because window.history.replaceState doesn't update useSearchParams,
-    // causing projectParam to be stale and fight with the new activeKey.
-    if (internalKeyChangeRef.current) {
-      internalKeyChangeRef.current = false;
-      return;
-    }
-    if (projectParam && activeKey && projectParam !== activeKey) {
-      if (projects.some(p => p.key === projectParam)) {
-        setActiveKey(projectParam);
-      }
-    }
-  }, [projectParam, activeKey, projects]);
 
   useEffect(() => {
     if (activeKey) fetchSections(activeKey);
@@ -230,7 +161,6 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
     router.push(activeKey ? `/flows/docs/${activeKey}` : '/flows/docs');
   };
 
-
   const handleNavigateTodos = () => {
     router.push('/flows/todos');
   };
@@ -249,21 +179,21 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
     const newIndex = projects.findIndex(p => p.key === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
 
-    // Optimistic UI update
+    // Compute reordered list for persistence
     const reordered = [...projects];
     const [moved] = reordered.splice(oldIndex, 1);
     reordered.splice(newIndex, 0, moved);
-    setProjects(reordered);
 
-    // Persist
+    // Persist then refresh from global context
     try {
       await fetch('/api/data/projects', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order: reordered.map(p => p.key) }),
       });
+      await fetchProjects();
     } catch { /* ignore */ }
-  }, [projects]);
+  }, [projects, fetchProjects]);
 
   const sectionSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -302,7 +232,7 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   const panelInnerWidth = 'w-60';
 
   return (
-    <FlowsContext.Provider value={{ projects, activeKey, setActiveKey, fetchProjects, highlightSectionId, setHighlightSectionId }}>
+    <FlowsContext.Provider value={{ highlightSectionId, setHighlightSectionId }}>
       <div className="flex h-screen flex-col overflow-hidden">
         <TopNav plannerOpen={plannerOpen} />
         <div className="flex flex-1 overflow-hidden">
