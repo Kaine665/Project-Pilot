@@ -1,7 +1,7 @@
 'use client';
 
-import { memo, useState, useEffect, useCallback } from 'react';
-import { FileDown, X, Loader2, AlertCircle } from 'lucide-react';
+import { memo, useState, useEffect, useCallback, useRef } from 'react';
+import { FileDown, X, Loader2, AlertCircle, ChevronDown, ChevronRight, Pencil, Check } from 'lucide-react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { ChatMessage } from '@/types';
 
@@ -29,7 +29,6 @@ function generateFakeCompression(messages: ChatMessage[]): ChatMessage[] {
   const userMsgs = compressed.filter(m => m.role === 'user');
   const rounds = Math.ceil(compressed.length / 2);
 
-  // 从用户消息中提取摘要要点
   const bulletPoints = userMsgs.slice(0, 3).map((m, i) => {
     const preview = m.content.slice(0, 40).replace(/\n/g, ' ');
     const labels = ['提出了', '讨论了', '完成了'];
@@ -52,6 +51,10 @@ function generateFakeCompression(messages: ChatMessage[]): ChatMessage[] {
 
   return [summaryMsg, ...kept];
 }
+
+// ── 缓存 ──
+// sessionId → { messages 快照长度, compressedMessages }
+const previewCache = new Map<string, { msgCount: number; result: ChatMessage[] }>();
 
 // ── 工具函数 ──
 
@@ -78,19 +81,26 @@ export const SessionCompressDialog = memo(function SessionCompressDialog({
   const [applyLoading, setApplyLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 打开对话框时调 preview API
+  // 展开/收起状态（右侧压缩结果中的消息）
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  // 编辑状态
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState('');
+  const editRef = useRef<HTMLTextAreaElement>(null);
+
+  // 打开对话框时调 preview API（有缓存则跳过）
   useEffect(() => {
-    if (!open) {
-      // 关闭时重置状态
-      setCompressedMessages(null);
-      setPreviewLoading(false);
-      setApplyLoading(false);
-      setError(null);
+    if (!open) return; // 关闭时不清空，保留缓存
+    if (!sessionId) {
+      setError('会话尚未创建，无法压缩');
       return;
     }
 
-    if (!sessionId) {
-      setError('会话尚未创建，无法压缩');
+    // 检查缓存：相同 session 且消息数没变
+    const cached = previewCache.get(sessionId);
+    if (cached && cached.msgCount === messages.length) {
+      setCompressedMessages(cached.result);
+      setError(null);
       return;
     }
 
@@ -98,6 +108,8 @@ export const SessionCompressDialog = memo(function SessionCompressDialog({
     setPreviewLoading(true);
     setError(null);
     setCompressedMessages(null);
+    setExpandedIds(new Set());
+    setEditingId(null);
 
     fetch(`/api/agent-chat/sessions/${sessionId}/compress`, {
       method: 'POST',
@@ -114,13 +126,16 @@ export const SessionCompressDialog = memo(function SessionCompressDialog({
       })
       .then((data) => {
         if (cancelled || !data) return;
-        setCompressedMessages(data.messages as ChatMessage[]);
+        const result = data.messages as ChatMessage[];
+        setCompressedMessages(result);
+        // 写入缓存
+        previewCache.set(sessionId, { msgCount: messages.length, result });
       })
       .catch((err) => {
         if (cancelled) return;
         console.warn('[compress] preview API 失败，降级使用本地压缩:', err);
-        // fallback 到假数据
-        setCompressedMessages(generateFakeCompression(messages));
+        const fallback = generateFakeCompression(messages);
+        setCompressedMessages(fallback);
         setError(`预览 API 不可用，已降级为本地模拟压缩（${err instanceof Error ? err.message : '未知错误'}）`);
       })
       .finally(() => {
@@ -129,6 +144,53 @@ export const SessionCompressDialog = memo(function SessionCompressDialog({
 
     return () => { cancelled = true; };
   }, [open, sessionId, messages]);
+
+  // 展开/收起切换
+  const toggleExpand = useCallback((id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  // 开始编辑
+  const startEdit = useCallback((msg: ChatMessage) => {
+    setEditingId(msg.id);
+    setEditContent(msg.content);
+    // 同时展开
+    setExpandedIds(prev => new Set(prev).add(msg.id));
+  }, []);
+
+  // 保存编辑
+  const saveEdit = useCallback(() => {
+    if (!editingId || !compressedMessages) return;
+    const updated = compressedMessages.map(m =>
+      m.id === editingId ? { ...m, content: editContent } : m,
+    );
+    setCompressedMessages(updated);
+    // 更新缓存
+    if (sessionId) {
+      previewCache.set(sessionId, { msgCount: messages.length, result: updated });
+    }
+    setEditingId(null);
+  }, [editingId, editContent, compressedMessages, sessionId, messages.length]);
+
+  // 取消编辑
+  const cancelEdit = useCallback(() => {
+    setEditingId(null);
+    setEditContent('');
+  }, []);
+
+  // Focus textarea when editing starts
+  useEffect(() => {
+    if (editingId && editRef.current) {
+      editRef.current.focus();
+      // 光标移到末尾
+      const len = editRef.current.value.length;
+      editRef.current.setSelectionRange(len, len);
+    }
+  }, [editingId]);
 
   // 确认压缩
   const handleConfirm = useCallback(async () => {
@@ -149,6 +211,8 @@ export const SessionCompressDialog = memo(function SessionCompressDialog({
         throw new Error(text || `保存失败 (${res.status})`);
       }
 
+      // 清除缓存（已应用）
+      previewCache.delete(sessionId);
       onConfirm(compressedMessages);
     } catch (err) {
       setError(`保存失败：${err instanceof Error ? err.message : '未知错误'}`);
@@ -256,6 +320,10 @@ export const SessionCompressDialog = memo(function SessionCompressDialog({
                 )}
                 {!previewLoading && compressedMessages && compressedMessages.map((msg, i) => {
                   const isSummary = i === 0 && msg.id.startsWith('compress-summary');
+                  const isExpanded = expandedIds.has(msg.id);
+                  const isEditing = editingId === msg.id;
+                  const needsTruncate = msg.content.length > 120;
+
                   return (
                     <div
                       key={msg.id}
@@ -266,18 +334,79 @@ export const SessionCompressDialog = memo(function SessionCompressDialog({
                       }`}
                     >
                       <div className="flex items-center gap-1.5 mb-0.5">
+                        {/* 展开/收起按钮 */}
+                        {needsTruncate && !isEditing && (
+                          <button
+                            onClick={() => toggleExpand(msg.id)}
+                            className="shrink-0 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                          >
+                            {isExpanded
+                              ? <ChevronDown className="h-3 w-3" />
+                              : <ChevronRight className="h-3 w-3" />
+                            }
+                          </button>
+                        )}
                         <span className="font-medium text-zinc-700 dark:text-zinc-300">
                           {msg.role === 'user' ? '用户' : '助手'}
                         </span>
                         <span className="text-zinc-300 dark:text-zinc-600">·</span>
                         <span className="text-zinc-300 dark:text-zinc-600">{msg.content.length} 字符</span>
                         {isSummary && (
-                          <span className="ml-auto text-[10px] text-blue-600 dark:text-blue-400">摘要</span>
+                          <span className="text-[10px] text-blue-600 dark:text-blue-400">摘要</span>
+                        )}
+                        {/* 编辑按钮 */}
+                        {!isEditing && (
+                          <button
+                            onClick={() => startEdit(msg)}
+                            className="ml-auto shrink-0 text-zinc-300 hover:text-zinc-500 dark:text-zinc-600 dark:hover:text-zinc-400"
+                            title="编辑"
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                        )}
+                        {isEditing && (
+                          <div className="ml-auto flex items-center gap-1">
+                            <button
+                              onClick={saveEdit}
+                              className="text-green-500 hover:text-green-600"
+                              title="保存"
+                            >
+                              <Check className="h-3 w-3" />
+                            </button>
+                            <button
+                              onClick={cancelEdit}
+                              className="text-zinc-400 hover:text-zinc-600"
+                              title="取消"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
                         )}
                       </div>
-                      <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed whitespace-pre-line">
-                        {truncate(msg.content, 120)}
-                      </p>
+
+                      {/* 内容区域 */}
+                      {isEditing ? (
+                        <textarea
+                          ref={editRef}
+                          value={editContent}
+                          onChange={e => setEditContent(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Escape') cancelEdit();
+                            if (e.key === 'Enter' && e.ctrlKey) saveEdit();
+                          }}
+                          className="mt-1 w-full min-h-[80px] max-h-[200px] rounded border border-zinc-300 bg-white p-2 text-xs text-zinc-700 outline-none focus:border-blue-400 resize-y dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:focus:border-blue-500"
+                        />
+                      ) : (
+                        <p
+                          className="text-zinc-600 dark:text-zinc-400 leading-relaxed whitespace-pre-line cursor-pointer"
+                          onClick={() => needsTruncate && toggleExpand(msg.id)}
+                        >
+                          {isExpanded || !needsTruncate
+                            ? msg.content
+                            : truncate(msg.content, 120)
+                          }
+                        </p>
+                      )}
                     </div>
                   );
                 })}
