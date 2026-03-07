@@ -780,7 +780,7 @@ export default function AgentsPage() {
                   </span>
                   <button
                     onClick={() => {
-                      window.dispatchEvent(new CustomEvent('toggle-session-compress'));
+                      window.dispatchEvent(new CustomEvent('toggle-session-compress', { detail: { sessionId: activeOpened?.sessionId } }));
                     }}
                     className="shrink-0 rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-blue-500 transition-colors dark:hover:bg-zinc-800 dark:hover:text-blue-400"
                     title="压缩会话历史"
