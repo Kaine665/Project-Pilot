@@ -16,7 +16,7 @@ interface ChatBubbleProps {
   onBranch?: (messageId: string) => void;
   /** Callback to save message as knowledge draft */
   onSaveAsKnowledge?: (messageId: string, content: string) => void;
-  /** Show action buttons (hidden during streaming) */
+  /** Show action buttons */
   showActions?: boolean;
   /** Callback to copy message text */
   onCopy?: (text: string) => void;
@@ -236,8 +236,9 @@ export const ChatBubble = memo(function ChatBubble({
           <div className={`mt-1 flex items-center gap-1.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
             <span className="text-[10px] text-red-400 dark:text-red-500">发送失败</span>
             <button
-              onClick={(e) => { e.stopPropagation(); onRetry(); }}
-              className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-red-500 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:text-red-300"
+              onClick={(e) => { e.stopPropagation(); if (!isStreaming) onRetry(); }}
+              disabled={isStreaming}
+              className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-red-500 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:text-red-300 disabled:opacity-40 disabled:pointer-events-none"
             >
               <RefreshCw className="h-2.5 w-2.5" />
               <span>重试</span>
@@ -248,7 +249,7 @@ export const ChatBubble = memo(function ChatBubble({
         {/* Action toolbar: hover-visible */}
         {showActions && (
           <div className={`mt-0.5 flex items-center gap-1 opacity-0 transition-opacity group-hover/bubble:opacity-100 ${isUser ? 'justify-end' : 'justify-start'}`}>
-            {/* Copy */}
+            {/* Copy — always available */}
             <button
               onClick={handleCopy}
               className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
@@ -258,7 +259,7 @@ export const ChatBubble = memo(function ChatBubble({
               <span>{copied ? '已复制' : '复制'}</span>
             </button>
 
-            {/* Save as knowledge (assistant only) */}
+            {/* Save as knowledge (assistant only) — always available */}
             {!isUser && onSaveAsKnowledge && (
               <button
                 onClick={(e) => { e.stopPropagation(); onSaveAsKnowledge(message.id, message.content || ''); }}
@@ -270,11 +271,12 @@ export const ChatBubble = memo(function ChatBubble({
               </button>
             )}
 
-            {/* Branch */}
+            {/* Branch — disabled during streaming */}
             {onBranch && (
               <button
-                onClick={(e) => { e.stopPropagation(); onBranch(message.id); }}
-                className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
+                onClick={(e) => { e.stopPropagation(); if (!isStreaming) onBranch(message.id); }}
+                disabled={isStreaming}
+                className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400 disabled:opacity-40 disabled:pointer-events-none"
                 title={t('chat.createBranchFrom')}
               >
                 <GitBranch className="h-2.5 w-2.5" />
@@ -282,11 +284,12 @@ export const ChatBubble = memo(function ChatBubble({
               </button>
             )}
 
-            {/* Regenerate (last assistant only) */}
+            {/* Regenerate (last assistant only) — disabled during streaming */}
             {!isUser && isLastAssistant && onRegenerate && (
               <button
-                onClick={(e) => { e.stopPropagation(); onRegenerate(); }}
-                className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
+                onClick={(e) => { e.stopPropagation(); if (!isStreaming) onRegenerate(); }}
+                disabled={isStreaming}
+                className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400 disabled:opacity-40 disabled:pointer-events-none"
                 title="重新生成"
               >
                 <RefreshCw className="h-2.5 w-2.5" />
@@ -294,11 +297,12 @@ export const ChatBubble = memo(function ChatBubble({
               </button>
             )}
 
-            {/* Delete with confirmation */}
+            {/* Delete with confirmation — disabled during streaming */}
             {onDelete && !confirmDelete && (
               <button
-                onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
-                className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-red-50 hover:text-red-500 dark:text-zinc-600 dark:hover:bg-red-950/30 dark:hover:text-red-400"
+                onClick={(e) => { e.stopPropagation(); if (!isStreaming) setConfirmDelete(true); }}
+                disabled={isStreaming}
+                className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-red-50 hover:text-red-500 dark:text-zinc-600 dark:hover:bg-red-950/30 dark:hover:text-red-400 disabled:opacity-40 disabled:pointer-events-none"
                 title="删除"
               >
                 <Trash2 className="h-2.5 w-2.5" />
