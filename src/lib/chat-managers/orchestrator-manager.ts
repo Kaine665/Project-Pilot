@@ -592,6 +592,7 @@ class OrchestratorManager {
 
     const claude = spawnClaude([
       '-p',
+      '--verbose',
       '--output-format', 'stream-json',
       ...modelArgs,
     ], {
@@ -898,6 +899,7 @@ class OrchestratorManager {
 
     const claude = spawnClaude([
       '-p',
+      '--verbose',
       '--output-format', 'stream-json',
       ...modelArgs,
     ], {
@@ -1112,6 +1114,7 @@ ${conflictContents.join('\n\n')}
       const resolverResult = await new Promise<string>((resolve, reject) => {
         const claude = spawnClaude([
           '-p',
+          '--verbose',
           '--output-format', 'stream-json',
           ...modelArgs,
         ], {
