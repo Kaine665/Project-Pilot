@@ -400,24 +400,76 @@ function tryMergeDetectConflicts(branch: string, workingDir: string): string[] {
 
 // ── Result Extractors ──
 
-function extractSplitPlan(text: string): SplitPlan | null {
-  const match = text.match(/```json:split-plan\s*([\s\S]*?)```/);
-  if (!match) return null;
-  try {
-    return JSON.parse(match[1].trim()) as SplitPlan;
-  } catch {
-    return null;
+/**
+ * 从文本中尝试提取 JSON 对象，带多层 fallback：
+ * 1. 精确匹配指定标签的代码块 (```json:tag)
+ * 2. 匹配任意 json 代码块 (```json / ```)
+ * 3. 匹配裸 JSON（最外层 { ... }，贪婪匹配最后一个 }）
+ *
+ * validator 用于验证解析后的对象是否符合预期结构。
+ */
+function extractJsonBlock<T>(
+  text: string,
+  tag: string,
+  validator: (obj: unknown) => obj is T,
+): T | null {
+  const candidates: string[] = [];
+
+  // 1. 精确标签：```json:split-plan 或 ```JSON:split-plan
+  const exactRe = new RegExp('```json:' + tag + '\\s*([\\s\\S]*?)```', 'i');
+  const exactMatch = text.match(exactRe);
+  if (exactMatch) candidates.push(exactMatch[1].trim());
+
+  // 2. 任意 json 代码块（可能没有 :tag 后缀）
+  const jsonBlocks = [...text.matchAll(/```(?:json)?\s*\n([\s\S]*?)```/gi)];
+  for (const m of jsonBlocks) {
+    candidates.push(m[1].trim());
   }
+
+  // 3. 裸 JSON — 找最外层 { ... }（从第一个 { 到最后一个 }）
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    candidates.push(text.slice(firstBrace, lastBrace + 1).trim());
+  }
+
+  // 按优先级逐个尝试解析 + 验证
+  for (const raw of candidates) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (validator(parsed)) return parsed;
+    } catch {
+      // JSON 解析失败，继续下一个候选
+    }
+  }
+  return null;
+}
+
+function isSplitPlan(obj: unknown): obj is SplitPlan {
+  return (
+    typeof obj === 'object' && obj !== null &&
+    'tasks' in obj && Array.isArray((obj as SplitPlan).tasks) &&
+    (obj as SplitPlan).tasks.length > 0 &&
+    (obj as SplitPlan).tasks.every(
+      t => typeof t.title === 'string' && typeof t.branchSlug === 'string',
+    )
+  );
+}
+
+function isWorkerResult(obj: unknown): obj is WorkerResult {
+  return (
+    typeof obj === 'object' && obj !== null &&
+    'status' in obj && 'summary' in obj &&
+    typeof (obj as WorkerResult).summary === 'string'
+  );
+}
+
+function extractSplitPlan(text: string): SplitPlan | null {
+  return extractJsonBlock(text, 'split-plan', isSplitPlan);
 }
 
 function extractWorkerResult(text: string): WorkerResult | null {
-  const match = text.match(/```json:result\s*([\s\S]*?)```/);
-  if (!match) return null;
-  try {
-    return JSON.parse(match[1].trim()) as WorkerResult;
-  } catch {
-    return null;
-  }
+  return extractJsonBlock(text, 'result', isWorkerResult);
 }
 
 // ── OrchestratorManager ──
