@@ -3,7 +3,19 @@
  *
  * Since --dangerously-skip-permissions auto-executes all tools,
  * we detect dangerous patterns AFTER the fact and emit warnings.
- * For 'critical' level patterns, ProcessManager auto-stops the process.
+ *
+ * Level semantics:
+ * - 'critical' — Reserved for truly catastrophic operations (data dir writes,
+ *   disk format, SQL DROP). Auto-stops process via onDangerousCritical().
+ * - 'warning'  — Dangerous but survivable (rm -rf, git push --force, etc.).
+ *   Emits warning to UI; does NOT stop process.
+ *
+ * Design note (2026-03): rm -rf was downgraded from critical to warning because
+ * auto-stopping (SIGTERM) on detection was WORSE than letting the command run:
+ * 1. On Windows, rm -rf usually fails anyway due to file locks
+ * 2. The detection happens AFTER execution, so SIGTERM can't prevent damage
+ * 3. Killing the session destroys all conversation context
+ * 4. The agent can't learn from the failure or try alternatives
  */
 
 import os from 'os';
@@ -23,16 +35,16 @@ interface DangerPattern {
  * 'warning'  — Show warning to user but don't auto-stop.
  */
 const DANGER_PATTERNS: DangerPattern[] = [
-  // ── Critical: likely irreversible damage ──
-  { pattern: /\brm\s+-[^\s]*r[^\s]*f|rm\s+-[^\s]*f[^\s]*r/,   reason: '递归强制删除文件',          level: 'critical' },
-  { pattern: /\brm\s+-rf\s+[/\\]/,                              reason: '从根路径递归删除',          level: 'critical' },
-  { pattern: /\bgit\s+push\s+.*--force(?!-with-lease)/,         reason: 'Git 强制推送（非 lease）', level: 'critical' },
-  { pattern: /\bgit\s+reset\s+--hard/,                          reason: 'Git 硬重置（丢弃所有变更）', level: 'critical' },
+  // ── Critical: truly catastrophic, auto-stop process ──
   { pattern: /\bDROP\s+(TABLE|DATABASE)\b/i,                    reason: 'SQL 删除表/数据库',         level: 'critical' },
   { pattern: /\bTRUNCATE\s+TABLE\b/i,                           reason: 'SQL 清空表数据',            level: 'critical' },
   { pattern: /\bformat\s+[a-zA-Z]:/i,                           reason: 'Windows 格式化磁盘',        level: 'critical' },
 
-  // ── Warning: potentially dangerous but sometimes intentional ──
+  // ── Warning: dangerous but don't kill the session ──
+  { pattern: /\brm\s+-[^\s]*r[^\s]*f|\brm\s+-[^\s]*f[^\s]*r/,  reason: '递归强制删除（建议用 safe-delete CLI）', level: 'warning' },
+  { pattern: /\brm\s+-rf\s+[/\\]/,                              reason: '从根路径递归删除',          level: 'warning' },
+  { pattern: /\bgit\s+push\s+.*--force(?!-with-lease)/,         reason: 'Git 强制推送（非 lease）', level: 'warning' },
+  { pattern: /\bgit\s+reset\s+--hard/,                          reason: 'Git 硬重置（丢弃所有变更）', level: 'warning' },
   { pattern: /\bgit\s+push\b/,                                  reason: 'Git 推送到远程',            level: 'warning' },
   { pattern: /\bgit\s+clean\s+-[^\s]*[fd]/,                     reason: 'Git 清理未跟踪文件',        level: 'warning' },
   { pattern: /\bgit\s+checkout\s+\.\s*$/,                       reason: 'Git 丢弃工作区变更',        level: 'warning' },
