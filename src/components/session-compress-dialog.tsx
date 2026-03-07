@@ -53,9 +53,13 @@ function generateFakeCompression(messages: ChatMessage[]): ChatMessage[] {
   return [summaryMsg, ...kept];
 }
 
-// ── 缓存 ──
+// ── 缓存（挂 globalThis，HMR 不丢失）──
 // sessionId → { messages 快照长度, compressedMessages }
-const previewCache = new Map<string, { msgCount: number; result: ChatMessage[] }>();
+const CACHE_KEY = '__compressPreviewCache';
+type PreviewCacheMap = Map<string, { msgCount: number; result: ChatMessage[] }>;
+const previewCache: PreviewCacheMap =
+  (globalThis as Record<string, unknown>)[CACHE_KEY] as PreviewCacheMap
+  ?? ((globalThis as Record<string, unknown>)[CACHE_KEY] = new Map());
 
 // ── 工具函数 ──
 
