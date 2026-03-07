@@ -27,6 +27,8 @@ export interface SplitPlan {
     agentId?: string;
   }>;
   expectedOutcome: string;
+  /** 可选的自定义编排计划（省略时使用默认 DAG 并行模式） */
+  orchestration?: OrchestrationPlan;
 }
 
 // ── Worker 子任务 ──
@@ -57,6 +59,30 @@ export interface WorkerResult {
   filesChanged: Array<{ path: string; action: 'created' | 'modified' | 'deleted' }>;
 }
 
+// ── 编排原语 ──
+
+/** 编排预设模式 */
+export type OrchestrationPreset =
+  | 'parallel'        // 经典：拆分 → 并行执行 → 合并
+  | 'pipeline'        // 流水线：A → B → C
+  | 'review-loop'     // 开发 + 审查：A 写 → B review → A 修改
+  | 'free-form';      // 自由编排：自定义 step 序列
+
+/** 编排步骤 */
+export type OrchestrationStep =
+  | { type: 'parallel'; branchSlugs: string[] }
+  | { type: 'sequence'; branchSlugs: string[] }
+  | { type: 'gate'; condition: 'user-confirm' | 'auto'; label?: string }
+  | { type: 'review'; reviewerAgentId: string; targetBranchSlugs: string[] }
+  | { type: 'merge'; branchSlugs: string[] }
+  | { type: 'synthesize'; prompt?: string };
+
+/** 编排计划（可选，附加在 SplitPlan 上或独立使用） */
+export interface OrchestrationPlan {
+  preset?: OrchestrationPreset;
+  steps?: OrchestrationStep[];
+}
+
 // ── 编排会话（持久化） ──
 
 export interface OrchestratorSession {
@@ -65,6 +91,8 @@ export interface OrchestratorSession {
   originalPrompt: string;
   phase: OrchestratorPhase;
   splitPlan?: SplitPlan;
+  /** 自定义编排计划（从 SplitPlan.orchestration 提取，或由 preset 生成） */
+  orchestrationPlan?: OrchestrationPlan;
   workers: WorkerTask[];
   synthesisResult?: string;
   baseBranch: string;
