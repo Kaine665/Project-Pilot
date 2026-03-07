@@ -869,8 +869,12 @@ export function AgentChatPanel({
   }, []);
 
   // Listen for toggle-session-compress event (from parent page header)
+  // Only respond if this panel is visible (agents page mounts multiple hidden instances)
   useEffect(() => {
-    const handler = () => { if (messages.length >= 6 && !isStreaming) setCompressDialogOpen(true); };
+    const handler = () => {
+      if (scrollRef.current?.offsetParent === null) return;
+      if (messages.length >= 6 && !isStreaming) setCompressDialogOpen(true);
+    };
     window.addEventListener('toggle-session-compress', handler);
     return () => window.removeEventListener('toggle-session-compress', handler);
   }, [messages.length, isStreaming]);
