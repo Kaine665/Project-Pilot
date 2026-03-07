@@ -6,12 +6,12 @@ import type { ProjectsData } from '@/types';
 
 /**
  * POST /api/orchestrator — Start a new orchestration
- * Body: { projectKey: string, prompt: string }
+ * Body: { projectKey: string, prompt: string, teamId?: string }
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { projectKey, prompt } = body as { projectKey?: string; prompt?: string };
+    const { projectKey, prompt, teamId } = body as { projectKey?: string; prompt?: string; teamId?: string };
 
     if (!projectKey || !prompt) {
       return NextResponse.json({ error: 'projectKey and prompt are required' }, { status: 400 });
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Project not found or has no path' }, { status: 404 });
     }
 
-    const orchId = await orchestratorManager.start(projectKey, project.path, prompt);
+    const orchId = await orchestratorManager.start(projectKey, project.path, prompt, teamId);
     return NextResponse.json({ orchestrationId: orchId });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
