@@ -523,7 +523,7 @@ export interface TodoItem {
   status: TodoStatus;
   priority: TodoPriority;
   agentId?: string;
-  projectKey?: string;      // 关联项目
+  projectKey?: string;
   createdAt: string;
   updatedAt: string;
 }

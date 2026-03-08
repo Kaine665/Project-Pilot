@@ -68,6 +68,7 @@ export async function POST(request: NextRequest) {
           ...(updates.status !== undefined && { status: updates.status }),
           ...(updates.priority !== undefined && { priority: updates.priority }),
           ...(updates.agentId !== undefined && { agentId: updates.agentId || undefined }),
+          ...(updates.projectKey !== undefined && { projectKey: updates.projectKey || undefined }),
           updatedAt: now,
         };
       }),

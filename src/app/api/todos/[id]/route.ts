@@ -19,7 +19,7 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const { title, description, status, priority, agentId } = body;
+  const { title, description, status, priority, agentId, projectKey } = body;
 
   const validStatuses = ['pending', 'in_progress', 'done'];
   const validPriorities = ['high', 'medium', 'low'];
@@ -53,6 +53,7 @@ export async function PATCH(
         ...(status !== undefined && { status }),
         ...(priority !== undefined && { priority }),
         ...(agentId !== undefined && { agentId: agentId || undefined }),
+        ...(projectKey !== undefined && { projectKey: projectKey || undefined }),
         updatedAt: new Date().toISOString(),
       };
       updated = patched;

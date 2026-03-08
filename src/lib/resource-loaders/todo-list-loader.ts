@@ -24,8 +24,8 @@ const API_GUIDE = `### Todo API
 | 操作 | 方法 | 路径 | 请求体 |
 |------|------|------|--------|
 | 列表 | GET | /api/todos | — |
-| 新建 | POST | /api/todos | \`{ title, description?, priority? }\` |
-| 更新 | PATCH | /api/todos/:id | \`{ title?, description?, status?, priority? }\` |
+| 新建 | POST | /api/todos | \`{ title, description?, priority?, projectKey? }\` |
+| 更新 | PATCH | /api/todos/:id | \`{ title?, description?, status?, priority?, projectKey? }\` |
 | 删除 | DELETE | /api/todos/:id | — |
 
 字段说明：
@@ -48,11 +48,16 @@ curl -s -X POST http://localhost:4000/api/todos -H "Content-Type: application/js
 export class TodoListLoader implements ResourceLoader {
   readonly type = 'todo-list' as const;
 
-  async resolve(ref: ResourceRef, _ctx: LoaderContext): Promise<ResolvedResource> {
+  async resolve(ref: ResourceRef, ctx: LoaderContext): Promise<ResolvedResource> {
     const data = await readJsonFile<TodosData>(getTodosPath(), { todos: [] });
-    const todos = ref.id === 'all'
+    let todos = ref.id === 'all'
       ? data.todos
       : data.todos.filter(t => t.status !== 'done');
+
+    // 按项目过滤：有 projectKey 时只显示该项目的 todos
+    if (ctx.projectKey) {
+      todos = todos.filter(t => t.projectKey === ctx.projectKey);
+    }
 
     if (todos.length === 0) {
       return {
