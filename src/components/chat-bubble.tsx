@@ -203,13 +203,6 @@ export const ChatBubble = memo(function ChatBubble({
             </div>
           )}
 
-          {/* Extracted plan indicator */}
-          {message.extractedPlanId && (
-            <div className="mt-1.5 rounded border border-green-200 bg-green-50 px-2 py-1 text-xs text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
-              {t('chat.planExtracted')}
-            </div>
-          )}
-
           {/* Plan file write badge */}
           {planWriteContent && onViewPlan && (
             <button

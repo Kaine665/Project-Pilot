@@ -3,8 +3,6 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import {
   getDataDir,
-  getTasksPath,
-  getAiPlansPath,
   getFlowsDir,
   getFlowIndexPath,
   getAgentsPath,
@@ -70,7 +68,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 统计清除数量
-    const cleared = { sessions: 0, tasks: 0, plans: 0, flows: 0 };
+    const cleared = { sessions: 0, flows: 0 };
 
     if (target === 'sessions' || target === 'all') {
       // 统计将被清除的会话数
@@ -80,20 +78,10 @@ export async function POST(request: NextRequest) {
       cleared.sessions = sessionsData.sessions.length;
 
       // 备份 sessions 相关
-      await backupFile(getTasksPath());
-      await backupFile(getAiPlansPath());
       await backupFile(getAgentChatSessionsPath());
-      await backupDir2(path.join(dataDir, 'conversations'));
 
       // 清空
-      await writeJsonFile(getTasksPath(), { tasks: [] });
-      await writeJsonFile(getAiPlansPath(), { plans: [] });
       await writeJsonFile(getAgentChatSessionsPath(), { sessions: [] });
-
-      // 删除 conversations 目录内容
-      try {
-        await fs.rm(path.join(dataDir, 'conversations'), { recursive: true, force: true });
-      } catch { /* ignore */ }
 
       // 清理所有运行时 prompt 副本（.runtime/ 目录）
       try {

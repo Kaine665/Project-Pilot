@@ -32,47 +32,8 @@ export function getDataDir(): string {
   return DATA_DIR;
 }
 
-export function getTasksPath(): string {
-  return path.join(DATA_DIR, 'tasks.json');
-}
-
 export function getProjectsPath(): string {
   return path.join(DATA_DIR, 'projects.json');
-}
-
-export function getAiPlansPath(): string {
-  return path.join(DATA_DIR, 'ai-plans.json');
-}
-
-export function getArtifactsDir(planId?: string): string {
-  if (planId) {
-    return path.join(DATA_DIR, 'artifacts', planId);
-  }
-  return path.join(DATA_DIR, 'artifacts');
-}
-
-/** 旧格式：单个对话文件（向后兼容 / 懒迁移源） */
-export function getConversationPath(taskId: string): string {
-  return path.join(DATA_DIR, 'conversations', `${taskId}.json`);
-}
-
-/** 新格式：每个 task 一个对话目录 */
-export function getConversationDir(taskId: string): string {
-  return path.join(DATA_DIR, 'conversations', taskId);
-}
-
-/** 对话索引文件 */
-export function getConversationIndexPath(taskId: string): string {
-  return path.join(DATA_DIR, 'conversations', taskId, '_index.json');
-}
-
-/** 单个对话文件 */
-export function getConversationFilePath(taskId: string, conversationId: string): string {
-  return path.join(DATA_DIR, 'conversations', taskId, `${conversationId}.json`);
-}
-
-export function getTaskArtifactsPath(taskId: string): string {
-  return path.join(DATA_DIR, 'task-artifacts', `${taskId}.json`);
 }
 
 export function getFlowsDir(): string {
@@ -140,10 +101,6 @@ export async function ensureFlowsMigrated(): Promise<void> {
   }
 }
 
-
-export function getArtifactSummaryPath(planId: string): string {
-  return path.join(DATA_DIR, 'artifacts', planId, 'summary.json');
-}
 
 export function getSettingsPath(): string {
   return path.join(DATA_DIR, 'settings.json');

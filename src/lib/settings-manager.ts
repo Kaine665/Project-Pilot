@@ -7,7 +7,7 @@
 
 import { getSettingsPath, readJsonFile, writeJsonFile } from '@/lib/file-store';
 import { getProviderPreset } from '@/lib/provider-registry';
-import type { AgentCapabilities, AppSettings, ClaudeSettings, ProviderId, SessionPhase } from '@/types';
+import type { AgentCapabilities, AppSettings, ClaudeSettings, ProviderId } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_APP_SETTINGS } from '@/types';
 
 const CACHE_TTL_MS = 30_000;
@@ -159,26 +159,6 @@ export async function buildClaudeMaxTurnsArgs(): Promise<string[]> {
   return ['--max-turns', String(maxTurns)];
 }
 
-/**
- * 根据 phase + 全局设置构造权限参数。
- *
- * - skipPermissions=true（默认）：有工具权限的阶段返回 ['--dangerously-skip-permissions']
- * - skipPermissions=false：始终返回 []，所有工具调用需用户审批
- *
- * understanding/branching 阶段始终不传该参数（无论设置如何）。
- */
-export async function buildClaudePermissionArgs(phase: SessionPhase | undefined): Promise<string[]> {
-  const effective = phase ?? 'understanding';
-
-  if (effective === 'branching' || effective === 'understanding') {
-    return [];
-  }
-
-  const settings = await getSettings();
-  const skip = settings.claude.skipPermissions !== false;
-  return skip ? ['--dangerously-skip-permissions'] : [];
-}
-
 // ── Agent capability → CLI args ──
 
 /** Maps capability keys to Claude Code tool names accepted by --allowedTools */
@@ -223,22 +203,14 @@ export function buildAgentToolArgs(capabilities: AgentCapabilities | undefined):
 }
 
 /**
- * 根据 phase + Agent 能力配置构造权限参数。
+ * 根据 Agent 能力配置构造权限参数。
  *
- * - understanding/branching 阶段始终不传
  * - Agent skipReview=false → 不传（需审核）
  * - Agent skipReview=true + 全局 skipPermissions=true → 传 --dangerously-skip-permissions
  */
 export async function buildAgentPermissionArgs(
-  phase: SessionPhase | undefined,
   capabilities: AgentCapabilities | undefined,
 ): Promise<string[]> {
-  const effective = phase ?? 'understanding';
-
-  if (effective === 'branching' || effective === 'understanding') {
-    return [];
-  }
-
   const caps = capabilities ?? DEFAULT_AGENT_CAPABILITIES;
   if (!caps.skipReview) return [];
 

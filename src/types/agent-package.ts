@@ -38,7 +38,6 @@ export interface AgentPackage {
     description?: string;
     icon?: string;
     capabilities?: AgentCapabilities;
-    executionMode?: 'task' | 'chat';
     requiredParams?: string[];
   };
 

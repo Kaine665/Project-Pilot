@@ -237,7 +237,7 @@ export function AgentChatPanel({
         const res = await fetch('/api/agents', { cache: 'no-store' });
         const data = await res.json();
         const available = (data.agents ?? []).filter(
-          (a: Agent) => !a.archived && a.executionMode !== 'task' && a.id !== agent.id,
+          (a: Agent) => !a.archived && a.id !== agent.id,
         );
         setGuestAgents(available);
       } catch {
