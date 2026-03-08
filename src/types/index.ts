@@ -120,6 +120,8 @@ export interface GeneralSettings {
 export interface AppSettings {
   claude: ClaudeSettings;
   general?: GeneralSettings;
+  /** 危险命令检测配置（各分类的检测级别） */
+  dangerDetector?: DangerDetectorSettings;
   version: number;
 }
 
@@ -158,6 +160,36 @@ export interface ChatMessage {
 }
 
 export type DangerLevel = 'warning' | 'critical';
+
+/** Danger Detector 检测级别（含 disabled） */
+export type DangerActionLevel = DangerLevel | 'disabled';
+
+/**
+ * 危险命令检测分类 ID。
+ * 每个分类对应一组相关的检测规则。
+ */
+export type DangerCategory =
+  | 'dataDirectory'    // 数据目录写入保护
+  | 'sqlDestructive'   // SQL DROP/TRUNCATE
+  | 'diskFormat'       // 磁盘格式化
+  | 'fileDestructive'  // rm -rf, del /s
+  | 'gitDangerous'     // git push, force push, reset --hard 等
+  | 'npmPublish'       // npm publish
+  | 'processKill';     // kill -9
+
+/** 各分类的检测级别配置 */
+export type DangerDetectorSettings = Record<DangerCategory, DangerActionLevel>;
+
+/** 默认 Danger Detector 配置 */
+export const DEFAULT_DANGER_SETTINGS: DangerDetectorSettings = {
+  dataDirectory: 'warning',
+  sqlDestructive: 'critical',
+  diskFormat: 'critical',
+  fileDestructive: 'warning',
+  gitDangerous: 'warning',
+  npmPublish: 'warning',
+  processKill: 'warning',
+};
 
 export type ChatSSEEvent =
   | { type: 'text_delta'; text: string }

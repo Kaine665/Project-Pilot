@@ -19,7 +19,9 @@
 import { spawnClaude } from '@/lib/claude-cli';
 import { StreamParser, LineBuffer } from '@/lib/claude-stream-parser';
 import { detectDangerousCommand } from '@/lib/danger-detector';
+import { getSettings } from '@/lib/settings-manager';
 import type { ChatSSEEvent, ChatToolCall, ContentBlock } from '@/types';
+import { DEFAULT_DANGER_SETTINGS } from '@/types';
 import type { BaseRun, RunStatus, RunStatusInfo, SpawnConfig } from './types';
 
 // ── Constants ──
@@ -192,6 +194,14 @@ export abstract class BaseChatManager<TRun extends BaseRun> {
       claudeSessionId: config.claudeSessionId,
     };
 
+    // ── Snapshot danger detector settings for this run ──
+    try {
+      const settings = await getSettings();
+      shell.dangerSettings = settings.dangerDetector ?? DEFAULT_DANGER_SETTINGS;
+    } catch {
+      shell.dangerSettings = DEFAULT_DANGER_SETTINGS;
+    }
+
     // ── Let subclass build the full TRun ──
     const run = this.createRun(config, shell);
     this.runs.set(runKey, run);
@@ -322,7 +332,7 @@ export abstract class BaseChatManager<TRun extends BaseRun> {
 
       // ── Danger detection (unified for all managers) ──
       if (event.toolName === 'Bash') {
-        const danger = detectDangerousCommand(event.input);
+        const danger = detectDangerousCommand(event.input, run.dangerSettings);
         if (danger) {
           const warningEvent: ChatSSEEvent = {
             type: 'dangerous_tool_warning',
