@@ -7,8 +7,9 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import {
   Shield, Brain, Wrench, Check, X, Loader2, ExternalLink, Server, Copy,
   Gauge, RotateCw, Eye, Sun, Moon, Monitor,
-  Download, Upload, Trash2, FolderOpen, Info, Github,
+  Download, Upload, Trash2, FolderOpen, Info, Github, ShieldAlert,
 } from 'lucide-react';
+import type { DangerCategory, DangerActionLevel, DangerDetectorSettings } from '@/types';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import type { Theme } from '@/components/theme-provider';
 import type { ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort } from '@/types';
@@ -759,6 +760,86 @@ export function SettingsDataSection({
           {dataStatus.message}
         </div>
       )}
+    </>
+  );
+}
+
+// ══════════════ Safety Detection ══════════════
+
+const DANGER_CATEGORIES: Array<{
+  key: DangerCategory;
+  labelKey: string;
+  hintKey: string;
+}> = [
+  { key: 'dataDirectory', labelKey: 'dangerDataDirectory', hintKey: 'dangerDataDirectoryHint' },
+  { key: 'sqlDestructive', labelKey: 'dangerSqlDestructive', hintKey: 'dangerSqlDestructiveHint' },
+  { key: 'diskFormat', labelKey: 'dangerDiskFormat', hintKey: 'dangerDiskFormatHint' },
+  { key: 'fileDestructive', labelKey: 'dangerFileDestructive', hintKey: 'dangerFileDestructiveHint' },
+  { key: 'gitDangerous', labelKey: 'dangerGitDangerous', hintKey: 'dangerGitDangerousHint' },
+  { key: 'npmPublish', labelKey: 'dangerNpmPublish', hintKey: 'dangerNpmPublishHint' },
+  { key: 'processKill', labelKey: 'dangerProcessKill', hintKey: 'dangerProcessKillHint' },
+];
+
+const DANGER_LEVELS: DangerActionLevel[] = ['critical', 'warning', 'disabled'];
+
+interface SafetySectionProps extends TranslationProps {
+  dangerSettings: DangerDetectorSettings;
+  onDangerSettingChange: (category: DangerCategory, level: DangerActionLevel) => void;
+}
+
+export function SettingsSafetySection({
+  t, btnActive, btnInactive,
+  dangerSettings,
+  onDangerSettingChange,
+}: SafetySectionProps) {
+  const levelColors: Record<DangerActionLevel, string> = {
+    critical: 'bg-red-600 text-white dark:bg-red-500',
+    warning: 'bg-amber-500 text-white dark:bg-amber-400 dark:text-zinc-900',
+    disabled: '',
+  };
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldAlert className="h-5 w-5" />
+            {t('safetyDetection')}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1">
+          <p className="text-xs text-zinc-500 mb-4">{t('safetyDetectionHint')}</p>
+          <div className="space-y-4">
+            {DANGER_CATEGORIES.map(({ key, labelKey, hintKey }) => (
+              <div key={key} className="flex items-center justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                    {t(labelKey)}
+                  </p>
+                  <p className="text-xs text-zinc-500 truncate">
+                    {t(hintKey)}
+                  </p>
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  {DANGER_LEVELS.map((level) => (
+                    <button
+                      key={level}
+                      onClick={() => onDangerSettingChange(key, level)}
+                      className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                        dangerSettings[key] === level
+                          ? (levelColors[level] || btnActive)
+                          : btnInactive
+                      }`}
+                    >
+                      {t(`dangerLevel${level.charAt(0).toUpperCase() + level.slice(1)}`)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
     </>
   );
 }

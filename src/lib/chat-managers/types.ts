@@ -6,7 +6,7 @@
  */
 
 import type { ChildProcess } from 'child_process';
-import type { ChatSSEEvent, ChatToolCall, ContentBlock } from '@/types';
+import type { ChatSSEEvent, ChatToolCall, ContentBlock, DangerDetectorSettings } from '@/types';
 
 // ── Run lifecycle ──
 
@@ -37,6 +37,9 @@ export interface BaseRun {
 
   // Resume support
   claudeSessionId?: string;
+
+  // Danger detector settings snapshot (captured at spawn time)
+  dangerSettings?: DangerDetectorSettings;
 }
 
 // ── Spawn configuration (built by subclass, consumed by base) ──

@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSettings, saveSettings } from '@/lib/settings-manager';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
-import type { ClaudeAuthMode, ProviderId, EffortLevel, OpenAIReasoningEffort, AppSettings } from '@/types';
+import type { ClaudeAuthMode, ProviderId, EffortLevel, OpenAIReasoningEffort, AppSettings, DangerCategory, DangerActionLevel } from '@/types';
+import { DEFAULT_DANGER_SETTINGS } from '@/types';
 
 const VALID_AUTH_MODES: ClaudeAuthMode[] = ['api_key', 'oauth'];
 const VALID_EFFORT_LEVELS: EffortLevel[] = ['low', 'medium', 'high'];
 const VALID_OPENAI_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
 const VALID_PROVIDERS: ProviderId[] = PROVIDER_REGISTRY.map((p) => p.id);
+const VALID_DANGER_LEVELS: DangerActionLevel[] = ['critical', 'warning', 'disabled'];
+const VALID_DANGER_CATEGORIES: DangerCategory[] = [
+  'dataDirectory', 'sqlDestructive', 'diskFormat',
+  'fileDestructive', 'gitDangerous', 'npmPublish', 'processKill',
+];
 
 /**
  * GET /api/settings
@@ -120,6 +126,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'telemetry must be a boolean' }, { status: 400 });
   }
 
+  // dangerDetector 字段验证
+  if (body.dangerDetector !== undefined) {
+    if (typeof body.dangerDetector !== 'object' || body.dangerDetector === null) {
+      return NextResponse.json({ error: 'dangerDetector must be an object' }, { status: 400 });
+    }
+    for (const [cat, level] of Object.entries(body.dangerDetector)) {
+      if (!VALID_DANGER_CATEGORIES.includes(cat as DangerCategory)) {
+        return NextResponse.json({ error: `Invalid danger category: ${cat}` }, { status: 400 });
+      }
+      if (!VALID_DANGER_LEVELS.includes(level as DangerActionLevel)) {
+        return NextResponse.json({ error: `Invalid danger level for ${cat}: ${level}` }, { status: 400 });
+      }
+    }
+  }
+
   const updated: AppSettings = {
     ...current,
     claude: {
@@ -136,6 +157,12 @@ export async function POST(request: NextRequest) {
       general: {
         ...current.general,
         ...(body.general?.telemetry !== undefined && { telemetry: body.general.telemetry }),
+      },
+    }),
+    ...(body.dangerDetector !== undefined && {
+      dangerDetector: {
+        ...(current.dangerDetector ?? DEFAULT_DANGER_SETTINGS),
+        ...body.dangerDetector,
       },
     }),
     version: current.version,

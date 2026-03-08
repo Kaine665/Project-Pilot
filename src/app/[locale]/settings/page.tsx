@@ -5,7 +5,7 @@ import { useTranslations, useLocale } from 'next-intl';
 import { useRouter, usePathname } from '@/i18n/routing';
 import { TopNav } from '@/components/top-nav';
 import { Button } from '@/components/ui/button';
-import { Check, X, Loader2, Brain, Wrench, Palette, Database, Eye, Settings } from 'lucide-react';
+import { Check, X, Loader2, Brain, Wrench, Palette, Database, Eye, Settings, ShieldAlert } from 'lucide-react';
 import { getProviderPreset } from '@/lib/provider-registry';
 import { useTheme } from '@/components/theme-provider';
 import {
@@ -14,8 +14,10 @@ import {
   SettingsAppearanceSection,
   SettingsDataSection,
   SettingsPrivacySection,
+  SettingsSafetySection,
 } from '@/components/settings-sections';
-import type { ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort } from '@/types';
+import type { ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort, DangerCategory, DangerActionLevel, DangerDetectorSettings } from '@/types';
+import { DEFAULT_DANGER_SETTINGS } from '@/types';
 
 const OPENAI_REASONING_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
 
@@ -50,6 +52,9 @@ export default function SettingsPage() {
 
   // Privacy state
   const [telemetry, setTelemetry] = useState(false);
+
+  // Safety detection state
+  const [dangerSettings, setDangerSettings] = useState<DangerDetectorSettings>({ ...DEFAULT_DANGER_SETTINGS });
 
   // UI state
   const [activeSection, setActiveSection] = useState('ai');
@@ -182,6 +187,7 @@ export default function SettingsPage() {
         setDefaultExposePromptPath(data.claude.defaultExposePromptPath !== false);
         setBaseUrl(data.claude.baseUrl || '');
         setTelemetry(data.general?.telemetry || false);
+        setDangerSettings({ ...DEFAULT_DANGER_SETTINGS, ...data.dangerDetector });
 
         // Per-provider API keys (backward compat: fill from flat apiKey if needed)
         const incomingKeys = (data.claude.providerApiKeys && typeof data.claude.providerApiKeys === 'object')
@@ -276,6 +282,7 @@ export default function SettingsPage() {
   const navItems = useMemo(() => [
     { id: 'ai', icon: Brain, label: t('aiConfig') },
     { id: 'claude', icon: Wrench, label: t('claudeCodeConfig') },
+    { id: 'safety', icon: ShieldAlert, label: t('safetyDetection') },
     { id: 'appearance', icon: Palette, label: t('appearance') },
     { id: 'data', icon: Database, label: t('dataManagement') },
     { id: 'privacy', icon: Eye, label: t('privacy') },
@@ -362,6 +369,10 @@ export default function SettingsPage() {
     }
   };
 
+  const handleDangerSettingChange = useCallback((category: DangerCategory, level: DangerActionLevel) => {
+    setDangerSettings((prev) => ({ ...prev, [category]: level }));
+  }, []);
+
   const handleSave = async () => {
     setSaving(true);
     setSaveStatus('idle');
@@ -387,6 +398,7 @@ export default function SettingsPage() {
             skipPermissions, effortLevel, maxTurns, defaultExposePromptPath, baseUrl,
           },
           general: { telemetry },
+          dangerDetector: dangerSettings,
         }),
       });
       if (res.ok) {
@@ -653,6 +665,14 @@ export default function SettingsPage() {
               />
             )}
 
+            {activeSection === 'safety' && (
+              <SettingsSafetySection
+                t={t} tActions={tActions} btnActive={btnActive} btnInactive={btnInactive}
+                dangerSettings={dangerSettings}
+                onDangerSettingChange={handleDangerSettingChange}
+              />
+            )}
+
             {activeSection === 'appearance' && (
               <SettingsAppearanceSection
                 t={t} tActions={tActions} btnActive={btnActive} btnInactive={btnInactive}
@@ -680,7 +700,7 @@ export default function SettingsPage() {
             )}
 
             {/* ── Save Button (for AI/Claude/Privacy sections) ── */}
-            {(activeSection === 'ai' || activeSection === 'claude' || activeSection === 'privacy') && (
+            {(activeSection === 'ai' || activeSection === 'claude' || activeSection === 'safety' || activeSection === 'privacy') && (
               <div className="flex items-center gap-3">
                 <Button onClick={handleSave} disabled={saving}>
                   {saving && <Loader2 className="h-4 w-4 animate-spin" />}
