@@ -841,8 +841,8 @@ export default function AgentsPage() {
                       initialSessionId={os.sessionId}
                       projectKey={activeKey}
                       onSessionChange={(newSession) => {
-                        // Update the opened session's sessionId if it was null (new session)
-                        if (newSession && os.sessionId === null) {
+                        // Update the opened session's sessionId (new session or branch switch)
+                        if (newSession && os.sessionId !== newSession.id) {
                           setOpenedSessions(prev =>
                             prev.map(p => p.key === os.key ? { ...p, sessionId: newSession.id } : p),
                           );

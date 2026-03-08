@@ -1036,10 +1036,12 @@ export function AgentChatPanel({
       };
       setSessionList(prev => [newItem, ...prev]);
       handleSwitchSession(newItem);
+      // Notify parent to update sidebar and opened session tab
+      onSessionChange?.(newItem);
     } catch {
       // ignore
     }
-  }, [isStreaming, sessionId, messages, handleSwitchSession]);
+  }, [isStreaming, sessionId, messages, handleSwitchSession, onSessionChange]);
 
   // Regenerate: remove the last assistant message and resend the last user message
   const handleRegenerate = useCallback(() => {
