@@ -8,9 +8,13 @@ const DEFAULT: TodosData = { todos: [] };
  * GET /api/todos
  * Return all todo items.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   const data = await readJsonFile<TodosData>(getTodosPath(), DEFAULT);
-  return NextResponse.json({ todos: data.todos });
+  const projectKey = request.nextUrl.searchParams.get('project');
+  const todos = projectKey
+    ? data.todos.filter(t => t.projectKey === projectKey)
+    : data.todos;
+  return NextResponse.json({ todos });
 }
 
 /**
@@ -20,7 +24,7 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { title, description, priority } = body;
+  const { title, description, priority, projectKey } = body;
 
   if (!title || typeof title !== 'string') {
     return NextResponse.json({ error: 'title is required' }, { status: 400 });
@@ -45,6 +49,7 @@ export async function POST(request: NextRequest) {
     description: description?.trim() || undefined,
     status: 'pending',
     priority: todoPriority,
+    projectKey: projectKey || undefined,
     createdAt: now,
     updatedAt: now,
   };

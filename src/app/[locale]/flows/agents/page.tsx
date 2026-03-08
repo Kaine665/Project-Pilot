@@ -11,10 +11,13 @@ import { AgentChatPanel } from '@/components/agent-chat-panel';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import { AgentIcon, SettingsForm, type FormData, emptyForm, agentToForm } from '@/components/agent-form';
 import { type AllSessionItem, type OpenedSession, groupSessionsByDay, syncUrlParams } from '@/components/agent-session-utils';
+import { useProject } from '@/components/project-context';
 
 // ── Main page ──
 
 export default function AgentsPage() {
+  const { activeKey } = useProject();
+
   // ── Core data ──
   const [agents, setAgents] = useState<Agent[]>([]);
   const [allSessions, setAllSessions] = useState<AllSessionItem[]>([]);
@@ -94,8 +97,11 @@ export default function AgentsPage() {
   // ── Fetch all sessions (cross-agent) ──
   const fetchAllSessions = useCallback(async () => {
     try {
+      const sessUrl = activeKey
+        ? `/api/agent-chat/sessions?projectKey=${encodeURIComponent(activeKey)}`
+        : '/api/agent-chat/sessions';
       const [sessRes, agentsRes] = await Promise.all([
-        fetch('/api/agent-chat/sessions', { cache: 'no-store' }),
+        fetch(sessUrl, { cache: 'no-store' }),
         fetch('/api/agents'),
       ]);
       const sessData = await sessRes.json();
@@ -126,7 +132,7 @@ export default function AgentsPage() {
       // Also update agents cache
       setAgents(agentsData.agents ?? []);
     } catch { /* ignore */ }
-  }, []);
+  }, [activeKey]);
 
   useEffect(() => { fetchAllSessions(); }, [fetchAllSessions]);
 
@@ -729,6 +735,7 @@ export default function AgentsPage() {
                     key={`agent-${selectedAgent.id}`}
                     agent={selectedAgent}
                     initialSessionId={null}
+                    projectKey={activeKey}
                     onSessionChange={(newSession) => {
                       if (newSession && selectedAgent) {
                         setAllSessions(prev => {
@@ -814,6 +821,7 @@ export default function AgentsPage() {
                     <AgentChatPanel
                       agent={agent}
                       initialSessionId={os.sessionId}
+                      projectKey={activeKey}
                       onSessionChange={(newSession) => {
                         // Update the opened session's sessionId if it was null (new session)
                         if (newSession && os.sessionId === null) {

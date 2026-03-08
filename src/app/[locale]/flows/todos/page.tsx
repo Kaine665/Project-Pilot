@@ -5,6 +5,7 @@ import { ListTodo, Plus, Trash2, ChevronDown, Circle, CheckCircle2, Bot, Play, X
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import type { TodoItem, TodoStatus, TodoPriority, Agent } from '@/types';
+import { useProject } from '@/components/project-context';
 
 const statusConfig: Record<TodoStatus, { label: string; color: string; bg: string }> = {
   pending:     { label: '待办',   color: 'text-zinc-500',  bg: 'bg-zinc-100 dark:bg-zinc-800' },
@@ -30,6 +31,7 @@ function formatDate(iso: string): string {
 export default function TodosPage() {
   const t = useTranslations('todos');
   const router = useRouter();
+  const { activeKey } = useProject();
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,7 +56,10 @@ export default function TodosPage() {
   const fetchTodos = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/todos');
+      const url = activeKey
+        ? `/api/todos?project=${encodeURIComponent(activeKey)}`
+        : '/api/todos';
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setTodos(data.todos ?? []);
@@ -64,7 +69,7 @@ export default function TodosPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeKey]);
 
   const fetchAgents = useCallback(async () => {
     try {
@@ -122,7 +127,7 @@ export default function TodosPage() {
       const res = await fetch('/api/todos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title }),
+        body: JSON.stringify({ title, projectKey: activeKey || undefined }),
       });
       if (res.ok) {
         setCreatingTitle('');
