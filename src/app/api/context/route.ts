@@ -23,15 +23,20 @@ async function writeIndex(data: ContextIndexData): Promise<void> {
   await writeJsonFile(getContextIndexPath(), data);
 }
 
-/** GET /api/context — list all context entries */
-export async function GET() {
+/** GET /api/context — list all context entries (optionally filtered by project) */
+export async function GET(request: NextRequest) {
   const data = await readIndex();
-  return NextResponse.json({ entries: data.entries });
+  const projectFilter = request.nextUrl.searchParams.get('project');
+  let filtered = data.entries;
+  if (projectFilter) {
+    filtered = filtered.filter(e => !e.projectKey || e.projectKey === projectFilter);
+  }
+  return NextResponse.json({ entries: filtered });
 }
 
 /** POST /api/context — create a new context entry + content file */
 export async function POST(request: NextRequest) {
-  const { label, description, fileName, format, content, group, sourcePath, status, sourceAgentSessionId, producedAt } = await request.json();
+  const { label, description, fileName, format, content, group, sourcePath, status, sourceAgentSessionId, producedAt, projectKey } = await request.json();
 
   if (!label?.trim()) {
     return NextResponse.json({ error: 'label is required' }, { status: 400 });
@@ -53,6 +58,7 @@ export async function POST(request: NextRequest) {
 
   const now = new Date().toISOString();
   const trimmedGroup = group?.trim() || undefined;
+  const trimmedProjectKey = projectKey?.trim() || undefined;
   const trimmedSourcePath = sourcePath?.trim() || undefined;
   const trimmedStatus = status === 'draft' ? 'draft' : undefined; // only 'draft' is stored; 'active' is default
   const trimmedSourceAgentSessionId = sourceAgentSessionId?.trim() || undefined;
@@ -65,6 +71,7 @@ export async function POST(request: NextRequest) {
     fileName: trimmedFileName,
     format,
     ...(trimmedGroup ? { group: trimmedGroup } : {}),
+    ...(trimmedProjectKey ? { projectKey: trimmedProjectKey } : {}),
     ...(trimmedSourcePath ? { sourcePath: trimmedSourcePath } : {}),
     ...(trimmedStatus ? { status: trimmedStatus } : {}),
     ...(trimmedSourceAgentSessionId ? { sourceAgentSessionId: trimmedSourceAgentSessionId } : {}),

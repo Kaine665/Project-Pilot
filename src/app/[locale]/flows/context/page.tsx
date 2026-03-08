@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { BookOpen, Plus, Trash2, X, User, Key, Server, Monitor, FolderTree, Globe, Database, Mail, Clock, FolderOpen, Upload, Check, Bot } from 'lucide-react';
 import type { ContextEntry } from '@/types';
 import type { LucideIcon } from 'lucide-react';
+import { useProject } from '@/components/project-context';
 
 type FormData = {
   label: string;
@@ -250,6 +251,7 @@ function EntryCard({ entry, selectedId, onSelect, onDelete }: {
 }
 
 export default function ContextPage() {
+  const { activeKey } = useProject();
   const [entries, setEntries] = useState<ContextEntry[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -282,13 +284,16 @@ export default function ContextPage() {
 
   const fetchEntries = useCallback(async () => {
     try {
-      const res = await fetch('/api/context');
+      const url = activeKey
+        ? `/api/context?project=${encodeURIComponent(activeKey)}`
+        : '/api/context';
+      const res = await fetch(url);
       const data = await res.json();
       setEntries(data.entries ?? []);
     } catch {
       setEntries([]);
     }
-  }, []);
+  }, [activeKey]);
 
   useEffect(() => { fetchEntries(); }, [fetchEntries]);
 
@@ -376,6 +381,7 @@ export default function ContextPage() {
             format: form.format,
             group: form.group.trim() || undefined,
             sourcePath: form.sourcePath.trim() || undefined,
+            projectKey: activeKey || undefined,
             content,
           }),
         });

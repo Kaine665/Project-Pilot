@@ -491,6 +491,7 @@ export interface ContextEntry {
   fileName: string;     // 相对于 context 目录，如 "user-profile.json"
   format: 'json' | 'markdown' | 'text';
   group?: string;       // 上下文包/分组名，如 "ELApp"，可选
+  projectKey?: string;      // 关联项目（空=全局上下文）
   /** 原始文件的本地绝对路径，由用户在从本地文件导入时填写，供 AI 修改源文件使用 */
   sourcePath?: string;
   /**
@@ -522,6 +523,7 @@ export interface TodoItem {
   status: TodoStatus;
   priority: TodoPriority;
   agentId?: string;
+  projectKey?: string;      // 关联项目
   createdAt: string;
   updatedAt: string;
 }
