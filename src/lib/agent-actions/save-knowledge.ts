@@ -74,6 +74,7 @@ export const saveKnowledgeAction: AgentAction<KnowledgeTagData> = {
       description: data.description,
       fileName,
       format: data.format,
+      ...(ctx.projectKey ? { projectKey: ctx.projectKey } : {}),
       status: 'draft',
       sourceAgentSessionId: ctx.sessionId,
       producedAt: now,

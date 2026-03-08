@@ -446,6 +446,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       const actionCtx = {
         sessionId: run.sessionId,
         agentId: run.agentId,
+        projectKey: run.projectKey,
         emit: (event: ChatSSEEvent) => this.trackAndEmit(run, event),
         setSessionTitle: (title: string) => { if (!run.sessionTitle) run.sessionTitle = title; },
       };

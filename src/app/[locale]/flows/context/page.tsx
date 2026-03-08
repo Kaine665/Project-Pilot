@@ -210,11 +210,12 @@ const FORMAT_OPTIONS: Array<{ value: FormData['format']; label: string }> = [
   { value: 'text', label: 'Text' },
 ];
 
-function EntryCard({ entry, selectedId, onSelect, onDelete }: {
+function EntryCard({ entry, selectedId, onSelect, onDelete, isGlobal }: {
   entry: ContextEntry;
   selectedId: string | null;
   onSelect: (entry: ContextEntry) => void;
   onDelete: (id: string) => void;
+  isGlobal?: boolean;
 }) {
   return (
     <div
@@ -239,6 +240,11 @@ function EntryCard({ entry, selectedId, onSelect, onDelete }: {
         <span className="shrink-0 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500">
           {entry.format}
         </span>
+        {isGlobal && (
+          <span className="shrink-0 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-400 dark:bg-blue-900/20 dark:text-blue-400">
+            全局
+          </span>
+        )}
       </div>
       <div className="mt-1.5 text-xs leading-relaxed text-zinc-400 dark:text-zinc-500 line-clamp-1">
         {entry.description || entry.fileName}
@@ -284,9 +290,7 @@ export default function ContextPage() {
 
   const fetchEntries = useCallback(async () => {
     try {
-      const url = activeKey
-        ? `/api/context?project=${encodeURIComponent(activeKey)}`
-        : '/api/context';
+      const url = activeKey ? `/api/context?projectKey=${activeKey}` : '/api/context';
       const res = await fetch(url);
       const data = await res.json();
       setEntries(data.entries ?? []);
@@ -295,7 +299,7 @@ export default function ContextPage() {
     }
   }, [activeKey]);
 
-  useEffect(() => { fetchEntries(); }, [fetchEntries]);
+  useEffect(() => { fetchEntries(); handleClose(); }, [fetchEntries]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadEntryContent = useCallback(async (id: string) => {
     try {
@@ -588,7 +592,7 @@ export default function ContextPage() {
                   </div>
                   <div className="grid grid-cols-3 gap-4">
                     {groupEntries.map(entry => (
-                      <EntryCard key={entry.id} entry={entry} selectedId={selectedId} onSelect={handleSelect} onDelete={handleDelete} />
+                      <EntryCard key={entry.id} entry={entry} selectedId={selectedId} onSelect={handleSelect} onDelete={handleDelete} isGlobal={!!activeKey && !entry.projectKey} />
                     ))}
                   </div>
                 </div>
@@ -608,7 +612,7 @@ export default function ContextPage() {
                   )}
                   <div className="grid grid-cols-3 gap-4">
                     {ungrouped.map(entry => (
-                      <EntryCard key={entry.id} entry={entry} selectedId={selectedId} onSelect={handleSelect} onDelete={handleDelete} />
+                      <EntryCard key={entry.id} entry={entry} selectedId={selectedId} onSelect={handleSelect} onDelete={handleDelete} isGlobal={!!activeKey && !entry.projectKey} />
                     ))}
                   </div>
                 </div>

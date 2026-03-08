@@ -23,15 +23,16 @@ async function writeIndex(data: ContextIndexData): Promise<void> {
   await writeJsonFile(getContextIndexPath(), data);
 }
 
-/** GET /api/context — list all context entries (optionally filtered by project) */
+/** GET /api/context — list all context entries (optionally filtered by projectKey) */
 export async function GET(request: NextRequest) {
   const data = await readIndex();
-  const projectFilter = request.nextUrl.searchParams.get('project');
-  let filtered = data.entries;
-  if (projectFilter) {
-    filtered = filtered.filter(e => !e.projectKey || e.projectKey === projectFilter);
+  const projectKey = request.nextUrl.searchParams.get('projectKey');
+  let entries = data.entries;
+  if (projectKey) {
+    entries = entries.filter(e => !e.projectKey || e.projectKey === projectKey);
   }
-  return NextResponse.json({ entries: filtered });
+  return NextResponse.json({ entries });
+
 }
 
 /** POST /api/context — create a new context entry + content file */
@@ -61,6 +62,7 @@ export async function POST(request: NextRequest) {
   const trimmedProjectKey = projectKey?.trim() || undefined;
   const trimmedSourcePath = sourcePath?.trim() || undefined;
   const trimmedStatus = status === 'draft' ? 'draft' : undefined; // only 'draft' is stored; 'active' is default
+  const trimmedProjectKey = projectKey?.trim() || undefined;
   const trimmedSourceAgentSessionId = sourceAgentSessionId?.trim() || undefined;
   const trimmedProducedAt = producedAt?.trim() || undefined;
 

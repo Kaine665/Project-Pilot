@@ -70,6 +70,14 @@ export async function PATCH(
       delete entry.group;
     }
   }
+  if (body.projectKey !== undefined) {
+    const pk = typeof body.projectKey === 'string' ? body.projectKey.trim() : '';
+    if (pk) {
+      entry.projectKey = pk;
+    } else {
+      delete entry.projectKey;
+    }
+  }
   if (body.sourcePath !== undefined) {
     const sp = typeof body.sourcePath === 'string' ? body.sourcePath.trim() : '';
     if (sp) {
