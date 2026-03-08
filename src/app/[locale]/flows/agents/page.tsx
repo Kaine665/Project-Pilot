@@ -145,10 +145,16 @@ export default function AgentsPage() {
   // ── Grouped sessions for display ──
   const groupedSessions = useMemo(() => groupSessionsByDay(allSessions), [allSessions]);
 
-  // ── Project-filtered agents ──
+  // ── Project-filtered agents（项目专属排前面，全局排后面）──
   const filteredAgents = useMemo(() => {
     if (!activeKey) return agents;
-    return agents.filter(a => !a.projectKey || a.projectKey === activeKey);
+    return agents
+      .filter(a => !a.projectKey || a.projectKey === activeKey)
+      .sort((a, b) => {
+        const aGlobal = a.projectKey ? 0 : 1;
+        const bGlobal = b.projectKey ? 0 : 1;
+        return aGlobal - bGlobal;
+      });
   }, [agents, activeKey]);
 
   // ── Close agent picker when clicking outside ──
@@ -605,6 +611,11 @@ export default function AgentsPage() {
                         {a.builtIn && (
                           <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
                             内置
+                          </span>
+                        )}
+                        {!a.projectKey && activeKey && (
+                          <span className="shrink-0 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:bg-amber-900/30 dark:text-amber-400">
+                            全局
                           </span>
                         )}
                       </div>

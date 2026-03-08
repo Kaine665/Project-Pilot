@@ -136,6 +136,7 @@ npm run lint         # ESLint 检查
 
 ## 注意事项
 
+- **终端沙箱**：沙箱默认只允许读写工作区。复制到 `~/.project-pilot` 等外部路径会被拦截。已配置 `.cursor/sandbox.json` 放行。若仍失败，检查 Settings > External-File Protection 或把命令加入 Allowlist
 - 没有自动化测试（无 .test.ts），提交前靠 `npm run build` 验证
 - 不要在 `agents.json` 中写入 `systemPrompt` 字段（写入时已过滤）
 - `settings.json` 含 API Key，**绝不读取或泄露**
