@@ -17,9 +17,13 @@ import type { ContextIndexData, ContextEntry } from '@/types';
 export class ContextIndexLoader implements ResourceLoader {
   readonly type = 'context-index' as const;
 
-  async resolve(ref: ResourceRef, _ctx: LoaderContext): Promise<ResolvedResource> {
+  async resolve(ref: ResourceRef, ctx: LoaderContext): Promise<ResolvedResource> {
     const data = await readJsonFile<ContextIndexData>(getContextIndexPath(), { entries: [] });
-    const activeEntries = data.entries.filter(e => !e.status || e.status === 'active');
+    let activeEntries = data.entries.filter(e => !e.status || e.status === 'active');
+    // 按项目过滤：包含全局条目 + 当前项目条目
+    if (ctx.projectKey) {
+      activeEntries = activeEntries.filter(e => !e.projectKey || e.projectKey === ctx.projectKey);
+    }
     if (activeEntries.length === 0) {
       return { ref, content: '', ok: true };
     }

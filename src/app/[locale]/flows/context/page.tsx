@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { BookOpen, Plus, Trash2, X, User, Key, Server, Monitor, FolderTree, Globe, Database, Mail, Clock, FolderOpen, Upload, Check, Bot } from 'lucide-react';
 import type { ContextEntry } from '@/types';
 import type { LucideIcon } from 'lucide-react';
+import { useProject } from '@/components/project-context';
 
 type FormData = {
   label: string;
@@ -209,11 +210,12 @@ const FORMAT_OPTIONS: Array<{ value: FormData['format']; label: string }> = [
   { value: 'text', label: 'Text' },
 ];
 
-function EntryCard({ entry, selectedId, onSelect, onDelete }: {
+function EntryCard({ entry, selectedId, onSelect, onDelete, isGlobal }: {
   entry: ContextEntry;
   selectedId: string | null;
   onSelect: (entry: ContextEntry) => void;
   onDelete: (id: string) => void;
+  isGlobal?: boolean;
 }) {
   return (
     <div
@@ -238,6 +240,11 @@ function EntryCard({ entry, selectedId, onSelect, onDelete }: {
         <span className="shrink-0 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500">
           {entry.format}
         </span>
+        {isGlobal && (
+          <span className="shrink-0 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-400 dark:bg-blue-900/20 dark:text-blue-400">
+            全局
+          </span>
+        )}
       </div>
       <div className="mt-1.5 text-xs leading-relaxed text-zinc-400 dark:text-zinc-500 line-clamp-1">
         {entry.description || entry.fileName}
@@ -250,6 +257,7 @@ function EntryCard({ entry, selectedId, onSelect, onDelete }: {
 }
 
 export default function ContextPage() {
+  const { activeKey } = useProject();
   const [entries, setEntries] = useState<ContextEntry[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -282,15 +290,16 @@ export default function ContextPage() {
 
   const fetchEntries = useCallback(async () => {
     try {
-      const res = await fetch('/api/context');
+      const url = activeKey ? `/api/context?projectKey=${activeKey}` : '/api/context';
+      const res = await fetch(url);
       const data = await res.json();
       setEntries(data.entries ?? []);
     } catch {
       setEntries([]);
     }
-  }, []);
+  }, [activeKey]);
 
-  useEffect(() => { fetchEntries(); }, [fetchEntries]);
+  useEffect(() => { fetchEntries(); handleClose(); }, [fetchEntries]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadEntryContent = useCallback(async (id: string) => {
     try {
@@ -376,6 +385,7 @@ export default function ContextPage() {
             format: form.format,
             group: form.group.trim() || undefined,
             sourcePath: form.sourcePath.trim() || undefined,
+            projectKey: activeKey || undefined,
             content,
           }),
         });
@@ -582,7 +592,7 @@ export default function ContextPage() {
                   </div>
                   <div className="grid grid-cols-3 gap-4">
                     {groupEntries.map(entry => (
-                      <EntryCard key={entry.id} entry={entry} selectedId={selectedId} onSelect={handleSelect} onDelete={handleDelete} />
+                      <EntryCard key={entry.id} entry={entry} selectedId={selectedId} onSelect={handleSelect} onDelete={handleDelete} isGlobal={!!activeKey && !entry.projectKey} />
                     ))}
                   </div>
                 </div>
@@ -602,7 +612,7 @@ export default function ContextPage() {
                   )}
                   <div className="grid grid-cols-3 gap-4">
                     {ungrouped.map(entry => (
-                      <EntryCard key={entry.id} entry={entry} selectedId={selectedId} onSelect={handleSelect} onDelete={handleDelete} />
+                      <EntryCard key={entry.id} entry={entry} selectedId={selectedId} onSelect={handleSelect} onDelete={handleDelete} isGlobal={!!activeKey && !entry.projectKey} />
                     ))}
                   </div>
                 </div>

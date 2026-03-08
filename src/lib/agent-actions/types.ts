@@ -17,6 +17,7 @@ import type { ChatSSEEvent } from '@/types';
 export interface ActionContext {
   sessionId: string;
   agentId: string;
+  projectKey?: string;
   /** Emit an SSE event to the frontend */
   emit: (event: ChatSSEEvent) => void;
   /** Set the session title (used by session-title action) */
