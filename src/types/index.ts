@@ -456,6 +456,8 @@ export interface Agent {
    * If absent, migrateAgentToResources() derives them from legacy fields at runtime.
    */
   defaultResources?: ResourceRef[];
+  /** 所属项目。undefined = 全局 Agent（所有项目可见） */
+  projectKey?: string;
   archived?: boolean;
   archivedAt?: string;
   createdAt: string;

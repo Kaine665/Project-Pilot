@@ -113,11 +113,15 @@ async function writeAgents(data: AgentsData): Promise<void> {
 /** GET /api/agents — list all agents (excludes archived by default) */
 export async function GET(request: NextRequest) {
   const includeArchived = request.nextUrl.searchParams.get('includeArchived') === 'true';
+  const projectKey = request.nextUrl.searchParams.get('projectKey');
 
   // 尝试用带 prompt 的缓存（避免每次 GET 都 N+1 磁盘 I/O）
   const now = Date.now();
   if (_cachedWithPrompts && now - _cacheTimestamp < AGENTS_CACHE_TTL_MS) {
-    const agents = includeArchived ? _cachedWithPrompts : _cachedWithPrompts.filter(a => !a.archived);
+    let agents = includeArchived ? _cachedWithPrompts : _cachedWithPrompts.filter(a => !a.archived);
+    if (projectKey) {
+      agents = agents.filter(a => !a.projectKey || a.projectKey === projectKey);
+    }
     return NextResponse.json({ agents });
   }
 
@@ -132,13 +136,16 @@ export async function GET(request: NextRequest) {
   );
   _cachedWithPrompts = agentsWithPrompts;
 
-  const agents = includeArchived ? agentsWithPrompts : agentsWithPrompts.filter(a => !a.archived);
+  let agents = includeArchived ? agentsWithPrompts : agentsWithPrompts.filter(a => !a.archived);
+  if (projectKey) {
+    agents = agents.filter(a => !a.projectKey || a.projectKey === projectKey);
+  }
   return NextResponse.json({ agents });
 }
 
 /** POST /api/agents — create a new agent */
 export async function POST(request: NextRequest) {
-  const { name, description, systemPrompt, icon, capabilities, requiredParams, contextIds, defaultResources } = await request.json();
+  const { name, description, systemPrompt, icon, capabilities, requiredParams, contextIds, defaultResources, projectKey } = await request.json();
   if (!name?.trim()) {
     return NextResponse.json({ error: 'name is required' }, { status: 400 });
   }
@@ -166,6 +173,7 @@ export async function POST(request: NextRequest) {
     requiredParams: Array.isArray(requiredParams) && requiredParams.length > 0 ? requiredParams : undefined,
     contextIds: Array.isArray(contextIds) && contextIds.length > 0 ? contextIds : undefined,
     defaultResources: Array.isArray(defaultResources) && defaultResources.length > 0 ? defaultResources as ResourceRef[] : undefined,
+    projectKey: projectKey?.trim() || undefined,
     createdAt: now,
     updatedAt: now,
   };
@@ -186,7 +194,7 @@ export async function POST(request: NextRequest) {
 /** PATCH /api/agents — update an agent. Body: { id, ...fields } */
 export async function PATCH(request: NextRequest) {
   const body = await request.json();
-  const { id, name, description, systemPrompt, icon, capabilities, requiredParams, contextIds, defaultResources } = body;
+  const { id, name, description, systemPrompt, icon, capabilities, requiredParams, contextIds, defaultResources, projectKey } = body;
   if (!id) {
     return NextResponse.json({ error: 'id is required' }, { status: 400 });
   }
@@ -209,6 +217,7 @@ export async function PATCH(request: NextRequest) {
   if (requiredParams !== undefined) agent.requiredParams = Array.isArray(requiredParams) && requiredParams.length > 0 ? requiredParams : undefined;
   if (contextIds !== undefined) agent.contextIds = Array.isArray(contextIds) && contextIds.length > 0 ? contextIds : undefined;
   if (defaultResources !== undefined) agent.defaultResources = Array.isArray(defaultResources) && defaultResources.length > 0 ? defaultResources as ResourceRef[] : undefined;
+  if (projectKey !== undefined) agent.projectKey = projectKey?.trim() || undefined;
 
   // systemPrompt 写入外置 .md 文件，不存入 agents.json
   if (systemPrompt !== undefined) {
