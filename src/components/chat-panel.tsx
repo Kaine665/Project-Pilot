@@ -553,6 +553,9 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
     // If streaming is active, queue the answer instead of interrupting.
     useEffect(() => {
       const handler = (e: Event) => {
+        // Only handle if this panel is visible (prevents cross-panel event leak)
+        if (scrollRef.current?.offsetParent === null) return;
+
         const answer = (e as CustomEvent<{ answer: string }>).detail?.answer;
         if (!answer) return;
 
