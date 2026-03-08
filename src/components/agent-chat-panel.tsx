@@ -463,7 +463,12 @@ export function AgentChatPanel({
     const pending = pendingAnswerRef.current;
     pendingAnswerRef.current = null;
     if (pending && pending.targetSessionId === sessionIdRef.current) {
-      setTimeout(() => doSendRef.current(pending.answer), 300);
+      setTimeout(() => {
+        // Re-check session match and visibility inside timeout to prevent stale sends
+        if (pending.targetSessionId === sessionIdRef.current && scrollRef.current?.offsetParent !== null) {
+          doSendRef.current(pending.answer);
+        }
+      }, 300);
     }
   }, [agent.id, projectKey, fetchSessionList, onSessionChange]);
 
