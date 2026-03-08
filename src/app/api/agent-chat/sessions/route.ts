@@ -15,6 +15,10 @@ export async function GET(request: NextRequest) {
     sessions = await listSessionsByProject(agentId, projectKey);
   } else if (agentId) {
     sessions = await listSessions(agentId);
+  } else if (projectKey) {
+    // 按项目过滤所有会话（跨 Agent）
+    const all = await listAllSessions();
+    sessions = all.filter(s => s.projectKey === projectKey);
   } else {
     sessions = await listAllSessions();
   }
