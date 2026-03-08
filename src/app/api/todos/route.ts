@@ -5,12 +5,24 @@ import type { TodosData, TodoItem } from '@/types';
 const DEFAULT: TodosData = { todos: [] };
 
 /**
- * GET /api/todos
- * Return all todo items.
+ * GET /api/todos?project=xxx
+ * Return todo items, optionally filtered by project.
+ * - project=xxx → only todos with that projectKey
+ * - project=_global → only todos without projectKey
+ * - no project param → all todos
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const project = request.nextUrl.searchParams.get('project');
   const data = await readJsonFile<TodosData>(getTodosPath(), DEFAULT);
-  return NextResponse.json({ todos: data.todos });
+
+  let todos = data.todos;
+  if (project === '_global') {
+    todos = todos.filter((t) => !t.projectKey);
+  } else if (project) {
+    todos = todos.filter((t) => t.projectKey === project);
+  }
+
+  return NextResponse.json({ todos });
 }
 
 /**
@@ -20,7 +32,7 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { title, description, priority } = body;
+  const { title, description, priority, projectKey } = body;
 
   if (!title || typeof title !== 'string') {
     return NextResponse.json({ error: 'title is required' }, { status: 400 });
@@ -45,6 +57,7 @@ export async function POST(request: NextRequest) {
     description: description?.trim() || undefined,
     status: 'pending',
     priority: todoPriority,
+    projectKey: (typeof projectKey === 'string' && projectKey) ? projectKey : undefined,
     createdAt: now,
     updatedAt: now,
   };

@@ -522,6 +522,7 @@ export interface TodoItem {
   status: TodoStatus;
   priority: TodoPriority;
   agentId?: string;
+  projectKey?: string;
   createdAt: string;
   updatedAt: string;
 }

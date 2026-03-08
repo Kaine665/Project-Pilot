@@ -5,6 +5,7 @@ import { ListTodo, Plus, Trash2, ChevronDown, Circle, CheckCircle2, Bot, Play, X
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import type { TodoItem, TodoStatus, TodoPriority, Agent } from '@/types';
+import { useProject } from '@/components/project-context';
 
 const statusConfig: Record<TodoStatus, { label: string; color: string; bg: string }> = {
   pending:     { label: '待办',   color: 'text-zinc-500',  bg: 'bg-zinc-100 dark:bg-zinc-800' },
@@ -30,6 +31,8 @@ function formatDate(iso: string): string {
 export default function TodosPage() {
   const t = useTranslations('todos');
   const router = useRouter();
+  const { projects, activeKey } = useProject();
+  const activeProject = projects.find(p => p.key === activeKey);
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,7 +57,8 @@ export default function TodosPage() {
   const fetchTodos = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/todos');
+      const url = activeKey ? `/api/todos?project=${encodeURIComponent(activeKey)}` : '/api/todos';
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setTodos(data.todos ?? []);
@@ -64,7 +68,7 @@ export default function TodosPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeKey]);
 
   const fetchAgents = useCallback(async () => {
     try {
@@ -122,7 +126,7 @@ export default function TodosPage() {
       const res = await fetch('/api/todos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title }),
+        body: JSON.stringify({ title, ...(activeKey && { projectKey: activeKey }) }),
       });
       if (res.ok) {
         setCreatingTitle('');
@@ -333,6 +337,11 @@ export default function TodosPage() {
           <div className="flex items-center gap-2.5">
             <ListTodo className="h-5 w-5 text-zinc-400" />
             <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{t('title')}</h1>
+            {activeProject && (
+              <span className="rounded-md bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                {activeProject.name}
+              </span>
+            )}
             <span className="text-sm text-zinc-400">({todos.length})</span>
           </div>
           <button
