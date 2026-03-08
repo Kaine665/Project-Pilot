@@ -173,7 +173,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     const chatEnv = await buildClaudeEnv(providerOverride, effortOverride);
     const chatModelArgs = await buildClaudeModelArgs(modelOverride);
     const chatMaxTurnsArgs = await buildClaudeMaxTurnsArgs();
-    const chatPermArgs = await buildAgentPermissionArgs('executing', agent.capabilities);
+    const chatPermArgs = await buildAgentPermissionArgs(agent.capabilities);
     const chatToolArgs = buildAgentToolArgs(agent.capabilities);
     const resumeArgs = isResume ? ['--resume', existing!.claudeSessionId!] : [];
 
@@ -270,7 +270,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     const chatEnv = await buildClaudeEnv();
     const chatModelArgs = await buildClaudeModelArgs();
     const chatMaxTurnsArgs = await buildClaudeMaxTurnsArgs();
-    const chatPermArgs = await buildAgentPermissionArgs('executing', agent.capabilities);
+    const chatPermArgs = await buildAgentPermissionArgs(agent.capabilities);
     const chatToolArgs = buildAgentToolArgs(agent.capabilities);
     const resumeArgs = isResume ? ['--resume', existing!.claudeSessionId!] : [];
 

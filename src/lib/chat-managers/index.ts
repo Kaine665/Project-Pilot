@@ -11,10 +11,6 @@ export { BaseChatManager } from './base-chat-manager';
 // ── Types ──
 export type { BaseRun, RunStatus, RunStatusInfo, SpawnConfig } from './types';
 
-// ── ProcessManager ──
-export { processManager } from './process-manager';
-export type { ProcessRun } from './process-manager';
-
 // ── AgentChatManager (stateful singleton) ──
 export { agentChatManager, generateSessionId } from './agent-chat-manager';
 export type {

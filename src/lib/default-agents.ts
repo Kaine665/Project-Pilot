@@ -7,7 +7,6 @@
 
 import type { Agent } from '@/types';
 
-export const TASK_WORKER_AGENT_ID = 'agent-builtin-task-worker';
 export const BUTLER_AGENT_ID = 'agent-builtin-butler';
 
 export const BUTLER_SYSTEM_PROMPT = `# ProjectPilot AI 管家
@@ -125,48 +124,7 @@ data/
 利用上下文给出更精准的回答。没有上下文也能正常工作。
 `;
 
-export const TASK_WORKER_SYSTEM_PROMPT = `# ProjectPilot 任务执行者
-
-你是 ProjectPilot 的默认任务执行 Agent。你在项目的 git worktree 中工作，协助用户完成具体的编码、文件修改、调研等任务。
-
-## 工作方式
-
-ProjectPilot 会根据任务阶段自动注入工作指令，你只需按照指令执行即可：
-
-- **understanding（理解）**：深入理解任务目标，制定执行计划
-- **doing（执行）**：在 git 分支上实际完成任务
-- **summarizing（总结）**：总结完成的工作，准备合并
-
-## 行为规范
-
-- 优先读取项目相关文件，充分理解上下文后再行动
-- 每次执行前说明你的意图，执行后简要汇报结果
-- 遇到不确定的情况，优先提问而非猜测
-- 保持代码风格与项目一致
-`;
-
 export const DEFAULT_AGENTS: Agent[] = [
-  {
-    id: TASK_WORKER_AGENT_ID,
-    slug: 'task-worker',
-    builtIn: true,
-    name: '任务执行者',
-    description: 'ProjectPilot 默认任务执行 Agent，在项目 git worktree 中完成编码、修改等具体任务',
-    icon: 'bot',
-    systemPrompt: TASK_WORKER_SYSTEM_PROMPT,
-    executionMode: 'task',
-    capabilities: {
-      bash: true,
-      fileAccess: true,
-      web: true,
-      subAgent: true,
-      skipReview: true,
-      todoRead: false,
-      exposePromptPath: true,
-    },
-    createdAt: '2026-02-26T00:00:00.000Z',
-    updatedAt: '2026-02-26T00:00:00.000Z',
-  },
   {
     id: BUTLER_AGENT_ID,
     slug: 'butler',

@@ -3,9 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import {
   getDataDir,
-  getTasksPath,
   getProjectsPath,
-  getAiPlansPath,
   getAgentsPath,
   getAgentChatSessionsPath,
   getFlowsDir,
@@ -40,7 +38,7 @@ export async function POST(request: NextRequest) {
     await fs.mkdir(backupDir, { recursive: true });
 
     // 复制核心文件到备份
-    const filesToBackup = ['tasks.json', 'projects.json', 'ai-plans.json', 'agents.json', 'agent-chat-sessions.json'];
+    const filesToBackup = ['projects.json', 'agents.json', 'agent-chat-sessions.json'];
     for (const file of filesToBackup) {
       const src = path.join(dataDir, file);
       try {
@@ -67,20 +65,10 @@ export async function POST(request: NextRequest) {
     }
 
     // 写入导入数据
-    const stats = { tasks: 0, flows: 0, agents: 0, plans: 0 };
+    const stats = { flows: 0, agents: 0 };
 
-    if (data.tasks) {
-      await writeJsonFile(getTasksPath(), data.tasks);
-      const taskList = data.tasks.tasks;
-      stats.tasks = Array.isArray(taskList) ? taskList.length : 0;
-    }
     if (data.projects) {
       await writeJsonFile(getProjectsPath(), data.projects);
-    }
-    if (data.aiPlans) {
-      await writeJsonFile(getAiPlansPath(), data.aiPlans);
-      const planList = data.aiPlans.plans;
-      stats.plans = Array.isArray(planList) ? planList.length : 0;
     }
     if (data.agents) {
       // Merge imported agents into existing ones — never discard existing agents
@@ -148,20 +136,6 @@ export async function POST(request: NextRequest) {
       for (const [key, value] of Object.entries(data.flows)) {
         await writeJsonFile(path.join(flowsDir, `${key}.json`), value);
         if (key !== '_index') stats.flows++;
-      }
-    }
-
-    // 写入 conversations
-    if (data.conversations && typeof data.conversations === 'object') {
-      const conversationsDir = path.join(getDataDir(), 'conversations');
-      for (const [taskId, convData] of Object.entries(data.conversations)) {
-        if (typeof convData === 'object' && convData !== null) {
-          const taskConvDir = path.join(conversationsDir, taskId);
-          await fs.mkdir(taskConvDir, { recursive: true });
-          for (const [convKey, convValue] of Object.entries(convData as Record<string, unknown>)) {
-            await writeJsonFile(path.join(taskConvDir, `${convKey}.json`), convValue);
-          }
-        }
       }
     }
 

@@ -3,9 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import {
   getDataDir,
-  getTasksPath,
   getProjectsPath,
-  getAiPlansPath,
   getAgentsPath,
   getAgentChatSessionsPath,
   getFlowsDir,
@@ -22,10 +20,8 @@ import type { Agent, AgentsData } from '@/types';
 export async function GET() {
   try {
     // 收集核心数据文件
-    const [tasks, projects, aiPlans, agents, agentChatSessions] = await Promise.all([
-      readJsonFile(getTasksPath(), {}),
+    const [projects, agents, agentChatSessions] = await Promise.all([
       readJsonFile(getProjectsPath(), {}),
-      readJsonFile(getAiPlansPath(), {}),
       readJsonFile(getAgentsPath(), {}),
       readJsonFile(getAgentChatSessionsPath(), {}),
     ]);
@@ -53,50 +49,14 @@ export async function GET() {
       // flows 目录不存在则跳过
     }
 
-    // 收集对话数据
-    const conversations: Record<string, Record<string, unknown>> = {};
-    const conversationsDir = path.join(getDataDir(), 'conversations');
-    try {
-      const taskDirs = await fs.readdir(conversationsDir);
-      for (const taskDir of taskDirs) {
-        const taskDirPath = path.join(conversationsDir, taskDir);
-        const stat = await fs.stat(taskDirPath);
-
-        if (stat.isDirectory()) {
-          conversations[taskDir] = {};
-          const convFiles = await fs.readdir(taskDirPath);
-          for (const convFile of convFiles) {
-            if (convFile.endsWith('.json')) {
-              const convKey = convFile.replace('.json', '');
-              conversations[taskDir][convKey] = await readJsonFile(
-                path.join(taskDirPath, convFile),
-                {},
-              );
-            }
-          }
-        } else if (taskDir.endsWith('.json')) {
-          // 旧格式单文件对话
-          const key = taskDir.replace('.json', '');
-          conversations[key] = {
-            _legacy: await readJsonFile(taskDirPath, {}),
-          };
-        }
-      }
-    } catch {
-      // conversations 目录不存在则跳过
-    }
-
     const exportData = {
       version: 1,
       exportedAt: new Date().toISOString(),
       data: {
-        tasks,
         projects,
-        aiPlans,
         agents,
         agentChatSessions,
         flows,
-        conversations,
       },
     };
 
