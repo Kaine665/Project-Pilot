@@ -124,12 +124,17 @@ export default function AgentsPage() {
           projectKey: s.projectKey,
         };
       });
-      // Merge: keep optimistically-inserted local sessions that backend doesn't know about yet
-      setAllSessions(prev => {
-        const remoteIds = new Set(sessions.map((s: AllSessionItem) => s.id));
-        const localOnly = prev.filter(s => !remoteIds.has(s.id));
-        return [...localOnly, ...sessions];
-      });
+      // 有项目过滤时直接替换（避免旧项目会话残留）；
+      // 无过滤时保留 merge 逻辑（保留乐观插入的本地会话）
+      if (activeKey) {
+        setAllSessions(sessions);
+      } else {
+        setAllSessions(prev => {
+          const remoteIds = new Set(sessions.map((s: AllSessionItem) => s.id));
+          const localOnly = prev.filter(s => !remoteIds.has(s.id));
+          return [...localOnly, ...sessions];
+        });
+      }
       // Also update agents cache
       setAgents(agentsData.agents ?? []);
     } catch { /* ignore */ }
