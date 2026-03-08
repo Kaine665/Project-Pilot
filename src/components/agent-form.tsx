@@ -8,6 +8,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { Agent, AgentCapabilities, ContextEntry } from '@/types';
+import type { ProjectEntry } from '@/components/project-context';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 
 // ── Icon picker presets ──
@@ -65,6 +66,7 @@ export type FormData = {
   capabilities: AgentCapabilities;
   requiredParamsText: string;
   contextIds: string[];
+  projectKey: string; // '' = 全局
 };
 
 export const emptyForm: FormData = {
@@ -72,6 +74,7 @@ export const emptyForm: FormData = {
   capabilities: { ...DEFAULT_AGENT_CAPABILITIES },
   requiredParamsText: '',
   contextIds: [],
+  projectKey: '',
 };
 
 export function agentToForm(a: Agent): FormData {
@@ -83,6 +86,7 @@ export function agentToForm(a: Agent): FormData {
     capabilities: a.capabilities ?? { ...DEFAULT_AGENT_CAPABILITIES },
     requiredParamsText: (a.requiredParams ?? []).join('\n'),
     contextIds: a.contextIds ?? [],
+    projectKey: a.projectKey ?? '',
   };
 }
 
@@ -127,6 +131,7 @@ export function SettingsForm({
   onDelete,
   selectedId,
   onExpandPrompt,
+  projects,
 }: {
   creating: boolean;
   form: FormData;
@@ -139,6 +144,7 @@ export function SettingsForm({
   onDelete: (id: string) => void;
   selectedId: string | null;
   onExpandPrompt: () => void;
+  projects?: ProjectEntry[];
 }) {
   // Fetch available context entries for the picker
   const [contextEntries, setContextEntries] = useState<ContextEntry[]>([]);
@@ -235,6 +241,34 @@ export function SettingsForm({
               className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
             />
           </div>
+
+          {/* Project */}
+          {projects && projects.length > 0 && (
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                所属项目
+              </label>
+              {selectedAgent?.builtIn ? (
+                <div className="w-full rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-400">
+                  全局（所有项目）
+                </div>
+              ) : (
+                <select
+                  value={form.projectKey}
+                  onChange={e => setForm(f => ({ ...f, projectKey: e.target.value }))}
+                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+                >
+                  <option value="">全局（所有项目）</option>
+                  {projects.map(p => (
+                    <option key={p.key} value={p.key}>{p.name}</option>
+                  ))}
+                </select>
+              )}
+              <p className="mt-1 text-xs text-zinc-400">
+                全局 Agent 在所有项目下可见
+              </p>
+            </div>
+          )}
 
           {/* Icon */}
           <div>

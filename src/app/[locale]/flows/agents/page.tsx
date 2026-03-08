@@ -16,7 +16,7 @@ import { useProject } from '@/components/project-context';
 // ── Main page ──
 
 export default function AgentsPage() {
-  const { activeKey } = useProject();
+  const { projects, activeKey } = useProject();
 
   // ── Core data ──
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -94,7 +94,7 @@ export default function AgentsPage() {
     return () => window.removeEventListener('focus', handleFocus);
   }, [fetchAgents]);
 
-  // ── Fetch all sessions (cross-agent) ──
+  // ── Fetch all sessions (cross-agent, filtered by active project) ──
   const fetchAllSessions = useCallback(async () => {
     try {
       const sessUrl = activeKey
@@ -110,7 +110,7 @@ export default function AgentsPage() {
       for (const a of (agentsData.agents ?? []) as Agent[]) {
         agentMap.set(a.id, a);
       }
-      const sessions: AllSessionItem[] = (sessData.sessions ?? []).map((s: { id: string; title: string; updatedAt: string; agentId: string; unreadCount?: number; archived?: boolean }) => {
+      const sessions: AllSessionItem[] = (sessData.sessions ?? []).map((s: { id: string; title: string; updatedAt: string; agentId: string; unreadCount?: number; archived?: boolean; projectKey?: string }) => {
         const agent = agentMap.get(s.agentId);
         return {
           id: s.id,
@@ -121,6 +121,7 @@ export default function AgentsPage() {
           agentIcon: agent?.icon,
           unreadCount: s.unreadCount,
           archived: s.archived,
+          projectKey: s.projectKey,
         };
       });
       // Merge: keep optimistically-inserted local sessions that backend doesn't know about yet
@@ -138,6 +139,12 @@ export default function AgentsPage() {
 
   // ── Grouped sessions for display ──
   const groupedSessions = useMemo(() => groupSessionsByDay(allSessions), [allSessions]);
+
+  // ── Project-filtered agents ──
+  const filteredAgents = useMemo(() => {
+    if (!activeKey) return agents;
+    return agents.filter(a => !a.projectKey || a.projectKey === activeKey);
+  }, [agents, activeKey]);
 
   // ── Close agent picker when clicking outside ──
   useEffect(() => {
@@ -226,7 +233,7 @@ export default function AgentsPage() {
   const handleStartCreate = () => {
     setSelectedAgentId(null);
     setCreating(true);
-    setForm(emptyForm);
+    setForm({ ...emptyForm, projectKey: activeKey ?? '' });
     setExpandedPrompt(false);
     setActivePanel(null);
   };
@@ -246,6 +253,7 @@ export default function AgentsPage() {
           requiredParams: source.requiredParams,
           contextIds: source.contextIds,
           defaultResources: source.defaultResources,
+          projectKey: source.projectKey,
         }),
       });
       if (res.ok) {
@@ -288,6 +296,7 @@ export default function AgentsPage() {
             capabilities: form.capabilities,
             requiredParams: parsedParams.length > 0 ? parsedParams : undefined,
             contextIds: form.contextIds.length > 0 ? form.contextIds : undefined,
+            projectKey: form.projectKey || undefined,
           }),
         });
         if (res.ok) {
@@ -312,6 +321,7 @@ export default function AgentsPage() {
             capabilities: form.capabilities,
             requiredParams: parsedParams.length > 0 ? parsedParams : [],
             contextIds: form.contextIds,
+            projectKey: form.projectKey || undefined,
           }),
         });
         if (res.ok) await fetchAgents();
@@ -406,6 +416,7 @@ export default function AgentsPage() {
         || JSON.stringify(form.capabilities) !== JSON.stringify(selectedAgent.capabilities ?? DEFAULT_AGENT_CAPABILITIES)
         || form.requiredParamsText !== (selectedAgent.requiredParams ?? []).join('\n')
         || JSON.stringify([...form.contextIds].sort()) !== JSON.stringify([...(selectedAgent.contextIds ?? [])].sort())
+        || form.projectKey !== (selectedAgent.projectKey ?? '')
       : false;
 
   // ── Active session info (for header display) ──
@@ -473,7 +484,7 @@ export default function AgentsPage() {
                   <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400">
                     选择 Agent 开始对话
                   </div>
-                  {agents.map(a => (
+                  {filteredAgents.map(a => (
                     <button
                       key={a.id}
                       onClick={() => handleNewSession(a)}
@@ -547,7 +558,7 @@ export default function AgentsPage() {
           <div className="flex flex-1 flex-col overflow-hidden">
             <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
               <div className="text-xs font-medium text-zinc-400">
-                {agents.length > 0 && `${agents.length} 个 Agent`}
+                {filteredAgents.length > 0 && `${filteredAgents.length} 个 Agent`}
               </div>
               <div className="flex items-center gap-0.5">
                 <button
@@ -567,12 +578,12 @@ export default function AgentsPage() {
               </div>
             </div>
             <div className="flex-1 overflow-y-auto">
-              {agents.length === 0 ? (
+              {filteredAgents.length === 0 ? (
                 <div className="px-4 py-8 text-center text-xs text-zinc-400">
                   暂无 Agent
                 </div>
               ) : (
-                agents.map(a => (
+                filteredAgents.map(a => (
                   <div
                     key={a.id}
                     onClick={() => handleAgentClick(a)}
@@ -646,6 +657,7 @@ export default function AgentsPage() {
               onDelete={handleDelete}
               selectedId={selectedAgentId}
               onExpandPrompt={() => setExpandedPrompt(true)}
+              projects={projects}
             />
           )
         ) : activePanel?.type === 'agent' && selectedAgent ? (
@@ -767,6 +779,7 @@ export default function AgentsPage() {
                   onDelete={handleDelete}
                   selectedId={selectedAgentId}
                   onExpandPrompt={() => setExpandedPrompt(true)}
+                  projects={projects}
                 />
               )}
             </>
