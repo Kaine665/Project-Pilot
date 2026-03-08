@@ -62,7 +62,6 @@ export async function POST(request: NextRequest) {
   const trimmedProjectKey = projectKey?.trim() || undefined;
   const trimmedSourcePath = sourcePath?.trim() || undefined;
   const trimmedStatus = status === 'draft' ? 'draft' : undefined; // only 'draft' is stored; 'active' is default
-  const trimmedProjectKey = projectKey?.trim() || undefined;
   const trimmedSourceAgentSessionId = sourceAgentSessionId?.trim() || undefined;
   const trimmedProducedAt = producedAt?.trim() || undefined;
 
