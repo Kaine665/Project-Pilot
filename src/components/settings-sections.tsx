@@ -11,7 +11,7 @@ import {
   Sparkles, Plus, Minus,
 } from 'lucide-react';
 import type { DangerCategory, DangerActionLevel, DangerDetectorSettings, TitleGenerationChainEntry } from '@/types';
-import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
+import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
 import type { Theme } from '@/components/theme-provider';
 import type { ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort } from '@/types';
 
@@ -878,10 +878,23 @@ export function SettingsTitleGenerationSection({
   };
 
   const updateEntry = (index: number, field: keyof TitleGenerationChainEntry, value: string) => {
-    const next = chain.map((entry, i) =>
-      i === index ? { ...entry, [field]: value } : entry,
-    );
+    const next = chain.map((entry, i) => {
+      if (i !== index) return entry;
+      // 切换 provider 时，自动选中新 provider 的第一个模型
+      if (field === 'provider') {
+        const preset = getProviderPreset(value as ProviderId);
+        const firstModel = preset.models[0]?.id ?? '';
+        return { ...entry, provider: value as ProviderId, model: firstModel };
+      }
+      return { ...entry, [field]: value };
+    });
     onChainChange(next);
+  };
+
+  /** 判断当前 model 是否在 provider 预设列表中 */
+  const isPresetModel = (provider: ProviderId, model: string) => {
+    const preset = getProviderPreset(provider);
+    return preset.models.some((m) => m.id === model);
   };
 
   return (
@@ -947,12 +960,38 @@ export function SettingsTitleGenerationSection({
                       </option>
                     ))}
                   </select>
-                  <Input
-                    value={entry.model}
-                    onChange={(e) => updateEntry(index, 'model', e.target.value)}
-                    placeholder={t('titleGenerationModelPlaceholder')}
-                    className="flex-1 text-xs"
-                  />
+                  {(() => {
+                    const preset = getProviderPreset(entry.provider);
+                    const isCustom = !isPresetModel(entry.provider, entry.model);
+                    return (
+                      <>
+                        <select
+                          value={isCustom ? '__custom__' : entry.model}
+                          onChange={(e) => {
+                            if (e.target.value === '__custom__') {
+                              updateEntry(index, 'model', '');
+                            } else {
+                              updateEntry(index, 'model', e.target.value);
+                            }
+                          }}
+                          className="h-9 rounded-md border border-zinc-200 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                        >
+                          {preset.models.map((m) => (
+                            <option key={m.id} value={m.id}>{m.label}</option>
+                          ))}
+                          <option value="__custom__">{t('titleGenerationCustomModel')}</option>
+                        </select>
+                        {isCustom && (
+                          <Input
+                            value={entry.model}
+                            onChange={(e) => updateEntry(index, 'model', e.target.value)}
+                            placeholder={t('titleGenerationModelPlaceholder')}
+                            className="flex-1 text-xs"
+                          />
+                        )}
+                      </>
+                    );
+                  })()}
                   <button
                     onClick={() => removeEntry(index)}
                     className="shrink-0 rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-red-500 dark:hover:bg-zinc-800 dark:hover:text-red-400 transition-colors"
