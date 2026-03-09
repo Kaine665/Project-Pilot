@@ -59,13 +59,11 @@ export const ToolExecutionWindow = memo(function ToolExecutionWindow({
           </div>
         )}
 
-        {/* Error */}
-        {toolCall.error && (
-          <div className="space-y-1">
-            <div className="text-red-600 dark:text-red-400">错误:</div>
-            <pre className="bg-red-50 dark:bg-red-900/20 rounded p-2 overflow-x-auto text-red-700 dark:text-red-400 whitespace-pre-wrap break-words max-h-20 text-[11px] border border-red-200 dark:border-red-800">
-              {toolCall.error}
-            </pre>
+        {/* Failed state */}
+        {toolCall.status === 'failed' && !toolCall.output && (
+          <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+            <XCircle className="h-3 w-3" />
+            <span>执行失败</span>
           </div>
         )}
 

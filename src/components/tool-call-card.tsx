@@ -7,6 +7,7 @@ import {
   Loader2,
   CheckCircle2,
   XCircle,
+  ClipboardList,
 } from 'lucide-react';
 import { AskUserQuestionCard } from '@/components/ask-user-question-card';
 import { TodoListCard } from '@/components/todo-list-card';
