@@ -9,6 +9,7 @@ import type { ChatMessage, ChatToolCall, ChatSSEEvent, ContentBlock } from '@/ty
 
 type IndexedSSEEvent = ChatSSEEvent & { _idx: number };
 
+// 向后兼容：旧 AI 回复中可能仍含标签
 function stripSessionTitleTag(text: string): string {
   return text.replace(/<session-title>[\s\S]*?<\/session-title>\s*/, '');
 }

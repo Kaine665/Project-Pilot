@@ -38,6 +38,7 @@ import { actionRegistry } from '@/lib/agent-actions';
 import { migrateAgentToResources } from '@/lib/resource-migration';
 import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
 import { checkSessionHealth, buildGuardMessage } from './session-health-guard';
+import { shouldGenerateTitle, generateSessionTitle } from '@/lib/session-title-generator';
 
 // Re-export store functions so existing callers don't break during migration
 export { generateSessionId } from './agent-chat-session-store';
@@ -453,7 +454,36 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
 
       const cleaned = await actionRegistry.processResponse(run.assistantText, actionCtx);
 
-      // Fallback title if no AI-generated title was set
+      // Clean contentBlocks text entries
+      const cleanedBlocks = run.contentBlocks.map(block => {
+        if (block.type === 'text') {
+          return { ...block, text: actionRegistry.stripAll(block.text) };
+        }
+        return block;
+      }).filter(block => !(block.type === 'text' && !block.text.trim()));
+
+      // Push assistant message BEFORE title generation so the generator sees the full conversation
+      run.messages.push({
+        role: 'assistant',
+        content: cleaned,
+        contentBlocks: cleanedBlocks.length > 0 ? cleanedBlocks : undefined,
+      });
+
+      // Async title generation via cheap AI at turn milestones (2/5/10/15)
+      const assistantTurnCount = run.messages.filter(m => m.role === 'assistant').length;
+      if (shouldGenerateTitle(assistantTurnCount)) {
+        try {
+          const aiTitle = await generateSessionTitle(
+            run.messages.map(m => ({ role: m.role, content: m.content })),
+            run.sessionTitle,
+          );
+          if (aiTitle) run.sessionTitle = aiTitle;
+        } catch (err) {
+          console.error(`${this.logPrefix} Title generation failed:`, err);
+        }
+      }
+
+      // Fallback title if still not set
       if (!run.sessionTitle) {
         const firstUserMsg = run.messages.find(m => m.role === 'user')?.content;
         const defaultTitle = run.parentSessionId ? '旁听会话' : '新会话';
@@ -462,20 +492,6 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
 
       // Emit structured title event so frontend can update immediately
       this.trackAndEmit(run, { type: 'session_title_set', title: run.sessionTitle });
-
-      // Also clean contentBlocks text entries
-      const cleanedBlocks = run.contentBlocks.map(block => {
-        if (block.type === 'text') {
-          return { ...block, text: actionRegistry.stripAll(block.text) };
-        }
-        return block;
-      }).filter(block => !(block.type === 'text' && !block.text.trim()));
-
-      run.messages.push({
-        role: 'assistant',
-        content: cleaned,
-        contentBlocks: cleanedBlocks.length > 0 ? cleanedBlocks : undefined,
-      });
     }
   }
 
