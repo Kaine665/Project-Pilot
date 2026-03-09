@@ -117,6 +117,7 @@ export async function markAsRead(sessionId: string): Promise<boolean> {
 
 export async function setArchived(sessionId: string, archived: boolean): Promise<boolean> {
   let found = false;
+  let archivedAgentId: string | undefined;
   await modifyJsonFile<AgentChatSessionsData>(
     getAgentChatSessionsPath(),
     DEFAULT_SESSIONS_DATA,
@@ -125,6 +126,7 @@ export async function setArchived(sessionId: string, archived: boolean): Promise
       if (session) {
         session.archived = archived || undefined; // don't persist false
         found = true;
+        if (archived) archivedAgentId = session.agentId;
         console.log(`[setArchived] ${sessionId} → archived=${session.archived}`);
       } else {
         console.warn(`[setArchived] ${sessionId} NOT FOUND in ${data.sessions.length} sessions`);
@@ -133,6 +135,10 @@ export async function setArchived(sessionId: string, archived: boolean): Promise
     },
   );
   invalidateSessionsCache();
+  // 归档时清理运行时 prompt 副本（软删除也应触发，避免文件堆积）
+  if (archived && found && archivedAgentId) {
+    await deleteRuntimePromptCopy(archivedAgentId, sessionId).catch(() => {});
+  }
   return found;
 }
 
