@@ -28,7 +28,8 @@ import {
   buildAgentToolArgs,
 } from '@/lib/settings-manager';
 import { getProviderPreset } from '@/lib/provider-registry';
-import type { ChatSSEEvent, ContentBlock, Agent, ProviderId } from '@/types';
+import type { ChatSSEEvent, ContentBlock, Agent, AgentCapabilities, ProviderId } from '@/types';
+import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import type { AgentChatSession, SessionConfig } from '@/types/agent-chat';
 import type { ResourceRef, InlineTextRef, FlowContextRef, ReferenceTurnsRef } from '@/types/resource';
 import { resourceRegistry } from '@/lib/resource-registry';
@@ -180,8 +181,9 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     const chatEnv = await buildClaudeEnv(providerOverride, effortOverride);
     const chatModelArgs = await buildClaudeModelArgs(modelOverride);
     const chatMaxTurnsArgs = await buildClaudeMaxTurnsArgs();
-    const chatPermArgs = await buildAgentPermissionArgs(agent.capabilities);
-    const chatToolArgs = buildAgentToolArgs(agent.capabilities);
+    const effectiveCaps = mergeCapabilities(agent.capabilities, sessionConfig?.capabilities);
+    const chatPermArgs = await buildAgentPermissionArgs(effectiveCaps);
+    const chatToolArgs = buildAgentToolArgs(effectiveCaps);
     const resumeArgs = isResume ? ['--resume', existing!.claudeSessionId!] : [];
 
     const config: SpawnConfig<AgentChatDomainData> = {
@@ -532,6 +534,24 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
   }
 }
 
+// ── Capability Merge Helper ──
+
+/** 合并 Agent 和会话级别的能力配置。会话只能收紧（关闭已开启的能力），不能放宽。 */
+function mergeCapabilities(
+  agentCaps?: AgentCapabilities,
+  sessionCaps?: Partial<AgentCapabilities>,
+): AgentCapabilities {
+  const base = { ...DEFAULT_AGENT_CAPABILITIES, ...agentCaps };
+  if (!sessionCaps) return base;
+  const merged = { ...base };
+  for (const key of Object.keys(sessionCaps) as Array<keyof AgentCapabilities>) {
+    if (sessionCaps[key] === undefined) continue;
+    // 只能收紧：agent 开了的可以关，agent 没开的不能开
+    merged[key] = base[key] ? sessionCaps[key]! : false;
+  }
+  return merged;
+}
+
 // ── Unified Resource-based Prompt Builder ──
 
 async function buildResourcePrompt(
@@ -564,19 +584,25 @@ async function buildResourcePrompt(
 
   const allRefs = merged;
 
-  const resolved = await resolveSystemPrompt(agent.id, agent.systemPrompt);
+  // 系统提示词优先级：sessionConfig.systemPrompt > prompts/{agentId}.md > agent.systemPrompt
+  const resolved = sessionConfig?.systemPrompt?.trim()
+    ? sessionConfig.systemPrompt.trim()
+    : await resolveSystemPrompt(agent.id, agent.systemPrompt);
   const systemPromptText = resolved
     || `你是一个名为「${agent.name}」的 AI 助手。${agent.description || ''}`;
 
+  // 能力合并（用于 exposePromptPath 判断）
+  const effectiveCaps = mergeCapabilities(agent.capabilities, sessionConfig?.capabilities);
+
   let runtimePromptPath: string | undefined;
-  if (agent.capabilities?.exposePromptPath && sessionId) {
+  if (effectiveCaps.exposePromptPath && sessionId) {
     runtimePromptPath = await createRuntimePromptCopy(agent.id, sessionId);
   }
 
   const ctx: SystemPromptLoaderContext = {
     agentId: agent.id,
     systemPromptText,
-    promptFilePath: agent.capabilities?.exposePromptPath ? getPromptFilePath(agent.id) : undefined,
+    promptFilePath: effectiveCaps.exposePromptPath ? getPromptFilePath(agent.id) : undefined,
     runtimePromptPath,
   };
 
