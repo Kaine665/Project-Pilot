@@ -572,7 +572,8 @@
     "titleGenerationProvider": "供应商",
     "titleGenerationModel": "模型 ID",
     "titleGenerationModelPlaceholder": "输入模型 ID",
-    "titleGenerationRemove": "移除"
+    "titleGenerationRemove": "移除",
+    "titleGenerationCustomModel": "自定义..."
   },
   "orchestrator": {
     "title": "Agent 编排",

@@ -571,7 +571,8 @@
     "titleGenerationProvider": "Provider",
     "titleGenerationModel": "Model ID",
     "titleGenerationModelPlaceholder": "Enter model ID",
-    "titleGenerationRemove": "Remove"
+    "titleGenerationRemove": "Remove",
+    "titleGenerationCustomModel": "Custom..."
   },
   "orchestrator": {
     "title": "Agent Orchestration",
