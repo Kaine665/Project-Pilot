@@ -25,7 +25,9 @@ export type ResourceType =
   | 'suspended-tasks'             // Cross-session suspended tasks board
   | 'suspend-task-instructions'   // Static: suspend task action instructions
   | 'complete-suspended-task-instructions' // Static: complete suspended task (tag-only, no instructions)
-  | 'shared-memory';               // Agent shared memory (blackboard)
+  | 'shared-memory'                // Agent shared memory (blackboard)
+  | 'global-prompt'                // Global prompt injected into every agent
+  | 'project-prompt';              // Project-level prompt injected when projectKey is set
 
 // ── ResourceRef ──
 
@@ -47,6 +49,8 @@ export interface ResourceRef {
    * - flow-context: '_snapshot'
    * - reference-turns: '_imported'
    * - suspended-tasks: '_suspended'
+   * - global-prompt: '_global'
+   * - project-prompt: '_project'
    */
   id: string;
   /** Sort priority — lower values appear earlier in prompt. Default: 50 */

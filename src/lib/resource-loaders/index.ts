@@ -21,6 +21,8 @@ import {
   ReferenceTurnsLoader,
 } from './static-text-loader';
 import { SharedMemoryLoader } from './shared-memory-loader';
+import { GlobalPromptLoader } from './global-prompt-loader';
+import { ProjectPromptLoader } from './project-prompt-loader';
 
 resourceRegistry.register(new ContextResourceLoader());
 resourceRegistry.register(new ContextIndexLoader());
@@ -34,3 +36,5 @@ resourceRegistry.register(new InlineTextLoader());
 resourceRegistry.register(new FlowContextLoader());
 resourceRegistry.register(new ReferenceTurnsLoader());
 resourceRegistry.register(new SharedMemoryLoader());
+resourceRegistry.register(new GlobalPromptLoader());
+resourceRegistry.register(new ProjectPromptLoader());

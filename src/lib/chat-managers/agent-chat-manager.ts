@@ -154,11 +154,13 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     // --resume 仍然用于恢复对话历史，但不依赖它来携带系统提示词。
     // 这样即使 Claude CLI 本地缓存失效（--resume 静默失败），
     // Claude 也能从 stdin 中获取系统提示词，不会出现"没有上下文"的情况。
+    const sessionProjectKey = flowContext?.projectKey ?? existing?.projectKey;
+
     let stdinContent: string;
     if (flowContext) {
       stdinContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext, sessionConfig, sessionId);
     } else {
-      stdinContent = await buildAgentChatPrompt(agent, message, sessionConfig, sessionId);
+      stdinContent = await buildAgentChatPrompt(agent, message, sessionConfig, sessionId, sessionProjectKey);
     }
 
     // Write images to temp files
@@ -559,9 +561,19 @@ async function buildResourcePrompt(
   extraRefs?: ResourceRef[],
   sessionConfig?: SessionConfig,
   sessionId?: string,
+  projectKey?: string,
 ): Promise<string> {
   const baseRefs = agent.defaultResources ?? migrateAgentToResources(agent);
   const merged: ResourceRef[] = [...baseRefs];
+
+  // 全局 prompt（始终注入，priority 1 — 仅次于系统提示词）
+  merged.push({ type: 'global-prompt', id: '_global', priority: 1 });
+
+  // 项目级 prompt（有 projectKey 时注入，priority 2）
+  if (projectKey) {
+    merged.push({ type: 'project-prompt', id: '_project', priority: 2 });
+  }
+
   if (extraRefs) merged.push(...extraRefs);
 
   if (sessionConfig) {
@@ -601,6 +613,7 @@ async function buildResourcePrompt(
 
   const ctx: SystemPromptLoaderContext = {
     agentId: agent.id,
+    projectKey,
     systemPromptText,
     promptFilePath: effectiveCaps.exposePromptPath ? getPromptFilePath(agent.id) : undefined,
     runtimePromptPath,
@@ -612,8 +625,8 @@ async function buildResourcePrompt(
 
 // ── Prompt Builders (powered by Resource Registry) ──
 
-async function buildAgentChatPrompt(agent: Agent, message: string, sessionConfig?: SessionConfig, sessionId?: string): Promise<string> {
-  const resourcePrompt = await buildResourcePrompt(agent, undefined, sessionConfig, sessionId);
+async function buildAgentChatPrompt(agent: Agent, message: string, sessionConfig?: SessionConfig, sessionId?: string, projectKey?: string): Promise<string> {
+  const resourcePrompt = await buildResourcePrompt(agent, undefined, sessionConfig, sessionId, projectKey);
 
   return `${resourcePrompt}
 
@@ -641,7 +654,7 @@ async function buildAgentChatPromptWithFlowContext(
     flowDataPath,
   };
 
-  const resourcePrompt = await buildResourcePrompt(agent, [flowRef], sessionConfig, sessionId);
+  const resourcePrompt = await buildResourcePrompt(agent, [flowRef], sessionConfig, sessionId, projectKey);
 
   return `${resourcePrompt}
 
