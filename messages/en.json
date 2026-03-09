@@ -572,7 +572,10 @@
     "titleGenerationModel": "Model ID",
     "titleGenerationModelPlaceholder": "Enter model ID",
     "titleGenerationRemove": "Remove",
-    "titleGenerationCustomModel": "Custom..."
+    "titleGenerationCustomModel": "Custom...",
+    "titleGenerationTest": "Test this entry",
+    "titleGenerationTestOk": "OK",
+    "testFailed": "Test failed"
   },
   "orchestrator": {
     "title": "Agent Orchestration",
