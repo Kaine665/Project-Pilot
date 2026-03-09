@@ -255,10 +255,20 @@ export abstract class BaseChatManager<TRun extends BaseRun> {
     });
 
     // ── stderr ──
+    // Claude CLI outputs non-fatal warnings on stderr (e.g. model fallback).
+    // Only emit as error if it's not a known transient warning.
     claude.stderr!.on('data', (chunk: Buffer) => {
       const text = chunk.toString('utf-8');
       if (text.includes('Error') || text.includes('error')) {
-        this.trackAndEmit(run, { type: 'error', message: text.trim() });
+        const lower = text.toLowerCase();
+        const isNonFatal =
+          lower.includes('issue with the selected model') ||
+          lower.includes('run --model to pick') ||
+          lower.includes('falling back') ||
+          lower.includes('deprecat');
+        if (!isNonFatal) {
+          this.trackAndEmit(run, { type: 'error', message: text.trim() });
+        }
       }
     });
 
