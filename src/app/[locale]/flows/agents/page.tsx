@@ -6,12 +6,13 @@ import {
   Settings, MessageSquare, Archive, ArchiveRestore,
   Download, Upload, FileDown,
 } from 'lucide-react';
-import type { Agent } from '@/types';
+import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
 import { AgentChatPanel } from '@/components/agent-chat-panel';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import { AgentIcon, SettingsForm, type FormData, emptyForm, agentToForm } from '@/components/agent-form';
 import { type AllSessionItem, type OpenedSession, groupSessionsByDay, syncUrlParams } from '@/components/agent-session-utils';
 import { useProject } from '@/components/project-context';
+import { getProviderPreset } from '@/lib/provider-registry';
 
 // ── Main page ──
 
@@ -46,6 +47,46 @@ export default function AgentsPage() {
   // ── New session agent picker ──
   const [showAgentPicker, setShowAgentPicker] = useState(false);
   const agentPickerRef = useRef<HTMLDivElement>(null);
+
+  // ── Cached settings for child panels (fetched once, shared to all AgentChatPanel instances) ──
+  type CachedSettings = { provider: ProviderId; model: string; modelOptions: Array<{ value: string; label: string }>; effort: OpenAIReasoningEffort };
+  const [cachedSettings, setCachedSettings] = useState<CachedSettings | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/settings', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const claude = data?.claude ?? {};
+        const loadedProvider = (claude.provider as ProviderId) || 'anthropic';
+        const providerModelsMap = (claude.providerModels && typeof claude.providerModels === 'object')
+          ? claude.providerModels as Partial<Record<ProviderId, string>>
+          : {};
+        const providerModelLib = (claude.providerModelLibrary && typeof claude.providerModelLibrary === 'object')
+          ? claude.providerModelLibrary as Partial<Record<ProviderId, string[]>>
+          : {};
+        const preset = getProviderPreset(loadedProvider);
+        const optionMap = new Map<string, string>();
+        for (const m of preset.models) optionMap.set(m.id, m.label || m.id);
+        const libModels = Array.isArray(providerModelLib[loadedProvider]) ? providerModelLib[loadedProvider] : [];
+        for (const raw of libModels) {
+          const id = typeof raw === 'string' ? raw.trim() : '';
+          if (id && !optionMap.has(id)) optionMap.set(id, id);
+        }
+        const fallbackModel = (providerModelsMap[loadedProvider] || claude.model || '').trim();
+        if (fallbackModel && !optionMap.has(fallbackModel)) optionMap.set(fallbackModel, fallbackModel);
+        const modelOptions = Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
+        const model = modelOptions.some((o) => o.value === fallbackModel) ? fallbackModel : (modelOptions[0]?.value || '');
+        const VALID_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
+        const effort: OpenAIReasoningEffort = (typeof claude.openaiReasoningEffort === 'string' && VALID_EFFORTS.includes(claude.openaiReasoningEffort)) ? claude.openaiReasoningEffort : 'xhigh';
+        setCachedSettings({ provider: loadedProvider, model, modelOptions, effort });
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // ── Fetch agents ──
   const fetchAgents = useCallback(async () => {
@@ -789,6 +830,8 @@ export default function AgentsPage() {
                     agent={selectedAgent}
                     initialSessionId={null}
                     projectKey={activeKey}
+                    cachedAgents={agents}
+                    cachedSettings={cachedSettings}
                     onSessionChange={(newSession) => {
                       if (newSession && selectedAgent) {
                         setAllSessions(prev => {
@@ -882,6 +925,8 @@ export default function AgentsPage() {
                       agent={agent}
                       initialSessionId={os.sessionId}
                       projectKey={activeKey}
+                      cachedAgents={agents}
+                      cachedSettings={cachedSettings}
                       onSessionChange={(newSession) => {
                         // Update the opened session's sessionId (new session or branch switch)
                         if (newSession && os.sessionId !== newSession.id) {
