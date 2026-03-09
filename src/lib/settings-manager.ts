@@ -62,6 +62,22 @@ export function getProviderScopedModel(claude: ClaudeSettings, provider?: Provid
 }
 
 /**
+ * 获取指定供应商的 baseUrl。
+ * 优先级：providerBaseUrls[provider] > 全局 baseUrl > preset.baseUrl
+ */
+export function getProviderScopedBaseUrl(
+  claude: ClaudeSettings,
+  preset: { baseUrl?: string },
+  provider?: ProviderId,
+): string | undefined {
+  const p = provider ?? claude.provider ?? 'anthropic';
+  const scoped = claude.providerBaseUrls?.[p];
+  if (scoped) return scoped;
+  if (claude.baseUrl) return claude.baseUrl;
+  return preset.baseUrl;
+}
+
+/**
  * 构造 Claude CLI 的 env 对象。
  *
  * 注入逻辑（按供应商区分）：
@@ -99,18 +115,24 @@ export async function buildClaudeEnv(providerOverride?: ProviderId, effortOverri
       env.ANTHROPIC_BASE_URL = claude.baseUrl;
     }
   } else {
-    // 第三方供应商
-    const baseUrl = claude.baseUrl || preset.baseUrl;
-    if (baseUrl && !process.env.ANTHROPIC_BASE_URL) {
+    // 第三方供应商（优先使用 providerBaseUrls，如 Kimi 探测后持久化的 URL）
+    // 强制覆盖，不受系统环境变量干扰
+    const baseUrl = getProviderScopedBaseUrl(claude, preset, provider);
+    if (baseUrl) {
       env.ANTHROPIC_BASE_URL = baseUrl;
     }
 
-    // 第三方用 AUTH_TOKEN 认证，同时把 API_KEY 设为空字符串
-    if (scopedKey && !process.env.ANTHROPIC_AUTH_TOKEN) {
-      env.ANTHROPIC_AUTH_TOKEN = scopedKey;
-    }
-    if (!process.env.ANTHROPIC_API_KEY) {
-      env.ANTHROPIC_API_KEY = '';
+    // Kimi Code 官方文档要求用 ANTHROPIC_API_KEY；其他第三方用 AUTH_TOKEN。
+    // 必须强制覆盖（不检查 process.env），并删除对立变量，
+    // 因为 Claude Code SDK 用 ?? 选择 token——空字符串不会穿透。
+    if (scopedKey) {
+      if (provider === 'kimi') {
+        env.ANTHROPIC_API_KEY = scopedKey;
+        delete env.ANTHROPIC_AUTH_TOKEN;
+      } else {
+        env.ANTHROPIC_AUTH_TOKEN = scopedKey;
+        delete env.ANTHROPIC_API_KEY;
+      }
     }
 
     // 供应商额外环境变量

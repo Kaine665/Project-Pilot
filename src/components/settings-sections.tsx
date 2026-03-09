@@ -43,6 +43,7 @@ interface AIConfigSectionProps extends TranslationProps {
   loginFlowActive: boolean;
   oauthCode: string;
   codeSubmitting: boolean;
+  oauthSubmitError: string | null;
   testState: 'idle' | 'testing' | 'success' | 'failed';
   testMessage: string;
   preset: { supportsOAuth?: boolean; apiKeyPlaceholder?: string; editableBaseUrl?: boolean; baseUrl?: string; models: Array<{ id: string; label: string }> };
@@ -67,7 +68,7 @@ export function SettingsAISection({
   t, tActions, btnActive, btnInactive,
   provider, authMode, apiKey, model, customModel, baseUrl,
   openaiReasoningEffort, openaiReasoningOptions,
-  oauthStatus, loginPending, loginUrl, loginFlowActive, oauthCode, codeSubmitting,
+  oauthStatus, loginPending, loginUrl, loginFlowActive, oauthCode, codeSubmitting, oauthSubmitError,
   testState, testMessage,
   preset, isPresetModel, modelSelectOptions,
   onProviderChange, onAuthModeChange, onApiKeyChange,
@@ -191,7 +192,7 @@ export function SettingsAISection({
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={onTriggerOAuthLogin} disabled={loginPending}>
                   {loginPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ExternalLink className="h-3.5 w-3.5" />}
-                  {t('oauthLogin')}
+                  {provider === 'openai' ? t('oauthLoginOpenAI') : t('oauthLogin')}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={onCheckOAuthStatus}>
                   {t('oauthCheckStatus')}
@@ -222,6 +223,9 @@ export function SettingsAISection({
                     <p className="text-xs text-zinc-500">{t('oauthWaiting')}</p>
                   )}
                   <p className="text-xs text-zinc-500">{t('oauthPasteCode')}</p>
+                  {oauthSubmitError && (
+                    <p className="text-xs text-red-600 dark:text-red-400">{oauthSubmitError}</p>
+                  )}
                   <div className="flex gap-2">
                     <Input
                       value={oauthCode}
@@ -245,7 +249,12 @@ export function SettingsAISection({
               )}
 
               {!loginFlowActive && (
-                <p className="text-xs text-zinc-500">{t('oauthHint')}</p>
+                <div className="space-y-1">
+                  <p className="text-xs text-zinc-500">{t('oauthHint')}</p>
+                  {provider === 'anthropic' && (
+                    <p className="text-xs text-amber-600 dark:text-amber-500">{t('oauthHintRedirect')}</p>
+                  )}
+                </div>
               )}
             </div>
           )}

@@ -90,11 +90,15 @@ export abstract class BaseChatManager<TRun extends BaseRun> {
     if (!run) {
       return { status: 'none', eventCount: 0 };
     }
+    const lastError = run.events.filter((e): e is { type: 'error'; message: string } =>
+      e.type === 'error' && 'message' in e
+    ).pop();
     return {
       status: run.status,
       runId: run.runId,
       eventCount: run.events.length,
       startedAt: new Date(run.startedAt).toISOString(),
+      errorMessage: lastError?.message,
     };
   }
 

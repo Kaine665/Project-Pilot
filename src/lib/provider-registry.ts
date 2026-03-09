@@ -26,6 +26,8 @@ export interface ProviderPreset {
   editableBaseUrl: boolean;
   /** 是否允许用户自填模型 ID */
   editableModel: boolean;
+  /** 多 URL 候选（如 Kimi 双接入方式），测试连接时依次尝试，成功后持久化 */
+  candidateBaseUrls?: string[];
   /** API Key 占位符提示 */
   apiKeyPlaceholder?: string;
   /** 第三方供应商需要的额外环境变量 */
@@ -40,7 +42,7 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
     id: 'anthropic',
     nameKey: 'settings.providers.anthropic',
     models: [
-      { id: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5' },
+      { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
       { id: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
       { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
     ],
@@ -73,6 +75,7 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
     id: 'deepseek',
     nameKey: 'settings.providers.deepseek',
     baseUrl: 'https://api.deepseek.com/anthropic',
+    candidateBaseUrls: ['https://api.deepseek.com/anthropic'],
     models: [
       { id: 'deepseek-chat', label: 'DeepSeek V3' },
       { id: 'deepseek-reasoner', label: 'DeepSeek R1' },
@@ -91,10 +94,15 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
     id: 'qwen',
     nameKey: 'settings.providers.qwen',
     baseUrl: 'https://coding.dashscope.aliyuncs.com/apps/anthropic',
+    candidateBaseUrls: [
+      'https://coding.dashscope.aliyuncs.com/apps/anthropic',
+      'https://dashscope-intl.aliyuncs.com/apps/anthropic',
+      'https://coding-intl.dashscope.aliyuncs.com/apps/anthropic',
+    ],
     models: [
       { id: 'qwen3-coder-plus', label: 'Qwen3 Coder Plus' },
+      { id: 'qwen3-coder-flash', label: 'Qwen3 Coder Flash' },
       { id: 'qwen3-coder', label: 'Qwen3 Coder' },
-      { id: 'qwen-plus', label: 'Qwen Plus' },
     ],
     supportsOAuth: false,
     editableBaseUrl: true,
@@ -108,8 +116,11 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
     id: 'zhipu',
     nameKey: 'settings.providers.zhipu',
     baseUrl: 'https://open.bigmodel.cn/api/anthropic',
+    candidateBaseUrls: ['https://open.bigmodel.cn/api/anthropic'],
     models: [
       { id: 'glm-4.7', label: 'GLM-4.7' },
+      { id: 'glm-4.7-flashx', label: 'GLM-4.7 FlashX' },
+      { id: 'glm-4.5', label: 'GLM-4.5' },
       { id: 'glm-4.5-air', label: 'GLM-4.5 Air' },
     ],
     supportsOAuth: false,
@@ -126,8 +137,16 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
     id: 'minimax',
     nameKey: 'settings.providers.minimax',
     baseUrl: 'https://api.minimax.chat/anthropic',
+    candidateBaseUrls: [
+      'https://api.minimax.chat/anthropic',
+      'https://api.minimax.io/anthropic',
+      'https://api.minimaxi.com/anthropic',
+    ],
     models: [
       { id: 'MiniMax-M2.5', label: 'MiniMax M2.5' },
+      { id: 'MiniMax-M2.5-highspeed', label: 'MiniMax M2.5 Highspeed' },
+      { id: 'MiniMax-M2.1', label: 'MiniMax M2.1' },
+      { id: 'MiniMax-M2', label: 'MiniMax M2' },
     ],
     supportsOAuth: false,
     editableBaseUrl: true,
@@ -141,16 +160,29 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
   {
     id: 'kimi',
     nameKey: 'settings.providers.kimi',
-    baseUrl: 'https://api.kimi.com/coding/v1',
+    // Claude Code 要求 base 不带 /v1，SDK 会拼接 /v1/messages
+    baseUrl: 'https://api.kimi.com/coding/',
+    candidateBaseUrls: [
+      'https://api.kimi.com/coding/',
+      'https://api.moonshot.ai/anthropic',
+      'https://api.moonshot.cn/anthropic',
+    ],
     models: [
-      { id: 'kimi-latest', label: 'Kimi Latest' },
+      // Kimi Code (api.kimi.com) 模型，官方文档唯一正确 ID
+      { id: 'kimi-for-coding', label: 'Kimi For Coding (K2.5)' },
+      { id: 'k2p5', label: 'Kimi K2.5 (Code)' },
+      // Moonshot (api.moonshot.ai) 模型
+      { id: 'kimi-k2.5', label: 'Kimi K2.5 (Moonshot)' },
+      { id: 'kimi-k2', label: 'Kimi K2' },
+      { id: 'kimi-k2-thinking', label: 'Kimi K2 Thinking' },
     ],
     supportsOAuth: false,
     editableBaseUrl: false,
     editableModel: true,
-    apiKeyPlaceholder: 'your-kimi-api-key',
+    apiKeyPlaceholder: 'sk-kimi-...',
     extraEnv: {
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+      ENABLE_TOOL_SEARCH: 'FALSE',
     },
   },
 
@@ -159,8 +191,9 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
     id: 'openrouter',
     nameKey: 'settings.providers.openrouter',
     baseUrl: 'https://openrouter.ai/api',
+    candidateBaseUrls: ['https://openrouter.ai/api'],
     models: [
-      { id: 'anthropic/claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
+      { id: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
       { id: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6' },
       { id: 'openai/gpt-4o', label: 'GPT-4o' },
       { id: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },

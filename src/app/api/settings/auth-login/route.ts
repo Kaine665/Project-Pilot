@@ -10,15 +10,29 @@ import {
 } from '@/lib/auth-login-state';
 import type { ProviderId } from '@/types';
 
-/** 从 CLI 输出中提取 OAuth URL */
+/** 从 CLI 输出中提取 OAuth URL（支持多种输出格式） */
 function extractOAuthUrl(text: string): string | null {
-  const visitMatch = text.match(/visit:\s*(https:\/\/[^\s]+)/i);
-  if (visitMatch) return visitMatch[1].trim();
-  const urlMatch = text.match(/https:\/\/claude\.ai\/oauth\/authorize\?[^\s]+/);
-  if (urlMatch) return urlMatch[0].trim();
-  // OpenAI device flow URL
-  const openaiMatch = text.match(/https:\/\/auth\.openai\.com\/[^\s]+/);
+  // 优先匹配 claude.ai 授权页（用户需在浏览器打开此链接）
+  const claudeAuth = text.match(/https:\/\/claude\.ai\/oauth\/authorize\?[^\s"')\]]+/);
+  if (claudeAuth) return claudeAuth[0].trim();
+
+  // visit: / open: / open this URL: 等前缀
+  const prefixed = text.match(/(?:visit|open|url|link|authorize)[:\s]+(https:\/\/[^\s"')\]]+)/i);
+  if (prefixed) return prefixed[1].trim();
+
+  // 通用 https 链接（排除 localhost 回调）
+  const httpsMatch = text.match(/https:\/\/[^\s"')\]]+/g);
+  if (httpsMatch) {
+    const authUrl = httpsMatch.find((u) =>
+      u.includes('claude.ai') || u.includes('auth.openai.com')
+    );
+    if (authUrl) return authUrl.trim();
+  }
+
+  // OpenAI device flow
+  const openaiMatch = text.match(/https:\/\/auth\.openai\.com\/[^\s"')\]]+/);
   if (openaiMatch) return openaiMatch[0].trim();
+
   return null;
 }
 

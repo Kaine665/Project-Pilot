@@ -68,6 +68,7 @@ export default function SettingsPage() {
   const [loginFlowActive, setLoginFlowActive] = useState(false);
   const [oauthCode, setOauthCode] = useState('');
   const [codeSubmitting, setCodeSubmitting] = useState(false);
+  const [oauthSubmitError, setOauthSubmitError] = useState<string | null>(null);
   const [testState, setTestState] = useState<'idle' | 'testing' | 'success' | 'failed'>('idle');
   const [testMessage, setTestMessage] = useState('');
 
@@ -433,6 +434,7 @@ export default function SettingsPage() {
     setLoginPending(true);
     setLoginUrl(null);
     setOauthCode('');
+    setOauthSubmitError(null);
     setLoginProcessAlive(true);
     setLoginFlowActive(true);
     try {
@@ -461,6 +463,7 @@ export default function SettingsPage() {
     setLoginFlowActive(false);
     setLoginUrl(null);
     setOauthCode('');
+    setOauthSubmitError(null);
     setLoginProcessAlive(false);
   };
 
@@ -493,13 +496,19 @@ export default function SettingsPage() {
       });
       if (res.ok) {
         setOauthCode('');
+        setOauthSubmitError(null);
         setLoginProcessAlive(false);
         setLoginFlowActive(false);
         setLoginUrl(null);
         await checkOAuthStatus();
       } else {
         const err = await res.json();
-        console.error(err?.error || 'Submit failed');
+        const msg = err?.error || '';
+        setOauthSubmitError(
+          msg.includes('No active login process') || msg.includes('login process')
+            ? t('oauthProcessGone')
+            : msg || t('oauthSubmitFailed')
+        );
       }
     } catch (err) {
       console.error('Failed to submit code:', err);
@@ -640,6 +649,7 @@ export default function SettingsPage() {
                 oauthStatus={oauthStatus} loginPending={loginPending}
                 loginUrl={loginUrl} loginFlowActive={loginFlowActive}
                 oauthCode={oauthCode} codeSubmitting={codeSubmitting}
+                oauthSubmitError={oauthSubmitError}
                 testState={testState} testMessage={testMessage}
                 preset={preset} isPresetModel={isPresetModel} modelSelectOptions={modelSelectOptions}
                 onProviderChange={handleProviderChange} onAuthModeChange={setAuthMode}

@@ -80,6 +80,8 @@ export interface AgentChatRun extends BaseRun {
   importedTurnIndices?: number[];
   _tempImagePaths?: string[];
   _guardRetryCount?: number;
+  /** 临时测试会话，不持久化到会话列表 */
+  _ephemeral?: boolean;
 }
 
 // ── Domain data (passed through SpawnConfig to createRun) ──
@@ -94,6 +96,7 @@ interface AgentChatDomainData {
   config?: SessionConfig;
   parentSessionId?: string;
   importedTurnIndices?: number[];
+  _ephemeral?: boolean;
 }
 
 // ── AgentChatManager ──
@@ -118,6 +121,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     providerOverride?: ProviderId,
     modelOverride?: string,
     effortOverride?: string,
+    ephemeral?: boolean,
   ): Promise<string> {
     const agent = await loadAgent(agentId);
 
@@ -202,20 +206,23 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
         tempPaths,
         config: sessionConfig,
         parentSessionId: parentSessionId ?? existing?.parentSessionId,
+        _ephemeral: ephemeral,
       },
     };
 
-    await eagerlySaveUserTurn({
-      sessionId,
-      agentId,
-      projectKey: flowContext?.projectKey ?? existing?.projectKey,
-      sessionTitle: existing?.sessionTitle ?? initialTitle,
-      messages,
-      claudeSessionId: existing?.claudeSessionId,
-      config: sessionConfig,
-      parentSessionId: parentSessionId ?? existing?.parentSessionId,
-      importedTurnIndices: undefined,
-    });
+    if (!ephemeral) {
+      await eagerlySaveUserTurn({
+        sessionId,
+        agentId,
+        projectKey: flowContext?.projectKey ?? existing?.projectKey,
+        sessionTitle: existing?.sessionTitle ?? initialTitle,
+        messages,
+        claudeSessionId: existing?.claudeSessionId,
+        config: sessionConfig,
+        parentSessionId: parentSessionId ?? existing?.parentSessionId,
+        importedTurnIndices: undefined,
+      });
+    }
 
     const run = await this.spawnAndManage(config);
     return run.runId;
@@ -372,10 +379,15 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       parentSessionId: d.parentSessionId,
       importedTurnIndices: d.importedTurnIndices,
       _tempImagePaths: d.tempPaths,
+      _ephemeral: d._ephemeral,
     };
   }
 
   protected async persistAfterClose(run: AgentChatRun, _aborted: boolean): Promise<void> {
+    if (run._ephemeral) {
+      return;
+    }
+
     const now = new Date().toISOString();
     const session: AgentChatSession = {
       id: run.sessionId,

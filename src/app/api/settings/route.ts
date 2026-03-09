@@ -120,6 +120,23 @@ export async function POST(request: NextRequest) {
       }
     }
   }
+  // providerBaseUrls: Record<ProviderId, string>
+  if (body.claude?.providerBaseUrls !== undefined) {
+    if (typeof body.claude.providerBaseUrls !== 'object' || body.claude.providerBaseUrls === null) {
+      return NextResponse.json({ error: 'providerBaseUrls must be an object' }, { status: 400 });
+    }
+    for (const [pid, val] of Object.entries(body.claude.providerBaseUrls)) {
+      if (!VALID_PROVIDERS.includes(pid as ProviderId)) {
+        return NextResponse.json({ error: `Invalid provider in providerBaseUrls: ${pid}` }, { status: 400 });
+      }
+      if (val !== null && val !== '' && typeof val !== 'string') {
+        return NextResponse.json({ error: 'providerBaseUrls values must be strings' }, { status: 400 });
+      }
+      if (typeof val === 'string' && val.length > 500) {
+        return NextResponse.json({ error: 'providerBaseUrls value too long' }, { status: 400 });
+      }
+    }
+  }
 
   // general 字段验证
   if (body.general?.telemetry !== undefined && typeof body.general.telemetry !== 'boolean') {
@@ -214,6 +231,19 @@ export async function POST(request: NextRequest) {
       ...current.claude.providerModelLibrary,
       ...body.claude.providerModelLibrary,
     };
+  }
+
+  // Per-provider base URLs (e.g. Kimi 探测后持久化)
+  if (body.claude?.providerBaseUrls !== undefined) {
+    const merged = { ...current.claude.providerBaseUrls };
+    for (const [pid, val] of Object.entries(body.claude.providerBaseUrls as Record<string, string | null>)) {
+      if (val === null || val === '') {
+        delete merged[pid as ProviderId];
+      } else {
+        merged[pid as ProviderId] = val as string;
+      }
+    }
+    updated.claude.providerBaseUrls = Object.keys(merged).length > 0 ? merged : undefined;
   }
 
   // OpenAI reasoning effort

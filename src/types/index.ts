@@ -106,6 +106,8 @@ export interface ClaudeSettings {
   providerModels?: Partial<Record<ProviderId, string>>;
   /** 每供应商的模型历史库（用户曾成功使用/手动添加的模型列表） */
   providerModelLibrary?: Partial<Record<ProviderId, string[]>>;
+  /** 每供应商的 baseUrl（如 Kimi 双 URL 探测后持久化） */
+  providerBaseUrls?: Partial<Record<ProviderId, string>>;
   /** OpenAI 推理努力等级 */
   openaiReasoningEffort?: OpenAIReasoningEffort;
 }

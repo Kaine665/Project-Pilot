@@ -17,6 +17,8 @@ export interface RunStatusInfo {
   runId?: string;
   eventCount: number;
   startedAt?: string;
+  /** 最后一次 error 事件的 message，便于测试连接等场景展示具体失败原因 */
+  errorMessage?: string;
 }
 
 // ── Base run data (shared by all managers) ──
