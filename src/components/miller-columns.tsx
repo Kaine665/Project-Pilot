@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  memo,
   useState,
   useEffect,
   useRef,
@@ -104,7 +105,7 @@ function getAncestors(items: TreeItem[], path: string[]): TreeItem[] {
 
 // --- MillerColumnItem ---
 
-function MillerColumnItem({
+const MillerColumnItem = memo(function MillerColumnItem({
   item,
   depth,
   sectionItems,
@@ -116,7 +117,7 @@ function MillerColumnItem({
   const t = useTranslations();
   const ctx = useContext(ItemActionsContext);
   const { selectionPath, onSelect, setAddingToItemId } = useContext(MillerSelectionContext);
-  const { showDeferred, highlightTarget, aiStatusMap, batchMode, selectedItems, toggleItemSelection, data, agents } = useFlowData();
+  const { showDeferred, highlightTarget, aiStatusMap, batchMode, selectedItems, toggleItemSelection, data, agents, agentMap } = useFlowData();
 
   if (!ctx) return null;
   if (!showDeferred && item.deferred) return null;
@@ -153,7 +154,7 @@ function MillerColumnItem({
   const agentPickerRef = useRef<HTMLDivElement>(null);
   const [agentPickerPos, setAgentPickerPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
-  const boundAgent = item.agentId ? agents.find(a => a.id === item.agentId) : undefined;
+  const boundAgent = item.agentId ? agentMap.get(item.agentId) : undefined;
 
   useEffect(() => {
     if (!agentPickerOpen) return;
@@ -393,7 +394,7 @@ function MillerColumnItem({
       </Dialog.Root>
     </div>
   );
-}
+});
 
 // --- SortableMillerColumnItem ---
 
