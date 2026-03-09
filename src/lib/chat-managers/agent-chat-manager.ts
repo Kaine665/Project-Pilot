@@ -149,10 +149,12 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     const sessionConfig = initialConfig ?? existing?.config;
 
     // Build prompt
+    // 注意：不区分 isResume，始终发送完整 prompt（含系统提示词）。
+    // --resume 仍然用于恢复对话历史，但不依赖它来携带系统提示词。
+    // 这样即使 Claude CLI 本地缓存失效（--resume 静默失败），
+    // Claude 也能从 stdin 中获取系统提示词，不会出现"没有上下文"的情况。
     let stdinContent: string;
-    if (isResume) {
-      stdinContent = message;
-    } else if (flowContext) {
+    if (flowContext) {
       stdinContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext, sessionConfig, sessionId);
     } else {
       stdinContent = await buildAgentChatPrompt(agent, message, sessionConfig, sessionId);
@@ -268,12 +270,8 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     const messages = existing?.messages ? [...existing.messages] : [];
     messages.push({ role: 'user', content: message });
 
-    let stdinContent: string;
-    if (isResume) {
-      stdinContent = message;
-    } else {
-      stdinContent = await buildGuestAgentPrompt(agent, message, selectedTurns);
-    }
+    // 同 start()：始终发送完整 prompt，不因 isResume 而省略系统提示词
+    const stdinContent = await buildGuestAgentPrompt(agent, message, selectedTurns);
 
     const chatEnv = await buildClaudeEnv();
     const chatModelArgs = await buildClaudeModelArgs();
