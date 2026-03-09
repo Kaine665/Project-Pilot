@@ -131,7 +131,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   claude: {
     provider: 'anthropic',
     authMode: 'api_key',
-    model: 'claude-sonnet-4-5-20250929',
+    model: 'claude-sonnet-4-6',
   },
   version: 1,
 };

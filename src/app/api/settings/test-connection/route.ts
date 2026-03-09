@@ -85,8 +85,8 @@ async function runSingleTest(
   current: Awaited<ReturnType<typeof getSettings>>,
 ): Promise<{ ok: boolean; error?: string }> {
   const preset = getProviderPreset(provider);
-  const prevBaseUrl = current.claude.baseUrl;
 
+  // 写入 providerBaseUrls（scoped），不碰全局 baseUrl，避免竞态污染
   const mergedForTest = {
     ...current,
     claude: {
@@ -95,7 +95,7 @@ async function runSingleTest(
       authMode: 'api_key' as const,
       providerApiKeys: { ...current.claude.providerApiKeys, [provider]: apiKey },
       providerModels: { ...current.claude.providerModels, [provider]: model || preset.models[0]?.id },
-      baseUrl,
+      providerBaseUrls: { ...current.claude.providerBaseUrls, [provider]: baseUrl },
     },
   };
   await saveSettings(mergedForTest);
@@ -118,10 +118,7 @@ async function runSingleTest(
       true, // ephemeral
     );
   } catch (err) {
-    await saveSettings({
-      ...current,
-      claude: { ...current.claude, baseUrl: prevBaseUrl },
-    });
+    await saveSettings(current);
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, error: msg };
   }
@@ -136,10 +133,7 @@ async function runSingleTest(
     }
     if (status.status === 'failed' || status.status === 'stopped') {
       agentChatManager.clear(sessionId);
-      await saveSettings({
-        ...current,
-        claude: { ...current.claude, baseUrl: prevBaseUrl },
-      });
+      await saveSettings(current);
       const errMsg = status.errorMessage;
       return {
         ok: false,
@@ -152,27 +146,11 @@ async function runSingleTest(
   if (!testOk) {
     agentChatManager.stop(sessionId);
     agentChatManager.clear(sessionId);
-    await saveSettings({
-      ...current,
-      claude: { ...current.claude, baseUrl: prevBaseUrl },
-    });
+    await saveSettings(current);
     return { ok: false, error: '会话测试超时' };
   }
 
-  // 成功：持久化 providerBaseUrls，恢复全局 baseUrl
-  const mergedSuccess = {
-    ...current,
-    claude: {
-      ...current.claude,
-      provider,
-      authMode: 'api_key' as const,
-      providerApiKeys: { ...current.claude.providerApiKeys, [provider]: apiKey },
-      providerModels: { ...current.claude.providerModels, [provider]: model || preset.models[0]?.id },
-      providerBaseUrls: { ...current.claude.providerBaseUrls, [provider]: baseUrl },
-      baseUrl: prevBaseUrl,
-    },
-  };
-  await saveSettings(mergedSuccess);
+  // 成功：providerBaseUrls 已在 mergedForTest 中正确写入，无需额外操作
   return { ok: true };
 }
 

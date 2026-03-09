@@ -135,12 +135,10 @@ export async function buildClaudeEnv(providerOverride?: ProviderId, effortOverri
       }
     }
 
-    // 供应商额外环境变量
+    // 供应商额外环境变量（强制覆盖，避免系统 env 残留干扰）
     if (preset.extraEnv) {
       for (const [key, val] of Object.entries(preset.extraEnv)) {
-        if (!process.env[key]) {
-          env[key] = val;
-        }
+        env[key] = val;
       }
     }
   }
