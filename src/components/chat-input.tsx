@@ -57,6 +57,7 @@ export const ChatInput = memo(function ChatInput({
   effortLabel,
 }: ChatInputProps) {
   const draftStorageKey = draftKey ? `pp:draft:${draftKey}` : null;
+  const historyStorageKey = 'pp:input-history';
   const [input, setInput] = useState(() => {
     if (!draftStorageKey) return '';
     try { return localStorage.getItem(draftStorageKey) ?? ''; } catch { return ''; }
@@ -66,6 +67,10 @@ export const ChatInput = memo(function ChatInput({
   const [guestPickerOpen, setGuestPickerOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 输入历史导航（上下箭头键）
+  const historyIndexRef = useRef(-1); // -1 = 不在历史浏览模式
+  const savedInputRef = useRef(''); // 进入历史浏览前暂存当前输入
 
   // Persist draft text to localStorage (debounced)
   useEffect(() => {
@@ -97,7 +102,24 @@ export const ChatInput = memo(function ChatInput({
     } catch { /* ignore */ }
   }, [draftStorageKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const getHistory = useCallback((): string[] => {
+    try { return JSON.parse(localStorage.getItem(historyStorageKey) ?? '[]'); } catch { return []; }
+  }, []);
+
+  const pushHistory = useCallback((text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    try {
+      const hist = getHistory().filter(h => h !== trimmed); // 去重
+      hist.push(trimmed);
+      if (hist.length > 50) hist.splice(0, hist.length - 50);
+      localStorage.setItem(historyStorageKey, JSON.stringify(hist));
+    } catch { /* quota exceeded — ignore */ }
+  }, [getHistory]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    // 用户手动输入时退出历史浏览模式
+    historyIndexRef.current = -1;
     setInput(e.target.value);
     const el = e.target;
     if (!fullWidth) {
@@ -112,6 +134,8 @@ export const ChatInput = memo(function ChatInput({
       ? (input.trim() ? `${input.trim()}\n\n---\n${fileParts.join('\n\n')}` : fileParts.join('\n\n'))
       : input;
     if (!fullText.trim() && pendingImages.length === 0) return;
+    pushHistory(input.trim());
+    historyIndexRef.current = -1;
     onSubmit(fullText, [...pendingImages], [...pendingFiles]);
     setInput('');
     if (draftStorageKey) try { localStorage.removeItem(draftStorageKey); } catch { /* ignore */ }
@@ -127,6 +151,37 @@ export const ChatInput = memo(function ChatInput({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
+      return;
+    }
+    // 输入历史导航：输入框为空（或已在浏览模式）时按上下键切换历史
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const hist = getHistory();
+      if (hist.length === 0) return;
+      const isBrowsing = historyIndexRef.current >= 0;
+      const isEmpty = !input.trim();
+      if (!isEmpty && !isBrowsing) return; // 有内容且非浏览模式，保留默认行为
+      e.preventDefault();
+      if (e.key === 'ArrowUp') {
+        if (!isBrowsing) {
+          // 首次进入历史浏览，暂存当前输入
+          savedInputRef.current = input;
+          historyIndexRef.current = hist.length - 1;
+        } else if (historyIndexRef.current > 0) {
+          historyIndexRef.current--;
+        }
+        setInput(hist[historyIndexRef.current]);
+      } else {
+        // ArrowDown
+        if (!isBrowsing) return;
+        if (historyIndexRef.current < hist.length - 1) {
+          historyIndexRef.current++;
+          setInput(hist[historyIndexRef.current]);
+        } else {
+          // 已到最新，恢复暂存的输入
+          historyIndexRef.current = -1;
+          setInput(savedInputRef.current);
+        }
+      }
     }
   };
 
