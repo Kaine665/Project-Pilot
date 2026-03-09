@@ -573,7 +573,10 @@
     "titleGenerationModel": "模型 ID",
     "titleGenerationModelPlaceholder": "输入模型 ID",
     "titleGenerationRemove": "移除",
-    "titleGenerationCustomModel": "自定义..."
+    "titleGenerationCustomModel": "自定义...",
+    "titleGenerationTest": "测试此条目",
+    "titleGenerationTestOk": "可用",
+    "testFailed": "测试失败"
   },
   "orchestrator": {
     "title": "Agent 编排",

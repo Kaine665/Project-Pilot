@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -8,7 +9,7 @@ import {
   Shield, Brain, Wrench, Check, X, Loader2, ExternalLink, Server, Copy,
   Gauge, RotateCw, Eye, Sun, Moon, Monitor,
   Download, Upload, Trash2, FolderOpen, Info, Github, ShieldAlert,
-  Sparkles, Plus, Minus,
+  Sparkles, Plus, Minus, Zap,
 } from 'lucide-react';
 import type { DangerCategory, DangerActionLevel, DangerDetectorSettings, TitleGenerationChainEntry } from '@/types';
 import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
@@ -868,6 +869,33 @@ export function SettingsTitleGenerationSection({
   enabled, chain,
   onEnabledChange, onChainChange,
 }: TitleGenerationSectionProps) {
+  type TestState = 'idle' | 'testing' | 'success' | 'failed';
+  const [entryTestStates, setEntryTestStates] = useState<Record<number, TestState>>({});
+  const [entryTestMessages, setEntryTestMessages] = useState<Record<number, string>>({});
+
+  const testEntry = async (index: number, entry: TitleGenerationChainEntry) => {
+    setEntryTestStates((prev) => ({ ...prev, [index]: 'testing' }));
+    setEntryTestMessages((prev) => ({ ...prev, [index]: '' }));
+    try {
+      const res = await fetch('/api/settings/test-title-entry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: entry.provider, model: entry.model }),
+      });
+      const data = await res.json() as { ok: boolean; error?: string; latencyMs?: number };
+      if (data.ok) {
+        setEntryTestStates((prev) => ({ ...prev, [index]: 'success' }));
+        setEntryTestMessages((prev) => ({ ...prev, [index]: data.latencyMs ? `${data.latencyMs}ms` : '' }));
+      } else {
+        setEntryTestStates((prev) => ({ ...prev, [index]: 'failed' }));
+        setEntryTestMessages((prev) => ({ ...prev, [index]: data.error || t('testFailed') }));
+      }
+    } catch (err) {
+      setEntryTestStates((prev) => ({ ...prev, [index]: 'failed' }));
+      setEntryTestMessages((prev) => ({ ...prev, [index]: err instanceof Error ? err.message : t('testFailed') }));
+    }
+  };
+
   const addEntry = () => {
     if (chain.length >= 10) return;
     onChainChange([...chain, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }]);
@@ -947,7 +975,8 @@ export function SettingsTitleGenerationSection({
 
             <div className="space-y-2">
               {chain.map((entry, index) => (
-                <div key={index} className="flex items-center gap-2">
+                <div key={index} className="space-y-1">
+                <div className="flex items-center gap-2">
                   <span className="text-xs text-zinc-400 w-5 shrink-0 text-center">{index + 1}</span>
                   <select
                     value={entry.provider}
@@ -993,12 +1022,35 @@ export function SettingsTitleGenerationSection({
                     );
                   })()}
                   <button
+                    onClick={() => testEntry(index, entry)}
+                    disabled={entryTestStates[index] === 'testing'}
+                    className="shrink-0 rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-blue-500 dark:hover:bg-zinc-800 dark:hover:text-blue-400 transition-colors disabled:opacity-50"
+                    title={t('titleGenerationTest')}
+                  >
+                    {entryTestStates[index] === 'testing'
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <Zap className="h-3.5 w-3.5" />}
+                  </button>
+                  <button
                     onClick={() => removeEntry(index)}
                     className="shrink-0 rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-red-500 dark:hover:bg-zinc-800 dark:hover:text-red-400 transition-colors"
                     title={t('titleGenerationRemove')}
                   >
                     <Minus className="h-3.5 w-3.5" />
                   </button>
+                </div>
+                {entryTestStates[index] === 'success' && (
+                  <div className="flex items-center gap-1 pl-7 text-xs text-green-600 dark:text-green-400">
+                    <Check className="h-3 w-3" />
+                    {t('titleGenerationTestOk')}{entryTestMessages[index] ? ` · ${entryTestMessages[index]}` : ''}
+                  </div>
+                )}
+                {entryTestStates[index] === 'failed' && (
+                  <div className="flex items-center gap-1 pl-7 text-xs text-red-600 dark:text-red-400">
+                    <X className="h-3 w-3" />
+                    <span className="break-all">{entryTestMessages[index]}</span>
+                  </div>
+                )}
                 </div>
               ))}
             </div>

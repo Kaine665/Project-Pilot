@@ -28,6 +28,38 @@ export function shouldGenerateTitle(assistantTurnCount: number): boolean {
 }
 
 /**
+ * 测试单个重试链条目是否可用。
+ * @returns ok/error/latencyMs
+ */
+export async function testTitleChainEntry(
+  entry: TitleGenerationChainEntry,
+): Promise<{ ok: boolean; error?: string; latencyMs: number }> {
+  const settings = await getSettings();
+  const t0 = Date.now();
+  try {
+    const result = await Promise.race([
+      callProviderApi(entry, '请回复「ok」', settings.claude),
+      new Promise<null>((res) => setTimeout(() => res(null), 10_000)),
+    ]);
+    const latencyMs = Date.now() - t0;
+    if (result !== null) return { ok: true, latencyMs };
+
+    const hasKey = !!getProviderScopedApiKey(
+      settings.claude as Parameters<typeof getProviderScopedApiKey>[0],
+      entry.provider,
+    );
+    return {
+      ok: false,
+      error: hasKey ? '请求超时或模型无响应' : '请先在 AI 配置中填写该供应商的 API Key',
+      latencyMs,
+    };
+  } catch (err) {
+    const latencyMs = Date.now() - t0;
+    return { ok: false, error: err instanceof Error ? err.message : String(err), latencyMs };
+  }
+}
+
+/**
  * 按配置的重试链依次尝试生成标题。
  * @returns 标题字符串，全部失败返回 null
  */
