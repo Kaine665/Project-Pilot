@@ -2,27 +2,21 @@
 
 import { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
 import { TopNav } from '@/components/top-nav';
-import { AgentChatPanel } from '@/components/agent-chat-panel';
-import { useProject, type ProjectEntry } from '@/components/project-context';
-import { FolderKanban, Plus, Trash2, Network, GripVertical, Bot, Layers, BookOpen, FileText, ListTodo, ChevronRight } from 'lucide-react';
+import dynamic from 'next/dynamic';
+const AgentChatPanel = dynamic(
+  () => import('@/components/agent-chat-panel').then(m => m.AgentChatPanel),
+  { ssr: false },
+);
+import { useProject } from '@/components/project-context';
+import { FolderKanban, Plus, Trash2, Network, Bot, Layers, BookOpen, FileText, ListTodo } from 'lucide-react';
 import { BUTLER_AGENT_ID } from '@/lib/default-agents';
 import type { Agent } from '@/types';
 import { useRouter, usePathname } from '@/i18n/routing';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-  useSortable,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+const SortableProjectTree = dynamic(
+  () => import('@/components/sortable-project-tree').then(m => m.SortableProjectTree),
+  { ssr: false },
+);
 
 interface FlowsContextValue {
   highlightSectionId: string | null;
@@ -166,68 +160,6 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
     router.push('/flows/todos');
   };
 
-  const [projectDragging, setProjectDragging] = useState(false);
-
-  const projectSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-  );
-
-  const handleProjectDragEnd = useCallback(async (event: DragEndEvent) => {
-    setProjectDragging(false);
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = projects.findIndex(p => p.key === active.id);
-    const newIndex = projects.findIndex(p => p.key === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-
-    // Compute reordered list for persistence
-    const reordered = [...projects];
-    const [moved] = reordered.splice(oldIndex, 1);
-    reordered.splice(newIndex, 0, moved);
-
-    // Persist then refresh from global context
-    try {
-      await fetch('/api/data/projects', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order: reordered.map(p => p.key) }),
-      });
-      await fetchProjects();
-    } catch { /* ignore */ }
-  }, [projects, fetchProjects]);
-
-  const sectionSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-  );
-
-  const handleSectionDragEnd = useCallback(async (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id || !activeKey) return;
-    const oldIndex = sections.findIndex(s => s.id === active.id);
-    const newIndex = sections.findIndex(s => s.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-
-    // Optimistic UI update
-    const reordered = [...sections];
-    const [moved] = reordered.splice(oldIndex, 1);
-    reordered.splice(newIndex, 0, moved);
-    setSections(reordered);
-
-    // Persist: read full data, reorder sections, save
-    try {
-      const res = await fetch(`/api/data?project=${encodeURIComponent(activeKey)}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      const fullSections = data.sections ?? [];
-      const [movedFull] = fullSections.splice(oldIndex, 1);
-      fullSections.splice(newIndex, 0, movedFull);
-      await fetch(`/api/data?project=${encodeURIComponent(activeKey)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...data, sections: fullSections }),
-      });
-    } catch { /* ignore */ }
-  }, [sections, activeKey]);
 
   const panelWidth = 'w-60';
   const panelInnerWidth = 'w-60';
@@ -420,23 +352,15 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
 
                     {/* Project tree */}
                     <div className="flex-1 overflow-y-auto px-1.5 py-1">
-                      <DndContext sensors={projectSensors} collisionDetection={closestCenter} onDragStart={() => setProjectDragging(true)} onDragEnd={handleProjectDragEnd}>
-                        <SortableContext items={projects.map(p => p.key)} strategy={verticalListSortingStrategy}>
-                          {projects.map(p => (
-                            <SortableProjectItem
-                              key={p.key}
-                              project={p}
-                              isActive={p.key === activeKey}
-                              onSelect={setActiveKey}
-                              sections={p.key === activeKey ? sections : []}
-                              sectionSensors={sectionSensors}
-                              onSectionDragEnd={handleSectionDragEnd}
-                              onHighlightSection={setHighlightSectionId}
-                              hideSections={projectDragging}
-                            />
-                          ))}
-                        </SortableContext>
-                      </DndContext>
+                      <SortableProjectTree
+                        projects={projects}
+                        activeKey={activeKey}
+                        sections={sections}
+                        setSections={setSections}
+                        setActiveKey={setActiveKey}
+                        fetchProjects={fetchProjects}
+                        setHighlightSectionId={setHighlightSectionId}
+                      />
                     </div>
               </div>
             </div>
@@ -467,127 +391,3 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   );
 }
 
-function SortableProjectItem({
-  project,
-  isActive,
-  onSelect,
-  sections,
-  sectionSensors,
-  onSectionDragEnd,
-  onHighlightSection,
-  hideSections,
-}: {
-  project: ProjectEntry;
-  isActive: boolean;
-  onSelect: (key: string) => void;
-  sections: { id: string; name: string }[];
-  sectionSensors: ReturnType<typeof useSensors>;
-  onSectionDragEnd: (event: DragEndEvent) => void;
-  onHighlightSection: (id: string | null) => void;
-  hideSections: boolean;
-}) {
-  const [collapsed, setCollapsed] = useState(false);
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.key });
-  const yOnlyTransform = transform ? { ...transform, x: 0 } : null;
-  const style = {
-    transform: CSS.Transform.toString(yOnlyTransform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  const hasSections = isActive && sections.length > 0;
-  const expanded = hasSections && !collapsed && !hideSections;
-
-  const handleChevronClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!isActive) {
-      // 非 active 项目：先选中（会自动展开）
-      onSelect(project.key);
-      setCollapsed(false);
-    } else {
-      // active 项目：切换展开/收起
-      setCollapsed(prev => !prev);
-    }
-  };
-
-  return (
-    <div ref={setNodeRef} style={style} {...attributes}>
-      {/* Project row */}
-      <div
-        className={`group flex w-full items-center gap-1 rounded-md px-1.5 py-1.5 text-base cursor-pointer transition-colors ${
-          isActive
-            ? 'text-zinc-900 font-medium dark:text-zinc-100'
-            : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-200'
-        }`}
-      >
-        <button
-          className="shrink-0 p-0 bg-transparent border-none cursor-pointer"
-          onClick={handleChevronClick}
-        >
-          <ChevronRight className={`h-3.5 w-3.5 text-zinc-400 transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`} />
-        </button>
-        <div className="flex flex-1 items-center gap-1 min-w-0" onClick={() => { onSelect(project.key); setCollapsed(false); }}>
-          <FolderKanban className="h-4 w-4 shrink-0" />
-          <span className="truncate">{project.name}</span>
-        </div>
-        <button
-          className="shrink-0 cursor-grab active:cursor-grabbing text-zinc-300 hover:text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={e => e.stopPropagation()}
-          {...listeners}
-        >
-          <GripVertical className="h-3 w-3" />
-        </button>
-      </div>
-      {/* Sections under active project */}
-      {expanded && (
-        <DndContext sensors={sectionSensors} collisionDetection={closestCenter} onDragEnd={onSectionDragEnd}>
-          <SortableContext items={sections.map(s => s.id)} strategy={verticalListSortingStrategy}>
-            {sections.map(s => (
-              <SortableSectionItem key={s.id} section={s} onHighlight={onHighlightSection} />
-            ))}
-          </SortableContext>
-        </DndContext>
-      )}
-    </div>
-  );
-}
-
-function SortableSectionItem({
-  section,
-  onHighlight,
-}: {
-  section: { id: string; name: string };
-  onHighlight: (id: string | null) => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: section.id });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  const handleClick = () => {
-    onHighlight(section.id);
-    window.dispatchEvent(new CustomEvent('pp:highlight-section', { detail: section.id }));
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      onClick={handleClick}
-      className="group flex w-full items-center gap-1 rounded-md pl-6 pr-1 py-1.5 text-sm cursor-pointer text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 transition-colors dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-200"
-    >
-      <Network className="h-3.5 w-3.5 shrink-0" />
-      <span className="flex-1 truncate">{section.name || '未命名'}</span>
-      <button
-        className="shrink-0 cursor-grab active:cursor-grabbing text-zinc-300 hover:text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity"
-        onClick={e => e.stopPropagation()}
-        {...listeners}
-      >
-        <GripVertical className="h-3.5 w-3.5" />
-      </button>
-    </div>
-  );
-}

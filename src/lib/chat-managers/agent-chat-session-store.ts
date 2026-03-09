@@ -291,8 +291,17 @@ export async function incrementGuardRetryCountOnDisk(sessionId: string): Promise
 
 // ── Agent Loading ──
 
+let _agentsCache: AgentsData | null = null;
+let _agentsCacheTs = 0;
+const AGENTS_CACHE_TTL = 5_000; // 5s
+
 export async function loadAgent(agentId: string): Promise<Agent> {
-  const agentsData = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
+  const now = Date.now();
+  if (!_agentsCache || now - _agentsCacheTs > AGENTS_CACHE_TTL) {
+    _agentsCache = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
+    _agentsCacheTs = now;
+  }
+  const agentsData = _agentsCache;
   const agent = agentsData.agents.find(a => a.id === agentId && !a.archived);
   if (!agent) {
     throw new Error('Agent not found or archived');
