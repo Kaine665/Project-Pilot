@@ -258,6 +258,12 @@ export interface Agent {
    * If absent, migrateAgentToResources() derives them from legacy fields at runtime.
    */
   defaultResources?: ResourceRef[];
+  /**
+   * 触发提示——告诉其他 Agent "什么情况下应该找我"。
+   * 每条是一个简短的场景描述，如 "需要审查 PR"、"遇到数据库迁移问题"。
+   * 在可调用 Agent 列表中展示，帮助 Agent 智能选择协作对象。
+   */
+  triggerHints?: string[];
   /** 所属项目。undefined = 全局 Agent（所有项目可见） */
   projectKey?: string;
   archived?: boolean;

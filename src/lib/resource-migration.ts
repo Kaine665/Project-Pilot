@@ -63,6 +63,14 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
     label: '挂起任务看板',
   });
 
+  // Shared memory (blackboard) — always present
+  refs.push({
+    type: 'shared-memory',
+    id: '_shared',
+    priority: 23,
+    label: 'Agent 共享记忆',
+  });
+
   // Available agents list (only when agent has subAgent capability)
   if (agent.capabilities?.subAgent) {
     refs.push({

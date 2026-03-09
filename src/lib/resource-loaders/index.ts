@@ -20,6 +20,7 @@ import {
   FlowContextLoader,
   ReferenceTurnsLoader,
 } from './static-text-loader';
+import { SharedMemoryLoader } from './shared-memory-loader';
 
 resourceRegistry.register(new ContextResourceLoader());
 resourceRegistry.register(new ContextIndexLoader());
@@ -32,3 +33,4 @@ resourceRegistry.register(new TodoListLoader());
 resourceRegistry.register(new InlineTextLoader());
 resourceRegistry.register(new FlowContextLoader());
 resourceRegistry.register(new ReferenceTurnsLoader());
+resourceRegistry.register(new SharedMemoryLoader());

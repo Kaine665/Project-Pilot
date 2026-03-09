@@ -142,6 +142,11 @@ export const DEFAULT_AGENTS: Agent[] = [
       todoRead: false,
       exposePromptPath: true,
     },
+    triggerHints: [
+      '需要查询 ProjectPilot 数据目录结构或文件格式',
+      '需要统计任务/项目/Agent 数量和状态',
+      '需要检查数据一致性或排查数据问题',
+    ],
     createdAt: '2026-02-25T00:00:00.000Z',
     updatedAt: '2026-02-25T00:00:00.000Z',
   },

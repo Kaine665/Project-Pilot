@@ -24,7 +24,8 @@ export type ResourceType =
   | 'reference-turns'             // Imported conversation turns (guest agent)
   | 'suspended-tasks'             // Cross-session suspended tasks board
   | 'suspend-task-instructions'   // Static: suspend task action instructions
-  | 'complete-suspended-task-instructions'; // Static: complete suspended task (tag-only, no instructions)
+  | 'complete-suspended-task-instructions' // Static: complete suspended task (tag-only, no instructions)
+  | 'shared-memory';               // Agent shared memory (blackboard)
 
 // ── ResourceRef ──
 
@@ -42,6 +43,7 @@ export interface ResourceRef {
    * - design-docs-index: '_all'
    * - active-tasks: '_running'
    * - available-agents: '_callable'
+   * - shared-memory: '_shared'
    * - flow-context: '_snapshot'
    * - reference-turns: '_imported'
    * - suspended-tasks: '_suspended'
