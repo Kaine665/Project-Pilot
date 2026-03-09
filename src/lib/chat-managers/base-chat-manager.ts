@@ -275,18 +275,22 @@ export abstract class BaseChatManager<TRun extends BaseRun> {
       // Subclass hook (artifacts, titles, knowledge tags, etc.)
       await this.onProcessClose(run, aborted, streamParser);
 
-      // Emit done BEFORE persist so SSE clients receive completion immediately.
-      // Persistence is fire-and-forget — it doesn't affect the stream.
-      this.trackAndEmit(run, { type: 'done' });
       if (run.status === 'running') {
         run.status = code === 0 ? 'completed' : 'failed';
       }
       run.completedAt = Date.now();
 
-      // Persist to disk (async, no need to block the done event)
-      this.persistAfterClose(run, aborted)
-        .then(() => config.onBeforeEmitDone?.())
-        .catch((err) => console.error(`${this.logPrefix} persistAfterClose error:`, err));
+      // Persist to disk BEFORE emitting done, so the session data is
+      // consistent when the frontend reloads after receiving the done event.
+      try {
+        await this.persistAfterClose(run, aborted);
+        await config.onBeforeEmitDone?.();
+      } catch (err) {
+        console.error(`${this.logPrefix} persistAfterClose error:`, err);
+      }
+
+      // Emit done AFTER persist — closes the SSE connection
+      this.trackAndEmit(run, { type: 'done' });
     });
 
     // ── error (spawn failure) ──
