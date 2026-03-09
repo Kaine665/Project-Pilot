@@ -108,6 +108,7 @@ interface FlowContextValue {
   data: FlowData;
   actions: FlowActions;
   agents: Agent[];
+  agentMap: Map<string, Agent>;
   showDeferred: boolean;
   toggleShowDeferred: () => void;
   highlightTarget: HighlightTarget | null;
@@ -357,9 +358,9 @@ export function FlowEditor({ projectKey, projectName, projectDescription, initia
     return () => es.close();
   }, [projectKey]);
 
-  // --- Actions ---
+  // --- Actions (memoized) ---
 
-  const actions: FlowActions = {
+  const actions: FlowActions = useMemo(() => ({
     addSection: (name) => {
       persist({
         ...data,
@@ -438,7 +439,7 @@ export function FlowEditor({ projectKey, projectName, projectDescription, initia
     reorderSections: (oldIndex, newIndex) => {
       persist({ ...data, sections: reorderArray(data.sections, oldIndex, newIndex) });
     },
-  };
+  }), [data, persist, t]);
 
   // --- Batch Operations ---
 
@@ -515,10 +516,10 @@ export function FlowEditor({ projectKey, projectName, projectDescription, initia
     clearSelection();
   }, [selectedItems, data, persist, clearSelection]);
 
-  // --- Stats ---
+  // --- Stats (memoized) ---
 
   const filterDeferred = !showDeferred;
-  const stats = data.sections.reduce(
+  const stats = useMemo(() => data.sections.reduce(
     (acc, section) => {
       for (const item of section.items) {
         const visible = filterDeferred ? !item.deferred : true;
@@ -532,7 +533,43 @@ export function FlowEditor({ projectKey, projectName, projectDescription, initia
       return acc;
     },
     { total: 0, done: 0, doing: 0, todo: 0 },
-  );
+  ), [data.sections, filterDeferred]);
+
+  const agentMap = useMemo(() => new Map(agents.map(a => [a.id, a])), [agents]);
+
+  const toggleShowDeferred = useCallback(() => setShowDeferred(v => !v), []);
+
+  const contextValue = useMemo<FlowContextValue>(() => ({
+    projectKey,
+    projectName,
+    data,
+    actions,
+    agents,
+    agentMap,
+    showDeferred,
+    toggleShowDeferred,
+    highlightTarget,
+    clearHighlight,
+    aiStatusMap,
+    batchMode,
+    selectedItems,
+    toggleBatchMode,
+    toggleItemSelection,
+    clearSelection,
+    batchDelete,
+    batchDefer,
+    batchUpdateStatus,
+    searchText,
+    setSearchText,
+    statusFilter,
+    setStatusFilter,
+  }), [
+    projectKey, projectName, data, actions, agents, agentMap, showDeferred, toggleShowDeferred,
+    highlightTarget, clearHighlight, aiStatusMap, batchMode, selectedItems,
+    toggleBatchMode, toggleItemSelection, clearSelection,
+    batchDelete, batchDefer, batchUpdateStatus,
+    searchText, statusFilter,
+  ]);
 
   if (loading) {
     return (
@@ -543,32 +580,7 @@ export function FlowEditor({ projectKey, projectName, projectDescription, initia
   }
 
   return (
-    <FlowDataContext.Provider
-      value={{
-        projectKey,
-        projectName,
-        data,
-        actions,
-        agents,
-        showDeferred,
-        toggleShowDeferred: () => setShowDeferred(v => !v),
-        highlightTarget,
-        clearHighlight,
-        aiStatusMap,
-        batchMode,
-        selectedItems,
-        toggleBatchMode,
-        toggleItemSelection,
-        clearSelection,
-        batchDelete,
-        batchDefer,
-        batchUpdateStatus,
-        searchText,
-        setSearchText,
-        statusFilter,
-        setStatusFilter,
-      }}
-    >
+    <FlowDataContext.Provider value={contextValue}>
       <div className="min-h-screen bg-background">
         <div className="max-w-7xl mx-auto px-8 py-12">
           {/* Header */}
