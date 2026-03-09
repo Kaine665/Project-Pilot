@@ -145,7 +145,7 @@ export async function GET(request: NextRequest) {
 
 /** POST /api/agents — create a new agent */
 export async function POST(request: NextRequest) {
-  const { name, description, systemPrompt, icon, capabilities, requiredParams, contextIds, defaultResources, projectKey, triggerHints } = await request.json();
+  const { name, description, systemPrompt, icon, capabilities, requiredParams, contextIds, defaultResources, projectKey, triggerHints, defaultProvider, defaultModel } = await request.json();
   if (!name?.trim()) {
     return NextResponse.json({ error: 'name is required' }, { status: 400 });
   }
@@ -175,6 +175,8 @@ export async function POST(request: NextRequest) {
     defaultResources: Array.isArray(defaultResources) && defaultResources.length > 0 ? defaultResources as ResourceRef[] : undefined,
     triggerHints: Array.isArray(triggerHints) && triggerHints.length > 0 ? triggerHints : undefined,
     projectKey: projectKey?.trim() || undefined,
+    defaultProvider: defaultProvider || undefined,
+    defaultModel: defaultModel?.trim() || undefined,
     createdAt: now,
     updatedAt: now,
   };
@@ -195,7 +197,7 @@ export async function POST(request: NextRequest) {
 /** PATCH /api/agents — update an agent. Body: { id, ...fields } */
 export async function PATCH(request: NextRequest) {
   const body = await request.json();
-  const { id, name, description, systemPrompt, icon, capabilities, requiredParams, contextIds, defaultResources, projectKey, triggerHints } = body;
+  const { id, name, description, systemPrompt, icon, capabilities, requiredParams, contextIds, defaultResources, projectKey, triggerHints, defaultProvider, defaultModel } = body;
   if (!id) {
     return NextResponse.json({ error: 'id is required' }, { status: 400 });
   }
@@ -220,6 +222,8 @@ export async function PATCH(request: NextRequest) {
   if (defaultResources !== undefined) agent.defaultResources = Array.isArray(defaultResources) && defaultResources.length > 0 ? defaultResources as ResourceRef[] : undefined;
   if (triggerHints !== undefined) agent.triggerHints = Array.isArray(triggerHints) && triggerHints.length > 0 ? triggerHints : undefined;
   if (projectKey !== undefined) agent.projectKey = projectKey?.trim() || undefined;
+  if (defaultProvider !== undefined) agent.defaultProvider = defaultProvider || undefined;
+  if (defaultModel !== undefined) agent.defaultModel = defaultModel?.trim() || undefined;
 
   // systemPrompt 写入外置 .md 文件，不存入 agents.json
   if (systemPrompt !== undefined) {

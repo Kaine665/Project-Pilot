@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { X, Check, ChevronDown, Search, FileText, BookOpen } from 'lucide-react';
-import type { ContextEntry } from '@/types';
+import { X, Check, ChevronDown, Search, FileText, BookOpen, Cpu } from 'lucide-react';
+import type { ContextEntry, ProviderId } from '@/types';
 import type { SessionConfig } from '@/types/agent-chat';
+import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
 
 interface SessionConfigPanelProps {
   sessionId: string;
@@ -20,6 +21,8 @@ export function SessionConfigPanel({
 }: SessionConfigPanelProps) {
   const [contextIds, setContextIds] = useState<string[]>(config.contextIds ?? []);
   const [supplementaryPrompt, setSupplementaryPrompt] = useState(config.supplementaryPrompt ?? '');
+  const [sessionProvider, setSessionProvider] = useState<ProviderId | ''>(config.provider ?? '');
+  const [sessionModel, setSessionModel] = useState(config.model ?? '');
   const [contextEntries, setContextEntries] = useState<ContextEntry[]>([]);
   const [saving, setSaving] = useState(false);
   const [contextOpen, setContextOpen] = useState(true);
@@ -49,6 +52,8 @@ export function SessionConfigPanel({
   useEffect(() => {
     setContextIds(config.contextIds ?? []);
     setSupplementaryPrompt(config.supplementaryPrompt ?? '');
+    setSessionProvider(config.provider ?? '');
+    setSessionModel(config.model ?? '');
   }, [config, sessionId]);
 
   // Auto-resize on content change
@@ -92,14 +97,18 @@ export function SessionConfigPanel({
     const origPrompt = config.supplementaryPrompt ?? '';
     const idsChanged = JSON.stringify([...contextIds].sort()) !== JSON.stringify([...origIds].sort());
     const promptChanged = supplementaryPrompt !== origPrompt;
-    return idsChanged || promptChanged;
-  }, [contextIds, supplementaryPrompt, config]);
+    const providerChanged = sessionProvider !== (config.provider ?? '');
+    const modelChanged = sessionModel !== (config.model ?? '');
+    return idsChanged || promptChanged || providerChanged || modelChanged;
+  }, [contextIds, supplementaryPrompt, sessionProvider, sessionModel, config]);
 
   const handleSave = async () => {
     setSaving(true);
     const newConfig: SessionConfig = {};
     if (contextIds.length > 0) newConfig.contextIds = contextIds;
     if (supplementaryPrompt.trim()) newConfig.supplementaryPrompt = supplementaryPrompt.trim();
+    if (sessionProvider) newConfig.provider = sessionProvider as ProviderId;
+    if (sessionModel.trim()) newConfig.model = sessionModel.trim();
     onSave(newConfig);
     setSaving(false);
   };
@@ -135,6 +144,55 @@ export function SessionConfigPanel({
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+
+        {/* ── 模型配置 ── */}
+        <div className="rounded-lg border border-zinc-150 bg-zinc-50/50 p-3 dark:border-zinc-700/50 dark:bg-zinc-800/30">
+          <div className="mb-2 flex items-center gap-1.5">
+            <Cpu className="h-3.5 w-3.5 text-zinc-400" />
+            <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">模型配置</span>
+            {(sessionProvider || sessionModel) && (
+              <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-400">
+                已自定义
+              </span>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <select
+              value={sessionProvider}
+              onChange={e => {
+                setSessionProvider(e.target.value as ProviderId | '');
+                setSessionModel('');
+              }}
+              className="w-32 shrink-0 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500"
+            >
+              <option value="">继承默认</option>
+              {PROVIDER_REGISTRY.map(p => (
+                <option key={p.id} value={p.id}>{p.id}</option>
+              ))}
+            </select>
+            {sessionProvider ? (
+              <select
+                value={sessionModel}
+                onChange={e => setSessionModel(e.target.value)}
+                className="flex-1 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500"
+              >
+                <option value="">继承默认</option>
+                {getProviderPreset(sessionProvider as ProviderId).models.map(m => (
+                  <option key={m.id} value={m.id}>{m.label || m.id}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                disabled
+                placeholder="先选择供应商"
+                className="flex-1 rounded-md border border-zinc-200 px-2 py-1.5 text-[11px] text-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/50"
+              />
+            )}
+          </div>
+          <p className="mt-1.5 text-[10px] text-zinc-400">
+            覆盖此会话的模型，不影响其他会话
+          </p>
+        </div>
 
         {/* ── 补充提示词 ── */}
         <div className="rounded-lg border border-zinc-150 bg-zinc-50/50 p-3 dark:border-zinc-700/50 dark:bg-zinc-800/30">
@@ -276,6 +334,8 @@ export function SessionConfigPanel({
               onClick={() => {
                 setContextIds(config.contextIds ?? []);
                 setSupplementaryPrompt(config.supplementaryPrompt ?? '');
+                setSessionProvider(config.provider ?? '');
+                setSessionModel(config.model ?? '');
               }}
               className="px-2 py-1.5 text-xs text-zinc-400 hover:text-zinc-600 transition-colors"
             >

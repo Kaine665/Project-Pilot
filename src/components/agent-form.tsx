@@ -7,9 +7,10 @@ import {
   Database, Brain, Code, Zap, Search, Shield, Wrench, BookOpen,
   type LucideIcon,
 } from 'lucide-react';
-import type { Agent, AgentCapabilities, ContextEntry } from '@/types';
+import type { Agent, AgentCapabilities, ContextEntry, ProviderId } from '@/types';
 import type { ProjectEntry } from '@/components/project-context';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
+import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
 
 // ── Icon picker presets ──
 
@@ -67,6 +68,8 @@ export type FormData = {
   requiredParamsText: string;
   contextIds: string[];
   projectKey: string; // '' = 全局
+  defaultProvider: ProviderId | ''; // '' = 继承全局设置
+  defaultModel: string;             // '' = 继承全局设置
 };
 
 export const emptyForm: FormData = {
@@ -75,6 +78,8 @@ export const emptyForm: FormData = {
   requiredParamsText: '',
   contextIds: [],
   projectKey: '',
+  defaultProvider: '',
+  defaultModel: '',
 };
 
 export function agentToForm(a: Agent): FormData {
@@ -87,6 +92,8 @@ export function agentToForm(a: Agent): FormData {
     requiredParamsText: (a.requiredParams ?? []).join('\n'),
     contextIds: a.contextIds ?? [],
     projectKey: a.projectKey ?? '',
+    defaultProvider: a.defaultProvider ?? '',
+    defaultModel: a.defaultModel ?? '',
   };
 }
 
@@ -445,6 +452,55 @@ export function SettingsForm({
               )}
             </div>
           )}
+
+          {/* Default Model */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              默认模型
+            </label>
+            <p className="mb-2 text-xs text-zinc-400">
+              此 Agent 创建新会话时预选的模型。留空则继承全局设置，用户仍可在会话中切换。
+            </p>
+            <div className="flex gap-2">
+              <select
+                value={form.defaultProvider}
+                onChange={e => setForm(f => ({
+                  ...f,
+                  defaultProvider: e.target.value as ProviderId | '',
+                  defaultModel: '',
+                }))}
+                className="w-36 shrink-0 rounded-md border border-zinc-300 bg-white px-2 py-2 text-sm outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+              >
+                <option value="">继承全局</option>
+                {PROVIDER_REGISTRY.map(p => (
+                  <option key={p.id} value={p.id}>{p.id}</option>
+                ))}
+              </select>
+              {form.defaultProvider ? (
+                <select
+                  value={form.defaultModel}
+                  onChange={e => setForm(f => ({ ...f, defaultModel: e.target.value }))}
+                  className="flex-1 rounded-md border border-zinc-300 bg-white px-2 py-2 text-sm outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+                >
+                  <option value="">继承全局</option>
+                  {getProviderPreset(form.defaultProvider as ProviderId).models.map(m => (
+                    <option key={m.id} value={m.id}>{m.label || m.id}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  disabled
+                  placeholder="先选择供应商"
+                  className="flex-1 rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/50"
+                />
+              )}
+            </div>
+            {form.defaultProvider && form.defaultModel && (
+              <p className="mt-1.5 text-xs text-zinc-500">
+                {form.defaultProvider} / {form.defaultModel}
+              </p>
+            )}
+          </div>
 
           {/* Actions */}
           <div className="flex items-center gap-3 pt-2">

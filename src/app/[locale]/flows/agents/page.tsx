@@ -374,6 +374,8 @@ export default function AgentsPage() {
             requiredParams: parsedParams.length > 0 ? parsedParams : undefined,
             contextIds: form.contextIds.length > 0 ? form.contextIds : undefined,
             projectKey: form.projectKey || undefined,
+            defaultProvider: form.defaultProvider || undefined,
+            defaultModel: form.defaultModel || undefined,
           }),
         });
         if (res.ok) {
@@ -399,6 +401,8 @@ export default function AgentsPage() {
             requiredParams: parsedParams.length > 0 ? parsedParams : [],
             contextIds: form.contextIds,
             projectKey: form.projectKey || undefined,
+            defaultProvider: form.defaultProvider || undefined,
+            defaultModel: form.defaultModel || undefined,
           }),
         });
         if (res.ok) await fetchAgents();
@@ -494,6 +498,8 @@ export default function AgentsPage() {
         || form.requiredParamsText !== (selectedAgent.requiredParams ?? []).join('\n')
         || JSON.stringify([...form.contextIds].sort()) !== JSON.stringify([...(selectedAgent.contextIds ?? [])].sort())
         || form.projectKey !== (selectedAgent.projectKey ?? '')
+        || form.defaultProvider !== (selectedAgent.defaultProvider ?? '')
+        || form.defaultModel !== (selectedAgent.defaultModel ?? '')
       : false;
 
   // ── Active session info (for header display) ──

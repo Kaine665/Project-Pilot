@@ -288,6 +288,10 @@ export interface Agent {
   triggerHints?: string[];
   /** 所属项目。undefined = 全局 Agent（所有项目可见） */
   projectKey?: string;
+  /** 默认供应商（创建新会话时预选）。留空则继承全局设置。 */
+  defaultProvider?: ProviderId;
+  /** 默认模型 ID（创建新会话时预选）。留空则继承全局设置。 */
+  defaultModel?: string;
   archived?: boolean;
   archivedAt?: string;
   createdAt: string;
