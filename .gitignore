@@ -44,6 +44,9 @@ yarn-error.log*
 # Claude Code settings
 /.claude/
 
+# MCP config (contains secrets)
+.mcp.json
+
 # messages and debug
 /messages/
 
