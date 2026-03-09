@@ -362,6 +362,7 @@ export default function AgentsPage() {
       .filter(Boolean);
     try {
       if (creating) {
+        const skillRefs = form.skillIds.map(id => ({ type: 'skill' as const, id, priority: 60 }));
         const res = await fetch('/api/agents', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -373,6 +374,7 @@ export default function AgentsPage() {
             capabilities: form.capabilities,
             requiredParams: parsedParams.length > 0 ? parsedParams : undefined,
             contextIds: form.contextIds.length > 0 ? form.contextIds : undefined,
+            defaultResources: skillRefs.length > 0 ? skillRefs : undefined,
             projectKey: form.projectKey || undefined,
             defaultProvider: form.defaultProvider || undefined,
             defaultModel: form.defaultModel || undefined,
@@ -388,6 +390,10 @@ export default function AgentsPage() {
           syncUrlParams({ agent: data.agent.id, session: null });
         }
       } else if (selectedAgentId) {
+        const skillRefs = form.skillIds.map(id => ({ type: 'skill' as const, id, priority: 60 }));
+        // Preserve non-skill defaultResources from the existing agent, replace skill refs
+        const existingNonSkillRefs = (selectedAgent?.defaultResources ?? []).filter(r => r.type !== 'skill');
+        const updatedDefaultResources = [...existingNonSkillRefs, ...skillRefs];
         const res = await fetch('/api/agents', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -400,6 +406,7 @@ export default function AgentsPage() {
             capabilities: form.capabilities,
             requiredParams: parsedParams.length > 0 ? parsedParams : [],
             contextIds: form.contextIds,
+            defaultResources: updatedDefaultResources.length > 0 ? updatedDefaultResources : [],
             projectKey: form.projectKey || undefined,
             defaultProvider: form.defaultProvider || undefined,
             defaultModel: form.defaultModel || undefined,
@@ -497,6 +504,9 @@ export default function AgentsPage() {
         || JSON.stringify(form.capabilities) !== JSON.stringify(selectedAgent.capabilities ?? DEFAULT_AGENT_CAPABILITIES)
         || form.requiredParamsText !== (selectedAgent.requiredParams ?? []).join('\n')
         || JSON.stringify([...form.contextIds].sort()) !== JSON.stringify([...(selectedAgent.contextIds ?? [])].sort())
+        || JSON.stringify([...form.skillIds].sort()) !== JSON.stringify(
+            [...(selectedAgent.defaultResources ?? []).filter(r => r.type === 'skill').map(r => r.id)].sort()
+          )
         || form.projectKey !== (selectedAgent.projectKey ?? '')
         || form.defaultProvider !== (selectedAgent.defaultProvider ?? '')
         || form.defaultModel !== (selectedAgent.defaultModel ?? '')
