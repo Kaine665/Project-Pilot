@@ -55,6 +55,9 @@ export function generateSessionId(): string {
 
 // ── Session Read Operations ──
 
+/** 测试连接会话（__test-*）不列入会话列表，测完即销毁 */
+const isEphemeralTestSession = (id: string) => id.startsWith('__test-');
+
 export async function loadSession(sessionId: string): Promise<AgentChatSession | null> {
   const data = await getSessionsData();
   return data.sessions.find(s => s.id === sessionId) ?? null;
@@ -63,7 +66,7 @@ export async function loadSession(sessionId: string): Promise<AgentChatSession |
 export async function listSessions(agentId: string): Promise<Omit<AgentChatSession, 'messages'>[]> {
   const data = await getSessionsData();
   return data.sessions
-    .filter(s => s.agentId === agentId)
+    .filter(s => s.agentId === agentId && !isEphemeralTestSession(s.id))
     .map(({ messages: _msgs, ...rest }) => rest)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
@@ -71,7 +74,7 @@ export async function listSessions(agentId: string): Promise<Omit<AgentChatSessi
 export async function listSessionsByProject(agentId: string, projectKey: string): Promise<Omit<AgentChatSession, 'messages'>[]> {
   const data = await getSessionsData();
   return data.sessions
-    .filter(s => s.agentId === agentId && s.projectKey === projectKey)
+    .filter(s => s.agentId === agentId && s.projectKey === projectKey && !isEphemeralTestSession(s.id))
     .map(({ messages: _msgs, ...rest }) => rest)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
@@ -79,6 +82,7 @@ export async function listSessionsByProject(agentId: string, projectKey: string)
 export async function listAllSessions(): Promise<Omit<AgentChatSession, 'messages'>[]> {
   const data = await getSessionsData();
   return data.sessions
+    .filter(s => !isEphemeralTestSession(s.id))
     .map(({ messages: _msgs, ...rest }) => rest)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
@@ -86,7 +90,7 @@ export async function listAllSessions(): Promise<Omit<AgentChatSession, 'message
 export async function listGuestSessions(parentSessionId: string): Promise<Omit<AgentChatSession, 'messages'>[]> {
   const data = await getSessionsData();
   return data.sessions
-    .filter(s => s.parentSessionId === parentSessionId)
+    .filter(s => s.parentSessionId === parentSessionId && !isEphemeralTestSession(s.id))
     .map(({ messages: _msgs, ...rest }) => rest)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }

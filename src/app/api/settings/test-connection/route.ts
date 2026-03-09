@@ -10,7 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getProviderPreset } from '@/lib/provider-registry';
 import { getSettings, saveSettings, getProviderScopedApiKey, getProviderScopedModel } from '@/lib/settings-manager';
-import { agentChatManager } from '@/lib/agent-chat-manager';
+import { agentChatManager, deleteSessionFromDisk } from '@/lib/agent-chat-manager';
 import { BUTLER_AGENT_ID } from '@/lib/default-agents';
 import { parseAuthStatusText } from '@/lib/oauth-status';
 import { execClaude } from '@/lib/claude-cli';
@@ -129,10 +129,12 @@ async function runSingleTest(
     if (status.status === 'completed') {
       testOk = true;
       agentChatManager.clear(sessionId);
+      await deleteSessionFromDisk(sessionId).catch(() => {});
       break;
     }
     if (status.status === 'failed' || status.status === 'stopped') {
       agentChatManager.clear(sessionId);
+      await deleteSessionFromDisk(sessionId).catch(() => {});
       await saveSettings(current);
       const errMsg = status.errorMessage;
       return {
@@ -146,6 +148,7 @@ async function runSingleTest(
   if (!testOk) {
     agentChatManager.stop(sessionId);
     agentChatManager.clear(sessionId);
+    await deleteSessionFromDisk(sessionId).catch(() => {});
     await saveSettings(current);
     return { ok: false, error: '会话测试超时' };
   }
