@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl';
 import { ToolCallCard } from '@/components/tool-call-card';
 import { ToolExecutionWindow } from '@/components/tool-execution-window';
 import { FormattedText } from '@/components/formatted-text';
-import type { ChatMessage, ContentBlock } from '@/types';
+import type { ChatMessage, ContentBlock, ChatToolCall } from '@/types';
 import { isRepetitiveTool } from '@/lib/tool-utils';
 
 interface ChatBubbleProps {
@@ -105,27 +105,46 @@ export const ChatBubble = memo(function ChatBubble({
   const isAskUserQuestion = (block: ContentBlock) =>
     block.type === 'tool_call' && block.toolCall.toolName === 'AskUserQuestion';
 
-  // 找到最后一个重复性工具（用于在 ToolExecutionWindow 中显示）
-  const latestRepetitiveTool = useMemo(() => {
-    const allBlocks = blocks ?? message.contentBlocks ?? [];
-    let lastRepetitive: any = null;
-    for (const block of allBlocks) {
-      if (block.type === 'tool_call' && isRepetitiveTool(block.toolCall.toolName)) {
-        lastRepetitive = block.toolCall;
-      }
-    }
-    return lastRepetitive;
-  }, [blocks, message.contentBlocks]);
-
   const renderBlocks = (blocksToRender: ContentBlock[]) => {
     const lastTextIdx = blocksToRender.reduce(
       (acc, b, i) => (b.type === 'text' ? i : acc),
       -1,
     );
 
-    return blocksToRender.map((block, i) => {
+    // 将 blocks 分组：连续的重复性工具合并为一组
+    const groups: Array<
+      | { type: 'block'; block: ContentBlock; index: number }
+      | { type: 'tool_group'; toolCalls: ChatToolCall[] }
+    > = [];
+
+    let pendingTools: ChatToolCall[] = [];
+
+    const flushTools = () => {
+      if (pendingTools.length > 0) {
+        groups.push({ type: 'tool_group', toolCalls: [...pendingTools] });
+        pendingTools = [];
+      }
+    };
+
+    for (let i = 0; i < blocksToRender.length; i++) {
+      const block = blocksToRender[i];
+      if (block.type === 'tool_call' && isRepetitiveTool(block.toolCall.toolName)) {
+        pendingTools.push(block.toolCall);
+      } else {
+        flushTools();
+        groups.push({ type: 'block', block, index: i });
+      }
+    }
+    flushTools();
+
+    return groups.map((group, gi) => {
+      if (group.type === 'tool_group') {
+        return <ToolExecutionWindow key={`tg-${gi}`} toolCalls={group.toolCalls} />;
+      }
+
+      const { block, index: i } = group;
+
       if (block.type === 'text') {
-        // 只格式化 AI 消息，用户消息保持纯文本
         if (isUser) {
           return (
             <div key={i} className="whitespace-pre-wrap wrap-break-word leading-relaxed">
@@ -136,7 +155,6 @@ export const ChatBubble = memo(function ChatBubble({
             </div>
           );
         }
-
         return (
           <div key={i} className="wrap-break-word">
             <FormattedText text={block.text} className="leading-relaxed space-y-1.5" />
@@ -146,12 +164,10 @@ export const ChatBubble = memo(function ChatBubble({
           </div>
         );
       }
+
       // AskUserQuestion rendered outside the bubble — skip here
       if (isAskUserQuestion(block)) return null;
-      // 跳过重复性工具（转移到 ToolExecutionWindow）
-      if (block.type === 'tool_call' && isRepetitiveTool(block.toolCall.toolName)) {
-        return null;
-      }
+
       return (
         <div key={block.toolCall.id} className="my-1.5">
           <ToolCallCard toolCall={block.toolCall} />
@@ -190,11 +206,26 @@ export const ChatBubble = memo(function ChatBubble({
       )}
       {message.toolCalls && message.toolCalls.length > 0 && (
         <div className="mt-1.5">
-          {message.toolCalls
-            .filter((tc) => !isRepetitiveTool(tc.toolName))
-            .map((tc) => (
-              <ToolCallCard key={tc.id} toolCall={tc} />
-            ))}
+          {(() => {
+            const result: React.ReactNode[] = [];
+            let pending: ChatToolCall[] = [];
+            const flush = () => {
+              if (pending.length > 0) {
+                result.push(<ToolExecutionWindow key={`lg-${result.length}`} toolCalls={[...pending]} />);
+                pending = [];
+              }
+            };
+            for (const tc of message.toolCalls!) {
+              if (isRepetitiveTool(tc.toolName)) {
+                pending.push(tc);
+              } else {
+                flush();
+                result.push(<ToolCallCard key={tc.id} toolCall={tc} />);
+              }
+            }
+            flush();
+            return result;
+          })()}
         </div>
       )}
     </>
@@ -249,13 +280,6 @@ export const ChatBubble = memo(function ChatBubble({
             {askUserBlocks.map((block) => (
               <ToolCallCard key={block.toolCall.id} toolCall={block.toolCall} />
             ))}
-          </div>
-        )}
-
-        {/* Tool Execution Window — shows latest repetitive tool (Read, Grep, Bash, etc.) */}
-        {!isUser && latestRepetitiveTool && (
-          <div className="mt-2">
-            <ToolExecutionWindow toolCall={latestRepetitiveTool} />
           </div>
         )}
 
