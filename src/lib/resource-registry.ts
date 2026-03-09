@@ -22,23 +22,21 @@ class ResourceRegistry {
     refs: ResourceRef[],
     ctx: LoaderContext,
   ): Promise<ResolvedResource[]> {
-    const results: ResolvedResource[] = [];
-
-    for (const ref of refs) {
+    const promises = refs.map(async (ref): Promise<ResolvedResource> => {
       const loader = this.loaders.get(ref.type);
       if (!loader) {
         console.warn(`[ResourceRegistry] No loader for type: ${ref.type}`);
-        results.push({ ref, content: '', ok: false });
-        continue;
+        return { ref, content: '', ok: false };
       }
       try {
-        results.push(await loader.resolve(ref, ctx));
+        return await loader.resolve(ref, ctx);
       } catch (err) {
         console.error(`[ResourceRegistry] Failed to resolve ${ref.type}:${ref.id}`, err);
-        results.push({ ref, content: '', ok: false });
+        return { ref, content: '', ok: false };
       }
-    }
+    });
 
+    const results = await Promise.all(promises);
     return results.sort((a, b) => (a.ref.priority ?? 50) - (b.ref.priority ?? 50));
   }
 

@@ -23,6 +23,30 @@ import { DEFAULT_AGENTS } from '@/lib/default-agents';
 
 const DEFAULT_SESSIONS_DATA: AgentChatSessionsData = { sessions: [] };
 
+// ── Sessions data cache (reduce repeated full-file reads) ──
+let _sessionsCache: AgentChatSessionsData | null = null;
+let _sessionsCacheTs = 0;
+const SESSIONS_CACHE_TTL = 3_000; // 3s
+
+async function getSessionsData(): Promise<AgentChatSessionsData> {
+  const now = Date.now();
+  if (_sessionsCache && now - _sessionsCacheTs < SESSIONS_CACHE_TTL) {
+    return _sessionsCache;
+  }
+  _sessionsCache = await readJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+  );
+  _sessionsCacheTs = now;
+  return _sessionsCache;
+}
+
+/** 写操作后使缓存失效 */
+function invalidateSessionsCache(): void {
+  _sessionsCache = null;
+  _sessionsCacheTs = 0;
+}
+
 // ── ID Generation ──
 
 export function generateSessionId(): string {
@@ -32,18 +56,12 @@ export function generateSessionId(): string {
 // ── Session Read Operations ──
 
 export async function loadSession(sessionId: string): Promise<AgentChatSession | null> {
-  const data = await readJsonFile<AgentChatSessionsData>(
-    getAgentChatSessionsPath(),
-    DEFAULT_SESSIONS_DATA,
-  );
+  const data = await getSessionsData();
   return data.sessions.find(s => s.id === sessionId) ?? null;
 }
 
 export async function listSessions(agentId: string): Promise<Omit<AgentChatSession, 'messages'>[]> {
-  const data = await readJsonFile<AgentChatSessionsData>(
-    getAgentChatSessionsPath(),
-    DEFAULT_SESSIONS_DATA,
-  );
+  const data = await getSessionsData();
   return data.sessions
     .filter(s => s.agentId === agentId)
     .map(({ messages: _msgs, ...rest }) => rest)
@@ -51,10 +69,7 @@ export async function listSessions(agentId: string): Promise<Omit<AgentChatSessi
 }
 
 export async function listSessionsByProject(agentId: string, projectKey: string): Promise<Omit<AgentChatSession, 'messages'>[]> {
-  const data = await readJsonFile<AgentChatSessionsData>(
-    getAgentChatSessionsPath(),
-    DEFAULT_SESSIONS_DATA,
-  );
+  const data = await getSessionsData();
   return data.sessions
     .filter(s => s.agentId === agentId && s.projectKey === projectKey)
     .map(({ messages: _msgs, ...rest }) => rest)
@@ -62,20 +77,14 @@ export async function listSessionsByProject(agentId: string, projectKey: string)
 }
 
 export async function listAllSessions(): Promise<Omit<AgentChatSession, 'messages'>[]> {
-  const data = await readJsonFile<AgentChatSessionsData>(
-    getAgentChatSessionsPath(),
-    DEFAULT_SESSIONS_DATA,
-  );
+  const data = await getSessionsData();
   return data.sessions
     .map(({ messages: _msgs, ...rest }) => rest)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
 export async function listGuestSessions(parentSessionId: string): Promise<Omit<AgentChatSession, 'messages'>[]> {
-  const data = await readJsonFile<AgentChatSessionsData>(
-    getAgentChatSessionsPath(),
-    DEFAULT_SESSIONS_DATA,
-  );
+  const data = await getSessionsData();
   return data.sessions
     .filter(s => s.parentSessionId === parentSessionId)
     .map(({ messages: _msgs, ...rest }) => rest)
@@ -98,6 +107,7 @@ export async function markAsRead(sessionId: string): Promise<boolean> {
       return data;
     },
   );
+  invalidateSessionsCache();
   return found;
 }
 
@@ -118,6 +128,7 @@ export async function setArchived(sessionId: string, archived: boolean): Promise
       return data;
     },
   );
+  invalidateSessionsCache();
   return found;
 }
 
@@ -136,6 +147,7 @@ export async function updateConfigOnDisk(sessionId: string, config: SessionConfi
       return data;
     },
   );
+  invalidateSessionsCache();
   return found;
 }
 
@@ -156,6 +168,7 @@ export async function deleteSessionFromDisk(sessionId: string): Promise<boolean>
       }),
     }),
   );
+  invalidateSessionsCache();
   // 清理运行时 prompt 副本
   if (found && deletedAgentId) {
     await deleteRuntimePromptCopy(deletedAgentId, sessionId).catch(() => {});
@@ -197,6 +210,7 @@ export async function branchSession(
       return data;
     },
   );
+  invalidateSessionsCache();
 
   return newSession;
 }
@@ -248,6 +262,7 @@ export async function eagerlySaveUserTurn(opts: {
       return data;
     },
   );
+  invalidateSessionsCache();
 }
 
 /**
@@ -273,6 +288,7 @@ export async function persistSessionToDisk(session: AgentChatSession): Promise<v
       return data;
     },
   );
+  invalidateSessionsCache();
 }
 
 export async function incrementGuardRetryCountOnDisk(sessionId: string): Promise<void> {
@@ -287,13 +303,14 @@ export async function incrementGuardRetryCountOnDisk(sessionId: string): Promise
       return data;
     },
   );
+  invalidateSessionsCache();
 }
 
 // ── Agent Loading ──
 
 let _agentsCache: AgentsData | null = null;
 let _agentsCacheTs = 0;
-const AGENTS_CACHE_TTL = 5_000; // 5s
+const AGENTS_CACHE_TTL = 30_000; // 30s (与 settings 和 agents route 缓存 TTL 一致)
 
 export async function loadAgent(agentId: string): Promise<Agent> {
   const now = Date.now();

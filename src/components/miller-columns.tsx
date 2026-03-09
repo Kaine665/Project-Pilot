@@ -398,7 +398,7 @@ const MillerColumnItem = memo(function MillerColumnItem({
 
 // --- SortableMillerColumnItem ---
 
-function SortableMillerColumnItem({
+const SortableMillerColumnItem = memo(function SortableMillerColumnItem({
   item,
   depth,
   sectionItems,
@@ -409,13 +409,13 @@ function SortableMillerColumnItem({
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
 
-  const style = {
+  const style = useMemo(() => ({
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
     position: 'relative' as const,
     zIndex: isDragging ? 10 : undefined,
-  };
+  }), [transform, transition, isDragging]);
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} className="flex items-stretch">
@@ -430,11 +430,11 @@ function SortableMillerColumnItem({
       </div>
     </div>
   );
-}
+});
 
 // --- MillerColumn ---
 
-function MillerColumn({
+const MillerColumn = memo(function MillerColumn({
   items,
   depth,
   parentItemId,
@@ -451,9 +451,12 @@ function MillerColumn({
   const t = useTranslations();
   const columnRef = useRef<HTMLDivElement>(null);
 
-  const visibleItems = showDeferred
-    ? items
-    : items.filter(i => !i.deferred);
+  const visibleItems = useMemo(
+    () => showDeferred ? items : items.filter(i => !i.deferred),
+    [items, showDeferred],
+  );
+
+  const sortableIds = useMemo(() => visibleItems.map(i => i.id), [visibleItems]);
 
   const isAddingHere = parentItemId !== null && addingToItemId === parentItemId;
 
@@ -488,7 +491,7 @@ function MillerColumn({
       {/* Items */}
       <div className="flex-1 overflow-y-auto">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={visibleItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
+          <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
             {visibleItems.map(item => (
               <SortableMillerColumnItem
                 key={item.id}
@@ -516,7 +519,7 @@ function MillerColumn({
       </div>
     </div>
   );
-}
+});
 
 // --- Root column (depth 0, adds to section directly) ---
 
@@ -722,7 +725,7 @@ export function MillerSectionBlock({ section }: { section: Section }) {
     totalCount === 0 ? 'todo' : doneCount === totalCount ? 'done' : doneCount > 0 ? 'doing' : 'todo';
 
   // AI launch handler
-  const handleLaunchAI = async (item: TreeItem, ancestors: TreeItem[]) => {
+  const handleLaunchAI = useCallback(async (item: TreeItem, ancestors: TreeItem[]) => {
     try {
       const lookupRes = await fetch(`/api/tasks?flowTaskId=${item.id}`);
       if (lookupRes.ok) {
@@ -764,27 +767,27 @@ export function MillerSectionBlock({ section }: { section: Section }) {
       const session = await res.json();
       router.push(`/tasks/${session.id}`);
     }
-  };
+  }, [projectKey, projectName, section, data.sections, data.cycleDeadline, router]);
 
-  const itemActions: ItemActionsCtx = {
+  const itemActions: ItemActionsCtx = useMemo(() => ({
     sectionId: section.id,
     section,
-    onToggleStatus: itemId => {
+    onToggleStatus: (itemId: string) => {
       const found = findItemById(section.items, itemId);
       if (found) {
         actions.updateItem(section.id, itemId, { status: nextStatus[found.status] });
       }
     },
-    onUpdate: (itemId, patch) => actions.updateItem(section.id, itemId, patch),
-    onDelete: itemId => actions.deleteItem(section.id, itemId),
-    onAddChild: (parentItemId, content) => actions.addItem(section.id, content, parentItemId),
-    onToggleDefer: (itemId, currentDeferred) =>
+    onUpdate: (itemId: string, patch: Partial<TreeItem>) => actions.updateItem(section.id, itemId, patch),
+    onDelete: (itemId: string) => actions.deleteItem(section.id, itemId),
+    onAddChild: (parentItemId: string, content: string) => actions.addItem(section.id, content, parentItemId),
+    onToggleDefer: (itemId: string, currentDeferred: boolean) =>
       actions.updateItem(section.id, itemId, { deferred: !currentDeferred }),
     onLaunchAI: handleLaunchAI,
     agents,
-    onAssignAgent: (itemId, agentId) =>
+    onAssignAgent: (itemId: string, agentId: string | null) =>
       actions.updateItem(section.id, itemId, { agentId: agentId ?? undefined }),
-  };
+  }), [section, actions, agents, handleLaunchAI]);
 
   const isSectionHighlighted =
     highlightTarget?.sectionId === section.id && !highlightTarget?.itemId;
