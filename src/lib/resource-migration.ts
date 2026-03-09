@@ -126,13 +126,7 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
     label: '任务挂起指令',
   });
 
-  // Session title instructions — always present
-  refs.push({
-    type: 'session-title-instructions',
-    id: '_static',
-    priority: 90,
-    label: '会话标题指令',
-  });
+  // session-title-instructions 已移除：标题由 session-title-generator 异步生成
 
   return refs;
 }

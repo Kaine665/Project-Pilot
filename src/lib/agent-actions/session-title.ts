@@ -18,11 +18,9 @@ export const sessionTitleAction: AgentAction<SessionTitleData> = {
   sectionTitle: '会话标题',
   priority: 90,
 
-  instructions: `在你的**第一条回复的开头**，用以下格式生成一个简短的会话标题（5-15 个字，概括这次对话的主题）：
-
-<session-title>标题内容</session-title>
-
-之后的回复不需要再输出标题。`,
+  // 标题现在由 session-title-generator.ts 异步生成，不再需要注入 prompt 指令。
+  // 保留 parse/strip/execute 供向后兼容（旧 AI 回复中可能仍含标签）。
+  instructions: '',
 
   parse(text: string): SessionTitleData[] {
     const match = text.match(/<session-title>([\s\S]*?)<\/session-title>/);

@@ -171,7 +171,7 @@ export async function importAgent(pkg: AgentPackage): Promise<ImportResult> {
     ...contextRefs,
     { type: 'knowledge-instructions', id: '_static', priority: 80 },
     { type: 'doc-save-instructions', id: '_static', priority: 85 },
-    { type: 'session-title-instructions', id: '_static', priority: 90 },
+    // session-title-instructions 已移除：标题由 session-title-generator 异步生成
   ];
 
   // 4. 创建 Agent
