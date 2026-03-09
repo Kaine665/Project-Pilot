@@ -6,7 +6,7 @@
  * 一个失败就试下一个，直到成功或全部失败。
  */
 
-import { getSettings, getProviderScopedApiKey, buildClaudeEnv } from '@/lib/settings-manager';
+import { getSettings, getProviderScopedApiKey, getProviderScopedBaseUrl, buildClaudeEnv } from '@/lib/settings-manager';
 import { getProviderPreset } from '@/lib/provider-registry';
 import { execClaude } from '@/lib/claude-cli';
 import type { ProviderId, TitleGenerationChainEntry, TitleGenerationSettings } from '@/types';
@@ -160,9 +160,12 @@ async function callProviderApi(
   }
 
   // OpenAI-compatible API（openai, deepseek, qwen, zhipu, minimax, kimi, openrouter, ollama, custom）
-  const baseUrl = claude.provider === entry.provider && claude.baseUrl
-    ? claude.baseUrl
-    : preset.baseUrl;
+  // 使用 getProviderScopedBaseUrl 正确获取 baseUrl（支持 providerBaseUrls 中保存的探测后 URL）
+  const baseUrl = getProviderScopedBaseUrl(
+    claude as Parameters<typeof getProviderScopedBaseUrl>[0],
+    preset,
+    entry.provider,
+  );
 
   if (!baseUrl) return null;
   return callOpenAiCompatibleApi(apiKey, entry.model, prompt, baseUrl);
