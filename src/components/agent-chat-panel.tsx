@@ -981,7 +981,6 @@ export function AgentChatPanel({
   // Save session config
   const handleSaveConfig = useCallback(async (config: SessionConfig) => {
     setSessionConfig(config);
-    setShowConfig(false);
     // Sync model/provider to chat panel state if session config has them
     if (config.provider) {
       setChatProvider(config.provider);
@@ -1253,18 +1252,6 @@ export function AgentChatPanel({
     return (
       <div className="flex h-full">
       <div className="relative flex h-full flex-1 flex-col min-w-0">
-        {/* Session Config Panel (collapsible, toggled from parent page header) */}
-        {showConfig && (
-          <div className="border-b border-zinc-100 dark:border-zinc-800 max-h-[50%] overflow-hidden">
-            <SessionConfigPanel
-              sessionId={sessionId ?? '_new'}
-              config={sessionConfig}
-              onSave={handleSaveConfig}
-              onClose={() => setShowConfig(false)}
-            />
-          </div>
-        )}
-
         {/* Messages */}
         <div ref={scrollRef} onScroll={handleChatScroll} className="flex-1 space-y-3 overflow-y-auto p-4">
           {messages.length === 0 && !isStreaming ? (
@@ -1335,6 +1322,22 @@ export function AgentChatPanel({
           messages={messages}
           onConfirm={handleCompressConfirm}
         />
+      </div>
+      {/* Right-side config drawer */}
+      <div
+        className={`shrink-0 overflow-hidden border-l border-zinc-200 transition-[width] duration-200 ease-in-out dark:border-zinc-800 ${
+          showConfig ? 'w-[320px]' : 'w-0 border-l-0'
+        }`}
+      >
+        <div className="h-full w-[320px]">
+          <SessionConfigPanel
+            sessionId={sessionId ?? '_new'}
+            config={sessionConfig}
+            onSave={handleSaveConfig}
+            onClose={() => setShowConfig(false)}
+            agent={agent}
+          />
+        </div>
       </div>
       {planPanel}
       </div>
@@ -1433,18 +1436,6 @@ export function AgentChatPanel({
         </div>
       </div>
 
-      {/* Session Config Panel (collapsible) */}
-      {showConfig && (
-        <div className="border-b border-zinc-100 dark:border-zinc-800 max-h-[50%] overflow-hidden">
-          <SessionConfigPanel
-            sessionId={sessionId ?? '_new'}
-            config={sessionConfig}
-            onSave={handleSaveConfig}
-            onClose={() => setShowConfig(false)}
-          />
-        </div>
-      )}
-
       {/* Messages */}
       <div ref={scrollRef} onScroll={handleChatScroll} className="flex-1 space-y-3 overflow-y-auto p-3">
         {/* 会话过长自动提示 */}
@@ -1538,6 +1529,22 @@ export function AgentChatPanel({
         messages={messages}
         onConfirm={handleCompressConfirm}
       />
+    </div>
+    {/* Right-side config drawer */}
+    <div
+      className={`shrink-0 overflow-hidden border-l border-zinc-200 transition-[width] duration-200 ease-in-out dark:border-zinc-800 ${
+        showConfig ? 'w-[320px]' : 'w-0 border-l-0'
+      }`}
+    >
+      <div className="h-full w-[320px]">
+        <SessionConfigPanel
+          sessionId={sessionId ?? '_new'}
+          config={sessionConfig}
+          onSave={handleSaveConfig}
+          onClose={() => setShowConfig(false)}
+          agent={agent}
+        />
+      </div>
     </div>
     {planPanel}
     </div>
