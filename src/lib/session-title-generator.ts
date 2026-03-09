@@ -6,8 +6,9 @@
  * 一个失败就试下一个，直到成功或全部失败。
  */
 
-import { getSettings, getProviderScopedApiKey } from '@/lib/settings-manager';
+import { getSettings, getProviderScopedApiKey, buildClaudeEnv } from '@/lib/settings-manager';
 import { getProviderPreset } from '@/lib/provider-registry';
+import { execClaude } from '@/lib/claude-cli';
 import type { ProviderId, TitleGenerationChainEntry, TitleGenerationSettings } from '@/types';
 import { DEFAULT_TITLE_GENERATION } from '@/types';
 
@@ -15,6 +16,7 @@ import { DEFAULT_TITLE_GENERATION } from '@/types';
 
 const TITLE_TURNS = new Set([2, 5, 10, 15]);
 const ENTRY_TIMEOUT_MS = 8_000;
+const CLI_TIMEOUT_MS = 15_000;
 const MAX_MSG_CHARS = 200;
 const MAX_MSGS = 6;
 
@@ -101,7 +103,8 @@ export async function generateSessionTitle(
     }
   }
 
-  return null;
+  // 直接 API 全部失败（如 OAuth/Max 套餐无 API Key），fallback 到 Claude CLI
+  return generateTitleViaCli(prompt);
 }
 
 // ── 内部实现 ──
@@ -231,4 +234,23 @@ async function callOpenAiCompatibleApi(
 
 function timeout(ms: number): Promise<null> {
   return new Promise(resolve => setTimeout(() => resolve(null), ms));
+}
+
+/**
+ * 通过 Claude CLI 生成标题（OAuth/Max 套餐无 API Key 时的 fallback）。
+ * 使用 `claude -p` 一次性调用，继承用户现有的鉴权方式（API Key 或 OAuth）。
+ */
+async function generateTitleViaCli(prompt: string): Promise<string | null> {
+  try {
+    const env = await buildClaudeEnv();
+    const result = await Promise.race([
+      execClaude(['-p', prompt, '--output-format', 'text'], { env }),
+      timeout(CLI_TIMEOUT_MS),
+    ]);
+
+    if (!result) return null;
+    return cleanTitle(result.stdout.trim()) ?? null;
+  } catch {
+    return null;
+  }
 }
