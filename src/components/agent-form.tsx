@@ -67,6 +67,7 @@ export type FormData = {
   capabilities: AgentCapabilities;
   requiredParamsText: string;
   contextIds: string[];
+  skillIds: string[];   // skill names bound via defaultResources
   projectKey: string; // '' = 全局
   defaultProvider: ProviderId | ''; // '' = 继承全局设置
   defaultModel: string;             // '' = 继承全局设置
@@ -77,6 +78,7 @@ export const emptyForm: FormData = {
   capabilities: { ...DEFAULT_AGENT_CAPABILITIES },
   requiredParamsText: '',
   contextIds: [],
+  skillIds: [],
   projectKey: '',
   defaultProvider: '',
   defaultModel: '',
@@ -91,6 +93,9 @@ export function agentToForm(a: Agent): FormData {
     capabilities: a.capabilities ?? { ...DEFAULT_AGENT_CAPABILITIES },
     requiredParamsText: (a.requiredParams ?? []).join('\n'),
     contextIds: a.contextIds ?? [],
+    skillIds: (a.defaultResources ?? [])
+      .filter(r => r.type === 'skill')
+      .map(r => r.id),
     projectKey: a.projectKey ?? '',
     defaultProvider: a.defaultProvider ?? '',
     defaultModel: a.defaultModel ?? '',
@@ -164,6 +169,27 @@ export function SettingsForm({
       } catch { setContextEntries([]); }
     })();
   }, []);
+
+  // Fetch available skills for the picker
+  const [availableSkills, setAvailableSkills] = useState<{ name: string; description: string }[]>([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/skills');
+        const data = await res.json();
+        setAvailableSkills(data.skills ?? []);
+      } catch { setAvailableSkills([]); }
+    })();
+  }, []);
+
+  const toggleSkill = (name: string) => {
+    setForm(f => ({
+      ...f,
+      skillIds: f.skillIds.includes(name)
+        ? f.skillIds.filter(s => s !== name)
+        : [...f.skillIds, name],
+    }));
+  };
 
   const toggleContext = (id: string) => {
     setForm(f => ({
@@ -448,6 +474,58 @@ export function SettingsForm({
               {form.contextIds.length > 0 && (
                 <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
                   已选 {form.contextIds.length} 项
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Skills Binding */}
+          {availableSkills.length > 0 && (
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                绑定 Skills
+              </label>
+              <p className="mb-2 text-xs text-zinc-400">
+                选中的 Skill 名称和描述将在会话启动时注入，让 Agent 知道可以使用哪些技能
+              </p>
+              <div className="space-y-0.5 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700 max-h-48 overflow-y-auto">
+                {availableSkills.map(skill => {
+                  const checked = form.skillIds.includes(skill.name);
+                  return (
+                    <button
+                      key={skill.name}
+                      type="button"
+                      onClick={() => toggleSkill(skill.name)}
+                      className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors ${
+                        checked
+                          ? 'bg-zinc-100 dark:bg-zinc-800'
+                          : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                      }`}
+                    >
+                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
+                        checked
+                          ? 'border-zinc-900 bg-zinc-900 dark:border-zinc-100 dark:bg-zinc-100'
+                          : 'border-zinc-300 dark:border-zinc-600'
+                      }`}>
+                        {checked && <Check className="h-3 w-3 text-white dark:text-zinc-900" />}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm text-zinc-900 dark:text-zinc-100">
+                          {skill.name}
+                        </div>
+                        {skill.description && (
+                          <div className="truncate text-xs text-zinc-400">
+                            {skill.description}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              {form.skillIds.length > 0 && (
+                <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                  已选 {form.skillIds.length} 个
                 </p>
               )}
             </div>
