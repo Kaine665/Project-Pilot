@@ -434,6 +434,28 @@ async function _modifyJsonFileImpl<T>(
   return modified;
 }
 
+// ── Skills 路径函数 ──
+
+export function getSkillsDir(): string {
+  return path.join(DATA_DIR, 'skills');
+}
+
+export function getSkillFilePath(skillName: string): string {
+  const safe = skillName.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 100) {
+    throw new Error(`Invalid skill name: ${skillName}`);
+  }
+  return path.join(DATA_DIR, 'skills', safe, 'SKILL.md');
+}
+
+export function getSkillHistoryDir(skillName: string): string {
+  const safe = skillName.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 100) {
+    throw new Error(`Invalid skill name: ${skillName}`);
+  }
+  return path.join(DATA_DIR, 'skills', safe, '.history');
+}
+
 // ── Inbox 路径函数 ──
 
 export function getInboxPath(projectKey: string): string {
