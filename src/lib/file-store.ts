@@ -190,6 +190,22 @@ export function getPromptRuntimePath(agentId: string, sessionId: string): string
   return path.join(DATA_DIR, 'prompts', `${safeAgent}.runtime`, `${safeSession}.md`);
 }
 
+export function getGlobalPromptPath(): string {
+  return path.join(DATA_DIR, 'prompts', '_global.md');
+}
+
+export function getProjectPromptsDir(): string {
+  return path.join(DATA_DIR, 'project-prompts');
+}
+
+export function getProjectPromptPath(projectKey: string): string {
+  const safe = projectKey.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 100) {
+    throw new Error(`Invalid project key: ${projectKey}`);
+  }
+  return path.join(DATA_DIR, 'project-prompts', `${safe}.md`);
+}
+
 // ── Context 路径函数 ──
 // 索引 + 内容文件分离设计（详见 docs/context-system.md）：
 //   index.json  → 元数据，注入 agent prompt（buildContextSection）
