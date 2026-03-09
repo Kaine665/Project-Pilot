@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { X, Check, ChevronDown, Search, FileText, BookOpen, Cpu } from 'lucide-react';
-import type { ContextEntry, ProviderId } from '@/types';
+import type { Agent, ContextEntry, ProviderId } from '@/types';
 import type { SessionConfig } from '@/types/agent-chat';
 import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
 
@@ -11,6 +11,8 @@ interface SessionConfigPanelProps {
   config: SessionConfig;
   onSave: (config: SessionConfig) => void;
   onClose: () => void;
+  /** Agent whose defaults to show as baseline (provider, model) */
+  agent?: Agent;
 }
 
 export function SessionConfigPanel({
@@ -18,6 +20,7 @@ export function SessionConfigPanel({
   config,
   onSave,
   onClose,
+  agent,
 }: SessionConfigPanelProps) {
   const [contextIds, setContextIds] = useState<string[]>(config.contextIds ?? []);
   const [supplementaryPrompt, setSupplementaryPrompt] = useState(config.supplementaryPrompt ?? '');
@@ -156,16 +159,16 @@ export function SessionConfigPanel({
               </span>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="space-y-2">
             <select
               value={sessionProvider}
               onChange={e => {
                 setSessionProvider(e.target.value as ProviderId | '');
                 setSessionModel('');
               }}
-              className="w-32 shrink-0 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500"
+              className="w-full rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500"
             >
-              <option value="">继承默认</option>
+              <option value="">{agent?.defaultProvider ? `继承 Agent (${agent.defaultProvider})` : '继承全局默认'}</option>
               {PROVIDER_REGISTRY.map(p => (
                 <option key={p.id} value={p.id}>{p.id}</option>
               ))}
@@ -174,9 +177,9 @@ export function SessionConfigPanel({
               <select
                 value={sessionModel}
                 onChange={e => setSessionModel(e.target.value)}
-                className="flex-1 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500"
+                className="w-full rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500"
               >
-                <option value="">继承默认</option>
+                <option value="">{agent?.defaultModel ? `继承 Agent (${agent.defaultModel})` : '继承默认'}</option>
                 {getProviderPreset(sessionProvider as ProviderId).models.map(m => (
                   <option key={m.id} value={m.id}>{m.label || m.id}</option>
                 ))}
@@ -184,13 +187,13 @@ export function SessionConfigPanel({
             ) : (
               <input
                 disabled
-                placeholder="先选择供应商"
-                className="flex-1 rounded-md border border-zinc-200 px-2 py-1.5 text-[11px] text-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/50"
+                placeholder={agent?.defaultModel ? `继承 Agent 默认: ${agent.defaultModel}` : '先选择供应商'}
+                className="w-full rounded-md border border-zinc-200 px-2 py-1.5 text-[11px] text-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/50"
               />
             )}
           </div>
           <p className="mt-1.5 text-[10px] text-zinc-400">
-            覆盖此会话的模型，不影响其他会话
+            覆盖此会话的模型，留空则继承 Agent 或全局配置
           </p>
         </div>
 
