@@ -11,6 +11,7 @@ export interface ProjectEntry {
 interface ProjectContextValue {
   projects: ProjectEntry[];
   activeKey: string | null;
+  initialized: boolean;
   setActiveKey: (key: string) => void;
   fetchProjects: () => Promise<ProjectEntry[]>;
 }
@@ -26,6 +27,7 @@ export function useProject() {
 export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
   const [activeKeyRaw, setActiveKeyRaw] = useState<string | null>(null);
+  const [initialized, setInitialized] = useState(false);
   const internalKeyChangeRef = useRef(false);
   const initializedRef = useRef(false);
 
@@ -60,14 +62,16 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     initializedRef.current = true;
 
     fetchProjects().then((list) => {
-      if (list.length === 0) return;
-      const urlParams = new URLSearchParams(window.location.search);
-      const projectParam = urlParams.get('project');
-      if (projectParam && list.some(p => p.key === projectParam)) {
-        setActiveKey(projectParam);
-      } else {
-        setActiveKey(list[0].key);
+      if (list.length > 0) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const projectParam = urlParams.get('project');
+        if (projectParam && list.some(p => p.key === projectParam)) {
+          setActiveKey(projectParam);
+        } else {
+          setActiveKey(list[0].key);
+        }
       }
+      setInitialized(true);
     });
   }, [fetchProjects, setActiveKey]);
 
@@ -89,7 +93,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   }, [activeKeyRaw, projects]);
 
   return (
-    <ProjectContext.Provider value={{ projects, activeKey: activeKeyRaw, setActiveKey, fetchProjects }}>
+    <ProjectContext.Provider value={{ projects, activeKey: activeKeyRaw, initialized, setActiveKey, fetchProjects }}>
       {children}
     </ProjectContext.Provider>
   );
