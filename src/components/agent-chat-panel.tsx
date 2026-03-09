@@ -37,6 +37,15 @@ interface AgentChatPanelProps {
   variant?: 'sidebar' | 'full';
   /** Project scope (butler mode). When set, flow context is injected. */
   projectKey?: string | null;
+  /** Pre-loaded agents list from parent — skips redundant /api/agents fetch */
+  cachedAgents?: Agent[];
+  /** Pre-loaded settings (provider, model, effort) from parent — skips /api/settings fetch */
+  cachedSettings?: {
+    provider: ProviderId;
+    model: string;
+    modelOptions: ModelSelectOption[];
+    effort: OpenAIReasoningEffort;
+  };
 }
 
 type IndexedSSEEvent = ChatSSEEvent & { _idx: number };
@@ -67,6 +76,8 @@ export function AgentChatPanel({
   onSessionChange,
   variant,
   projectKey,
+  cachedAgents,
+  cachedSettings,
 }: AgentChatPanelProps) {
   const t = useTranslations();
   const router = useRouter();
@@ -160,6 +171,10 @@ export function AgentChatPanel({
 
   // Load guest agent candidates (chat-mode agents, excluding current agent)
   useEffect(() => {
+    if (cachedAgents) {
+      setGuestAgents(cachedAgents.filter(a => !a.archived && a.id !== agent.id));
+      return;
+    }
     (async () => {
       try {
         const res = await fetch('/api/agents', { cache: 'no-store' });
@@ -172,7 +187,7 @@ export function AgentChatPanel({
         // ignore
       }
     })();
-  }, [agent.id]);
+  }, [agent.id, cachedAgents]);
 
   // Provider/model selector options
   const providerOptions = useMemo(
@@ -189,8 +204,15 @@ export function AgentChatPanel({
     [],
   );
 
-  // Load provider/model from global settings
+  // Load provider/model from global settings (skip if parent provided cached values)
   useEffect(() => {
+    if (cachedSettings) {
+      setChatProvider(cachedSettings.provider);
+      setChatModel(cachedSettings.model);
+      setChatModelOptions(cachedSettings.modelOptions);
+      setChatEffort(cachedSettings.effort);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -233,7 +255,7 @@ export function AgentChatPanel({
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Update model options when provider changes (+ fetch OpenAI catalog)
   useEffect(() => {
@@ -624,59 +646,83 @@ export function AgentChatPanel({
     // Plain mode with null initialSessionId → new empty session
     if (!hasProject && initialSessionId === null) return;
 
+    // Helper: reconnect to a running stream
+    const reconnectRunning = (sid: string, statusData: { messages?: Array<{ role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }> }) => {
+      if (Array.isArray(statusData.messages) && statusData.messages.length > 0) {
+        const restored: ChatMessage[] = statusData.messages.map(
+          (m: { role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }, i: number) => ({
+            id: `restored-${i}`,
+            role: m.role,
+            content: m.content,
+            contentBlocks: m.contentBlocks,
+            timestamp: '',
+          }),
+        );
+        setMessages(restored);
+      }
+      setIsStreaming(true);
+      blocksRef.current = [];
+      fullTextRef.current = '';
+      toolCallsRef.current = [];
+      connectToStream(sid, 0);
+    };
+
     (async () => {
+      // ── Fast path: agents page with specific session (skip session list fetch) ──
+      if (!hasProject && initialSessionId) {
+        setSessionIdSync(initialSessionId);
+        // Parallel: load session data + check status
+        const [, statusRes] = await Promise.all([
+          loadSessionData(initialSessionId, token),
+          fetch(`/api/agent-chat/status?sessionId=${initialSessionId}`, { cache: 'no-store' }),
+        ]);
+        if (isStale()) return;
+        try {
+          const statusData = await statusRes.json();
+          if (statusData.status === 'running') {
+            reconnectRunning(initialSessionId, statusData);
+          }
+        } catch { /* ignore status parse failure */ }
+        return;
+      }
+
+      // ── Standard path: butler/project mode — need session list ──
       const sessions: SessionListItem[] = await fetchSessionList(agent.id, projectKey);
       if (isStale()) return;
 
-      if (!hasProject && initialSessionId) {
-        // Load the specific session requested by parent (agents page)
-        const target = sessions.find(s => s.id === initialSessionId);
-        setSessionIdSync(initialSessionId);
-        setSessionTitle(target?.title ?? '会话');
-        await loadSessionData(initialSessionId, token);
-        if (isStale()) return;
-      } else if (sessions.length > 0) {
+      if (sessions.length > 0) {
         // Auto-select latest
         const latest = sessions[0];
         setSessionIdSync(latest.id);
         setSessionTitle(latest.title);
-        await loadSessionData(latest.id, token);
+        // Parallel: load session data + check status for latest
+        const [, statusRes] = await Promise.all([
+          loadSessionData(latest.id, token),
+          fetch(`/api/agent-chat/status?sessionId=${latest.id}`, { cache: 'no-store' }),
+        ]);
         if (isStale()) return;
-      }
-
-      // Check if a run is still live in memory
-      const sessionIdsToCheck = (!hasProject && initialSessionId)
-        ? [initialSessionId]
-        : sessions.map(s => s.id);
-
-      for (const sid of sessionIdsToCheck) {
-        if (isStale()) return;
-        const statusRes = await fetch(`/api/agent-chat/status?sessionId=${sid}`, { cache: 'no-store' });
-        const statusData = await statusRes.json();
-        if (!isStale() && statusData.status === 'running') {
-          const title = sessions.find(s => s.id === sid)?.title ?? '会话';
-          setSessionIdSync(sid);
-          setSessionTitle(title);
-          await loadSessionData(sid, token);
-          if (isStale()) return;
-          if (Array.isArray(statusData.messages) && statusData.messages.length > 0) {
-            const restored: ChatMessage[] = statusData.messages.map(
-              (m: { role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }, i: number) => ({
-                id: `restored-${i}`,
-                role: m.role,
-                content: m.content,
-                contentBlocks: m.contentBlocks,
-                timestamp: '',
-              }),
-            );
-            setMessages(restored);
+        try {
+          const statusData = await statusRes.json();
+          if (statusData.status === 'running') {
+            reconnectRunning(latest.id, statusData);
+            return;
           }
-          setIsStreaming(true);
-          blocksRef.current = [];
-          fullTextRef.current = '';
-          toolCallsRef.current = [];
-          connectToStream(sid, 0);
-          break;
+        } catch { /* ignore */ }
+
+        // If latest isn't running, check remaining sessions
+        for (let i = 1; i < sessions.length; i++) {
+          if (isStale()) return;
+          const sid = sessions[i].id;
+          const res = await fetch(`/api/agent-chat/status?sessionId=${sid}`, { cache: 'no-store' });
+          const data = await res.json();
+          if (!isStale() && data.status === 'running') {
+            setSessionIdSync(sid);
+            setSessionTitle(sessions[i].title);
+            await loadSessionData(sid, token);
+            if (isStale()) return;
+            reconnectRunning(sid, data);
+            break;
+          }
         }
       }
     })();
