@@ -553,7 +553,19 @@
     "dangerProcessKillHint": "检测 kill -9 强制终止进程",
     "dangerLevelCritical": "终止",
     "dangerLevelWarning": "警告",
-    "dangerLevelDisabled": "关闭"
+    "dangerLevelDisabled": "关闭",
+    "titleGeneration": "标题生成",
+    "titleGenerationHint": "会话进行到第 2/5/10/15 轮时，自动调用廉价 AI 模型为会话生成或更新标题。",
+    "titleGenerationEnabled": "启用自动标题生成",
+    "titleGenerationEnabledHint": "关闭后会话标题将使用用户消息前 30 字作为标题。",
+    "titleGenerationChain": "重试链",
+    "titleGenerationChainHint": "按顺序尝试，一个失败就试下一个。每个条目 8 秒超时。",
+    "titleGenerationChainEmpty": "暂无条目，将使用默认配置（Anthropic Claude Haiku）",
+    "titleGenerationAddEntry": "添加",
+    "titleGenerationProvider": "供应商",
+    "titleGenerationModel": "模型 ID",
+    "titleGenerationModelPlaceholder": "输入模型 ID",
+    "titleGenerationRemove": "移除"
   },
   "orchestrator": {
     "title": "Agent 编排",

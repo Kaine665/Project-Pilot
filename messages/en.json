@@ -552,7 +552,19 @@
     "dangerProcessKillHint": "Detect kill -9 force process termination",
     "dangerLevelCritical": "Terminate",
     "dangerLevelWarning": "Warn",
-    "dangerLevelDisabled": "Off"
+    "dangerLevelDisabled": "Off",
+    "titleGeneration": "Title Generation",
+    "titleGenerationHint": "Automatically generates or updates session titles using a cheap AI model at turns 2, 5, 10, and 15.",
+    "titleGenerationEnabled": "Enable Auto Title Generation",
+    "titleGenerationEnabledHint": "When disabled, session titles will use the first 30 characters of the user message.",
+    "titleGenerationChain": "Retry Chain",
+    "titleGenerationChainHint": "Tried in order — if one fails, the next is attempted. Each entry has an 8-second timeout.",
+    "titleGenerationChainEmpty": "No entries. Default config will be used (Anthropic Claude Haiku).",
+    "titleGenerationAddEntry": "Add",
+    "titleGenerationProvider": "Provider",
+    "titleGenerationModel": "Model ID",
+    "titleGenerationModelPlaceholder": "Enter model ID",
+    "titleGenerationRemove": "Remove"
   },
   "orchestrator": {
     "title": "Agent Orchestration",

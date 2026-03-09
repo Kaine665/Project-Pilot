@@ -116,12 +116,32 @@ export interface GeneralSettings {
   telemetry?: boolean;
 }
 
+/** 会话标题自动生成配置 */
+export interface TitleGenerationChainEntry {
+  provider: ProviderId;
+  model: string;
+}
+
+export interface TitleGenerationSettings {
+  /** 是否启用自动标题生成（默认 true） */
+  enabled?: boolean;
+  /** 重试链：按顺序尝试，一个失败就试下一个 */
+  chain?: TitleGenerationChainEntry[];
+}
+
+export const DEFAULT_TITLE_GENERATION: TitleGenerationSettings = {
+  enabled: true,
+  chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }],
+};
+
 /** 全局应用设置 */
 export interface AppSettings {
   claude: ClaudeSettings;
   general?: GeneralSettings;
   /** 危险命令检测配置（各分类的检测级别） */
   dangerDetector?: DangerDetectorSettings;
+  /** 会话标题自动生成配置 */
+  titleGeneration?: TitleGenerationSettings;
   version: number;
 }
 
