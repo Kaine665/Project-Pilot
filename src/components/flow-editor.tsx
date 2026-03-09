@@ -307,7 +307,8 @@ export function FlowEditor({ projectKey, projectName, projectDescription, initia
       .finally(() => setLoading(false));
   }, [projectKey]);
 
-  // Fetch AI status
+  // Fetch AI status (skip setState if unchanged)
+  const aiStatusRef = useRef<string>('');
   useEffect(() => {
     const fetchAIStatus = () => {
       fetch('/api/tasks')
@@ -319,7 +320,11 @@ export function FlowEditor({ projectKey, projectName, projectDescription, initia
               map[t.flowContext.flowTaskId] = t.aiStatus;
             }
           }
-          setAiStatusMap(map);
+          const serialized = JSON.stringify(map);
+          if (serialized !== aiStatusRef.current) {
+            aiStatusRef.current = serialized;
+            setAiStatusMap(map);
+          }
         })
         .catch(() => {});
     };

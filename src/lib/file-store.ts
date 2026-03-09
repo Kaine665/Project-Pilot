@@ -274,34 +274,37 @@ const MAX_SNAPSHOTS = 10;
 /** 需要做写入前快照的文件（basename） */
 const SNAPSHOT_TARGETS = new Set(['agents.json', 'agent-chat-sessions.json']);
 
-async function snapshotBeforeWrite(filePath: string): Promise<void> {
+function snapshotBeforeWrite(filePath: string): void {
   const baseName = path.basename(filePath);
   if (!SNAPSHOT_TARGETS.has(baseName)) return;
 
-  try {
-    await fs.stat(filePath); // 文件不存在则跳过
-  } catch {
-    return;
-  }
-
-  try {
-    await fs.mkdir(SNAPSHOT_DIR, { recursive: true });
-    const stem = baseName.replace('.json', '');
-    const dest = path.join(SNAPSHOT_DIR, `${stem}_${Date.now()}.json`);
-    await fs.copyFile(filePath, dest);
-
-    // 清理超出上限的旧快照
-    const files = (await fs.readdir(SNAPSHOT_DIR))
-      .filter(f => f.startsWith(`${stem}_`) && f.endsWith('.json'))
-      .sort(); // 时间戳排序，最旧在前
-    if (files.length > MAX_SNAPSHOTS) {
-      for (const old of files.slice(0, files.length - MAX_SNAPSHOTS)) {
-        await fs.unlink(path.join(SNAPSHOT_DIR, old)).catch(() => {});
-      }
+  // Fire-and-forget：快照在后台执行，不阻塞写入路径
+  void (async () => {
+    try {
+      await fs.stat(filePath); // 文件不存在则跳过
+    } catch {
+      return;
     }
-  } catch {
-    // 快照失败不阻塞正常写入
-  }
+
+    try {
+      await fs.mkdir(SNAPSHOT_DIR, { recursive: true });
+      const stem = baseName.replace('.json', '');
+      const dest = path.join(SNAPSHOT_DIR, `${stem}_${Date.now()}.json`);
+      await fs.copyFile(filePath, dest);
+
+      // 清理超出上限的旧快照
+      const files = (await fs.readdir(SNAPSHOT_DIR))
+        .filter(f => f.startsWith(`${stem}_`) && f.endsWith('.json'))
+        .sort(); // 时间戳排序，最旧在前
+      if (files.length > MAX_SNAPSHOTS) {
+        for (const old of files.slice(0, files.length - MAX_SNAPSHOTS)) {
+          await fs.unlink(path.join(SNAPSHOT_DIR, old)).catch(() => {});
+        }
+      }
+    } catch {
+      // 快照失败不阻塞正常写入
+    }
+  })();
 }
 
 /**
@@ -332,7 +335,7 @@ async function renameWithRetry(src: string, dest: string, retries = 5): Promise<
  * 使用原子写入（write-to-tmp + rename）防止进程中断导致文件损坏。
  */
 export async function writeJsonFile(filePath: string, data: unknown): Promise<void> {
-  await snapshotBeforeWrite(filePath);
+  snapshotBeforeWrite(filePath);
   const dirPath = path.dirname(filePath);
   await fs.mkdir(dirPath, { recursive: true });
   const content = JSON.stringify(data, null, 2);
@@ -407,8 +410,8 @@ async function _modifyJsonFileImpl<T>(
     throw new Error(`Output JSON too large (max ${MAX_JSON_SIZE} bytes)`);
   }
 
-  // 写入前快照 + 原子写入
-  await snapshotBeforeWrite(filePath);
+  // 写入前快照（fire-and-forget）+ 原子写入
+  snapshotBeforeWrite(filePath);
   const tmpPath = filePath + `.tmp_${Date.now()}`;
   await fs.writeFile(tmpPath, serialized, 'utf-8');
   await renameWithRetry(tmpPath, filePath);

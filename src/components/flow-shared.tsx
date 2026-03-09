@@ -80,6 +80,24 @@ export function getEffectiveStatus(item: TreeItem, filterDeferred: boolean): Sta
   return 'todo';
 }
 
+/**
+ * 预计算所有 item 的 effective status，返回 Map<itemId, Status>。
+ * 一次遍历替代渲染期间 N 次递归调用。
+ */
+export function buildStatusMap(items: TreeItem[], filterDeferred: boolean): Map<string, Status> {
+  const map = new Map<string, Status>();
+  function walk(item: TreeItem): Status {
+    const s = getEffectiveStatus(item, filterDeferred);
+    map.set(item.id, s);
+    if (item.children) {
+      for (const c of item.children) walk(c);
+    }
+    return s;
+  }
+  for (const item of items) walk(item);
+  return map;
+}
+
 export function countDone(items: TreeItem[], filterDeferred: boolean): { done: number; total: number } {
   const visible = filterDeferred ? items.filter(i => !i.deferred) : items;
   let done = 0;

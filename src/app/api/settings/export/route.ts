@@ -29,21 +29,28 @@ export async function GET() {
     // 导出时将外置的 systemPrompt 重新填入 agents 数据，保证导出文件自包含
     const agentsData = agents as AgentsData;
     if (agentsData.agents) {
-      for (const agent of agentsData.agents) {
-        agent.systemPrompt = await resolveSystemPrompt(agent.id, agent.systemPrompt);
-      }
+      await Promise.all(
+        agentsData.agents.map(async (agent: Agent) => {
+          agent.systemPrompt = await resolveSystemPrompt(agent.id, agent.systemPrompt);
+        }),
+      );
     }
 
-    // 收集 flows 数据
+    // 收集 flows 数据（并行读取所有 flow 文件）
     const flows: Record<string, unknown> = {};
     const flowsDir = getFlowsDir();
     try {
       const files = await fs.readdir(flowsDir);
-      for (const file of files) {
-        if (file.endsWith('.json')) {
+      const jsonFiles = files.filter(f => f.endsWith('.json'));
+      const flowEntries = await Promise.all(
+        jsonFiles.map(async (file) => {
           const key = file.replace('.json', '');
-          flows[key] = await readJsonFile(path.join(flowsDir, file), {});
-        }
+          const data = await readJsonFile(path.join(flowsDir, file), {});
+          return [key, data] as const;
+        }),
+      );
+      for (const [key, data] of flowEntries) {
+        flows[key] = data;
       }
     } catch {
       // flows 目录不存在则跳过
