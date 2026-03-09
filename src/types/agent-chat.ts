@@ -15,6 +15,10 @@ export interface SessionConfig {
   contextIds?: string[];
   /** 会话级别的补充提示词（追加到 Agent 系统提示词之后） */
   supplementaryPrompt?: string;
+  /** 会话使用的供应商（覆盖 Agent 默认值和全局设置） */
+  provider?: import('./index').ProviderId;
+  /** 会话使用的模型 ID（覆盖 Agent 默认值和全局设置） */
+  model?: string;
 }
 
 export interface AgentChatSession {

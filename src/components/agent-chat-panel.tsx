@@ -241,9 +241,26 @@ export function AgentChatPanel({
         if (fallbackModel && !optionMap.has(fallbackModel)) optionMap.set(fallbackModel, fallbackModel);
         const options = Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
         const selected = options.some((o) => o.value === fallbackModel) ? fallbackModel : (options[0]?.value || '');
-        setChatProvider(loadedProvider);
-        setChatModelOptions(options);
-        setChatModel(selected);
+        // Apply agent default model (overrides global settings, can be overridden by session config)
+        const effectiveProvider = agent.defaultProvider ?? loadedProvider;
+        if (agent.defaultProvider) {
+          const agentPreset = getProviderPreset(agent.defaultProvider);
+          const agentOptionMap = new Map<string, string>();
+          for (const m of agentPreset.models) agentOptionMap.set(m.id, m.label || m.id);
+          const agentDefaultModel = agent.defaultModel ?? '';
+          if (agentDefaultModel && !agentOptionMap.has(agentDefaultModel)) agentOptionMap.set(agentDefaultModel, agentDefaultModel);
+          const agentOptions = Array.from(agentOptionMap.entries()).map(([value, label]) => ({ value, label }));
+          const agentSelected = agentOptions.some(o => o.value === agentDefaultModel)
+            ? agentDefaultModel
+            : agentOptions[0]?.value || '';
+          setChatProvider(effectiveProvider);
+          setChatModelOptions(agentOptions.length > 0 ? agentOptions : options);
+          setChatModel(agentSelected || selected);
+        } else {
+          setChatProvider(loadedProvider);
+          setChatModelOptions(options);
+          setChatModel(selected);
+        }
         // Load OpenAI reasoning effort
         const VALID_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
         const savedEffort = claude.openaiReasoningEffort;
@@ -357,7 +374,21 @@ export function AgentChatPanel({
       );
       setMessages(restored);
       setSessionTitle(data.title ?? '新会话');
-      setSessionConfig(data.config ?? {});
+      const loadedConfig = data.config ?? {};
+      setSessionConfig(loadedConfig);
+      // Session model config has highest priority (overrides agent default and global settings)
+      if (loadedConfig.provider) {
+        setChatProvider(loadedConfig.provider);
+        const sessionPreset = getProviderPreset(loadedConfig.provider);
+        const sessionOptionMap = new Map<string, string>();
+        for (const m of sessionPreset.models) sessionOptionMap.set(m.id, m.label || m.id);
+        if (loadedConfig.model && !sessionOptionMap.has(loadedConfig.model)) {
+          sessionOptionMap.set(loadedConfig.model, loadedConfig.model);
+        }
+        const sessionOptions = Array.from(sessionOptionMap.entries()).map(([value, label]) => ({ value, label }));
+        if (sessionOptions.length > 0) setChatModelOptions(sessionOptions);
+        if (loadedConfig.model) setChatModel(loadedConfig.model);
+      }
     } catch {
       // ignore
     }
@@ -836,8 +867,16 @@ export function AgentChatPanel({
           effortOverride: chatProvider === 'openai' ? chatEffort : undefined,
           images: imageAttachments.length > 0 ? imageAttachments : undefined,
           initialTitle: text.trim().slice(0, 10) || undefined,
-          config: (sessionConfig.contextIds?.length || sessionConfig.supplementaryPrompt?.trim())
-            ? sessionConfig : undefined,
+          config: (() => {
+            // 将当前模型选择持久化到 session config（优先级最高）
+            const configWithModel = {
+              ...sessionConfig,
+              provider: chatProvider,
+              model: chatModel || undefined,
+            };
+            const hasAny = configWithModel.contextIds?.length || configWithModel.supplementaryPrompt?.trim() || configWithModel.provider || configWithModel.model;
+            return hasAny ? configWithModel : undefined;
+          })(),
         }),
       });
 
@@ -943,6 +982,17 @@ export function AgentChatPanel({
   const handleSaveConfig = useCallback(async (config: SessionConfig) => {
     setSessionConfig(config);
     setShowConfig(false);
+    // Sync model/provider to chat panel state if session config has them
+    if (config.provider) {
+      setChatProvider(config.provider);
+      const cfgPreset = getProviderPreset(config.provider);
+      const cfgOptionMap = new Map<string, string>();
+      for (const m of cfgPreset.models) cfgOptionMap.set(m.id, m.label || m.id);
+      if (config.model && !cfgOptionMap.has(config.model)) cfgOptionMap.set(config.model, config.model);
+      const cfgOptions = Array.from(cfgOptionMap.entries()).map(([value, label]) => ({ value, label }));
+      if (cfgOptions.length > 0) setChatModelOptions(cfgOptions);
+      if (config.model) setChatModel(config.model);
+    }
     // Persist to backend if session exists on disk
     if (sessionId) {
       try {
@@ -973,7 +1023,19 @@ export function AgentChatPanel({
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
-  }, [isStreaming, hasProject, t, setSessionIdSync]);
+    // Reset model to agent default (session config cleared, fall back to agent/global defaults)
+    if (agent.defaultProvider) {
+      setChatProvider(agent.defaultProvider);
+      const agentPreset = getProviderPreset(agent.defaultProvider);
+      const agentOptions = agentPreset.models.map(m => ({ value: m.id, label: m.label || m.id }));
+      if (agentOptions.length > 0) setChatModelOptions(agentOptions);
+      if (agent.defaultModel) {
+        setChatModel(agent.defaultModel);
+      } else if (agentOptions.length > 0) {
+        setChatModel(agentOptions[0].value);
+      }
+    }
+  }, [isStreaming, hasProject, t, setSessionIdSync, agent]);
 
   // Switch to an existing session
   const handleSwitchSession = useCallback(async (target: SessionListItem) => {
