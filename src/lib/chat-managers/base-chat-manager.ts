@@ -16,6 +16,8 @@
  *   - logPrefix            — customize console log prefix
  */
 
+import path from 'path';
+import fs from 'fs';
 import { spawnClaude } from '@/lib/claude-cli';
 import { StreamParser, LineBuffer } from '@/lib/claude-stream-parser';
 import { detectDangerousCommand } from '@/lib/danger-detector';
@@ -206,6 +208,13 @@ export abstract class BaseChatManager<TRun extends BaseRun> {
     const run = this.createRun(config, shell);
     this.runs.set(runKey, run);
 
+    // ── Build MCP config args ──
+    const mcpConfigPath = path.join(workingDir, '.mcp.json');
+    const mcpArgs: string[] = [];
+    if (fs.existsSync(mcpConfigPath)) {
+      mcpArgs.push('--mcp-config', mcpConfigPath);
+    }
+
     // ── Build CLI args ──
     // Note: auth env, model, maxTurns, permissions, tools, resume, image
     // args are all pre-built by the subclass and passed in extraCliArgs.
@@ -213,6 +222,7 @@ export abstract class BaseChatManager<TRun extends BaseRun> {
       '-p',
       '--verbose',
       '--output-format', 'stream-json',
+      ...mcpArgs,
       ...extraCliArgs,
     ], {
       cwd: workingDir,
