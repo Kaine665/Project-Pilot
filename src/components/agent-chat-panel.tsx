@@ -602,7 +602,13 @@ export function AgentChatPanel({
               setSessionList(prev => prev.map(s =>
                 s.id === targetSessionId ? { ...s, title: event.title } : s,
               ));
-              onSessionChange?.();
+              // 传递标题更新信息，让 parent 直接更新侧栏，
+              // 不依赖 fetchAllSessions（此时 persistAfterClose 可能尚未完成）
+              onSessionChange?.({
+                id: targetSessionId,
+                title: event.title,
+                updatedAt: new Date().toISOString(),
+              });
               break;
 
             case 'knowledge_draft_created':
