@@ -1336,6 +1336,8 @@ export function AgentChatPanel({
             onSave={handleSaveConfig}
             onClose={() => setShowConfig(false)}
             agent={agent}
+            agentSystemPrompt={agent.systemPrompt}
+            agentCapabilities={agent.capabilities}
           />
         </div>
       </div>

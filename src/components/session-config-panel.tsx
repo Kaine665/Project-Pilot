@@ -1,18 +1,24 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { X, Check, ChevronDown, Search, FileText, BookOpen, Cpu } from 'lucide-react';
-import type { Agent, ContextEntry, ProviderId } from '@/types';
+import { X, Check, ChevronDown, Search, FileText, BookOpen, Cpu, Code, Shield } from 'lucide-react';
+import type { Agent, AgentCapabilities, ContextEntry, ProviderId } from '@/types';
+import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import type { SessionConfig } from '@/types/agent-chat';
 import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
+import { CAPABILITY_ITEMS } from '@/components/agent-form';
 
 interface SessionConfigPanelProps {
   sessionId: string;
   config: SessionConfig;
   onSave: (config: SessionConfig) => void;
   onClose: () => void;
-  /** Agent whose defaults to show as baseline (provider, model) */
+  /** Agent whose defaults to show as baseline */
   agent?: Agent;
+  /** Agent 的已解析系统提示词（用作基线显示） */
+  agentSystemPrompt?: string;
+  /** Agent 的能力配置（用作默认值和约束上限） */
+  agentCapabilities?: AgentCapabilities;
 }
 
 export function SessionConfigPanel({
@@ -21,16 +27,26 @@ export function SessionConfigPanel({
   onSave,
   onClose,
   agent,
+  agentSystemPrompt,
+  agentCapabilities,
 }: SessionConfigPanelProps) {
   const [contextIds, setContextIds] = useState<string[]>(config.contextIds ?? []);
   const [supplementaryPrompt, setSupplementaryPrompt] = useState(config.supplementaryPrompt ?? '');
   const [sessionProvider, setSessionProvider] = useState<ProviderId | ''>(config.provider ?? '');
   const [sessionModel, setSessionModel] = useState(config.model ?? '');
+  const [systemPromptOverride, setSystemPromptOverride] = useState(config.systemPrompt ?? '');
+  const [capsOverride, setCapsOverride] = useState<Partial<AgentCapabilities>>(config.capabilities ?? {});
   const [contextEntries, setContextEntries] = useState<ContextEntry[]>([]);
   const [saving, setSaving] = useState(false);
   const [contextOpen, setContextOpen] = useState(true);
   const [contextFilter, setContextFilter] = useState('');
+  const [promptSectionOpen, setPromptSectionOpen] = useState(false);
+  const [capsSectionOpen, setCapsSectionOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Agent 的有效能力基线
+  const baseCaps = useMemo(() => ({ ...DEFAULT_AGENT_CAPABILITIES, ...agentCapabilities }), [agentCapabilities]);
 
   // Auto-resize textarea
   const autoResize = useCallback(() => {
@@ -57,6 +73,8 @@ export function SessionConfigPanel({
     setSupplementaryPrompt(config.supplementaryPrompt ?? '');
     setSessionProvider(config.provider ?? '');
     setSessionModel(config.model ?? '');
+    setSystemPromptOverride(config.systemPrompt ?? '');
+    setCapsOverride(config.capabilities ?? {});
   }, [config, sessionId]);
 
   // Auto-resize on content change
@@ -102,8 +120,10 @@ export function SessionConfigPanel({
     const promptChanged = supplementaryPrompt !== origPrompt;
     const providerChanged = sessionProvider !== (config.provider ?? '');
     const modelChanged = sessionModel !== (config.model ?? '');
-    return idsChanged || promptChanged || providerChanged || modelChanged;
-  }, [contextIds, supplementaryPrompt, sessionProvider, sessionModel, config]);
+    const sysPromptChanged = systemPromptOverride !== (config.systemPrompt ?? '');
+    const capsChanged = JSON.stringify(capsOverride) !== JSON.stringify(config.capabilities ?? {});
+    return idsChanged || promptChanged || providerChanged || modelChanged || sysPromptChanged || capsChanged;
+  }, [contextIds, supplementaryPrompt, sessionProvider, sessionModel, systemPromptOverride, capsOverride, config]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -112,6 +132,8 @@ export function SessionConfigPanel({
     if (supplementaryPrompt.trim()) newConfig.supplementaryPrompt = supplementaryPrompt.trim();
     if (sessionProvider) newConfig.provider = sessionProvider as ProviderId;
     if (sessionModel.trim()) newConfig.model = sessionModel.trim();
+    if (systemPromptOverride.trim()) newConfig.systemPrompt = systemPromptOverride.trim();
+    if (Object.keys(capsOverride).length > 0) newConfig.capabilities = capsOverride;
     onSave(newConfig);
     setSaving(false);
   };
@@ -197,6 +219,49 @@ export function SessionConfigPanel({
           </p>
         </div>
 
+        {/* ── 系统提示词覆盖 ── */}
+        <div className="rounded-lg border border-zinc-150 bg-zinc-50/50 p-3 dark:border-zinc-700/50 dark:bg-zinc-800/30">
+          <button
+            type="button"
+            onClick={() => setPromptSectionOpen(v => !v)}
+            className="flex w-full items-center gap-1.5"
+          >
+            <Code className="h-3.5 w-3.5 text-zinc-400" />
+            <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">系统提示词</span>
+            {systemPromptOverride.trim() && (
+              <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-400">
+                已覆盖
+              </span>
+            )}
+            <ChevronDown className={`ml-auto h-3 w-3 text-zinc-400 transition-transform ${promptSectionOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {promptSectionOpen && (
+            <div className="mt-2 space-y-1.5">
+              <textarea
+                ref={promptTextareaRef}
+                value={systemPromptOverride || (agentSystemPrompt ?? '')}
+                onChange={e => setSystemPromptOverride(e.target.value)}
+                placeholder="定义此会话的系统提示词（留空使用 Agent 默认）"
+                rows={6}
+                className="w-full resize-y rounded-md border border-zinc-200 bg-white px-2.5 py-2 text-xs leading-relaxed font-mono outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500 dark:focus:ring-blue-500/30"
+              />
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] text-zinc-400">
+                  {systemPromptOverride.trim() ? '已覆盖 Agent 默认提示词' : '当前显示 Agent 默认提示词，编辑即覆盖'}
+                </p>
+                {systemPromptOverride.trim() && (
+                  <button
+                    onClick={() => setSystemPromptOverride('')}
+                    className="text-[10px] text-blue-500 hover:text-blue-700 dark:hover:text-blue-400"
+                  >
+                    重置为 Agent 默认
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* ── 补充提示词 ── */}
         <div className="rounded-lg border border-zinc-150 bg-zinc-50/50 p-3 dark:border-zinc-700/50 dark:bg-zinc-800/30">
           <div className="mb-2 flex items-center gap-1.5">
@@ -212,8 +277,102 @@ export function SessionConfigPanel({
             className="w-full resize-none rounded-md border border-zinc-200 bg-white px-2.5 py-2 text-xs leading-relaxed outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500 dark:focus:ring-blue-500/30"
           />
           <p className="mt-1.5 text-[10px] text-zinc-400">
-            附加在 Agent 系统提示词之后，不替换原始提示词
+            附加在系统提示词之后，不替换
           </p>
+        </div>
+
+        {/* ── 能力开关 ── */}
+        <div className="rounded-lg border border-zinc-150 bg-zinc-50/50 p-3 dark:border-zinc-700/50 dark:bg-zinc-800/30">
+          <button
+            type="button"
+            onClick={() => setCapsSectionOpen(v => !v)}
+            className="flex w-full items-center gap-1.5"
+          >
+            <Shield className="h-3.5 w-3.5 text-zinc-400" />
+            <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">能力开关</span>
+            {Object.keys(capsOverride).length > 0 && (
+              <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-400">
+                已自定义
+              </span>
+            )}
+            <ChevronDown className={`ml-auto h-3 w-3 text-zinc-400 transition-transform ${capsSectionOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {capsSectionOpen && (
+            <div className="mt-2 space-y-0.5">
+              {CAPABILITY_ITEMS.map(({ key, label, description, icon: Icon, danger }) => {
+                const agentEnabled = baseCaps[key];
+                const sessionVal = capsOverride[key];
+                const effective = sessionVal !== undefined ? sessionVal : agentEnabled;
+                const isOverridden = sessionVal !== undefined;
+                return (
+                  <div
+                    key={key}
+                    className={`flex items-center justify-between rounded-md px-2 py-1.5 transition-colors ${
+                      danger && effective ? 'bg-red-50/50 dark:bg-red-950/20' : ''
+                    } ${!agentEnabled ? 'opacity-50' : ''}`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Icon className={`h-3 w-3 shrink-0 ${
+                        danger && effective ? 'text-red-400' : 'text-zinc-400'
+                      }`} />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1">
+                          <span className={`text-[11px] font-medium ${
+                            danger && effective ? 'text-red-600 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-300'
+                          }`}>{label}</span>
+                          {isOverridden && (
+                            <span className="h-1 w-1 rounded-full bg-blue-500" />
+                          )}
+                        </div>
+                        <div className="text-[10px] text-zinc-400 truncate">{description}</div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (!agentEnabled) return; // 不能放宽
+                        setCapsOverride(prev => {
+                          const next = { ...prev };
+                          if (sessionVal === undefined) {
+                            // 首次覆盖：关闭
+                            next[key] = false;
+                          } else if (!sessionVal) {
+                            // 已关闭 → 恢复 Agent 默认（删除覆盖）
+                            delete next[key];
+                          } else {
+                            next[key] = false;
+                          }
+                          return next;
+                        });
+                      }}
+                      disabled={!agentEnabled}
+                      className={`relative ml-2 h-4 w-7 shrink-0 rounded-full transition-colors ${
+                        effective
+                          ? danger ? 'bg-red-500' : 'bg-blue-600'
+                          : 'bg-zinc-300 dark:bg-zinc-600'
+                      } ${!agentEnabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 h-3 w-3 rounded-full bg-white transition-transform ${
+                        effective ? 'translate-x-3' : ''
+                      }`} />
+                    </button>
+                  </div>
+                );
+              })}
+              <div className="flex items-center justify-between pt-1">
+                <p className="text-[10px] text-zinc-400">
+                  只能关闭 Agent 已启用的能力
+                </p>
+                {Object.keys(capsOverride).length > 0 && (
+                  <button
+                    onClick={() => setCapsOverride({})}
+                    className="text-[10px] text-blue-500 hover:text-blue-700 dark:hover:text-blue-400"
+                  >
+                    重置全部
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── 上下文绑定 ── */}
@@ -339,6 +498,8 @@ export function SessionConfigPanel({
                 setSupplementaryPrompt(config.supplementaryPrompt ?? '');
                 setSessionProvider(config.provider ?? '');
                 setSessionModel(config.model ?? '');
+                setSystemPromptOverride(config.systemPrompt ?? '');
+                setCapsOverride(config.capabilities ?? {});
               }}
               className="px-2 py-1.5 text-xs text-zinc-400 hover:text-zinc-600 transition-colors"
             >
