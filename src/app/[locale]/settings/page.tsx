@@ -5,7 +5,7 @@ import { useTranslations, useLocale } from 'next-intl';
 import { useRouter, usePathname } from '@/i18n/routing';
 import { TopNav } from '@/components/top-nav';
 import { Button } from '@/components/ui/button';
-import { Check, X, Loader2, Brain, Wrench, Palette, Database, Eye, Settings, ShieldAlert } from 'lucide-react';
+import { Check, X, Loader2, Brain, Wrench, Palette, Database, Eye, Settings, ShieldAlert, Sparkles } from 'lucide-react';
 import { getProviderPreset } from '@/lib/provider-registry';
 import { useTheme } from '@/components/theme-provider';
 import {
@@ -15,9 +15,10 @@ import {
   SettingsDataSection,
   SettingsPrivacySection,
   SettingsSafetySection,
+  SettingsTitleGenerationSection,
 } from '@/components/settings-sections';
-import type { ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort, DangerCategory, DangerActionLevel, DangerDetectorSettings } from '@/types';
-import { DEFAULT_DANGER_SETTINGS } from '@/types';
+import type { ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort, DangerCategory, DangerActionLevel, DangerDetectorSettings, TitleGenerationChainEntry } from '@/types';
+import { DEFAULT_DANGER_SETTINGS, DEFAULT_TITLE_GENERATION } from '@/types';
 
 const OPENAI_REASONING_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
 
@@ -55,6 +56,12 @@ export default function SettingsPage() {
 
   // Safety detection state
   const [dangerSettings, setDangerSettings] = useState<DangerDetectorSettings>({ ...DEFAULT_DANGER_SETTINGS });
+
+  // Title generation state
+  const [titleGenEnabled, setTitleGenEnabled] = useState(true);
+  const [titleGenChain, setTitleGenChain] = useState<TitleGenerationChainEntry[]>(
+    DEFAULT_TITLE_GENERATION.chain ?? [],
+  );
 
   // UI state
   const [activeSection, setActiveSection] = useState('ai');
@@ -190,6 +197,14 @@ export default function SettingsPage() {
         setTelemetry(data.general?.telemetry || false);
         setDangerSettings({ ...DEFAULT_DANGER_SETTINGS, ...data.dangerDetector });
 
+        // Title generation
+        setTitleGenEnabled(data.titleGeneration?.enabled !== false);
+        setTitleGenChain(
+          Array.isArray(data.titleGeneration?.chain) && data.titleGeneration.chain.length > 0
+            ? data.titleGeneration.chain
+            : DEFAULT_TITLE_GENERATION.chain ?? [],
+        );
+
         // Per-provider API keys (backward compat: fill from flat apiKey if needed)
         const incomingKeys = (data.claude.providerApiKeys && typeof data.claude.providerApiKeys === 'object')
           ? { ...data.claude.providerApiKeys as Partial<Record<ProviderId, string>> }
@@ -284,6 +299,7 @@ export default function SettingsPage() {
     { id: 'ai', icon: Brain, label: t('aiConfig') },
     { id: 'claude', icon: Wrench, label: t('claudeCodeConfig') },
     { id: 'safety', icon: ShieldAlert, label: t('safetyDetection') },
+    { id: 'titleGeneration', icon: Sparkles, label: t('titleGeneration') },
     { id: 'appearance', icon: Palette, label: t('appearance') },
     { id: 'data', icon: Database, label: t('dataManagement') },
     { id: 'privacy', icon: Eye, label: t('privacy') },
@@ -400,6 +416,10 @@ export default function SettingsPage() {
           },
           general: { telemetry },
           dangerDetector: dangerSettings,
+          titleGeneration: {
+            enabled: titleGenEnabled,
+            chain: titleGenChain,
+          },
         }),
       });
       if (res.ok) {
@@ -683,6 +703,16 @@ export default function SettingsPage() {
               />
             )}
 
+            {activeSection === 'titleGeneration' && (
+              <SettingsTitleGenerationSection
+                t={t} tActions={tActions} btnActive={btnActive} btnInactive={btnInactive}
+                enabled={titleGenEnabled}
+                chain={titleGenChain}
+                onEnabledChange={setTitleGenEnabled}
+                onChainChange={setTitleGenChain}
+              />
+            )}
+
             {activeSection === 'appearance' && (
               <SettingsAppearanceSection
                 t={t} tActions={tActions} btnActive={btnActive} btnInactive={btnInactive}
@@ -710,7 +740,7 @@ export default function SettingsPage() {
             )}
 
             {/* ── Save Button (for AI/Claude/Privacy sections) ── */}
-            {(activeSection === 'ai' || activeSection === 'claude' || activeSection === 'safety' || activeSection === 'privacy') && (
+            {(activeSection === 'ai' || activeSection === 'claude' || activeSection === 'safety' || activeSection === 'titleGeneration' || activeSection === 'privacy') && (
               <div className="flex items-center gap-3">
                 <Button onClick={handleSave} disabled={saving}>
                   {saving && <Loader2 className="h-4 w-4 animate-spin" />}

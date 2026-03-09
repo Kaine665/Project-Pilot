@@ -158,6 +158,29 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // titleGeneration 字段验证
+  if (body.titleGeneration !== undefined) {
+    if (typeof body.titleGeneration !== 'object' || body.titleGeneration === null) {
+      return NextResponse.json({ error: 'titleGeneration must be an object' }, { status: 400 });
+    }
+    if (body.titleGeneration.enabled !== undefined && typeof body.titleGeneration.enabled !== 'boolean') {
+      return NextResponse.json({ error: 'titleGeneration.enabled must be a boolean' }, { status: 400 });
+    }
+    if (body.titleGeneration.chain !== undefined) {
+      if (!Array.isArray(body.titleGeneration.chain) || body.titleGeneration.chain.length > 10) {
+        return NextResponse.json({ error: 'titleGeneration.chain must be an array (max 10)' }, { status: 400 });
+      }
+      for (const entry of body.titleGeneration.chain) {
+        if (!entry.provider || !entry.model) {
+          return NextResponse.json({ error: 'Each chain entry must have provider and model' }, { status: 400 });
+        }
+        if (!VALID_PROVIDERS.includes(entry.provider)) {
+          return NextResponse.json({ error: `Invalid provider in chain: ${entry.provider}` }, { status: 400 });
+        }
+      }
+    }
+  }
+
   const updated: AppSettings = {
     ...current,
     claude: {
@@ -180,6 +203,12 @@ export async function POST(request: NextRequest) {
       dangerDetector: {
         ...(current.dangerDetector ?? DEFAULT_DANGER_SETTINGS),
         ...body.dangerDetector,
+      },
+    }),
+    ...(body.titleGeneration !== undefined && {
+      titleGeneration: {
+        ...current.titleGeneration,
+        ...body.titleGeneration,
       },
     }),
     version: current.version,

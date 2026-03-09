@@ -8,8 +8,9 @@ import {
   Shield, Brain, Wrench, Check, X, Loader2, ExternalLink, Server, Copy,
   Gauge, RotateCw, Eye, Sun, Moon, Monitor,
   Download, Upload, Trash2, FolderOpen, Info, Github, ShieldAlert,
+  Sparkles, Plus, Minus,
 } from 'lucide-react';
-import type { DangerCategory, DangerActionLevel, DangerDetectorSettings } from '@/types';
+import type { DangerCategory, DangerActionLevel, DangerDetectorSettings, TitleGenerationChainEntry } from '@/types';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import type { Theme } from '@/components/theme-provider';
 import type { ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort } from '@/types';
@@ -849,6 +850,129 @@ export function SettingsSafetySection({
           </div>
         </CardContent>
       </Card>
+    </>
+  );
+}
+
+// ══════════════ Title Generation ══════════════
+
+interface TitleGenerationSectionProps extends TranslationProps {
+  enabled: boolean;
+  chain: TitleGenerationChainEntry[];
+  onEnabledChange: (v: boolean) => void;
+  onChainChange: (chain: TitleGenerationChainEntry[]) => void;
+}
+
+export function SettingsTitleGenerationSection({
+  t, btnActive, btnInactive,
+  enabled, chain,
+  onEnabledChange, onChainChange,
+}: TitleGenerationSectionProps) {
+  const addEntry = () => {
+    if (chain.length >= 10) return;
+    onChainChange([...chain, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }]);
+  };
+
+  const removeEntry = (index: number) => {
+    onChainChange(chain.filter((_, i) => i !== index));
+  };
+
+  const updateEntry = (index: number, field: keyof TitleGenerationChainEntry, value: string) => {
+    const next = chain.map((entry, i) =>
+      i === index ? { ...entry, [field]: value } : entry,
+    );
+    onChainChange(next);
+  };
+
+  return (
+    <>
+      {/* Enable toggle */}
+      <Card>
+        <CardContent className="pt-4">
+          <label className="flex items-center justify-between cursor-pointer">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2 text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                <Sparkles className="h-4 w-4" />
+                {t('titleGenerationEnabled')}
+              </div>
+              <p className="text-xs text-zinc-500 pr-4">{t('titleGenerationEnabledHint')}</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={enabled}
+              onClick={() => onEnabledChange(!enabled)}
+              className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
+                enabled ? 'bg-zinc-900 dark:bg-zinc-100' : 'bg-zinc-200 dark:bg-zinc-700'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform dark:bg-zinc-900 ${
+                  enabled ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </label>
+        </CardContent>
+      </Card>
+
+      {/* Retry chain */}
+      {enabled && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5" />
+              {t('titleGenerationChain')}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-zinc-500">{t('titleGenerationChainHint')}</p>
+
+            {chain.length === 0 && (
+              <p className="text-xs text-zinc-400 italic">{t('titleGenerationChainEmpty')}</p>
+            )}
+
+            <div className="space-y-2">
+              {chain.map((entry, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <span className="text-xs text-zinc-400 w-5 shrink-0 text-center">{index + 1}</span>
+                  <select
+                    value={entry.provider}
+                    onChange={(e) => updateEntry(index, 'provider', e.target.value)}
+                    className="h-9 rounded-md border border-zinc-200 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                  >
+                    {PROVIDER_REGISTRY.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {t(`providers.${p.id}`)}
+                      </option>
+                    ))}
+                  </select>
+                  <Input
+                    value={entry.model}
+                    onChange={(e) => updateEntry(index, 'model', e.target.value)}
+                    placeholder={t('titleGenerationModelPlaceholder')}
+                    className="flex-1 text-xs"
+                  />
+                  <button
+                    onClick={() => removeEntry(index)}
+                    className="shrink-0 rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-red-500 dark:hover:bg-zinc-800 dark:hover:text-red-400 transition-colors"
+                    title={t('titleGenerationRemove')}
+                  >
+                    <Minus className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {chain.length < 10 && (
+              <Button variant="outline" size="sm" onClick={addEntry}>
+                <Plus className="h-3.5 w-3.5" />
+                {t('titleGenerationAddEntry')}
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </>
   );
 }
