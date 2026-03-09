@@ -149,6 +149,25 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
 
     const sessionConfig = initialConfig ?? existing?.config;
 
+    // ── Resolve provider / model with priority chain ──
+    // Priority: explicit override → session config → agent default → (empty = global settings)
+    const resolvedProvider = providerOverride
+      || sessionConfig?.provider
+      || agent.defaultProvider
+      || undefined;
+    const resolvedModel = modelOverride
+      || sessionConfig?.model
+      || agent.defaultModel
+      || undefined;
+
+    // Persist resolved provider/model into session config so subsequent
+    // messages in the same session reuse the same model automatically.
+    const persistedConfig: SessionConfig = {
+      ...sessionConfig,
+      ...(resolvedProvider ? { provider: resolvedProvider } : {}),
+      ...(resolvedModel ? { model: resolvedModel } : {}),
+    };
+
     // Build prompt
     // 注意：不区分 isResume，始终发送完整 prompt（含系统提示词）。
     // --resume 仍然用于恢复对话历史，但不依赖它来携带系统提示词。
@@ -156,9 +175,9 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
     // Claude 也能从 stdin 中获取系统提示词，不会出现"没有上下文"的情况。
     let stdinContent: string;
     if (flowContext) {
-      stdinContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext, sessionConfig, sessionId);
+      stdinContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext, persistedConfig, sessionId);
     } else {
-      stdinContent = await buildAgentChatPrompt(agent, message, sessionConfig, sessionId);
+      stdinContent = await buildAgentChatPrompt(agent, message, persistedConfig, sessionId);
     }
 
     // Write images to temp files
@@ -177,11 +196,11 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
       }
     }
 
-    // Build CLI args
-    const chatEnv = await buildClaudeEnv(providerOverride, effortOverride);
-    const chatModelArgs = await buildClaudeModelArgs(modelOverride);
+    // Build CLI args (using resolved provider/model from priority chain)
+    const chatEnv = await buildClaudeEnv(resolvedProvider, effortOverride);
+    const chatModelArgs = await buildClaudeModelArgs(resolvedModel);
     const chatMaxTurnsArgs = await buildClaudeMaxTurnsArgs();
-    const effectiveCaps = mergeCapabilities(agent.capabilities, sessionConfig?.capabilities);
+    const effectiveCaps = mergeCapabilities(agent.capabilities, persistedConfig?.capabilities);
     const chatPermArgs = await buildAgentPermissionArgs(effectiveCaps);
     const chatToolArgs = buildAgentToolArgs(effectiveCaps);
     const resumeArgs = isResume ? ['--resume', existing!.claudeSessionId!] : [];
@@ -208,7 +227,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
         sessionTitle: existing?.sessionTitle ?? initialTitle,
         messages,
         tempPaths,
-        config: sessionConfig,
+        config: persistedConfig,
         parentSessionId: parentSessionId ?? existing?.parentSessionId,
         _ephemeral: ephemeral,
       },
@@ -222,7 +241,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
         sessionTitle: existing?.sessionTitle ?? initialTitle,
         messages,
         claudeSessionId: existing?.claudeSessionId,
-        config: sessionConfig,
+        config: persistedConfig,
         parentSessionId: parentSessionId ?? existing?.parentSessionId,
         importedTurnIndices: undefined,
       });
