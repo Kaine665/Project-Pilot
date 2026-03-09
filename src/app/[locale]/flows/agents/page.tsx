@@ -16,7 +16,7 @@ import { useProject } from '@/components/project-context';
 // ── Main page ──
 
 export default function AgentsPage() {
-  const { projects, activeKey } = useProject();
+  const { projects, activeKey, initialized: projectInitialized } = useProject();
 
   // ── Core data ──
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -95,7 +95,9 @@ export default function AgentsPage() {
   }, [fetchAgents]);
 
   // ── Fetch all sessions (cross-agent, filtered by active project) ──
+  // 等待项目上下文初始化完成后再请求，避免先显示全部会话再切换到项目过滤结果
   const fetchAllSessions = useCallback(async () => {
+    if (!projectInitialized) return;
     try {
       const sessUrl = activeKey
         ? `/api/agent-chat/sessions?projectKey=${encodeURIComponent(activeKey)}`
@@ -137,7 +139,7 @@ export default function AgentsPage() {
       // Also update agents cache
       setAgents(agentsData.agents ?? []);
     } catch { /* ignore */ }
-  }, [activeKey]);
+  }, [activeKey, projectInitialized]);
 
   useEffect(() => { fetchAllSessions(); }, [fetchAllSessions]);
 
