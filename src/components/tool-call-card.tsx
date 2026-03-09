@@ -214,6 +214,18 @@ export const ToolCallCard = memo(function ToolCallCard({ toolCall }: ToolCallCar
     return <SubagentCard toolCall={toolCall} />;
   }
 
+  // Plan mode tools: compact inline display
+  if (toolCall.toolName === 'EnterPlanMode' || toolCall.toolName === 'ExitPlanMode') {
+    const isPlan = toolCall.toolName === 'EnterPlanMode';
+    return (
+      <div className="my-1 flex items-center gap-1.5 text-xs text-blue-500 dark:text-blue-400">
+        {statusIcons[toolCall.status]}
+        <ClipboardList className="h-3 w-3" />
+        <span>{isPlan ? '进入规划模式' : '退出规划模式'}</span>
+      </div>
+    );
+  }
+
   const { name: displayName, isMcp } = getToolDisplayName(toolCall.toolName);
   const icon = getToolIcon(toolCall.toolName);
   const parsed = parseToolForDisplay(

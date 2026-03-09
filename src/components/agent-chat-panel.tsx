@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Loader2, Maximize2, Minimize2, Bot, Sparkles, Plus, MessageSquare, Trash2, Settings, FileDown } from 'lucide-react';
+import { Loader2, Maximize2, Minimize2, Bot, Sparkles, Plus, MessageSquare, Trash2, Settings, FileDown, ClipboardList } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from '@/i18n/routing';
 import { Button } from '@/components/ui/button';
@@ -116,6 +116,7 @@ export function AgentChatPanel({
   // Plan viewer
   const [planContent, setPlanContent] = useState<string | null>(null);
   const [isPlanOpen, setIsPlanOpen] = useState(false);
+  const [inPlanMode, setInPlanMode] = useState(false);
 
   const streamAbortRef = useRef<AbortController | null>(null);
   const blocksRef = useRef<ContentBlock[]>([]);
@@ -373,6 +374,7 @@ export function AgentChatPanel({
 
     setIsStreaming(false);
     setStreamingBlocks([]);
+    setInPlanMode(false);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
@@ -500,11 +502,16 @@ export function AgentChatPanel({
               if (event.toolName === 'Write') {
                 try {
                   const parsed = typeof event.input === 'string' ? JSON.parse(event.input) : event.input;
-                  if (parsed?.file_path?.includes('.claude/plans/')) {
+                  const fp = (parsed?.file_path ?? '').replace(/\\/g, '/');
+                  if (fp.includes('.claude/plans/')) {
                     setPlanContent(parsed.content);
                     setIsPlanOpen(true);
                   }
                 } catch { /* ignore parse errors */ }
+              }
+              // Track plan mode state
+              if (event.toolName === 'EnterPlanMode') {
+                setInPlanMode(true);
               }
               break;
             }
@@ -515,6 +522,16 @@ export function AgentChatPanel({
                 tc.output = event.output;
                 tc.status = event.status;
                 chunkHasDisplayEvents = true;
+
+                // ExitPlanMode → extract plan content from output as fallback
+                if (tc.toolName === 'ExitPlanMode') {
+                  setInPlanMode(false);
+                  const out = (event.output ?? '').trim();
+                  if (out.length > 50) {
+                    setPlanContent(out);
+                    setIsPlanOpen(true);
+                  }
+                }
               }
               break;
             }
@@ -575,6 +592,7 @@ export function AgentChatPanel({
     setIsStreaming(false);
     setStreamingBlocks([]);
     setErrorMsg(null);
+    setInPlanMode(false);
     setSessionIdSync(null);
     setSessionTitle(hasProject ? t('chat.newSession') : '新会话');
     setSessionList([]);
@@ -1104,6 +1122,13 @@ export function AgentChatPanel({
         <div className="flex items-center gap-2 text-xs text-zinc-400">
           <Loader2 className="h-3 w-3 animate-spin" />
           {hasProject ? t('chat.thinking') : '思考中...'}
+        </div>
+      )}
+
+      {inPlanMode && isStreaming && (
+        <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs text-blue-600 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400">
+          <ClipboardList className="h-3.5 w-3.5" />
+          <span>AI 正在规划中…</span>
         </div>
       )}
 

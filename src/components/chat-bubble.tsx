@@ -63,17 +63,25 @@ export const ChatBubble = memo(function ChatBubble({
     message.contentBlocks ??
     null;
 
-  // Detect plan file write in tool calls
+  // Detect plan content in tool calls (Write to .claude/plans/ or ExitPlanMode output)
   const planWriteContent = useMemo(() => {
     const allBlocks = blocks ?? message.contentBlocks ?? [];
     for (const b of allBlocks) {
-      if (b.type === 'tool_call' && b.toolCall.toolName === 'Write') {
+      if (b.type !== 'tool_call') continue;
+      // 1. Write to .claude/plans/ — normalize backslashes for Windows
+      if (b.toolCall.toolName === 'Write') {
         try {
           const parsed = typeof b.toolCall.input === 'string'
             ? JSON.parse(b.toolCall.input)
             : b.toolCall.input;
-          if (parsed?.file_path?.includes('.claude/plans/')) return parsed.content as string;
+          const fp = (parsed?.file_path ?? '').replace(/\\/g, '/');
+          if (fp.includes('.claude/plans/')) return parsed.content as string;
         } catch { /* ignore */ }
+      }
+      // 2. ExitPlanMode output contains the plan content
+      if (b.toolCall.toolName === 'ExitPlanMode' && b.toolCall.output) {
+        const out = b.toolCall.output.trim();
+        if (out.length > 50) return out;
       }
     }
     return null;
