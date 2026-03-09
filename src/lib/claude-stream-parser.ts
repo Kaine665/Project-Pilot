@@ -160,7 +160,11 @@ export class StreamParser {
         if (!this.sessionId && typeof json.session_id === 'string') {
           this.sessionId = json.session_id;
         }
-        events.push({ type: 'done' });
+        // NOTE: Do NOT emit { type: 'done' } here.
+        // The 'done' event is emitted by BaseChatManager's close handler,
+        // which fires AFTER onProcessClose (title extraction, action processing,
+        // assistant message commit). Emitting 'done' here would close the SSE
+        // connection prematurely, causing onProcessClose events to be lost.
         break;
 
       default:

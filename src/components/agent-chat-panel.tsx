@@ -380,7 +380,23 @@ export function AgentChatPanel({
       if (!res.ok) return;
       if (token !== undefined && initTokenRef.current !== token) return;
       const data = await res.json();
-      const restored: ChatMessage[] = (data.messages ?? []).map(
+      let messages: Array<{ role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }> = data.messages ?? [];
+
+      // Defensive: if disk data ends with a user message (assistant reply may not
+      // have been persisted yet), check in-memory status for up-to-date messages.
+      if (messages.length > 0 && messages[messages.length - 1].role === 'user') {
+        try {
+          const statusRes = await fetch(`/api/agent-chat/status?sessionId=${sid}`, { cache: 'no-store' });
+          if (statusRes.ok) {
+            const statusData = await statusRes.json();
+            if (Array.isArray(statusData.messages) && statusData.messages.length > messages.length) {
+              messages = statusData.messages;
+            }
+          }
+        } catch { /* ignore fallback failure */ }
+      }
+
+      const restored: ChatMessage[] = messages.map(
         (m: { role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }, i: number) => ({
           id: `restored-${i}`,
           role: m.role,
