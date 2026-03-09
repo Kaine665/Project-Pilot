@@ -10,7 +10,7 @@ interface ToolExecutionWindowProps {
 }
 
 /**
- * 紧凑工具执行窗：标题行（居中展开按钮）+ 当前工具摘要
+ * 紧凑工具执行窗：标题行（标题左 + 展开按钮居中）+ 当前工具摘要
  * 展开后显示所有工具列表
  */
 export const ToolExecutionWindow = memo(function ToolExecutionWindow({
@@ -34,23 +34,31 @@ export const ToolExecutionWindow = memo(function ToolExecutionWindow({
 
   return (
     <div className="my-1.5 rounded border border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900/30 overflow-hidden">
-      {/* 标题行：展开按钮居中 */}
-      <button
+      {/* 标题行：标题左侧，展开按钮居中 */}
+      <div
+        className="grid grid-cols-3 items-center px-2 py-1 cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800/50 transition-colors"
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center justify-center gap-1.5 px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800/50 transition-colors"
       >
-        {isRunning && <Loader2 className="h-3 w-3 animate-spin text-blue-500 shrink-0" />}
-        <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-          {title}
-        </span>
-        <span className="text-[10px] text-zinc-400 dark:text-zinc-500">
-          ({toolCalls.length})
-        </span>
-        {expanded
-          ? <ChevronDown className="h-3 w-3 text-zinc-400" />
-          : <ChevronRight className="h-3 w-3 text-zinc-400" />
-        }
-      </button>
+        {/* 左：标题 */}
+        <div className="flex items-center gap-1 justify-start">
+          {isRunning && <Loader2 className="h-3 w-3 animate-spin text-blue-500 shrink-0" />}
+          <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 truncate">
+            {title}
+          </span>
+          <span className="text-[10px] text-zinc-400 dark:text-zinc-500 shrink-0">
+            ({toolCalls.length})
+          </span>
+        </div>
+        {/* 中：展开/收起按钮 */}
+        <div className="flex justify-center">
+          {expanded
+            ? <ChevronDown className="h-3 w-3 text-zinc-400" />
+            : <ChevronRight className="h-3 w-3 text-zinc-400" />
+          }
+        </div>
+        {/* 右：留空 */}
+        <div />
+      </div>
 
       {/* 收起时：只显示当前工具摘要 */}
       {!expanded && (
