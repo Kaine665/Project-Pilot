@@ -94,13 +94,34 @@ export default function AgentsPage() {
     return () => window.removeEventListener('focus', handleFocus);
   }, [fetchAgents]);
 
+  // ── Session cache per project (stale-while-revalidate) ──
+  const sessionCacheRef = useRef<Map<string, AllSessionItem[]>>(new Map());
+  const CACHE_KEY_ALL = '__all__';
+
+  // 解析首次渲染时 URL 上的 projectKey，跳过等待 ProjectProvider 初始化
+  const initialProjectKeyRef = useRef<string | null>(
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('project')
+      : null,
+  );
+
+  // 实际使用的 projectKey：优先用 ProjectProvider 的值，首次渲染时用 URL 直读值
+  const effectiveProjectKey = projectInitialized ? activeKey : initialProjectKeyRef.current;
+
   // ── Fetch all sessions (cross-agent, filtered by active project) ──
-  // 等待项目上下文初始化完成后再请求，避免先显示全部会话再切换到项目过滤结果
   const fetchAllSessions = useCallback(async () => {
-    if (!projectInitialized) return;
+    const key = effectiveProjectKey;
+    const cacheKey = key ?? CACHE_KEY_ALL;
+
+    // 切换项目时立即展示缓存数据（如有）
+    const cached = sessionCacheRef.current.get(cacheKey);
+    if (cached) {
+      setAllSessions(cached);
+    }
+
     try {
-      const sessUrl = activeKey
-        ? `/api/agent-chat/sessions?projectKey=${encodeURIComponent(activeKey)}`
+      const sessUrl = key
+        ? `/api/agent-chat/sessions?projectKey=${encodeURIComponent(key)}`
         : '/api/agent-chat/sessions';
       const [sessRes, agentsRes] = await Promise.all([
         fetch(sessUrl, { cache: 'no-store' }),
@@ -132,14 +153,17 @@ export default function AgentsPage() {
         const remoteIds = new Set(sessions.map((s: AllSessionItem) => s.id));
         const localOnly = prev.filter(s =>
           !remoteIds.has(s.id)
-          && (!activeKey || !s.projectKey || s.projectKey === activeKey),
+          && (!key || !s.projectKey || s.projectKey === key),
         );
-        return [...localOnly, ...sessions];
+        const merged = [...localOnly, ...sessions];
+        // 写入缓存
+        sessionCacheRef.current.set(cacheKey, merged);
+        return merged;
       });
       // Also update agents cache
       setAgents(agentsData.agents ?? []);
     } catch { /* ignore */ }
-  }, [activeKey, projectInitialized]);
+  }, [effectiveProjectKey]);
 
   useEffect(() => { fetchAllSessions(); }, [fetchAllSessions]);
 
