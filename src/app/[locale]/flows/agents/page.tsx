@@ -124,17 +124,16 @@ export default function AgentsPage() {
           projectKey: s.projectKey,
         };
       });
-      // 有项目过滤时直接替换（避免旧项目会话残留）；
-      // 无过滤时保留 merge 逻辑（保留乐观插入的本地会话）
-      if (activeKey) {
-        setAllSessions(sessions);
-      } else {
-        setAllSessions(prev => {
-          const remoteIds = new Set(sessions.map((s: AllSessionItem) => s.id));
-          const localOnly = prev.filter(s => !remoteIds.has(s.id));
-          return [...localOnly, ...sessions];
-        });
-      }
+      // merge 逻辑：保留乐观插入的本地会话（服务端还没来得及落盘的新会话），
+      // 同时用服务端数据覆盖已有条目。有项目过滤时额外排除其他项目的残留。
+      setAllSessions(prev => {
+        const remoteIds = new Set(sessions.map((s: AllSessionItem) => s.id));
+        const localOnly = prev.filter(s =>
+          !remoteIds.has(s.id)
+          && (!activeKey || !s.projectKey || s.projectKey === activeKey),
+        );
+        return [...localOnly, ...sessions];
+      });
       // Also update agents cache
       setAgents(agentsData.agents ?? []);
     } catch { /* ignore */ }
@@ -767,7 +766,13 @@ export default function AgentsPage() {
                     onSessionChange={(newSession) => {
                       if (newSession && selectedAgent) {
                         setAllSessions(prev => {
-                          if (prev.some(s => s.id === newSession.id)) return prev;
+                          const existing = prev.find(s => s.id === newSession.id);
+                          if (existing) {
+                            // 已存在 → 更新标题等字段（session_title_set 场景）
+                            return prev.map(s => s.id === newSession.id
+                              ? { ...s, title: newSession.title, updatedAt: newSession.updatedAt }
+                              : s);
+                          }
                           return [{
                             id: newSession.id,
                             title: newSession.title,
@@ -859,10 +864,15 @@ export default function AgentsPage() {
                           );
                           syncUrlParams({ session: newSession.id });
                         }
-                        // Optimistically insert new session into sidebar list
+                        // Optimistically insert/update session in sidebar list
                         if (newSession) {
                           setAllSessions(prev => {
-                            if (prev.some(s => s.id === newSession.id)) return prev;
+                            const existing = prev.find(s => s.id === newSession.id);
+                            if (existing) {
+                              return prev.map(s => s.id === newSession.id
+                                ? { ...s, title: newSession.title, updatedAt: newSession.updatedAt }
+                                : s);
+                            }
                             return [{
                               id: newSession.id,
                               title: newSession.title,
