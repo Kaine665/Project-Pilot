@@ -266,6 +266,14 @@ export abstract class BaseChatManager<TRun extends BaseRun> {
           lower.includes('run --model to pick') ||
           lower.includes('falling back') ||
           lower.includes('deprecat');
+
+        // Detect corrupted resume session (e.g. invalid thinking block signature).
+        // Clear claudeSessionId so next attempt starts fresh without --resume.
+        if (text.includes('Invalid') && text.includes('signature') && text.includes('thinking')) {
+          console.warn(`${this.logPrefix} Detected corrupted resume session — clearing claudeSessionId`);
+          run.claudeSessionId = undefined;
+        }
+
         if (!isNonFatal) {
           this.trackAndEmit(run, { type: 'error', message: text.trim() });
         }
