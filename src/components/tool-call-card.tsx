@@ -4,41 +4,15 @@ import { useState, memo } from 'react';
 import {
   ChevronDown,
   ChevronRight,
-  Terminal,
-  FileText,
-  Pencil,
   Loader2,
   CheckCircle2,
   XCircle,
-  Search,
-  Globe,
-  MessageCircleQuestion,
-  ListTodo,
-  ClipboardList,
-  Blocks,
-  Plug,
 } from 'lucide-react';
 import { AskUserQuestionCard } from '@/components/ask-user-question-card';
 import { TodoListCard } from '@/components/todo-list-card';
 import { SubagentCard } from '@/components/subagent-card';
 import type { ChatToolCall } from '@/types';
-
-const toolIcons: Record<string, React.ReactNode> = {
-  Bash: <Terminal className="h-3 w-3" />,
-  Read: <FileText className="h-3 w-3" />,
-  Edit: <Pencil className="h-3 w-3" />,
-  Write: <Pencil className="h-3 w-3" />,
-  Glob: <Search className="h-3 w-3" />,
-  Grep: <Search className="h-3 w-3" />,
-  WebFetch: <Globe className="h-3 w-3" />,
-  WebSearch: <Globe className="h-3 w-3" />,
-  NotebookEdit: <FileText className="h-3 w-3" />,
-  Task: <Blocks className="h-3 w-3" />,
-  AskUserQuestion: <MessageCircleQuestion className="h-3 w-3" />,
-  TodoWrite: <ListTodo className="h-3 w-3" />,
-  EnterPlanMode: <ClipboardList className="h-3 w-3" />,
-  ExitPlanMode: <ClipboardList className="h-3 w-3" />,
-};
+import { getToolIcon, getToolDisplayName } from '@/lib/tool-utils';
 
 const statusIcons: Record<ChatToolCall['status'], React.ReactNode> = {
   running: <Loader2 className="h-3 w-3 animate-spin text-blue-500" />,
@@ -48,27 +22,6 @@ const statusIcons: Record<ChatToolCall['status'], React.ReactNode> = {
 
 interface ToolCallCardProps {
   toolCall: ChatToolCall;
-}
-
-/**
- * Get a human-readable display name for the tool.
- * MCP tools have format: mcp__serverName__toolName
- */
-function getToolDisplayName(toolName: string): { name: string; isMcp: boolean } {
-  const mcpMatch = toolName.match(/^mcp__([^_]+)__(.+)$/);
-  if (mcpMatch) {
-    return { name: `${mcpMatch[1]}/${mcpMatch[2]}`, isMcp: true };
-  }
-  return { name: toolName, isMcp: false };
-}
-
-/**
- * Get an icon for the tool, with fallback for MCP and unknown tools.
- */
-function getToolIcon(toolName: string): React.ReactNode {
-  if (toolIcons[toolName]) return toolIcons[toolName];
-  if (toolName.startsWith('mcp__')) return <Plug className="h-3 w-3" />;
-  return <Terminal className="h-3 w-3" />;
 }
 
 /** 安全解析工具输入 JSON */

@@ -4,8 +4,10 @@ import { memo, useState, useMemo } from 'react';
 import { Bot, User, GitBranch, BookMarked, Copy, Check, Trash2, RefreshCw, ClipboardList } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { ToolCallCard } from '@/components/tool-call-card';
+import { ToolExecutionWindow } from '@/components/tool-execution-window';
 import { FormattedText } from '@/components/formatted-text';
 import type { ChatMessage, ContentBlock } from '@/types';
+import { isRepetitiveTool } from '@/lib/tool-utils';
 
 interface ChatBubbleProps {
   message: ChatMessage;
@@ -103,6 +105,18 @@ export const ChatBubble = memo(function ChatBubble({
   const isAskUserQuestion = (block: ContentBlock) =>
     block.type === 'tool_call' && block.toolCall.toolName === 'AskUserQuestion';
 
+  // 找到最后一个重复性工具（用于在 ToolExecutionWindow 中显示）
+  const latestRepetitiveTool = useMemo(() => {
+    const allBlocks = blocks ?? message.contentBlocks ?? [];
+    let lastRepetitive: any = null;
+    for (const block of allBlocks) {
+      if (block.type === 'tool_call' && isRepetitiveTool(block.toolCall.toolName)) {
+        lastRepetitive = block.toolCall;
+      }
+    }
+    return lastRepetitive;
+  }, [blocks, message.contentBlocks]);
+
   const renderBlocks = (blocksToRender: ContentBlock[]) => {
     const lastTextIdx = blocksToRender.reduce(
       (acc, b, i) => (b.type === 'text' ? i : acc),
@@ -134,6 +148,10 @@ export const ChatBubble = memo(function ChatBubble({
       }
       // AskUserQuestion rendered outside the bubble — skip here
       if (isAskUserQuestion(block)) return null;
+      // 跳过重复性工具（转移到 ToolExecutionWindow）
+      if (block.type === 'tool_call' && isRepetitiveTool(block.toolCall.toolName)) {
+        return null;
+      }
       return (
         <div key={block.toolCall.id} className="my-1.5">
           <ToolCallCard toolCall={block.toolCall} />
@@ -172,9 +190,11 @@ export const ChatBubble = memo(function ChatBubble({
       )}
       {message.toolCalls && message.toolCalls.length > 0 && (
         <div className="mt-1.5">
-          {message.toolCalls.map((tc) => (
-            <ToolCallCard key={tc.id} toolCall={tc} />
-          ))}
+          {message.toolCalls
+            .filter((tc) => !isRepetitiveTool(tc.toolName))
+            .map((tc) => (
+              <ToolCallCard key={tc.id} toolCall={tc} />
+            ))}
         </div>
       )}
     </>
@@ -229,6 +249,13 @@ export const ChatBubble = memo(function ChatBubble({
             {askUserBlocks.map((block) => (
               <ToolCallCard key={block.toolCall.id} toolCall={block.toolCall} />
             ))}
+          </div>
+        )}
+
+        {/* Tool Execution Window — shows latest repetitive tool (Read, Grep, Bash, etc.) */}
+        {!isUser && latestRepetitiveTool && (
+          <div className="mt-2">
+            <ToolExecutionWindow toolCall={latestRepetitiveTool} />
           </div>
         )}
 
