@@ -1,12 +1,7 @@
 import {
-  ChevronDown,
-  ChevronRight,
   Terminal,
   FileText,
   Pencil,
-  Loader2,
-  CheckCircle2,
-  XCircle,
   Search,
   Globe,
   MessageCircleQuestion,
@@ -15,6 +10,7 @@ import {
   Blocks,
   Plug,
 } from 'lucide-react';
+import type { ChatToolCall } from '@/types';
 
 /**
  * 重复性工具：应该在固定 200px 面板中显示，而不是直接在气泡中列举
@@ -91,4 +87,104 @@ export function getToolIcon(toolName: string): React.ReactNode {
   if (toolIcons[toolName]) return toolIcons[toolName];
   if (toolName.startsWith('mcp__')) return <Plug className="h-3 w-3" />;
   return <Terminal className="h-3 w-3" />;
+}
+
+/**
+ * 安全解析工具输入 JSON
+ */
+function parseInput(input: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(input);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 将工具调用压缩为一行摘要
+ */
+export function getToolOneLiner(tc: ChatToolCall): string {
+  const parsed = typeof tc.input === 'string' ? parseInput(tc.input) : null;
+
+  switch (tc.toolName) {
+    case 'Read': {
+      const fp = parsed?.file_path as string | undefined;
+      return fp ? basename(fp) : 'Read';
+    }
+    case 'Grep': {
+      const pattern = parsed?.pattern as string | undefined;
+      const path = parsed?.path as string | undefined;
+      return pattern
+        ? `/${pattern}/${path ? ' in ' + basename(path) : ''}`
+        : 'Grep';
+    }
+    case 'Glob': {
+      const pattern = parsed?.pattern as string | undefined;
+      return pattern ?? 'Glob';
+    }
+    case 'Bash': {
+      const cmd = parsed?.command as string | undefined;
+      return cmd ? cmd.slice(0, 80) : 'Bash';
+    }
+    case 'Edit': {
+      const fp = parsed?.file_path as string | undefined;
+      return fp ? basename(fp) : 'Edit';
+    }
+    case 'Write': {
+      const fp = parsed?.file_path as string | undefined;
+      return fp ? basename(fp) : 'Write';
+    }
+    case 'WebFetch': {
+      const url = parsed?.url as string | undefined;
+      return url ? url.slice(0, 60) : 'WebFetch';
+    }
+    case 'WebSearch': {
+      const query = parsed?.query as string | undefined;
+      return query ?? 'WebSearch';
+    }
+    case 'Task': {
+      const desc = parsed?.description as string | undefined;
+      return desc ?? 'Task';
+    }
+    default: {
+      const { name } = getToolDisplayName(tc.toolName);
+      return name;
+    }
+  }
+}
+
+/**
+ * 根据工具组合生成面板标题
+ */
+export function getToolGroupTitle(toolCalls: ChatToolCall[]): string {
+  const names = new Set(toolCalls.map((tc) => tc.toolName));
+
+  if (names.size === 1) {
+    const name = names.values().next().value;
+    switch (name) {
+      case 'Read': return '阅读代码';
+      case 'Grep': return '搜索代码';
+      case 'Glob': return '查找文件';
+      case 'Bash': return '执行命令';
+      case 'Edit': return '编辑文件';
+      case 'Write': return '写入文件';
+      case 'WebFetch': return '获取网页';
+      case 'WebSearch': return '搜索网络';
+      case 'Task': return '子任务';
+      default: return '工具执行';
+    }
+  }
+
+  // 混合类型
+  const hasRead = names.has('Read') || names.has('Grep') || names.has('Glob');
+  const hasWrite = names.has('Edit') || names.has('Write');
+
+  if (hasRead && hasWrite) return '查阅与修改代码';
+  if (hasRead) return '查阅代码';
+  if (hasWrite) return '修改代码';
+  return '工具执行';
+}
+
+function basename(fp: string): string {
+  return fp.replace(/\\/g, '/').split('/').pop() || fp;
 }
