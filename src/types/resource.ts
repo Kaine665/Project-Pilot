@@ -28,7 +28,8 @@ export type ResourceType =
   | 'shared-memory'                // Agent shared memory (blackboard)
   | 'global-prompt'                // Global prompt injected into every agent
   | 'project-prompt'               // Project-level prompt injected when projectKey is set
-  | 'skill';                       // Skill bound to agent (name + description summary)
+  | 'skill'                        // Skill bound to agent (name + description summary)
+  | 'agent-data-info';              // Agent private data store directory listing
 
 // ── ResourceRef ──
 

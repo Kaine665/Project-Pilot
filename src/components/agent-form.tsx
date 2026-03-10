@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Bot, X, Maximize2,
   Terminal, FileText, Globe, Users, ShieldOff, ListTodo, Eye, Check,
-  Database, Brain, Code, Zap, Search, Shield, Wrench, BookOpen,
+  Database, Brain, Code, Zap, Search, Shield, Wrench, BookOpen, HardDrive,
   type LucideIcon,
 } from 'lucide-react';
 import type { Agent, AgentCapabilities, ContextEntry, ProviderId } from '@/types';
@@ -55,6 +55,7 @@ export const CAPABILITY_ITEMS: Array<{
   { key: 'skipReview',      label: '无需审核',       description: '自动批准所有工具调用',                icon: ShieldOff, danger: true },
   { key: 'todoRead',        label: '读取待办',       description: '将 pending 待办注入提示词',           icon: ListTodo },
   { key: 'exposePromptPath', label: '暴露提示词路径', description: '将 prompt 文件路径注入提示词，AI 可自行读写', icon: Eye },
+  { key: 'dataStore',        label: '数据存储',       description: '为 Agent 分配私有数据目录，可自由读写文件',  icon: HardDrive },
 ];
 
 // ── Form types ──

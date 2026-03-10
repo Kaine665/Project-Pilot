@@ -141,6 +141,7 @@ export const DEFAULT_AGENTS: Agent[] = [
       skipReview: true,
       todoRead: false,
       exposePromptPath: true,
+      dataStore: false,
     },
     triggerHints: [
       '需要查询 ProjectPilot 数据目录结构或文件格式',

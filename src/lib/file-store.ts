@@ -72,6 +72,7 @@ async function ensureDataDirInitialized(): Promise<void> {
     getDesignDocsDir(),
     getSkillsDir(),
     getProjectPromptsDir(),
+    getAgentDataDir(),
     path.join(DATA_DIR, 'orchestrations'),
     path.join(DATA_DIR, '_snapshots'),
   ];
@@ -476,6 +477,35 @@ export function getSkillHistoryDir(skillName: string): string {
     throw new Error(`Invalid skill name: ${skillName}`);
   }
   return path.join(DATA_DIR, 'skills', safe, '.history');
+}
+
+// ── Agent Data Store 路径函数 ──
+// 每个 Agent 的私有数据目录：agent-data/{agentId}/
+// Agent 通过 bash 自由读写，danger-detector 对此目录白名单放行
+
+export function getAgentDataDir(): string {
+  return path.join(DATA_DIR, 'agent-data');
+}
+
+export function getAgentDataPath(agentId: string): string {
+  const safe = agentId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 100) {
+    throw new Error(`Invalid agent id: ${agentId}`);
+  }
+  return path.join(DATA_DIR, 'agent-data', safe);
+}
+
+export function getAgentDataFilePath(agentId: string, fileName: string): string {
+  const safe = agentId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 100) {
+    throw new Error(`Invalid agent id: ${agentId}`);
+  }
+  // 🔒 Security: prevent path traversal
+  const safeFile = path.basename(fileName);
+  if (!safeFile || safeFile !== fileName || safeFile.includes('..')) {
+    throw new Error(`Invalid file name: ${fileName}`);
+  }
+  return path.join(DATA_DIR, 'agent-data', safe, safeFile);
 }
 
 // ── Inbox 路径函数 ──

@@ -244,6 +244,8 @@ export interface AgentCapabilities {
   todoRead: boolean;
   /** Expose the prompt file path in the system prompt so the AI can read/edit its own instructions */
   exposePromptPath: boolean;
+  /** Grant agent read/write access to its private data store (agent-data/{agentId}/) */
+  dataStore: boolean;
 }
 
 export const DEFAULT_AGENT_CAPABILITIES: AgentCapabilities = {
@@ -254,6 +256,7 @@ export const DEFAULT_AGENT_CAPABILITIES: AgentCapabilities = {
   skipReview: false,
   todoRead: false,
   exposePromptPath: true,
+  dataStore: false,
 };
 
 export interface Agent {
