@@ -238,3 +238,104 @@ export async function buildAgentPermissionArgs(
   const skip = settings.claude.skipPermissions !== false;
   return skip ? ['--dangerously-skip-permissions'] : [];
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// SDK query() option builders — Agent Chat 使用
+// ═══════════════════════════════════════════════════════════════════════
+
+import type { Options as SdkQueryOptions, PermissionMode as SdkPermissionMode } from '@anthropic-ai/claude-agent-sdk';
+
+/**
+ * 根据 Agent 能力配置构造 SDK allowedTools 列表。
+ * 全部开启返回 undefined（不限制），部分开启返回工具名数组。
+ */
+export function buildSdkAllowedTools(capabilities: AgentCapabilities | undefined): string[] | undefined {
+  const caps = capabilities ?? DEFAULT_AGENT_CAPABILITIES;
+  const toolCapKeys = ['bash', 'fileAccess', 'web', 'subAgent'] as const;
+  if (toolCapKeys.every(k => caps[k])) return undefined;
+
+  const allowed: string[] = [...META_TOOLS];
+  for (const key of toolCapKeys) {
+    if (caps[key]) {
+      allowed.push(...CAPABILITY_TOOL_MAP[key]);
+    }
+  }
+  return allowed;
+}
+
+/**
+ * 根据 Agent 能力配置确定 SDK permissionMode。
+ */
+export async function buildSdkPermissionMode(
+  capabilities: AgentCapabilities | undefined,
+): Promise<{ permissionMode: SdkPermissionMode; allowDangerouslySkipPermissions?: boolean }> {
+  const caps = capabilities ?? DEFAULT_AGENT_CAPABILITIES;
+  if (!caps.skipReview) {
+    return { permissionMode: 'default' };
+  }
+  const settings = await getSettings();
+  const skip = settings.claude.skipPermissions !== false;
+  if (skip) {
+    return { permissionMode: 'bypassPermissions', allowDangerouslySkipPermissions: true };
+  }
+  return { permissionMode: 'default' };
+}
+
+/**
+ * 构造 SDK query() 的 Options 对象。
+ *
+ * 这是 Agent Chat 的核心入口，取代了旧的 buildClaudeEnv + CLI args 组合。
+ * 返回的 Options 可直接传给 query({ prompt, options })。
+ */
+export async function buildSdkQueryOptions(opts: {
+  capabilities?: AgentCapabilities;
+  providerOverride?: ProviderId;
+  modelOverride?: string;
+  effortOverride?: string;
+  systemPrompt?: string;
+  resumeSessionId?: string;
+  cwd?: string;
+  maxTurns?: number;
+}): Promise<SdkQueryOptions> {
+  const settings = await getSettings();
+  const claude = settings.claude;
+  const provider = opts.providerOverride ?? claude.provider ?? 'anthropic';
+
+  // Environment variables (auth + provider routing)
+  const env = await buildClaudeEnv(provider, opts.effortOverride);
+
+  // Model
+  const model = opts.modelOverride ?? getProviderScopedModel(claude, provider);
+
+  // Allowed tools
+  const allowedTools = buildSdkAllowedTools(opts.capabilities);
+
+  // Permission mode
+  const { permissionMode, allowDangerouslySkipPermissions } = await buildSdkPermissionMode(opts.capabilities);
+
+  // Max turns
+  const maxTurns = opts.maxTurns ?? claude.maxTurns ?? undefined;
+
+  // Effort level
+  const effortValue = opts.effortOverride ?? claude.effortLevel ?? 'high';
+  const effort = effortValue as SdkQueryOptions['effort'];
+
+  const sdkOpts: SdkQueryOptions = {
+    env,
+    model,
+    cwd: opts.cwd,
+    includePartialMessages: true,
+    thinking: { type: 'adaptive' },
+    effort,
+    permissionMode,
+    ...(allowDangerouslySkipPermissions ? { allowDangerouslySkipPermissions: true } : {}),
+    ...(allowedTools ? { allowedTools } : {}),
+    ...(maxTurns && maxTurns > 0 ? { maxTurns } : {}),
+    ...(opts.resumeSessionId ? { resume: opts.resumeSessionId } : {}),
+    ...(opts.systemPrompt ? {
+      systemPrompt: opts.systemPrompt,
+    } : {}),
+  };
+
+  return sdkOpts;
+}
