@@ -603,7 +603,7 @@ async function buildResourcePrompt(
     }
     if (sessionConfig.skillNames?.length) {
       for (const name of sessionConfig.skillNames) {
-        merged.push({ type: 'skill', id: name, priority: 36 });
+        merged.push({ type: 'skill', id: name, priority: 52 });
       }
     }
     if (sessionConfig.supplementaryPrompt?.trim()) {
