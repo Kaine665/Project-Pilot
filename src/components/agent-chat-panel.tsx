@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Loader2, Maximize2, Minimize2, Bot, Sparkles, Plus, MessageSquare, Trash2, Settings, FileDown, ClipboardList } from 'lucide-react';
+import { Loader2, Maximize2, Minimize2, Bot, Sparkles, Plus, MessageSquare, Trash2, Settings, FileDown, ClipboardList, ArrowLeft, GitFork } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from '@/i18n/routing';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,8 @@ import { GuestAgentOverlay } from '@/components/guest-agent-overlay';
 import { SessionConfigPanel } from '@/components/session-config-panel';
 import { PlanViewerPanel } from '@/components/plan-viewer-panel';
 import { SessionCompressDialog } from '@/components/session-compress-dialog';
+import type { SessionNavLink } from '@/components/agent-session-utils';
+import { buildSessionUrl } from '@/components/agent-session-utils';
 import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
 import type { SessionConfig } from '@/types/agent-chat';
@@ -128,6 +130,11 @@ export function AgentChatPanel({
   const [planContent, setPlanContent] = useState<string | null>(null);
   const [isPlanOpen, setIsPlanOpen] = useState(false);
   const [inPlanMode, setInPlanMode] = useState(false);
+
+  // 父子会话导航
+  const [parentSession, setParentSession] = useState<SessionNavLink | null>(null);
+  const [childSessions, setChildSessions] = useState<SessionNavLink[]>([]);
+  const [showChildList, setShowChildList] = useState(false);
 
   const streamAbortRef = useRef<AbortController | null>(null);
   const blocksRef = useRef<ContentBlock[]>([]);
@@ -340,6 +347,37 @@ export function AgentChatPanel({
     }
   }, []);
 
+  // 加载父/子会话导航链接
+  const loadSessionNavLinks = useCallback(async (sid: string, parentSid?: string) => {
+    setParentSession(null);
+    setChildSessions([]);
+    setShowChildList(false);
+
+    // 父会话
+    if (parentSid) {
+      try {
+        const res = await fetch(`/api/agent-chat/sessions/${parentSid}`, { cache: 'no-store' });
+        if (res.ok) {
+          const ps = await res.json();
+          setParentSession({ id: ps.id, title: ps.title, agentId: ps.agentId });
+        }
+      } catch { /* ignore */ }
+    }
+
+    // 子会话
+    try {
+      const res = await fetch(`/api/agent-chat/sessions/${sid}/children`, { cache: 'no-store' });
+      if (res.ok) {
+        const { children } = await res.json();
+        if (Array.isArray(children) && children.length > 0) {
+          setChildSessions(children.map((c: { id: string; title: string; agentId: string }) => ({
+            id: c.id, title: c.title, agentId: c.agentId,
+          })));
+        }
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   // Load a session's full data (messages + config)
   const loadSessionData = useCallback(async (sid: string, token?: number) => {
     try {
@@ -389,6 +427,9 @@ export function AgentChatPanel({
         if (sessionOptions.length > 0) setChatModelOptions(sessionOptions);
         if (loadedConfig.model) setChatModel(loadedConfig.model);
       }
+
+      // 加载父子会话导航信息（fire-and-forget，不阻塞主流程）
+      loadSessionNavLinks(sid, data.parentSessionId);
     } catch {
       // ignore
     }
@@ -1038,6 +1079,9 @@ export function AgentChatPanel({
     setSessionConfig({});
     setShowConfig(false);
     setCompressDismissed(false);
+    setParentSession(null);
+    setChildSessions([]);
+    setShowChildList(false);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
@@ -1383,6 +1427,16 @@ export function AgentChatPanel({
       {/* Header */}
       <div className="flex items-center justify-between border-b border-zinc-100 px-3 py-1.5 dark:border-zinc-800">
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          {/* 父会话返回按钮 */}
+          {parentSession && (
+            <button
+              onClick={() => router.push(buildSessionUrl(parentSession.agentId, parentSession.id))}
+              className="flex items-center gap-0.5 shrink-0 text-xs text-blue-500 hover:text-blue-700 dark:hover:text-blue-300 mr-1"
+              title={`返回父会话: ${parentSession.title}`}
+            >
+              <ArrowLeft className="h-3 w-3" />
+            </button>
+          )}
           <Sparkles className="h-3.5 w-3.5 shrink-0 text-blue-500" />
           {isFull ? (
             <span className="text-xs font-medium text-zinc-500 truncate">{sessionTitle}</span>
@@ -1395,6 +1449,36 @@ export function AgentChatPanel({
               onSwitch={handleSwitchSession}
               onNew={handleNewSession}
             />
+          )}
+          {/* 子会话指示器 */}
+          {childSessions.length > 0 && (
+            <div className="relative shrink-0 ml-1" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setShowChildList(false); }}>
+              <button
+                onClick={() => setShowChildList(v => !v)}
+                className="flex items-center gap-0.5 text-xs text-violet-500 hover:text-violet-700 dark:hover:text-violet-300"
+                title={`${childSessions.length} 个子会话`}
+              >
+                <GitFork className="h-3 w-3" />
+                <span>{childSessions.length}</span>
+              </button>
+              {showChildList && (
+                <div className="absolute left-0 top-full mt-1 z-50 min-w-[200px] max-w-[300px] rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+                  <div className="px-2 py-1.5 text-[10px] font-medium text-zinc-400 border-b border-zinc-100 dark:border-zinc-700">子会话</div>
+                  {childSessions.map(cs => (
+                    <button
+                      key={cs.id}
+                      onClick={() => {
+                        setShowChildList(false);
+                        router.push(buildSessionUrl(cs.agentId, cs.id));
+                      }}
+                      className="block w-full text-left px-2 py-1.5 text-xs text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-700 truncate"
+                    >
+                      {cs.title || '未命名会话'}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
