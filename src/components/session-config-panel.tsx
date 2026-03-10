@@ -401,8 +401,7 @@ export function SessionConfigPanel({
         </div>
 
         {/* ── Skills 绑定 ── */}
-        {availableSkills.length > 0 && (
-          <div className="rounded-lg border border-zinc-150 bg-zinc-50/50 p-3 dark:border-zinc-700/50 dark:bg-zinc-800/30">
+        <div className="rounded-lg border border-zinc-150 bg-zinc-50/50 p-3 dark:border-zinc-700/50 dark:bg-zinc-800/30">
             <button
               type="button"
               onClick={() => setSkillsOpen(v => !v)}
@@ -454,6 +453,9 @@ export function SessionConfigPanel({
 
                 {/* 列表 */}
                 <div className="max-h-52 space-y-0.5 overflow-y-auto">
+                  {availableSkills.length === 0 && (
+                    <p className="py-3 text-center text-[11px] text-zinc-400">暂无可用 Skills</p>
+                  )}
                   {availableSkills
                     .filter(s => !skillFilter.trim() ||
                       s.name.toLowerCase().includes(skillFilter.toLowerCase()) ||
@@ -496,7 +498,7 @@ export function SessionConfigPanel({
               </div>
             )}
           </div>
-        )}
+        </div>
 
         {/* ── 上下文绑定 ── */}
         {contextEntries.length > 0 && (
