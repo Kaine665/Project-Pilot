@@ -18,6 +18,7 @@ import { randomBytes } from 'crypto';
 import { BaseChatManager } from './base-chat-manager';
 import type { BaseRun, SpawnConfig } from './types';
 import type { StreamParser } from '@/lib/claude-stream-parser';
+import { getAppWorkingDir } from '@/lib/app-paths';
 import { getPromptFilePath } from '@/lib/file-store';
 import { resolveSystemPrompt, createRuntimePromptCopy } from '@/lib/agent-prompt-store';
 import {
@@ -216,7 +217,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
 
     const config: SpawnConfig<AgentChatDomainData> = {
       runKey: sessionId,
-      workingDir: process.cwd(),
+      workingDir: getAppWorkingDir(),
       stdinContent,
       isResume,
       claudeSessionId: existing?.claudeSessionId,
@@ -312,7 +313,7 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
 
     const config: SpawnConfig<AgentChatDomainData> = {
       runKey: guestSessionId,
-      workingDir: process.cwd(),
+      workingDir: getAppWorkingDir(),
       stdinContent,
       isResume,
       claudeSessionId: existing?.claudeSessionId,

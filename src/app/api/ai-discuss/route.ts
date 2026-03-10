@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exec } from 'child_process';
+import { getAppWorkingDir } from '@/lib/app-paths';
 
 /**
  * POST /api/ai-discuss
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
 
   // Spawn discussor agent as detached process
   const cmd = `node scripts/agents/discussor.js ${taskId} ${planId}`;
-  exec(cmd, { cwd: process.cwd() });
+  exec(cmd, { cwd: getAppWorkingDir() });
 
   return NextResponse.json({ success: true });
 }

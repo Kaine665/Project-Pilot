@@ -16,6 +16,7 @@
 import { type ChildProcess } from 'child_process';
 import { promises as fs } from 'fs';
 import { spawnClaude } from '@/lib/claude-cli';
+import { getAppWorkingDir } from '@/lib/app-paths';
 import path from 'path';
 import { StreamParser, LineBuffer } from '@/lib/claude-stream-parser';
 import {
@@ -951,7 +952,7 @@ class OrchestratorManager {
     // Use the first worker's project path (go up from worktree) or baseBranch cwd
     // For synthesis we don't need tools, just use any valid cwd
     const anyCwd = runtime.session.workers[0]?.worktreePath
-      ?? process.cwd();
+      ?? getAppWorkingDir();
 
     const claude = spawnClaude([
       '-p',
