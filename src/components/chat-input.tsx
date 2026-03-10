@@ -4,6 +4,11 @@ import { memo, useState, useRef, useCallback, useEffect } from 'react';
 import { Send, Square, X, Paperclip, UserPlus } from 'lucide-react';
 import type { Agent } from '@/types';
 
+interface SkillItem {
+  name: string;
+  description: string;
+}
+
 interface ChatInputProps {
   onSubmit: (text: string, images: string[], files: Array<{ name: string; content: string }>) => void;
   onAbort: () => void;
@@ -31,6 +36,8 @@ interface ChatInputProps {
   effortValue?: string;
   onEffortChange?: (effort: string) => void;
   effortLabel?: string;
+  /** 是否启用 / 命令（skill 选择器） */
+  enableSlashCommands?: boolean;
 }
 
 export const ChatInput = memo(function ChatInput({
@@ -55,6 +62,7 @@ export const ChatInput = memo(function ChatInput({
   effortValue,
   onEffortChange,
   effortLabel,
+  enableSlashCommands = false,
 }: ChatInputProps) {
   const draftStorageKey = draftKey ? `pp:draft:${draftKey}` : null;
   const historyStorageKey = 'pp:input-history';
@@ -71,6 +79,13 @@ export const ChatInput = memo(function ChatInput({
   // 输入历史导航（上下箭头键）
   const historyIndexRef = useRef(-1); // -1 = 不在历史浏览模式
   const savedInputRef = useRef(''); // 进入历史浏览前暂存当前输入
+
+  // Slash 命令菜单状态
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashQuery, setSlashQuery] = useState('');
+  const [slashIndex, setSlashIndex] = useState(0);
+  const skillsCacheRef = useRef<SkillItem[] | null>(null);
+  const [skillsLoaded, setSkillsLoaded] = useState(false);
 
   // Persist draft text to localStorage (debounced)
   useEffect(() => {
@@ -117,14 +132,65 @@ export const ChatInput = memo(function ChatInput({
     } catch { /* quota exceeded — ignore */ }
   }, [getHistory]);
 
+  // 懒加载 skills 列表（仅在 enableSlashCommands 时调用）
+  const loadSkills = useCallback(async () => {
+    if (skillsCacheRef.current !== null) return;
+    try {
+      const res = await fetch('/api/skills');
+      const data = await res.json();
+      skillsCacheRef.current = Array.isArray(data) ? data : [];
+    } catch {
+      skillsCacheRef.current = [];
+    }
+    setSkillsLoaded(true);
+  }, []);
+
+  // 获取过滤后的 skills 列表
+  const getFilteredSkills = useCallback((): SkillItem[] => {
+    const skills = skillsCacheRef.current ?? [];
+    if (!slashQuery) return skills;
+    const q = slashQuery.toLowerCase();
+    return skills.filter(s =>
+      s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)
+    );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slashQuery, skillsLoaded]);
+
+  // 选中 skill：把 /name 填入输入框
+  const handleSkillSelect = useCallback((skill: SkillItem) => {
+    setSlashOpen(false);
+    setInput(`/${skill.name} `);
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        const len = textareaRef.current.value.length;
+        textareaRef.current.setSelectionRange(len, len);
+      }
+    });
+  }, []);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     // 用户手动输入时退出历史浏览模式
     historyIndexRef.current = -1;
-    setInput(e.target.value);
+    const val = e.target.value;
+    setInput(val);
     const el = e.target;
     if (!fullWidth) {
       el.style.height = 'auto';
       el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+    }
+    // Slash 命令检测：输入框以 / 开头时触发菜单
+    if (enableSlashCommands) {
+      if (val.startsWith('/') && !val.includes(' ')) {
+        // 输入中，还没有空格（未完成选择）
+        const query = val.slice(1);
+        setSlashQuery(query);
+        setSlashIndex(0);
+        setSlashOpen(true);
+        loadSkills();
+      } else {
+        setSlashOpen(false);
+      }
     }
   };
 
@@ -148,6 +214,30 @@ export const ChatInput = memo(function ChatInput({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Slash 菜单键盘导航（优先于其他处理）
+    if (slashOpen && enableSlashCommands) {
+      const filtered = getFilteredSkills();
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSlashIndex(i => Math.min(i + 1, filtered.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSlashIndex(i => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter' && filtered.length > 0) {
+        e.preventDefault();
+        handleSkillSelect(filtered[slashIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        setSlashOpen(false);
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
@@ -332,6 +422,39 @@ export const ChatInput = memo(function ChatInput({
           ))}
         </div>
       )}
+      {/* Slash 命令菜单 */}
+      {slashOpen && enableSlashCommands && (() => {
+        const filtered = getFilteredSkills();
+        return (
+          <div className="relative mb-1">
+            <div className="absolute bottom-0 left-0 right-0 z-50 max-h-48 overflow-y-auto rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+              {filtered.length === 0 ? (
+                <div className="px-3 py-2 text-sm text-zinc-400 dark:text-zinc-500">
+                  {skillsCacheRef.current === null ? '加载中...' : '没有匹配的 Skill'}
+                </div>
+              ) : (
+                filtered.map((skill, i) => (
+                  <button
+                    key={skill.name}
+                    className={`w-full text-left px-3 py-2 text-sm flex items-baseline gap-2 transition-colors ${
+                      i === slashIndex
+                        ? 'bg-zinc-100 dark:bg-zinc-800'
+                        : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/60'
+                    }`}
+                    onMouseDown={(e) => { e.preventDefault(); handleSkillSelect(skill); }}
+                    onMouseEnter={() => setSlashIndex(i)}
+                  >
+                    <span className="font-mono font-medium text-zinc-900 dark:text-zinc-100 shrink-0">/{skill.name}</span>
+                    {skill.description && (
+                      <span className="text-xs text-zinc-400 dark:text-zinc-500 truncate">{skill.description}</span>
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        );
+      })()}
       {/* Textarea + send button */}
       {fullWidth ? (
         <textarea

@@ -854,12 +854,31 @@ export function AgentChatPanel({
     }
 
     try {
+      // 展开 /skill-name 命令：将 skill 的完整内容替换 /name 前缀发送给后端
+      // UI 中显示的仍是用户原始输入（/name），不影响聊天记录
+      let messageToSend = text.trim();
+      const slashMatch = messageToSend.match(/^\/(\S+)([\s\S]*)$/);
+      if (slashMatch) {
+        const skillName = slashMatch[1];
+        const extraText = slashMatch[2].trim();
+        try {
+          const skillRes = await fetch(`/api/skills/${encodeURIComponent(skillName)}`);
+          if (skillRes.ok) {
+            const skillData = await skillRes.json() as { content?: string };
+            const skillBody = (skillData.content ?? '').replace(/^---[\s\S]*?---\r?\n/, '').trim();
+            if (skillBody) {
+              messageToSend = extraText ? `${skillBody}\n\n${extraText}` : skillBody;
+            }
+          }
+        } catch { /* skill 不存在或获取失败，保持原始文本 */ }
+      }
+
       const res = await fetch('/api/agent-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           agentId: agent.id,
-          message: text.trim(),
+          message: messageToSend,
           sessionId: targetSessionId,
           projectKey: projectKey ?? undefined,
           providerOverride: chatProvider,
@@ -1294,6 +1313,7 @@ export function AgentChatPanel({
             showGuestPicker={showGuestPicker}
             onSelectGuest={handleSelectGuest}
             draftKey={sessionId ?? undefined}
+            enableSlashCommands
           />
         </div>
 
@@ -1492,6 +1512,7 @@ export function AgentChatPanel({
           showGuestPicker={showGuestPicker}
           onSelectGuest={handleSelectGuest}
           draftKey={sessionId ?? undefined}
+          enableSlashCommands
         />
       </div>
 
