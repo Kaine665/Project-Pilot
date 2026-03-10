@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { X, Check, ChevronDown, Search, FileText, BookOpen, Cpu, Code, Shield } from 'lucide-react';
+import { X, Check, ChevronDown, Search, FileText, BookOpen, Cpu, Code, Shield, Zap } from 'lucide-react';
 import type { Agent, AgentCapabilities, ContextEntry, ProviderId } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import type { SessionConfig } from '@/types/agent-chat';
@@ -31,15 +31,19 @@ export function SessionConfigPanel({
   agentCapabilities,
 }: SessionConfigPanelProps) {
   const [contextIds, setContextIds] = useState<string[]>(config.contextIds ?? []);
+  const [skillNames, setSkillNames] = useState<string[]>(config.skillNames ?? []);
   const [supplementaryPrompt, setSupplementaryPrompt] = useState(config.supplementaryPrompt ?? '');
   const [sessionProvider, setSessionProvider] = useState<ProviderId | ''>(config.provider ?? '');
   const [sessionModel, setSessionModel] = useState(config.model ?? '');
   const [systemPromptOverride, setSystemPromptOverride] = useState(config.systemPrompt ?? '');
   const [capsOverride, setCapsOverride] = useState<Partial<AgentCapabilities>>(config.capabilities ?? {});
   const [contextEntries, setContextEntries] = useState<ContextEntry[]>([]);
+  const [availableSkills, setAvailableSkills] = useState<{ name: string; description: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [contextOpen, setContextOpen] = useState(true);
   const [contextFilter, setContextFilter] = useState('');
+  const [skillsOpen, setSkillsOpen] = useState(false);
+  const [skillFilter, setSkillFilter] = useState('');
   const [promptSectionOpen, setPromptSectionOpen] = useState(false);
   const [capsSectionOpen, setCapsSectionOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -67,9 +71,21 @@ export function SessionConfigPanel({
     })();
   }, []);
 
+  // Fetch available skills
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/skills');
+        const data = await res.json();
+        setAvailableSkills(Array.isArray(data) ? data : []);
+      } catch { setAvailableSkills([]); }
+    })();
+  }, []);
+
   // Reset form when config changes (session switch)
   useEffect(() => {
     setContextIds(config.contextIds ?? []);
+    setSkillNames(config.skillNames ?? []);
     setSupplementaryPrompt(config.supplementaryPrompt ?? '');
     setSessionProvider(config.provider ?? '');
     setSessionModel(config.model ?? '');
@@ -83,6 +99,12 @@ export function SessionConfigPanel({
   const toggleContext = useCallback((id: string) => {
     setContextIds(prev =>
       prev.includes(id) ? prev.filter(cid => cid !== id) : [...prev, id],
+    );
+  }, []);
+
+  const toggleSkill = useCallback((name: string) => {
+    setSkillNames(prev =>
+      prev.includes(name) ? prev.filter(s => s !== name) : [...prev, name],
     );
   }, []);
 
@@ -115,20 +137,23 @@ export function SessionConfigPanel({
   // Check if there are changes
   const hasChanges = useMemo(() => {
     const origIds = config.contextIds ?? [];
+    const origSkills = config.skillNames ?? [];
     const origPrompt = config.supplementaryPrompt ?? '';
     const idsChanged = JSON.stringify([...contextIds].sort()) !== JSON.stringify([...origIds].sort());
+    const skillsChanged = JSON.stringify([...skillNames].sort()) !== JSON.stringify([...origSkills].sort());
     const promptChanged = supplementaryPrompt !== origPrompt;
     const providerChanged = sessionProvider !== (config.provider ?? '');
     const modelChanged = sessionModel !== (config.model ?? '');
     const sysPromptChanged = systemPromptOverride !== (config.systemPrompt ?? '');
     const capsChanged = JSON.stringify(capsOverride) !== JSON.stringify(config.capabilities ?? {});
-    return idsChanged || promptChanged || providerChanged || modelChanged || sysPromptChanged || capsChanged;
-  }, [contextIds, supplementaryPrompt, sessionProvider, sessionModel, systemPromptOverride, capsOverride, config]);
+    return idsChanged || skillsChanged || promptChanged || providerChanged || modelChanged || sysPromptChanged || capsChanged;
+  }, [contextIds, skillNames, supplementaryPrompt, sessionProvider, sessionModel, systemPromptOverride, capsOverride, config]);
 
   const handleSave = async () => {
     setSaving(true);
     const newConfig: SessionConfig = {};
     if (contextIds.length > 0) newConfig.contextIds = contextIds;
+    if (skillNames.length > 0) newConfig.skillNames = skillNames;
     if (supplementaryPrompt.trim()) newConfig.supplementaryPrompt = supplementaryPrompt.trim();
     if (sessionProvider) newConfig.provider = sessionProvider as ProviderId;
     if (sessionModel.trim()) newConfig.model = sessionModel.trim();
@@ -375,6 +400,104 @@ export function SessionConfigPanel({
           )}
         </div>
 
+        {/* ── Skills 绑定 ── */}
+        {availableSkills.length > 0 && (
+          <div className="rounded-lg border border-zinc-150 bg-zinc-50/50 p-3 dark:border-zinc-700/50 dark:bg-zinc-800/30">
+            <button
+              type="button"
+              onClick={() => setSkillsOpen(v => !v)}
+              className="mb-2 flex w-full items-center gap-1.5"
+            >
+              <Zap className="h-3.5 w-3.5 text-zinc-400" />
+              <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">追加 Skills</span>
+              {skillNames.length > 0 && (
+                <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-400">
+                  {skillNames.length}
+                </span>
+              )}
+              <ChevronDown className={`ml-auto h-3 w-3 text-zinc-400 transition-transform ${skillsOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* 已选 chips（折叠时展示） */}
+            {skillNames.length > 0 && !skillsOpen && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {availableSkills
+                  .filter(s => skillNames.includes(s.name))
+                  .map(s => (
+                    <button
+                      key={s.name}
+                      onClick={() => toggleSkill(s.name)}
+                      className="group flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] text-blue-700 hover:bg-red-50 hover:text-red-600 transition-colors dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                    >
+                      <span className="truncate max-w-[120px]">{s.name}</span>
+                      <X className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </button>
+                  ))}
+              </div>
+            )}
+
+            {skillsOpen && (
+              <div className="mt-1 space-y-2">
+                {/* 搜索 */}
+                {availableSkills.length > 5 && (
+                  <div className="relative">
+                    <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-zinc-400" />
+                    <input
+                      type="text"
+                      value={skillFilter}
+                      onChange={e => setSkillFilter(e.target.value)}
+                      placeholder="搜索 skills…"
+                      className="w-full rounded-md border border-zinc-200 bg-white py-1.5 pl-7 pr-2 text-[11px] outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500"
+                    />
+                  </div>
+                )}
+
+                {/* 列表 */}
+                <div className="max-h-52 space-y-0.5 overflow-y-auto">
+                  {availableSkills
+                    .filter(s => !skillFilter.trim() ||
+                      s.name.toLowerCase().includes(skillFilter.toLowerCase()) ||
+                      s.description.toLowerCase().includes(skillFilter.toLowerCase())
+                    )
+                    .map(skill => {
+                      const checked = skillNames.includes(skill.name);
+                      return (
+                        <button
+                          key={skill.name}
+                          type="button"
+                          onClick={() => toggleSkill(skill.name)}
+                          className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
+                            checked
+                              ? 'bg-blue-50 dark:bg-blue-900/20'
+                              : 'hover:bg-zinc-100 dark:hover:bg-zinc-700/50'
+                          }`}
+                        >
+                          <div className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-colors ${
+                            checked
+                              ? 'border-blue-600 bg-blue-600 dark:border-blue-500 dark:bg-blue-500'
+                              : 'border-zinc-300 dark:border-zinc-600'
+                          }`}>
+                            {checked && <Check className="h-2.5 w-2.5 text-white" />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-xs text-zinc-900 dark:text-zinc-100">
+                              {skill.name}
+                            </div>
+                            {skill.description && (
+                              <div className="truncate text-[10px] text-zinc-400">
+                                {skill.description}
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── 上下文绑定 ── */}
         {contextEntries.length > 0 && (
           <div className="rounded-lg border border-zinc-150 bg-zinc-50/50 p-3 dark:border-zinc-700/50 dark:bg-zinc-800/30">
@@ -495,6 +618,7 @@ export function SessionConfigPanel({
             <button
               onClick={() => {
                 setContextIds(config.contextIds ?? []);
+                setSkillNames(config.skillNames ?? []);
                 setSupplementaryPrompt(config.supplementaryPrompt ?? '');
                 setSessionProvider(config.provider ?? '');
                 setSessionModel(config.model ?? '');
