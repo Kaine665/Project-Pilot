@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
 
 /** POST /api/context — create a new context entry + content file */
 export async function POST(request: NextRequest) {
-  const { label, description, fileName, format, content, group, sourcePath, status, sourceAgentSessionId, producedAt, projectKey } = await request.json();
+  const { label, description, fileName, format, content, group, sourcePath, tags, status, sourceAgentSessionId, producedAt, projectKey } = await request.json();
 
   if (!label?.trim()) {
     return NextResponse.json({ error: 'label is required' }, { status: 400 });
@@ -74,6 +74,7 @@ export async function POST(request: NextRequest) {
     ...(trimmedGroup ? { group: trimmedGroup } : {}),
     ...(trimmedProjectKey ? { projectKey: trimmedProjectKey } : {}),
     ...(trimmedSourcePath ? { sourcePath: trimmedSourcePath } : {}),
+    ...(Array.isArray(tags) && tags.length ? { tags: tags.filter((t: unknown) => typeof t === 'string' && t.trim()).map((t: string) => t.trim()) } : {}),
     ...(trimmedStatus ? { status: trimmedStatus } : {}),
     ...(trimmedSourceAgentSessionId ? { sourceAgentSessionId: trimmedSourceAgentSessionId } : {}),
     ...(trimmedProducedAt ? { producedAt: trimmedProducedAt } : {}),
@@ -81,11 +82,13 @@ export async function POST(request: NextRequest) {
     updatedAt: now,
   };
 
-  // Ensure context dir exists, write content file
-  const contextDir = getContextDir();
-  await fs.mkdir(contextDir, { recursive: true });
-  const filePath = getContextFilePath(entry.fileName);
-  await fs.writeFile(filePath, content ?? '', 'utf-8');
+  // 有 sourcePath 时内容在外部文件，不写本地副本；否则写入 context/ 目录
+  if (!trimmedSourcePath) {
+    const contextDir = getContextDir();
+    await fs.mkdir(contextDir, { recursive: true });
+    const filePath = getContextFilePath(entry.fileName);
+    await fs.writeFile(filePath, content ?? '', 'utf-8');
+  }
 
   // Update index
   data.entries.push(entry);
