@@ -14,6 +14,8 @@
 export interface SessionConfig {
   /** 会话级别追加的预加载上下文 ID 列表（与 Agent 默认上下文合并） */
   contextIds?: string[];
+  /** 会话级别追加的 Skill 名称列表（与 Agent 绑定的 skills 合并） */
+  skillNames?: string[];
   /** 会话级别的补充提示词（追加到系统提示词之后） */
   supplementaryPrompt?: string;
   /** 会话使用的供应商（覆盖 Agent 默认值和全局设置） */
