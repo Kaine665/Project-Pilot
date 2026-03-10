@@ -13,6 +13,7 @@ import { AgentIcon, SettingsForm, type FormData, emptyForm, agentToForm } from '
 import { type AllSessionItem, type OpenedSession, groupSessionsByDay, syncUrlParams } from '@/components/agent-session-utils';
 import { useProject } from '@/components/project-context';
 import { getProviderPreset } from '@/lib/provider-registry';
+import { AgentSchedulesPanel } from '@/components/agent-schedules-panel';
 
 // ── Main page ──
 
@@ -43,6 +44,9 @@ export default function AgentsPage() {
   const [form, setForm] = useState<FormData>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [expandedPrompt, setExpandedPrompt] = useState(false);
+
+  // ── Agent settings 子 tab（基本设置 | 定时运行） ──
+  const [settingsTab, setSettingsTab] = useState<'basic' | 'schedules'>('basic');
 
   // ── New session agent picker ──
   const [showAgentPicker, setShowAgentPicker] = useState(false);
@@ -802,6 +806,7 @@ export default function AgentsPage() {
                         const newMode = activePanel.mode === 'chat' ? 'settings' : 'chat';
                         setActivePanel({ ...activePanel, mode: newMode });
                         setExpandedPrompt(false);
+                        setSettingsTab('basic');
                       }
                     }}
                     className={`rounded-md p-1.5 transition-colors ${
@@ -873,20 +878,45 @@ export default function AgentsPage() {
                   />
                 </div>
               ) : (
-                <SettingsForm
-                  creating={false}
-                  form={form}
-                  setForm={setForm}
-                  selectedAgent={selectedAgent}
-                  hasChanges={hasChanges}
-                  saving={saving}
-                  onSave={handleSave}
-                  onClose={handleClose}
-                  onDelete={handleDelete}
-                  selectedId={selectedAgentId}
-                  onExpandPrompt={() => setExpandedPrompt(true)}
-                  projects={projects}
-                />
+                <>
+                  {/* Settings sub-tab bar */}
+                  <div className="flex border-b border-zinc-200 px-4 dark:border-zinc-800">
+                    {(['basic', 'schedules'] as const).map(tab => (
+                      <button
+                        key={tab}
+                        onClick={() => setSettingsTab(tab)}
+                        className={`px-3 py-2 text-xs font-medium transition-colors border-b-2 -mb-px ${
+                          settingsTab === tab
+                            ? 'border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100'
+                            : 'border-transparent text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+                        }`}
+                      >
+                        {tab === 'basic' ? '基本设置' : '定时运行'}
+                      </button>
+                    ))}
+                  </div>
+                  {settingsTab === 'basic' ? (
+                    <SettingsForm
+                      creating={false}
+                      form={form}
+                      setForm={setForm}
+                      selectedAgent={selectedAgent}
+                      hasChanges={hasChanges}
+                      saving={saving}
+                      onSave={handleSave}
+                      onClose={handleClose}
+                      onDelete={handleDelete}
+                      selectedId={selectedAgentId}
+                      onExpandPrompt={() => setExpandedPrompt(true)}
+                      projects={projects}
+                    />
+                  ) : (
+                    <AgentSchedulesPanel
+                      agentId={selectedAgent.id}
+                      projects={projects}
+                    />
+                  )}
+                </>
               )}
             </>
           )
