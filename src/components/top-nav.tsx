@@ -67,8 +67,8 @@ export function TopNav({ children, plannerOpen }: { children?: React.ReactNode; 
           className={cn(
             'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
             isOpen
-              ? 'bg-violet-100 text-violet-700 dark:bg-violet-800/50 dark:text-violet-300'
-              : 'bg-violet-50 text-violet-600 hover:bg-violet-100 dark:bg-violet-900/30 dark:text-violet-400 dark:hover:bg-violet-900/50',
+              ? 'bg-ai-subtle text-ai dark:bg-ai-subtle dark:text-ai'
+              : 'bg-ai-subtle text-ai hover:bg-ai-subtle dark:bg-ai-subtle dark:text-ai dark:hover:bg-ai-subtle',
           )}
           title={t('nav.aiAssistant')}
         >

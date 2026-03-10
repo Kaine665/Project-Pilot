@@ -27,6 +27,15 @@
   --radius-xl: calc(var(--radius) + 4px);
   --animate-blink-waiting: blink-waiting 1.5s ease-in-out infinite;
   --animate-blink-confirm: blink-confirm 1.5s ease-in-out infinite;
+  --color-user: var(--color-user);
+  --color-user-subtle: var(--color-user-subtle);
+  --color-ai: var(--color-ai);
+  --color-ai-subtle: var(--color-ai-subtle);
+  --color-guest: var(--color-guest);
+  --color-guest-subtle: var(--color-guest-subtle);
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-info: var(--color-info);
 }
 
 :root {
@@ -49,6 +58,16 @@
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
+  /* 功能语义色 */
+  --color-user: #3b82f6;
+  --color-user-subtle: #dbeafe;
+  --color-ai: #7c3aed;
+  --color-ai-subtle: #f5f3ff;
+  --color-guest: #b45309;
+  --color-guest-subtle: #fffbeb;
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-info: #2563eb;
 }
 
 .dark {
@@ -70,6 +89,15 @@
     --border: oklch(1 0 0 / 8%);
     --input: oklch(1 0 0 / 10%);
     --ring: oklch(0.5 0 0);
+    --color-user: #3b82f6;
+    --color-user-subtle: rgba(30, 64, 175, 0.2);
+    --color-ai: #a78bfa;
+    --color-ai-subtle: rgba(109, 40, 217, 0.15);
+    --color-guest: #fbbf24;
+    --color-guest-subtle: rgba(180, 83, 9, 0.15);
+    --color-success: #22c55e;
+    --color-warning: #f59e0b;
+    --color-info: #60a5fa;
 }
 
 @layer base {
