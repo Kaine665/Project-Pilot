@@ -33,6 +33,14 @@ export class SdkEventAdapter {
   sessionId: string | null = null;
 
   /**
+   * 是否已收到过 stream_event（流式增量）。
+   * 用于避免完整 assistant 消息导致的重复输出。
+   * SDK 设置 includePartialMessages: true 时，会同时发送增量和完整消息，
+   * 我们只取增量，丢弃完整消息中的文本内容（但保留工具调用状态）。
+   */
+  private hasReceivedStreamEvents = false;
+
+  /**
    * 将一个 SDKMessage 转换为零或多个 ChatSSEEvent。
    */
   adapt(msg: SDKMessage): ChatSSEEvent[] {
@@ -48,6 +56,7 @@ export class SdkEventAdapter {
     if (msg.type === 'stream_event') {
       // SDKPartialAssistantMessage — 流式增量事件
       // msg.event 是 BetaRawMessageStreamEvent
+      this.hasReceivedStreamEvents = true;
       return this.handleStreamEvent(msg.event);
     }
 
@@ -150,7 +159,11 @@ export class SdkEventAdapter {
 
     for (const block of content) {
       if (block.type === 'text' && typeof block.text === 'string' && block.text) {
-        events.push({ type: 'text_delta', text: block.text });
+        // 如果已经通过 stream_event 接收过增量，跳过完整消息中的文本
+        // 避免同一句话被显示两次
+        if (!this.hasReceivedStreamEvents) {
+          events.push({ type: 'text_delta', text: block.text });
+        }
       } else if (block.type === 'tool_use') {
         const input = typeof block.input === 'string'
           ? block.input
