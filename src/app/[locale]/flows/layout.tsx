@@ -8,7 +8,7 @@ const AgentChatPanel = dynamic(
   { ssr: false },
 );
 import { useProject } from '@/components/project-context';
-import { FolderKanban, Plus, Trash2, Network, Bot, Layers, BookOpen, FileText, ListTodo, Table2 } from 'lucide-react';
+import { FolderKanban, Plus, Trash2, Network, Bot, Layers, BookOpen, FileText, ListTodo, Table2, Timer } from 'lucide-react';
 import { BUTLER_AGENT_ID } from '@/lib/default-agents';
 import type { Agent } from '@/types';
 import { useRouter, usePathname } from '@/i18n/routing';
@@ -53,7 +53,8 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   const isTodosPage = pathname.startsWith('/flows/todos');
   const isOrchestratorPage = pathname.startsWith('/flows/orchestrator');
   const isBitablePage = pathname.startsWith('/flows/bitable');
-  const isSubRoute = isAgentsPage || isDimensionsPage || isContextPage || isDocsPage || isRecycleBinPage || isButlerPage || isTodosPage || isOrchestratorPage || isBitablePage;
+  const isSchedulesPage = pathname.startsWith('/flows/schedules');
+  const isSubRoute = isAgentsPage || isDimensionsPage || isContextPage || isDocsPage || isRecycleBinPage || isButlerPage || isTodosPage || isOrchestratorPage || isBitablePage || isSchedulesPage;
 
   // Auto-close expandable panel when on sub-route pages
   useEffect(() => {
@@ -298,6 +299,21 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right">Agent 编排</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className={`flex h-11 w-11 items-center justify-center rounded-md transition-colors ${
+                      isSchedulesPage
+                        ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
+                        : 'text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200'
+                    }`}
+                    onClick={() => router.push('/flows/schedules')}
+                  >
+                    <Timer className="h-5 w-5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">定时运行</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
