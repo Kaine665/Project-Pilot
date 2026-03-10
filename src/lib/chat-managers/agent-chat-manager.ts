@@ -947,6 +947,32 @@ async function buildGuestAgentPrompt(
 用户消息：${message}`;
 }
 
+// ── Prompt Preview ──
+
+/**
+ * 构建 Agent 的完整系统提示词（不含用户消息），返回字符数和估算 token 数。
+ * 供 /api/agent-chat/prompt-info 端点调用，用于在 UI 中展示提示词大小。
+ *
+ * @param agentId    Agent ID
+ * @param sessionId  会话 ID（可选，用于运行时提示词副本路径）
+ * @param projectKey 项目 key（可选，影响上下文注入）
+ * @param config     会话配置（可选）
+ */
+export async function buildPromptPreview(
+  agentId: string,
+  sessionId?: string,
+  projectKey?: string,
+  config?: import('@/types/agent-chat').SessionConfig,
+): Promise<{ charCount: number; estimatedTokens: number }> {
+  const agent = await loadAgent(agentId);
+  const promptText = await buildResourcePrompt(agent, undefined, config, sessionId, projectKey);
+  return {
+    charCount: promptText.length,
+    // 粗略估算：英文 ~4 chars/token，中文 ~1.5 chars/token，取 3.5 折中
+    estimatedTokens: Math.ceil(promptText.length / 3.5),
+  };
+}
+
 // ── Singleton ──
 
 const globalForAC = globalThis as unknown as {

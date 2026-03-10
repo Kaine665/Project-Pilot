@@ -140,7 +140,25 @@ export class SdkEventAdapter {
         break;
       }
 
-      // message_start, message_delta, message_stop — 不需要映射
+      case 'message_start': {
+        // 捕获输入 token 数（系统提示词 + 历史消息 + 当前用户消息）
+        const usage = event.message?.usage;
+        if (usage && typeof usage.input_tokens === 'number') {
+          events.push({ type: 'token_usage', inputTokens: usage.input_tokens, outputTokens: 0 });
+        }
+        break;
+      }
+
+      case 'message_delta': {
+        // 捕获输出 token 数（当前助手回复）
+        const usage = event.usage;
+        if (usage && typeof usage.output_tokens === 'number') {
+          events.push({ type: 'token_usage', inputTokens: 0, outputTokens: usage.output_tokens });
+        }
+        break;
+      }
+
+      // message_stop — 不需要映射
       default:
         break;
     }

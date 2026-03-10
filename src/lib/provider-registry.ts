@@ -10,6 +10,8 @@ import type { ProviderId } from '@/types';
 export interface ModelOption {
   id: string;
   label: string;
+  /** 模型上下文窗口大小（token 数） */
+  contextWindow?: number;
 }
 
 export interface ProviderPreset {
@@ -243,4 +245,69 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
 /** 按 ID 查找供应商预设 */
 export function getProviderPreset(id: ProviderId): ProviderPreset {
   return PROVIDER_REGISTRY.find((p) => p.id === id) ?? PROVIDER_REGISTRY[0];
+}
+
+/**
+ * 常用模型的上下文窗口大小（token 数）。
+ * 不在此表中的模型走 pattern-based fallback。
+ */
+const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
+  // ── Anthropic Claude ──
+  'claude-opus-4-6': 200000,
+  'claude-sonnet-4-6': 200000,
+  'claude-haiku-4-5-20251001': 200000,
+  'claude-haiku-4-5-20250929': 200000,
+  'claude-sonnet-4-5-20250929': 200000,
+  'claude-3-5-sonnet-20241022': 200000,
+  'claude-3-5-haiku-20241022': 200000,
+  'claude-3-opus-20240229': 200000,
+  // ── DeepSeek ──
+  'deepseek-chat': 65536,
+  'deepseek-reasoner': 65536,
+  // ── Qwen ──
+  'qwen3-coder-plus': 131072,
+  'qwen3-coder-flash': 131072,
+  'qwen3-coder': 131072,
+  // ── Zhipu GLM ──
+  'glm-4.7': 128000,
+  'glm-4.7-flashx': 128000,
+  'glm-4.5': 128000,
+  'glm-4.5-air': 128000,
+  // ── MiniMax ──
+  'MiniMax-M2.5': 1000000,
+  'MiniMax-M2.5-highspeed': 1000000,
+  'MiniMax-M2.1': 1000000,
+  'MiniMax-M2': 1000000,
+  // ── Kimi / Moonshot ──
+  'kimi-for-coding': 131072,
+  'k2p5': 131072,
+  'kimi-k2.5': 131072,
+  'kimi-k2': 131072,
+  'kimi-k2-thinking': 131072,
+};
+
+/**
+ * 根据模型 ID 查询上下文窗口大小（token 数）。
+ * 优先精确匹配，其次按供应商前缀推断，最后返回通用默认值。
+ */
+export function getModelContextWindow(modelId: string): number {
+  // 精确匹配
+  if (MODEL_CONTEXT_WINDOWS[modelId]) return MODEL_CONTEXT_WINDOWS[modelId];
+  // 前缀推断
+  if (modelId.startsWith('claude-')) return 200000;
+  if (modelId.startsWith('gpt-')) return 128000;
+  if (modelId.startsWith('o1') || modelId.startsWith('o3')) return 200000;
+  if (modelId.startsWith('deepseek-')) return 65536;
+  if (modelId.startsWith('qwen')) return 131072;
+  if (modelId.startsWith('glm-')) return 128000;
+  if (modelId.startsWith('kimi-') || modelId.startsWith('moonshot-')) return 131072;
+  if (modelId.startsWith('MiniMax-')) return 1000000;
+  if (modelId.includes('gemini-2.5')) return 1000000;
+  if (modelId.includes('gemini-')) return 128000;
+  // OpenRouter 格式 "provider/model"
+  if (modelId.includes('/claude-')) return 200000;
+  if (modelId.includes('/gpt-')) return 128000;
+  if (modelId.includes('/gemini-2.5')) return 1000000;
+  // 通用默认值
+  return 128000;
 }

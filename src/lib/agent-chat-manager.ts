@@ -3,7 +3,7 @@
  * The actual implementation lives in `./chat-managers/`.
  */
 
-export { agentChatManager, generateSessionId } from './chat-managers/agent-chat-manager';
+export { agentChatManager, generateSessionId, buildPromptPreview } from './chat-managers/agent-chat-manager';
 export type {
   AgentChatRun,
   ImageAttachment,

@@ -223,6 +223,8 @@ export type ChatSSEEvent =
   | { type: 'doc_created'; docId: string; title: string; projectKey: string }
   | { type: 'task_suspended'; taskId: string; title: string }
   | { type: 'task_completed'; taskId: string }
+  /** 模型 token 用量（来自 Anthropic streaming API 的 message_start / message_delta 事件） */
+  | { type: 'token_usage'; inputTokens: number; outputTokens: number }
   | { type: 'error'; message: string }
   | { type: 'done' };
 
