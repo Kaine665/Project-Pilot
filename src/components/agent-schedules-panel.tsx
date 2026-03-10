@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, Clock, Power, PowerOff, Loader2 } from 'lucide-react';
-import type { AgentSchedule } from '@/types';
-import type { ProjectEntry } from '@/components/project-context';
+import { Plus, Trash2, Clock, Power, PowerOff, Loader2, Bot } from 'lucide-react';
+import type { Agent, AgentSchedule } from '@/types';
+import { useProject, type ProjectEntry } from '@/components/project-context';
 
 // ── cron 预设 ──
 
@@ -34,10 +34,12 @@ function formatLastRunAt(iso?: string): string {
 
 function ScheduleRow({
   schedule,
+  agentName,
   onToggle,
   onDelete,
 }: {
   schedule: AgentSchedule;
+  agentName: string;
   onToggle: (id: string, enabled: boolean) => void;
   onDelete: (id: string) => void;
 }) {
@@ -47,7 +49,11 @@ function ScheduleRow({
     <div className="flex items-start gap-3 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900">
       <Clock className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" />
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
+        <div className="flex items-center gap-2 mb-1 flex-wrap">
+          <span className="inline-flex items-center gap-1 shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+            <Bot className="h-3 w-3" />
+            {agentName}
+          </span>
           {schedule.label && (
             <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
               {schedule.label}
@@ -65,6 +71,11 @@ function ScheduleRow({
         <p className="text-xs text-zinc-500 truncate dark:text-zinc-400">
           消息：{schedule.message}
         </p>
+        {schedule.projectKey && (
+          <p className="mt-0.5 text-[11px] text-zinc-400">
+            项目：{schedule.projectKey}
+          </p>
+        )}
         <p className="mt-0.5 text-[11px] text-zinc-400">
           上次运行：{formatLastRunAt(schedule.lastRunAt)}
         </p>
@@ -101,16 +112,17 @@ function ScheduleRow({
 // ── CreateScheduleForm ──
 
 function CreateScheduleForm({
-  agentId,
+  agents,
   projects,
   onCreated,
   onCancel,
 }: {
-  agentId: string;
-  projects?: ProjectEntry[];
+  agents: Agent[];
+  projects: ProjectEntry[];
   onCreated: (s: AgentSchedule) => void;
   onCancel: () => void;
 }) {
+  const [agentId, setAgentId] = useState(agents[0]?.id ?? '');
   const [cronPreset, setCronPreset] = useState('0 9 * * *');
   const [customCron, setCustomCron] = useState('');
   const [message, setMessage] = useState('');
@@ -122,6 +134,7 @@ function CreateScheduleForm({
   const cronValue = cronPreset === 'custom' ? customCron : cronPreset;
 
   const handleSubmit = async () => {
+    if (!agentId) { setError('请选择一个 Agent'); return; }
     if (!message.trim()) { setError('消息不能为空'); return; }
     if (!cronValue.trim()) { setError('cron 表达式不能为空'); return; }
 
@@ -154,6 +167,20 @@ function CreateScheduleForm({
     <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
       <h4 className="mb-3 text-sm font-medium text-zinc-900 dark:text-zinc-100">新建调度规则</h4>
       <div className="space-y-3">
+
+        {/* 选择 Agent */}
+        <div>
+          <label className="mb-1 block text-xs text-zinc-500">Agent <span className="text-red-400">*</span></label>
+          <select
+            value={agentId}
+            onChange={e => setAgentId(e.target.value)}
+            className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400"
+          >
+            {agents.map(a => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </select>
+        </div>
 
         {/* 备注名称 */}
         <div>
@@ -206,7 +233,7 @@ function CreateScheduleForm({
         </div>
 
         {/* 绑定项目 */}
-        {projects && projects.length > 0 && (
+        {projects.length > 0 && (
           <div>
             <label className="mb-1 block text-xs text-zinc-500">绑定项目（可选）</label>
             <select
@@ -249,35 +276,37 @@ function CreateScheduleForm({
   );
 }
 
-// ── Main component ──
+// ── Main panel (standalone full page) ──
 
-export function AgentSchedulesPanel({
-  agentId,
-  projects,
-}: {
-  agentId: string;
-  projects?: ProjectEntry[];
-}) {
+export function AgentSchedulesPanel() {
+  const { projects } = useProject();
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [schedules, setSchedules] = useState<AgentSchedule[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
 
-  const fetchSchedules = useCallback(async () => {
+  const agentMap = new Map(agents.map(a => [a.id, a.name]));
+
+  const fetchData = useCallback(async () => {
     try {
-      const res = await fetch('/api/schedules');
-      const data = await res.json();
-      const all: AgentSchedule[] = data.schedules ?? [];
-      setSchedules(all.filter(s => s.agentId === agentId));
+      const [schedRes, agentRes] = await Promise.all([
+        fetch('/api/schedules'),
+        fetch('/api/agents'),
+      ]);
+      const schedData = await schedRes.json();
+      const agentData = await agentRes.json();
+      setSchedules(schedData.schedules ?? []);
+      setAgents((agentData.agents ?? []).filter((a: Agent) => !a.archived));
     } catch {
       setSchedules([]);
     } finally {
       setLoading(false);
     }
-  }, [agentId]);
+  }, []);
 
   useEffect(() => {
-    fetchSchedules();
-  }, [fetchSchedules]);
+    fetchData();
+  }, [fetchData]);
 
   const handleToggle = async (id: string, enabled: boolean) => {
     setSchedules(prev => prev.map(s => s.id === id ? { ...s, enabled } : s));
@@ -288,8 +317,7 @@ export function AgentSchedulesPanel({
         body: JSON.stringify({ enabled }),
       });
     } catch {
-      // 乐观更新失败，刷新列表
-      fetchSchedules();
+      fetchData();
     }
   };
 
@@ -298,7 +326,7 @@ export function AgentSchedulesPanel({
     try {
       await fetch(`/api/schedules/${id}`, { method: 'DELETE' });
     } catch {
-      fetchSchedules();
+      fetchData();
     }
   };
 
@@ -309,56 +337,75 @@ export function AgentSchedulesPanel({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12 text-zinc-400">
-        <Loader2 className="h-4 w-4 animate-spin" />
+      <div className="flex h-full items-center justify-center text-zinc-400">
+        <Loader2 className="h-5 w-5 animate-spin" />
       </div>
     );
   }
 
+  const enabledCount = schedules.filter(s => s.enabled).length;
+
   return (
-    <div className="flex flex-col gap-4 p-4 overflow-y-auto">
-      {/* 说明 */}
-      <p className="text-xs text-zinc-500 dark:text-zinc-400">
-        定时运行会在指定时间自动创建新会话并发送初始消息，适合周期性任务（如晨报、数据汇总）。
-      </p>
-
-      {/* 现有调度列表 */}
-      {schedules.length > 0 ? (
-        <div className="flex flex-col gap-2">
-          {schedules.map(s => (
-            <ScheduleRow
-              key={s.id}
-              schedule={s}
-              onToggle={handleToggle}
-              onDelete={handleDelete}
-            />
-          ))}
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
+        <div>
+          <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">定时运行</h1>
+          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+            在指定时间自动创建会话并发送指令，适合周期性任务（如晨报、数据汇总）。
+            {schedules.length > 0 && (
+              <span className="ml-2">共 {schedules.length} 条规则，{enabledCount} 条启用中</span>
+            )}
+          </p>
         </div>
-      ) : (
-        !showCreate && (
-          <div className="rounded-lg border border-dashed border-zinc-300 py-8 text-center text-sm text-zinc-400 dark:border-zinc-700">
-            暂无调度规则
-          </div>
-        )
-      )}
+        {!showCreate && (
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-sm text-white hover:bg-zinc-700 transition-colors dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            添加调度
+          </button>
+        )}
+      </div>
 
-      {/* 创建表单 */}
-      {showCreate ? (
-        <CreateScheduleForm
-          agentId={agentId}
-          projects={projects}
-          onCreated={handleCreated}
-          onCancel={() => setShowCreate(false)}
-        />
-      ) : (
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-1.5 self-start rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:border-zinc-400 hover:text-zinc-900 transition-colors dark:border-zinc-600 dark:text-zinc-400 dark:hover:border-zinc-500 dark:hover:text-zinc-200"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          添加调度
-        </button>
-      )}
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="mx-auto max-w-2xl flex flex-col gap-4">
+          {/* 创建表单 */}
+          {showCreate && (
+            <CreateScheduleForm
+              agents={agents}
+              projects={projects}
+              onCreated={handleCreated}
+              onCancel={() => setShowCreate(false)}
+            />
+          )}
+
+          {/* 调度列表 */}
+          {schedules.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              {schedules.map(s => (
+                <ScheduleRow
+                  key={s.id}
+                  schedule={s}
+                  agentName={agentMap.get(s.agentId) ?? s.agentId}
+                  onToggle={handleToggle}
+                  onDelete={handleDelete}
+                />
+              ))}
+            </div>
+          ) : (
+            !showCreate && (
+              <div className="rounded-lg border border-dashed border-zinc-300 py-16 text-center dark:border-zinc-700">
+                <Clock className="mx-auto h-8 w-8 text-zinc-300 dark:text-zinc-600" />
+                <p className="mt-3 text-sm text-zinc-400">暂无调度规则</p>
+                <p className="mt-1 text-xs text-zinc-400">点击右上角「添加调度」创建第一条规则</p>
+              </div>
+            )
+          )}
+        </div>
+      </div>
     </div>
   );
 }
