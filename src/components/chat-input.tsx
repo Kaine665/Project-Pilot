@@ -369,7 +369,7 @@ export const ChatInput = memo(function ChatInput({
                 <TokenRing used={usedTokens} total={tokenInfo.contextWindow} size={16} />
               </div>
               {/* Hover tooltip */}
-              <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block z-50 whitespace-nowrap">
+              <div className="pointer-events-none absolute bottom-full left-0 mb-1.5 hidden group-hover:block z-50 whitespace-nowrap">
                 <div className="rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 shadow-md dark:border-zinc-700 dark:bg-zinc-900">
                   <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{line1}</p>
                   <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{line2}</p>
