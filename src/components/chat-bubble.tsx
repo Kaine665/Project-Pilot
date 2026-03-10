@@ -288,13 +288,13 @@ export const ChatBubble = memo(function ChatBubble({
         {/* Retry button for failed sends (user messages) */}
         {hasSendError && isUser && onRetry && showActions && (
           <div className={`mt-1 flex items-center gap-1.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
-            <span className="text-[10px] text-red-400 dark:text-red-500">发送失败</span>
+            <span className="text-xs text-red-400 dark:text-red-500">发送失败</span>
             <button
               onClick={(e) => { e.stopPropagation(); if (!isStreaming) onRetry(); }}
               disabled={isStreaming}
-              className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-red-500 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:text-red-300 disabled:opacity-40 disabled:pointer-events-none"
+              className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-red-500 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:text-red-300 disabled:opacity-40 disabled:pointer-events-none"
             >
-              <RefreshCw className="h-2.5 w-2.5" />
+              <RefreshCw className="h-3 w-3" />
               <span>重试</span>
             </button>
           </div>
@@ -306,10 +306,10 @@ export const ChatBubble = memo(function ChatBubble({
             {/* Copy — always available */}
             <button
               onClick={handleCopy}
-              className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
+              className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
               title="复制"
             >
-              {copied ? <Check className="h-2.5 w-2.5" /> : <Copy className="h-2.5 w-2.5" />}
+              {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
               <span>{copied ? '已复制' : '复制'}</span>
             </button>
 
@@ -317,10 +317,10 @@ export const ChatBubble = memo(function ChatBubble({
             {!isUser && onSaveAsKnowledge && (
               <button
                 onClick={(e) => { e.stopPropagation(); onSaveAsKnowledge(message.id, message.content || ''); }}
-                className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
+                className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
                 title="存为知识"
               >
-                <BookMarked className="h-2.5 w-2.5" />
+                <BookMarked className="h-3 w-3" />
                 <span>存为知识</span>
               </button>
             )}
@@ -329,10 +329,10 @@ export const ChatBubble = memo(function ChatBubble({
             {onBranch && (
               <button
                 onClick={(e) => { e.stopPropagation(); onBranch(message.id); }}
-                className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
+                className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
                 title={t('chat.createBranchFrom')}
               >
-                <GitBranch className="h-2.5 w-2.5" />
+                <GitBranch className="h-3 w-3" />
                 <span>{t('chat.branch')}</span>
               </button>
             )}
@@ -342,10 +342,10 @@ export const ChatBubble = memo(function ChatBubble({
               <button
                 onClick={(e) => { e.stopPropagation(); if (!isStreaming) onRegenerate(); }}
                 disabled={isStreaming}
-                className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400 disabled:opacity-40 disabled:pointer-events-none"
+                className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400 disabled:opacity-40 disabled:pointer-events-none"
                 title="重新生成"
               >
-                <RefreshCw className="h-2.5 w-2.5" />
+                <RefreshCw className="h-3 w-3" />
                 <span>重新生成</span>
               </button>
             )}
@@ -355,10 +355,10 @@ export const ChatBubble = memo(function ChatBubble({
               <button
                 onClick={(e) => { e.stopPropagation(); if (!isStreaming) setConfirmDelete(true); }}
                 disabled={isStreaming}
-                className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-red-50 hover:text-red-500 dark:text-zinc-600 dark:hover:bg-red-950/30 dark:hover:text-red-400 disabled:opacity-40 disabled:pointer-events-none"
+                className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-red-50 hover:text-red-500 dark:text-zinc-600 dark:hover:bg-red-950/30 dark:hover:text-red-400 disabled:opacity-40 disabled:pointer-events-none"
                 title="删除"
               >
-                <Trash2 className="h-2.5 w-2.5" />
+                <Trash2 className="h-3 w-3" />
                 <span>删除</span>
               </button>
             )}
@@ -366,14 +366,14 @@ export const ChatBubble = memo(function ChatBubble({
               <>
                 <button
                   onClick={(e) => { e.stopPropagation(); onDelete(message.id); setConfirmDelete(false); }}
-                  className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-red-500 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                  className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-red-500 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
                 >
-                  <Trash2 className="h-2.5 w-2.5" />
+                  <Trash2 className="h-3 w-3" />
                   <span>确认删除</span>
                 </button>
                 <button
                   onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }}
-                  className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
+                  className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
                 >
                   <span>取消</span>
                 </button>
