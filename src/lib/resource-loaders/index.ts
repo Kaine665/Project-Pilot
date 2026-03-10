@@ -24,6 +24,7 @@ import { SharedMemoryLoader } from './shared-memory-loader';
 import { GlobalPromptLoader } from './global-prompt-loader';
 import { ProjectPromptLoader } from './project-prompt-loader';
 import { SkillResourceLoader } from './skill-loader';
+import { AgentDataInfoLoader } from './agent-data-info-loader';
 
 resourceRegistry.register(new ContextResourceLoader());
 resourceRegistry.register(new ContextIndexLoader());
@@ -40,3 +41,4 @@ resourceRegistry.register(new SharedMemoryLoader());
 resourceRegistry.register(new GlobalPromptLoader());
 resourceRegistry.register(new ProjectPromptLoader());
 resourceRegistry.register(new SkillResourceLoader());
+resourceRegistry.register(new AgentDataInfoLoader());

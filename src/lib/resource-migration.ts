@@ -92,6 +92,16 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
     }
   }
 
+  // Agent private data store (if agent has dataStore capability)
+  if (agent.capabilities?.dataStore) {
+    refs.push({
+      type: 'agent-data-info',
+      id: agent.id,
+      priority: 28,
+      label: 'Agent 私有数据',
+    });
+  }
+
   // Todo list (if agent has todoRead capability)
   if (agent.capabilities?.todoRead) {
     refs.push({

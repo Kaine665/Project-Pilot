@@ -77,6 +77,11 @@ function detectDataDirWrite(command: string): { reason: string } | null {
 
   if (!referencesDataDir) return null;
 
+  // Whitelist: agent-data/ is the Agent's private data store — writes are expected
+  if (normalized.includes('agent-data/') || normalized.includes('agent-data\\')) {
+    return null;
+  }
+
   if (WRITE_INDICATORS.test(command)) {
     return {
       reason: `禁止写入 ProjectPilot 数据目录（${DATA_DIR}）`,
