@@ -213,7 +213,7 @@ export const ToolCallCard = memo(function ToolCallCard({ toolCall }: ToolCallCar
           {displayName}
         </span>
         {isMcp && (
-          <span className="rounded bg-violet-100 px-1 py-0.5 text-[9px] text-violet-600 dark:bg-violet-900/30 dark:text-violet-400 shrink-0">
+          <span className="rounded bg-violet-100 px-1 py-0.5 text-[10px] text-violet-600 dark:bg-violet-900/30 dark:text-violet-400 shrink-0">
             MCP
           </span>
         )}

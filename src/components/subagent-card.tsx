@@ -63,7 +63,7 @@ export const SubagentCard = memo(function SubagentCard({ toolCall }: SubagentCar
         <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
           子代理
         </span>
-        <span className={`rounded px-1.5 py-0.5 text-[9px] font-medium ${typeInfo.color}`}>
+        <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${typeInfo.color}`}>
           {typeInfo.label}
         </span>
         <span className="flex-1 truncate text-xs text-zinc-500 dark:text-zinc-400">

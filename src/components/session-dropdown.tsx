@@ -73,7 +73,7 @@ export const SessionDropdown = memo(function SessionDropdown({
                 <MessageSquare className={`h-3 w-3 shrink-0 ${s.id === currentSessionId ? 'text-blue-500 dark:text-blue-400' : ''}`} />
                 <span className="truncate flex-1 text-left">{s.title}</span>
                 {s.id !== currentSessionId && !!s.unreadCount && s.unreadCount > 0 && (
-                  <span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-medium leading-none text-white">
+                  <span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-red-500 px-0.5 text-[10px] font-medium leading-none text-white">
                     {s.unreadCount > 99 ? '99+' : s.unreadCount}
                   </span>
                 )}

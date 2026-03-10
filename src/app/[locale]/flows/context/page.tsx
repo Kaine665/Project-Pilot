@@ -649,7 +649,7 @@ export default function ContextPage() {
                 )}
 
                 {selectedEntry && (
-                  <div className="flex items-center gap-3 text-[11px] text-zinc-400 dark:text-zinc-500">
+                  <div className="flex items-center gap-3 text-xs text-zinc-400 dark:text-zinc-500">
                     <span className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
                       创建于 {formatDateTime(selectedEntry.createdAt)}

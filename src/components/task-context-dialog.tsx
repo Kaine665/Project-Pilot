@@ -372,7 +372,7 @@ export function TaskContextDialog({
                           <div key={group}>
                             <div className="flex items-center gap-1.5 px-2 pt-1.5 pb-0.5">
                               <FolderOpen className="w-3 h-3 text-muted-foreground/60" />
-                              <span className="text-[11px] font-medium text-muted-foreground/70">{group}</span>
+                              <span className="text-xs font-medium text-muted-foreground/70">{group}</span>
                             </div>
                             {groupEntries.map(entry => {
                               const enabled = globalContextIds.includes(entry.id);

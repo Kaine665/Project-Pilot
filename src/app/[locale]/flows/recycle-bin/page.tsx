@@ -119,7 +119,7 @@ export default function RecycleBinPage() {
                               <div className="truncate text-sm text-zinc-900 dark:text-zinc-100 max-w-48">
                                 {item.name}
                               </div>
-                              <div className="text-[11px] text-zinc-400">
+                              <div className="text-xs text-zinc-400">
                                 {formatDate(item.archivedAt)}
                               </div>
                             </div>

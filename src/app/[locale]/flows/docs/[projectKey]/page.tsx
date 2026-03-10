@@ -250,7 +250,7 @@ export default function DocsProjectPage() {
                   )}
                 </div>
                 <div className="flex shrink-0 items-center gap-3 pl-4">
-                  <span className="text-[11px] text-zinc-300 dark:text-zinc-600">
+                  <span className="text-xs text-zinc-300 dark:text-zinc-600">
                     {formatDateTime(doc.updatedAt)}
                   </span>
                   <button
@@ -276,7 +276,7 @@ export default function DocsProjectPage() {
                   {creating ? '新建设计文档' : '编辑设计文档'}
                 </h3>
                 {selectedDoc && (
-                  <div className="flex items-center gap-3 text-[11px] text-zinc-400 dark:text-zinc-500">
+                  <div className="flex items-center gap-3 text-xs text-zinc-400 dark:text-zinc-500">
                     <span className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
                       创建于 {formatDateTime(selectedDoc.createdAt)}
