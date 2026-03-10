@@ -14,7 +14,7 @@
     "migrate:data": "node scripts/migrate-data.js",
     "electron:dev": "concurrently --kill-others \"npm run dev\" \"wait-on http://127.0.0.1:4000 && cross-env ELECTRON_DEV=1 electron .\"",
     "electron:compile": "tsc -p electron/tsconfig.json",
-    "electron:build": "cross-env BUILD_TARGET=electron next build && npm run electron:compile && electron-builder --win",
+    "electron:build": "cross-env NODE_ENV=production BUILD_TARGET=electron next build && npm run electron:compile && electron-builder --win",
     "electron:start": "electron ."
   },
   "build": {
