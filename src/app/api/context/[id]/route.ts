@@ -12,6 +12,7 @@ import {
   writeJsonFile,
 } from '@/lib/file-store';
 import type { ContextIndexData } from '@/types';
+import { generateContextSummary } from '../route';
 
 const DEFAULT_INDEX: ContextIndexData = { entries: [] };
 
@@ -113,9 +114,23 @@ export async function PATCH(
     entry.fileName = newFileName;
   }
 
+  // 手动 summary 更新
+  if (body.summary !== undefined) {
+    const s = typeof body.summary === 'string' ? body.summary.trim() : '';
+    if (s) {
+      entry.summary = s;
+    } else {
+      delete entry.summary;
+    }
+  }
+
   // Update content file if provided
   if (body.content !== undefined) {
     await fs.writeFile(getContextFilePath(entry.fileName), body.content, 'utf-8');
+    // 内容更新时自动回填 summary（仅当没有手动 summary 时）
+    if (!entry.summary) {
+      entry.summary = generateContextSummary(body.content, entry.format);
+    }
   }
 
   await writeJsonFile(getContextIndexPath(), data);

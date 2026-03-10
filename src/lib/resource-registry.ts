@@ -46,16 +46,34 @@ class ResourceRegistry {
    * Entries with the same sectionTitle are grouped under one ## heading,
    * separated by `---`. This preserves the original buildPreloadedContextSection
    * format where multiple context entries share one "Agent 预加载上下文" heading.
+   *
+   * @param maxChars - 总字符数上限（粗估 token 用）。超出时跳过低优先级（priority 大）的资源。
+   *                   默认 400,000 字符（约 100K tokens），为对话留出足够空间。
    */
-  formatAsPrompt(resolved: ResolvedResource[]): string {
+  formatAsPrompt(resolved: ResolvedResource[], maxChars = 400_000): string {
     const valid = resolved.filter(r => r.ok && r.content);
     if (valid.length === 0) return '';
+
+    // 按 priority 已排序（resolveAll 阶段完成），此处按序纳入预算
+    let totalChars = 0;
+    const included: ResolvedResource[] = [];
+    for (const r of valid) {
+      const cost = r.content.length + (r.sectionTitle?.length ?? 0) + 20;
+      if (totalChars + cost > maxChars) {
+        console.warn(`[ResourceRegistry] prompt 超预算，跳过 ${r.ref.type}:${r.ref.id} (priority=${r.ref.priority ?? 50}, cost=${cost})`);
+        continue;
+      }
+      totalChars += cost;
+      included.push(r);
+    }
+
+    if (included.length === 0) return '';
 
     const parts: string[] = [];
     let i = 0;
 
-    while (i < valid.length) {
-      const r = valid[i];
+    while (i < included.length) {
+      const r = included[i];
 
       if (!r.sectionTitle) {
         // No heading — emit content directly
@@ -66,9 +84,9 @@ class ResourceRegistry {
 
       // Collect consecutive entries with the same sectionTitle
       const group: ResolvedResource[] = [r];
-      while (i + 1 < valid.length && valid[i + 1].sectionTitle === r.sectionTitle) {
+      while (i + 1 < included.length && included[i + 1].sectionTitle === r.sectionTitle) {
         i++;
-        group.push(valid[i]);
+        group.push(included[i]);
       }
 
       // Emit grouped section

@@ -346,6 +346,11 @@ export interface ContextEntry {
   sourceAgentSessionId?: string;
   /** Agent 产出此知识的时间 */
   producedAt?: string;
+  /**
+   * 摘要文本，注入 prompt 时替代全文。
+   * 可选；缺失时 fallback 到 description（>20字符）或文件前 500 字符。
+   */
+  summary?: string;
   createdAt: string;
   updatedAt: string;
 }

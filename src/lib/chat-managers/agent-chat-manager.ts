@@ -617,7 +617,8 @@ async function buildResourcePrompt(
       if (existingCtxIds.has(entry.id)) continue;
       // 标签筛选：Agent 有 contextTags 时，条目必须至少匹配一个标签
       if (agentTags?.length && (!entry.tags?.length || !entry.tags.some(t => agentTags.includes(t)))) continue;
-      merged.push({ type: 'context', id: entry.id, priority: 32 });
+      // 自动注入的 context 使用摘要模式，节省 token
+      merged.push({ type: 'context', id: entry.id, priority: 32, injectMode: 'summary' });
     }
   }
 
