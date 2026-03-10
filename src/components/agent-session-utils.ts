@@ -49,6 +49,15 @@ export function groupSessionsByDay<T extends { updatedAt: string }>(sessions: T[
   return groups;
 }
 
+// ── Session navigation link info ──
+
+export interface SessionNavLink {
+  id: string;
+  title: string;
+  agentId: string;
+  agentName?: string;
+}
+
 // ── URL param sync helper ──
 
 export function syncUrlParams(params: Record<string, string | null | undefined>) {
@@ -61,4 +70,12 @@ export function syncUrlParams(params: Record<string, string | null | undefined>)
     }
   }
   window.history.replaceState({}, '', url.toString());
+}
+
+/**
+ * 构建跳转到指定会话的 URL。
+ * 统一走 /flows/agents 路由，通过 query params 定位 agent + session。
+ */
+export function buildSessionUrl(agentId: string, sessionId: string, locale = 'zh'): string {
+  return `/${locale}/flows/agents?agent=${encodeURIComponent(agentId)}&session=${encodeURIComponent(sessionId)}`;
 }
