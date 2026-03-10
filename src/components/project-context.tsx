@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { usePathname } from '@/i18n/routing';
 
 export interface ProjectEntry {
   key: string;
@@ -30,6 +31,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const [initialized, setInitialized] = useState(false);
   const internalKeyChangeRef = useRef(false);
   const initializedRef = useRef(false);
+  const pathname = usePathname();
 
   const setActiveKey = useCallback((key: string) => {
     internalKeyChangeRef.current = true;
@@ -91,6 +93,16 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, [activeKeyRaw, projects]);
+
+  // Re-sync ?project= to URL after client-side navigation (router.push strips query params)
+  useEffect(() => {
+    if (!activeKeyRaw) return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('project')) {
+      url.searchParams.set('project', activeKeyRaw);
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, [pathname, activeKeyRaw]);
 
   return (
     <ProjectContext.Provider value={{ projects, activeKey: activeKeyRaw, initialized, setActiveKey, fetchProjects }}>
