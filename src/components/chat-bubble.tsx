@@ -106,7 +106,10 @@ export const ChatBubble = memo(function ChatBubble({
     block.type === 'tool_call' && block.toolCall.toolName === 'AskUserQuestion';
 
   const renderBlocks = (blocksToRender: ContentBlock[]) => {
-    const lastTextIdx = blocksToRender.reduce(
+    // 过滤掉 AskUserQuestion（它们在气泡外部单独渲染）
+    const filteredBlocks = blocksToRender.filter((b) => !isAskUserQuestion(b));
+
+    const lastTextIdx = filteredBlocks.reduce(
       (acc, b, i) => (b.type === 'text' ? i : acc),
       -1,
     );
@@ -126,8 +129,8 @@ export const ChatBubble = memo(function ChatBubble({
       }
     };
 
-    for (let i = 0; i < blocksToRender.length; i++) {
-      const block = blocksToRender[i];
+    for (let i = 0; i < filteredBlocks.length; i++) {
+      const block = filteredBlocks[i];
       if (block.type === 'tool_call' && isRepetitiveTool(block.toolCall.toolName)) {
         pendingTools.push(block.toolCall);
       } else {
@@ -165,11 +168,9 @@ export const ChatBubble = memo(function ChatBubble({
         );
       }
 
-      // AskUserQuestion rendered outside the bubble — skip here
-      if (isAskUserQuestion(block)) return null;
-
+      // 使用 index 后缀确保 key 唯一，防止 toolCall.id 重复
       return (
-        <div key={block.toolCall.id} className="my-1.5">
+        <div key={`${block.toolCall.id}-${i}`} className="my-1.5">
           <ToolCallCard toolCall={block.toolCall} />
         </div>
       );
@@ -215,12 +216,13 @@ export const ChatBubble = memo(function ChatBubble({
                 pending = [];
               }
             };
-            for (const tc of message.toolCalls!) {
+            for (let i = 0; i < message.toolCalls!.length; i++) {
+              const tc = message.toolCalls![i];
               if (isRepetitiveTool(tc.toolName)) {
                 pending.push(tc);
               } else {
                 flush();
-                result.push(<ToolCallCard key={tc.id} toolCall={tc} />);
+                result.push(<ToolCallCard key={`${tc.id}-${i}`} toolCall={tc} />);
               }
             }
             flush();
@@ -277,8 +279,8 @@ export const ChatBubble = memo(function ChatBubble({
         {/* AskUserQuestion cards — rendered outside the bubble for prominence */}
         {askUserBlocks.length > 0 && (
           <div className="mt-1.5">
-            {askUserBlocks.map((block) => (
-              <ToolCallCard key={block.toolCall.id} toolCall={block.toolCall} />
+            {askUserBlocks.map((block, idx) => (
+              <ToolCallCard key={`${block.toolCall.id}-${idx}`} toolCall={block.toolCall} />
             ))}
           </div>
         )}
