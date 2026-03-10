@@ -9,10 +9,11 @@ const AgentChatPanel = dynamic(
 );
 import { useProject } from '@/components/project-context';
 import { FolderKanban, Plus, Trash2, Network, Bot, Layers, BookOpen, FileText, ListTodo, Table2, Timer } from 'lucide-react';
+import { SidebarIconButton } from '@/components/sidebar-icon-button';
 import { BUTLER_AGENT_ID } from '@/lib/default-agents';
 import type { Agent } from '@/types';
 import { useRouter, usePathname } from '@/i18n/routing';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { TooltipProvider } from '@/components/ui/tooltip';
 const SortableProjectTree = dynamic(
   () => import('@/components/sortable-project-tree').then(m => m.SortableProjectTree),
   { ssr: false },
@@ -180,156 +181,16 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
             {/* Icon strip — always visible */}
             <TooltipProvider delayDuration={300}>
             <div className="flex w-13 flex-col items-center border-r border-zinc-200 bg-zinc-50 py-2 gap-1 dark:border-zinc-800 dark:bg-zinc-950">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    className={`flex h-11 w-11 items-center justify-center rounded-md transition-colors ${
-                      !isSubRoute && panelOpen
-                        ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                        : 'text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200'
-                    }`}
-                    onClick={handleToggleProjects}
-                  >
-                    <FolderKanban className="h-5 w-5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">项目管理</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    className={`flex h-11 w-11 items-center justify-center rounded-md transition-colors ${
-                      isAgentsPage
-                        ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                        : 'text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200'
-                    }`}
-                    onClick={handleNavigateAgents}
-                  >
-                    <Bot className="h-5 w-5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">Agents</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    className={`flex h-11 w-11 items-center justify-center rounded-md transition-colors ${
-                      isDimensionsPage
-                        ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                        : 'text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200'
-                    }`}
-                    onClick={handleNavigateDimensions}
-                  >
-                    <Layers className="h-5 w-5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">信息角度</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    className={`flex h-11 w-11 items-center justify-center rounded-md transition-colors ${
-                      isContextPage
-                        ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                        : 'text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200'
-                    }`}
-                    onClick={handleNavigateContext}
-                  >
-                    <BookOpen className="h-5 w-5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">上下文</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    className={`flex h-11 w-11 items-center justify-center rounded-md transition-colors ${
-                      isDocsPage
-                        ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                        : 'text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200'
-                    }`}
-                    onClick={handleNavigateDocs}
-                  >
-                    <FileText className="h-5 w-5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">设计文档</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    className={`flex h-11 w-11 items-center justify-center rounded-md transition-colors ${
-                      isTodosPage
-                        ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                        : 'text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200'
-                    }`}
-                    onClick={handleNavigateTodos}
-                  >
-                    <ListTodo className="h-5 w-5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">AI 待办</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    className={`flex h-11 w-11 items-center justify-center rounded-md transition-colors ${
-                      isBitablePage
-                        ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                        : 'text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200'
-                    }`}
-                    onClick={() => router.push('/flows/bitable')}
-                  >
-                    <Table2 className="h-5 w-5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">多维表格</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    className={`flex h-11 w-11 items-center justify-center rounded-md transition-colors ${
-                      isOrchestratorPage
-                        ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                        : 'text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200'
-                    }`}
-                    onClick={() => router.push('/flows/orchestrator')}
-                  >
-                    <Network className="h-5 w-5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">Agent 编排</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    className={`flex h-11 w-11 items-center justify-center rounded-md transition-colors ${
-                      isSchedulesPage
-                        ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                        : 'text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200'
-                    }`}
-                    onClick={() => router.push('/flows/schedules')}
-                  >
-                    <Timer className="h-5 w-5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">定时运行</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    className={`flex h-11 w-11 items-center justify-center rounded-md transition-colors ${
-                      isRecycleBinPage
-                        ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                        : 'text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200'
-                    }`}
-                    onClick={handleNavigateRecycleBin}
-                  >
-                    <Trash2 className="h-5 w-5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">回收站</TooltipContent>
-              </Tooltip>
+              <SidebarIconButton icon={FolderKanban} tooltip="项目管理" isActive={!isSubRoute && panelOpen} onClick={handleToggleProjects} />
+              <SidebarIconButton icon={Bot} tooltip="Agents" isActive={isAgentsPage} onClick={handleNavigateAgents} />
+              <SidebarIconButton icon={Layers} tooltip="信息角度" isActive={isDimensionsPage} onClick={handleNavigateDimensions} />
+              <SidebarIconButton icon={BookOpen} tooltip="上下文" isActive={isContextPage} onClick={handleNavigateContext} />
+              <SidebarIconButton icon={FileText} tooltip="设计文档" isActive={isDocsPage} onClick={handleNavigateDocs} />
+              <SidebarIconButton icon={ListTodo} tooltip="AI 待办" isActive={isTodosPage} onClick={handleNavigateTodos} />
+              <SidebarIconButton icon={Table2} tooltip="多维表格" isActive={isBitablePage} onClick={() => router.push('/flows/bitable')} />
+              <SidebarIconButton icon={Network} tooltip="Agent 编排" isActive={isOrchestratorPage} onClick={() => router.push('/flows/orchestrator')} />
+              <SidebarIconButton icon={Timer} tooltip="定时运行" isActive={isSchedulesPage} onClick={() => router.push('/flows/schedules')} />
+              <SidebarIconButton icon={Trash2} tooltip="回收站" isActive={isRecycleBinPage} onClick={handleNavigateRecycleBin} />
             </div>
             </TooltipProvider>
 
