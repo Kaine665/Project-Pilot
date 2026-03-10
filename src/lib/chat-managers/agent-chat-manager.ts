@@ -27,6 +27,7 @@ import {
   buildAgentPermissionArgs,
   buildAgentToolArgs,
 } from '@/lib/settings-manager';
+import { checkClaudeCliHealth } from '@/lib/claude-cli';
 import { getProviderPreset } from '@/lib/provider-registry';
 import type { ChatSSEEvent, ContentBlock, Agent, AgentCapabilities, ProviderId } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
@@ -196,6 +197,12 @@ class AgentChatManager extends BaseChatManager<AgentChatRun> {
         tempPaths.push(tmpPath);
         imageArgs.push('--image', tmpPath);
       }
+    }
+
+    // ── Pre-flight checks ──
+    const cliHealth = checkClaudeCliHealth();
+    if (!cliHealth.ok) {
+      throw new Error(cliHealth.diagnostic || 'Claude CLI 不可用');
     }
 
     // Build CLI args (using resolved provider/model from priority chain)

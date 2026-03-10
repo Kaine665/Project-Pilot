@@ -32,14 +32,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
-# runtime data
-/data/*.json
-/data/artifacts/
-/data/conversations/
-/data/logs/
-/data/prompts/
-/data/task-artifacts/
+# runtime data (legacy, when data was stored in project dir)
+/data/
 
 # Claude Code settings
 /.claude/

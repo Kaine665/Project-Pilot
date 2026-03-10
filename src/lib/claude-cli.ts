@@ -1,7 +1,8 @@
 import type { ChildProcess, ExecFileOptions, SpawnOptions } from 'child_process';
-import { createCliResolver, type CliInvocation } from '@/lib/cli-resolver';
+import { createCliResolver, type CliHealthResult, type CliInvocation } from '@/lib/cli-resolver';
 
 export type ClaudeCliInvocation = CliInvocation;
+export type { CliHealthResult };
 
 const resolver = createCliResolver({
   binName: 'claude',
@@ -29,6 +30,10 @@ export function execClaude(
   options: ExecFileOptions = {},
 ): Promise<{ stdout: string; stderr: string }> {
   return resolver.execCli(args, options);
+}
+
+export function checkClaudeCliHealth(): CliHealthResult {
+  return resolver.checkHealth();
 }
 
 export function clearClaudeCliPathCache(): void {
