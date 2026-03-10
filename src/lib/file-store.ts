@@ -479,6 +479,12 @@ export async function writeInbox(projectKey: string, data: import('@/types').Pro
   await writeJsonFile(getInboxPath(projectKey), data);
 }
 
+// ── Agent Schedules 路径函数 ──
+
+export function getSchedulesPath(): string {
+  return path.join(DATA_DIR, 'agent-schedules.json');
+}
+
 /**
  * 通知数据已变更（供 MCP Server 写入后触发 UI 刷新）
  */
