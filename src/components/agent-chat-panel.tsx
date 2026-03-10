@@ -16,7 +16,7 @@ import { PlanViewerPanel } from '@/components/plan-viewer-panel';
 import { SessionCompressDialog } from '@/components/session-compress-dialog';
 import type { SessionNavLink } from '@/components/agent-session-utils';
 import { buildSessionUrl } from '@/components/agent-session-utils';
-import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
+import { PROVIDER_REGISTRY, getProviderPreset, getModelContextWindow } from '@/lib/provider-registry';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
 import type { SessionConfig } from '@/types/agent-chat';
 import type { ChatMessage, ChatToolCall, ChatSSEEvent, ContentBlock } from '@/types';
@@ -70,6 +70,114 @@ const PROVIDER_LABELS: Record<ProviderId, string> = {
 // 保留 strip 函数供向后兼容（旧 AI 回复中可能仍含标签）。
 function stripSessionTitleTag(text: string): string {
   return text.replace(/<session-title>[\s\S]*?<\/session-title>\s*/, '');
+}
+
+/** 将 token 数格式化为易读字符串，如 "3.2k"、"120k" */
+function formatTokens(n: number): string {
+  if (n <= 0) return '0';
+  if (n < 1000) return String(n);
+  return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k`;
+}
+
+/**
+ * 上下文窗口圆环指示器（Cursor 风格）。
+ * 用 SVG 圆弧展示已用 token 占上下文窗口的比例。
+ * 颜色随用量变化：绿 → 黄 → 橙 → 红。
+ */
+function TokenRing({ used, total, size = 18 }: { used: number; total: number; size?: number }) {
+  const r = (size - 3) / 2;
+  const circumference = 2 * Math.PI * r;
+  const pct = total > 0 ? Math.min(used / total, 1) : 0;
+  const dashOffset = circumference * (1 - pct);
+  const color =
+    pct < 0.7  ? '#22c55e'  // green
+    : pct < 0.85 ? '#f59e0b'  // amber
+    : pct < 0.95 ? '#f97316'  // orange
+    : '#ef4444';               // red
+  const cx = size / 2;
+  const cy = size / 2;
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
+      {/* 背景轨道 */}
+      <circle
+        cx={cx} cy={cy} r={r}
+        fill="none" strokeWidth="2"
+        className="stroke-zinc-200 dark:stroke-zinc-700"
+      />
+      {/* 进度弧 */}
+      {pct > 0 && (
+        <circle
+          cx={cx} cy={cy} r={r}
+          fill="none" stroke={color} strokeWidth="2"
+          strokeDasharray={circumference}
+          strokeDashoffset={dashOffset}
+          strokeLinecap="round"
+          transform={`rotate(-90 ${cx} ${cy})`}
+          style={{ transition: 'stroke-dashoffset 0.4s ease, stroke 0.4s ease' }}
+        />
+      )}
+    </svg>
+  );
+}
+
+/**
+ * Token 用量指示栏 — 圆环 + 文字。
+ *
+ * 两种显示状态：
+ * - 会话中有 token 数据（inputTokens > 0）：显示 "实际已用 / 上下文窗口"
+ * - 无数据时：显示系统提示词估算大小（promptEstimate / contextWindow）
+ */
+function TokenUsageBar({
+  inputTokens,
+  outputTokens,
+  promptEstimate,
+  contextWindow,
+}: {
+  inputTokens: number;
+  outputTokens: number;
+  promptEstimate: number;
+  contextWindow: number;
+}) {
+  const hasActual = inputTokens > 0;
+  const usedTokens = hasActual ? inputTokens + outputTokens : promptEstimate;
+  const pct = contextWindow > 0 ? Math.round((usedTokens / contextWindow) * 100) : 0;
+
+  const tooltipLines: string[] = [];
+  if (hasActual) {
+    tooltipLines.push(`输入：${formatTokens(inputTokens)} tokens`);
+    tooltipLines.push(`输出：${formatTokens(outputTokens)} tokens`);
+    tooltipLines.push(`合计：${formatTokens(usedTokens)} / ${formatTokens(contextWindow)}（${pct}%）`);
+  } else {
+    tooltipLines.push(`系统提示词估算：~${formatTokens(promptEstimate)} tokens`);
+    tooltipLines.push(`上下文窗口：${formatTokens(contextWindow)}`);
+    if (promptEstimate > 0) tooltipLines.push(`占用：${pct}%`);
+  }
+
+  // 数据为 0 且无估算时不显示（避免无意义的空指示器）
+  if (usedTokens === 0) return null;
+
+  return (
+    <div
+      className="mb-1.5 flex items-center justify-end gap-1.5 px-0.5"
+      title={tooltipLines.join('\n')}
+    >
+      <span className="text-[10px] text-zinc-400">
+        {hasActual ? (
+          <>
+            {formatTokens(usedTokens)}
+            <span className="text-zinc-300 dark:text-zinc-600">/{formatTokens(contextWindow)}</span>
+          </>
+        ) : (
+          <>
+            <span className="text-zinc-400">提示词</span>
+            {' '}~{formatTokens(promptEstimate)}
+          </>
+        )}
+      </span>
+      <TokenRing used={usedTokens} total={contextWindow} size={18} />
+    </div>
+  );
 }
 
 export function AgentChatPanel({
@@ -130,6 +238,12 @@ export function AgentChatPanel({
   const [planContent, setPlanContent] = useState<string | null>(null);
   const [isPlanOpen, setIsPlanOpen] = useState(false);
   const [inPlanMode, setInPlanMode] = useState(false);
+
+  // Token usage tracking
+  const [tokenInputs, setTokenInputs] = useState(0);
+  const [tokenOutputs, setTokenOutputs] = useState(0);
+  const [promptEstimate, setPromptEstimate] = useState(0);
+  const [contextWindow, setContextWindow] = useState(200000);
 
   // 父子会话导航
   const [parentSession, setParentSession] = useState<SessionNavLink | null>(null);
@@ -326,6 +440,33 @@ export function AgentChatPanel({
     }
     return () => { cancelled = true; };
   }, [chatProvider]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch prompt info (system prompt size + context window for current model)
+  useEffect(() => {
+    // 立即根据当前 model 更新 contextWindow（不需要网络请求）
+    setContextWindow(getModelContextWindow(chatModel || 'claude-sonnet-4-6'));
+
+    let cancelled = false;
+    const params = new URLSearchParams({ agentId: agent.id });
+    if (projectKey) params.set('projectKey', projectKey);
+    if (chatModel) params.set('model', chatModel);
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/agent-chat/prompt-info?${params}`, { cache: 'no-store' });
+        if (cancelled || !res.ok) return;
+        const data = await res.json();
+        if (!cancelled) {
+          setPromptEstimate(data.estimatedTokens ?? 0);
+          setContextWindow(data.contextWindow ?? getModelContextWindow(chatModel));
+        }
+      } catch {
+        // ignore — fallback to local estimate
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [agent.id, chatModel, projectKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch session list
   const fetchSessionList = useCallback(async (agentId: string, pk?: string | null) => {
@@ -652,6 +793,11 @@ export function AgentChatPanel({
               setDocsSaved(prev => [...prev, { docId: event.docId, title: event.title, projectKey: event.projectKey }]);
               break;
 
+            case 'token_usage':
+              if (event.inputTokens > 0) setTokenInputs(event.inputTokens);
+              if (event.outputTokens > 0) setTokenOutputs(prev => prev + event.outputTokens);
+              break;
+
             case 'error':
               console.error('Agent chat stream error:', event.message);
               setErrorMsg(event.message ?? 'Stream error');
@@ -690,6 +836,8 @@ export function AgentChatPanel({
     setSessionIdSync(null);
     setSessionTitle(hasProject ? t('chat.newSession') : '新会话');
     setSessionList([]);
+    setTokenInputs(0);
+    setTokenOutputs(0);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
@@ -1114,6 +1262,8 @@ export function AgentChatPanel({
     setSessionConfig({});
     setShowConfig(false);
     setCompressDismissed(false);
+    setTokenInputs(0);
+    setTokenOutputs(0);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
@@ -1337,6 +1487,13 @@ export function AgentChatPanel({
 
         {/* Input area */}
         <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
+          {/* Token 用量指示器行 */}
+          <TokenUsageBar
+            inputTokens={tokenInputs}
+            outputTokens={tokenOutputs}
+            promptEstimate={promptEstimate}
+            contextWindow={contextWindow}
+          />
           <ChatInput
             onSubmit={handleChatInputSubmit}
             onAbort={handleAbort}
@@ -1574,6 +1731,13 @@ export function AgentChatPanel({
 
       {/* Input area */}
       <div className="border-t border-zinc-100 p-2 dark:border-zinc-800">
+        {/* Token 用量指示器行 */}
+        <TokenUsageBar
+          inputTokens={tokenInputs}
+          outputTokens={tokenOutputs}
+          promptEstimate={promptEstimate}
+          contextWindow={contextWindow}
+        />
         <ChatInput
           onSubmit={handleChatInputSubmit}
           onAbort={handleAbort}
