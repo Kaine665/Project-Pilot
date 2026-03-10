@@ -601,6 +601,11 @@ async function buildResourcePrompt(
         merged.push({ type: 'context', id: cid, priority: 35 });
       }
     }
+    if (sessionConfig.skillNames?.length) {
+      for (const name of sessionConfig.skillNames) {
+        merged.push({ type: 'skill', id: name, priority: 52 });
+      }
+    }
     if (sessionConfig.supplementaryPrompt?.trim()) {
       const promptRef: InlineTextRef = {
         type: 'inline-text',
