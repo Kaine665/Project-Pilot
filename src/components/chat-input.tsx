@@ -4,6 +4,41 @@ import { memo, useState, useRef, useCallback, useEffect } from 'react';
 import { Send, Square, X, Paperclip, UserPlus } from 'lucide-react';
 import type { Agent } from '@/types';
 
+/** 将 token 数格式化为易读字符串，如 "3.2k"、"120k" */
+function formatTokens(n: number): string {
+  if (n <= 0) return '0';
+  if (n < 1000) return String(n);
+  return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k`;
+}
+
+/** 上下文窗口圆环（Cursor 风格），颜色随用量变化：绿 → 黄 → 橙 → 红 */
+function TokenRing({ used, total, size = 16 }: { used: number; total: number; size?: number }) {
+  const r = (size - 2.5) / 2;
+  const circumference = 2 * Math.PI * r;
+  const pct = total > 0 ? Math.min(used / total, 1) : 0;
+  const dashOffset = circumference * (1 - pct);
+  const color =
+    pct < 0.7  ? '#22c55e'
+    : pct < 0.85 ? '#f59e0b'
+    : pct < 0.95 ? '#f97316'
+    : '#ef4444';
+  const cx = size / 2;
+  const cy = size / 2;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
+      <circle cx={cx} cy={cy} r={r} fill="none" strokeWidth="2"
+        className="stroke-zinc-200 dark:stroke-zinc-700" />
+      {pct > 0 && (
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth="2"
+          strokeDasharray={circumference} strokeDashoffset={dashOffset}
+          strokeLinecap="round" transform={`rotate(-90 ${cx} ${cy})`}
+          style={{ transition: 'stroke-dashoffset 0.4s ease, stroke 0.4s ease' }}
+        />
+      )}
+    </svg>
+  );
+}
+
 interface SkillItem {
   name: string;
   description: string;
@@ -38,6 +73,13 @@ interface ChatInputProps {
   effortLabel?: string;
   /** 是否启用 / 命令（skill 选择器） */
   enableSlashCommands?: boolean;
+  /** Token 用量信息（用于工具栏圆环指示器） */
+  tokenInfo?: {
+    promptEstimate: number;   // 系统提示词 token 估算
+    inputTokens: number;      // 实际输入 token（含提示词，0 表示对话尚未开始）
+    outputTokens: number;     // 实际输出 token
+    contextWindow: number;    // 模型上下文窗口上限
+  };
 }
 
 export const ChatInput = memo(function ChatInput({
@@ -63,6 +105,7 @@ export const ChatInput = memo(function ChatInput({
   onEffortChange,
   effortLabel,
   enableSlashCommands = false,
+  tokenInfo,
 }: ChatInputProps) {
   const draftStorageKey = draftKey ? `pp:draft:${draftKey}` : null;
   const historyStorageKey = 'pp:input-history';
@@ -311,6 +354,30 @@ export const ChatInput = memo(function ChatInput({
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
       {/* Toolbar */}
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
+        {/* Token 圆环指示器 */}
+        {tokenInfo && tokenInfo.contextWindow > 0 && (() => {
+          const hasActual = tokenInfo.inputTokens > 0;
+          const usedTokens = hasActual
+            ? tokenInfo.inputTokens + tokenInfo.outputTokens
+            : tokenInfo.promptEstimate;
+          if (usedTokens <= 0) return null;
+          const line1 = `提示词：~${formatTokens(tokenInfo.promptEstimate)}`;
+          const line2 = `已用/总（含提示词）：${hasActual ? '' : '~'}${formatTokens(usedTokens)}/${formatTokens(tokenInfo.contextWindow)}`;
+          return (
+            <div className="relative flex items-center group">
+              <div className="flex h-[22px] w-[22px] items-center justify-center cursor-default">
+                <TokenRing used={usedTokens} total={tokenInfo.contextWindow} size={16} />
+              </div>
+              {/* Hover tooltip */}
+              <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block z-50 whitespace-nowrap">
+                <div className="rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 shadow-md dark:border-zinc-700 dark:bg-zinc-900">
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{line1}</p>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{line2}</p>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
         <button
           onClick={() => fileInputRef.current?.click()}
           className="flex items-center gap-1 rounded-full border border-zinc-200 px-2 py-0.5 text-xs text-zinc-400 hover:border-zinc-300 hover:text-zinc-600 transition-colors dark:border-zinc-700 dark:text-zinc-500 dark:hover:border-zinc-600 dark:hover:text-zinc-300"

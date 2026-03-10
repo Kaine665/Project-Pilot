@@ -72,113 +72,6 @@ function stripSessionTitleTag(text: string): string {
   return text.replace(/<session-title>[\s\S]*?<\/session-title>\s*/, '');
 }
 
-/** 将 token 数格式化为易读字符串，如 "3.2k"、"120k" */
-function formatTokens(n: number): string {
-  if (n <= 0) return '0';
-  if (n < 1000) return String(n);
-  return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k`;
-}
-
-/**
- * 上下文窗口圆环指示器（Cursor 风格）。
- * 用 SVG 圆弧展示已用 token 占上下文窗口的比例。
- * 颜色随用量变化：绿 → 黄 → 橙 → 红。
- */
-function TokenRing({ used, total, size = 18 }: { used: number; total: number; size?: number }) {
-  const r = (size - 3) / 2;
-  const circumference = 2 * Math.PI * r;
-  const pct = total > 0 ? Math.min(used / total, 1) : 0;
-  const dashOffset = circumference * (1 - pct);
-  const color =
-    pct < 0.7  ? '#22c55e'  // green
-    : pct < 0.85 ? '#f59e0b'  // amber
-    : pct < 0.95 ? '#f97316'  // orange
-    : '#ef4444';               // red
-  const cx = size / 2;
-  const cy = size / 2;
-
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
-      {/* 背景轨道 */}
-      <circle
-        cx={cx} cy={cy} r={r}
-        fill="none" strokeWidth="2"
-        className="stroke-zinc-200 dark:stroke-zinc-700"
-      />
-      {/* 进度弧 */}
-      {pct > 0 && (
-        <circle
-          cx={cx} cy={cy} r={r}
-          fill="none" stroke={color} strokeWidth="2"
-          strokeDasharray={circumference}
-          strokeDashoffset={dashOffset}
-          strokeLinecap="round"
-          transform={`rotate(-90 ${cx} ${cy})`}
-          style={{ transition: 'stroke-dashoffset 0.4s ease, stroke 0.4s ease' }}
-        />
-      )}
-    </svg>
-  );
-}
-
-/**
- * Token 用量指示栏 — 圆环 + 文字。
- *
- * 两种显示状态：
- * - 会话中有 token 数据（inputTokens > 0）：显示 "实际已用 / 上下文窗口"
- * - 无数据时：显示系统提示词估算大小（promptEstimate / contextWindow）
- */
-function TokenUsageBar({
-  inputTokens,
-  outputTokens,
-  promptEstimate,
-  contextWindow,
-}: {
-  inputTokens: number;
-  outputTokens: number;
-  promptEstimate: number;
-  contextWindow: number;
-}) {
-  const hasActual = inputTokens > 0;
-  const usedTokens = hasActual ? inputTokens + outputTokens : promptEstimate;
-  const pct = contextWindow > 0 ? Math.round((usedTokens / contextWindow) * 100) : 0;
-
-  const tooltipLines: string[] = [];
-  if (hasActual) {
-    tooltipLines.push(`输入：${formatTokens(inputTokens)} tokens`);
-    tooltipLines.push(`输出：${formatTokens(outputTokens)} tokens`);
-    tooltipLines.push(`合计：${formatTokens(usedTokens)} / ${formatTokens(contextWindow)}（${pct}%）`);
-  } else {
-    tooltipLines.push(`系统提示词估算：~${formatTokens(promptEstimate)} tokens`);
-    tooltipLines.push(`上下文窗口：${formatTokens(contextWindow)}`);
-    if (promptEstimate > 0) tooltipLines.push(`占用：${pct}%`);
-  }
-
-  // 数据为 0 且无估算时不显示（避免无意义的空指示器）
-  if (usedTokens === 0) return null;
-
-  return (
-    <div
-      className="mb-1.5 flex items-center justify-end gap-1.5 px-0.5"
-      title={tooltipLines.join('\n')}
-    >
-      <span className="text-[10px] text-zinc-400">
-        {hasActual ? (
-          <>
-            {formatTokens(usedTokens)}
-            <span className="text-zinc-300 dark:text-zinc-600">/{formatTokens(contextWindow)}</span>
-          </>
-        ) : (
-          <>
-            <span className="text-zinc-400">提示词</span>
-            {' '}~{formatTokens(promptEstimate)}
-          </>
-        )}
-      </span>
-      <TokenRing used={usedTokens} total={contextWindow} size={18} />
-    </div>
-  );
-}
 
 export function AgentChatPanel({
   agent,
@@ -1487,13 +1380,6 @@ export function AgentChatPanel({
 
         {/* Input area */}
         <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
-          {/* Token 用量指示器行 */}
-          <TokenUsageBar
-            inputTokens={tokenInputs}
-            outputTokens={tokenOutputs}
-            promptEstimate={promptEstimate}
-            contextWindow={contextWindow}
-          />
           <ChatInput
             onSubmit={handleChatInputSubmit}
             onAbort={handleAbort}
@@ -1515,6 +1401,7 @@ export function AgentChatPanel({
             onSelectGuest={handleSelectGuest}
             draftKey={sessionId ?? undefined}
             enableSlashCommands
+            tokenInfo={{ promptEstimate, inputTokens: tokenInputs, outputTokens: tokenOutputs, contextWindow }}
           />
         </div>
 
@@ -1731,13 +1618,6 @@ export function AgentChatPanel({
 
       {/* Input area */}
       <div className="border-t border-zinc-100 p-2 dark:border-zinc-800">
-        {/* Token 用量指示器行 */}
-        <TokenUsageBar
-          inputTokens={tokenInputs}
-          outputTokens={tokenOutputs}
-          promptEstimate={promptEstimate}
-          contextWindow={contextWindow}
-        />
         <ChatInput
           onSubmit={handleChatInputSubmit}
           onAbort={handleAbort}
@@ -1761,6 +1641,7 @@ export function AgentChatPanel({
           onSelectGuest={handleSelectGuest}
           draftKey={sessionId ?? undefined}
           enableSlashCommands
+          tokenInfo={{ promptEstimate, inputTokens: tokenInputs, outputTokens: tokenOutputs, contextWindow }}
         />
       </div>
 
