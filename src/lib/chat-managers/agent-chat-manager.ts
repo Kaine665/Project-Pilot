@@ -603,16 +603,21 @@ async function buildResourcePrompt(
   }
 
   // 项目级上下文自动注入：projectKey 匹配的上下文条目自动加载
+  // 若 Agent 声明了 contextTags，则只注入包含匹配标签的条目
   if (projectKey) {
     const existingCtxIds = new Set([
       ...(baseRefs.filter(r => r.type === 'context').map(r => r.id)),
       ...(sessionConfig?.contextIds ?? []),
     ]);
+    const agentTags = agent.contextTags;
     const ctxIndex = await readJsonFile<ContextIndexData>(getContextIndexPath(), { entries: [] });
     for (const entry of ctxIndex.entries) {
-      if (entry.projectKey === projectKey && (!entry.status || entry.status === 'active') && !existingCtxIds.has(entry.id)) {
-        merged.push({ type: 'context', id: entry.id, priority: 32 });
-      }
+      if (entry.projectKey !== projectKey) continue;
+      if (entry.status && entry.status !== 'active') continue;
+      if (existingCtxIds.has(entry.id)) continue;
+      // 标签筛选：Agent 有 contextTags 时，条目必须至少匹配一个标签
+      if (agentTags?.length && (!entry.tags?.length || !entry.tags.some(t => agentTags.includes(t)))) continue;
+      merged.push({ type: 'context', id: entry.id, priority: 32 });
     }
   }
 

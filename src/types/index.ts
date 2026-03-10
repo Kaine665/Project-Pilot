@@ -288,6 +288,8 @@ export interface Agent {
   triggerHints?: string[];
   /** 所属项目。undefined = 全局 Agent（所有项目可见） */
   projectKey?: string;
+  /** 上下文标签筛选：只自动注入包含这些标签的项目级上下文。为空则注入所有匹配 projectKey 的上下文 */
+  contextTags?: string[];
   /** 默认供应商（创建新会话时预选）。留空则继承全局设置。 */
   defaultProvider?: ProviderId;
   /** 默认模型 ID（创建新会话时预选）。留空则继承全局设置。 */
@@ -328,8 +330,10 @@ export interface ContextEntry {
   format: 'json' | 'markdown' | 'text';
   group?: string;       // 上下文包/分组名，如 "ELApp"，可选
   projectKey?: string;      // 关联项目（空=全局上下文）
-  /** 原始文件的本地绝对路径，由用户在从本地文件导入时填写，供 AI 修改源文件使用 */
+  /** 外部文件路径（绝对路径）。设置后从此路径读取内容，不复制到 context/ 目录 */
   sourcePath?: string;
+  /** 逻辑标签，用于按需筛选（如 ["数据库", "阅读"]） */
+  tags?: string[];
   /**
    * 'draft' = Agent 自动产出，等待用户确认。
    * 'active' / undefined = 正常生效。

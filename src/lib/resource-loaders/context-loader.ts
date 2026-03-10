@@ -25,7 +25,8 @@ export class ContextResourceLoader implements ResourceLoader {
     }
 
     try {
-      const filePath = getContextFilePath(entry.fileName);
+      // sourcePath 优先：从外部文件读取；否则从 context/ 目录读取
+      const filePath = entry.sourcePath || getContextFilePath(entry.fileName);
       const content = await readFile(filePath, 'utf-8');
       return {
         ref,

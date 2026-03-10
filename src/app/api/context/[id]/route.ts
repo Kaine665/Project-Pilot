@@ -29,7 +29,8 @@ export async function GET(
 
   let content = '';
   try {
-    content = await fs.readFile(getContextFilePath(entry.fileName), 'utf-8');
+    const readPath = entry.sourcePath || getContextFilePath(entry.fileName);
+    content = await fs.readFile(readPath, 'utf-8');
   } catch { /* file may not exist yet */ }
 
   return NextResponse.json({ entry, content });
@@ -84,6 +85,13 @@ export async function PATCH(
       entry.sourcePath = sp;
     } else {
       delete entry.sourcePath;
+    }
+  }
+  if (body.tags !== undefined) {
+    if (Array.isArray(body.tags) && body.tags.length) {
+      entry.tags = body.tags.filter((t: unknown) => typeof t === 'string' && (t as string).trim()).map((t: string) => t.trim());
+    } else {
+      delete entry.tags;
     }
   }
   entry.updatedAt = new Date().toISOString();
