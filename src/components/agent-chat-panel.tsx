@@ -688,7 +688,8 @@ export function AgentChatPanel({
 
             case 'token_usage':
               if (event.inputTokens > 0) setTokenInputs(event.inputTokens);
-              if (event.outputTokens > 0) setTokenOutputs(prev => prev + event.outputTokens);
+              if (event.outputTokens > 0) setTokenOutputs(event.outputTokens);
+              if (event.contextWindow && event.contextWindow > 0) setContextWindow(event.contextWindow);
               break;
 
             case 'error':
