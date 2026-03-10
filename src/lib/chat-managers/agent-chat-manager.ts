@@ -19,7 +19,8 @@ import { BaseChatManager } from './base-chat-manager';
 import type { BaseRun, SpawnConfig } from './types';
 import type { StreamParser } from '@/lib/claude-stream-parser';
 import { getAppWorkingDir } from '@/lib/app-paths';
-import { getPromptFilePath } from '@/lib/file-store';
+import { getPromptFilePath, getContextIndexPath, readJsonFile } from '@/lib/file-store';
+import type { ContextIndexData } from '@/types';
 import { resolveSystemPrompt, createRuntimePromptCopy } from '@/lib/agent-prompt-store';
 import {
   buildClaudeEnv,
@@ -599,6 +600,20 @@ async function buildResourcePrompt(
   // 项目级 prompt（有 projectKey 时注入，priority 2）
   if (projectKey) {
     merged.push({ type: 'project-prompt', id: '_project', priority: 2 });
+  }
+
+  // 项目级上下文自动注入：projectKey 匹配的上下文条目自动加载
+  if (projectKey) {
+    const existingCtxIds = new Set([
+      ...(baseRefs.filter(r => r.type === 'context').map(r => r.id)),
+      ...(sessionConfig?.contextIds ?? []),
+    ]);
+    const ctxIndex = await readJsonFile<ContextIndexData>(getContextIndexPath(), { entries: [] });
+    for (const entry of ctxIndex.entries) {
+      if (entry.projectKey === projectKey && (!entry.status || entry.status === 'active') && !existingCtxIds.has(entry.id)) {
+        merged.push({ type: 'context', id: entry.id, priority: 32 });
+      }
+    }
   }
 
   if (extraRefs) merged.push(...extraRefs);
