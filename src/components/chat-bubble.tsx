@@ -266,9 +266,9 @@ export const ChatBubble = memo(function ChatBubble({
           {planWriteContent && onViewPlan && (
             <button
               onClick={(e) => { e.stopPropagation(); onViewPlan(planWriteContent); }}
-              className="mt-1.5 flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700 transition-colors hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/40"
+              className="mt-2 flex h-[60px] w-[200px] items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/40"
             >
-              <ClipboardList className="h-3 w-3" />
+              <ClipboardList className="h-5 w-5 shrink-0" />
               <span>查看计划</span>
             </button>
           )}

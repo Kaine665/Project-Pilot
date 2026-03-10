@@ -498,7 +498,6 @@ export function SessionConfigPanel({
               </div>
             )}
           </div>
-        </div>
 
         {/* ── 上下文绑定 ── */}
         {contextEntries.length > 0 && (

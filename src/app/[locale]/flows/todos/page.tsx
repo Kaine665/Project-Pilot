@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ListTodo, Plus, Trash2, ChevronDown, Circle, CheckCircle2, Bot, Play, X } from 'lucide-react';
+import { ListTodo, Plus, Trash2, ChevronDown, Circle, CheckCircle2, Bot, Play, X, MessageSquare } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import type { TodoItem, TodoStatus, TodoPriority, Agent } from '@/types';
@@ -230,14 +230,14 @@ export default function TodosPage() {
       if (res.ok) {
         const data = await res.json();
         setLaunchedSessionId(data.sessionId);
-        // Mark selected as in_progress
+        // Mark selected as in_progress and link session
         await fetch('/api/todos/batch', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ids: todoItems.map(t => t.id),
             action: 'update',
-            updates: { status: 'in_progress' },
+            updates: { status: 'in_progress', sessionId: data.sessionId },
           }),
         });
         setSelectedIds(new Set());
@@ -327,7 +327,7 @@ export default function TodosPage() {
   const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
   const someSelected = visibleIds.some(id => selectedIds.has(id));
 
-  const gridCols = 'grid-cols-[28px_1fr_100px_90px_90px_120px_40px]';
+  const gridCols = 'grid-cols-[28px_1fr_100px_90px_90px_120px_32px_40px]';
 
   return (
     <div className="h-full overflow-y-auto">
@@ -401,6 +401,7 @@ export default function TodosPage() {
             <span>{t('columns.status')}</span>
             <span>{t('columns.createdAt')}</span>
             <span></span>
+            <span></span>
           </div>
 
           {/* Table body */}
@@ -419,9 +420,7 @@ export default function TodosPage() {
                 return (
                   <div key={todo.id} className="group">
                     <div
-                      className={`grid ${gridCols} items-center px-4 py-2.5 border-b border-zinc-100 transition-colors hover:bg-zinc-50 dark:border-zinc-800/50 dark:hover:bg-zinc-900/40 ${
-                        todo.status === 'done' ? 'opacity-50' : ''
-                      } ${isSelected ? 'bg-blue-50/50 dark:bg-blue-950/20' : ''}`}
+                      className={`grid ${gridCols} items-center px-4 py-2.5 border-b border-zinc-100 transition-colors hover:bg-zinc-50 dark:border-zinc-800/50 dark:hover:bg-zinc-900/40 ${isSelected ? 'bg-blue-50/50 dark:bg-blue-950/20' : ''}`}
                     >
                       {/* Circle checkbox */}
                       <button
@@ -457,7 +456,7 @@ export default function TodosPage() {
                           />
                         ) : (
                           <span
-                            className={`flex-1 truncate text-sm cursor-text ${todo.status === 'done' ? 'line-through text-zinc-400' : 'text-zinc-900 dark:text-zinc-100'}`}
+                            className={`flex-1 truncate text-sm cursor-text ${todo.status === 'done' ? 'text-zinc-400 dark:text-zinc-500' : 'text-zinc-900 dark:text-zinc-100'}`}
                             onClick={() => startEditTitle(todo)}
                           >
                             {todo.title}
@@ -502,6 +501,19 @@ export default function TodosPage() {
 
                       {/* Created at */}
                       <span className="text-xs text-zinc-400">{formatDate(todo.createdAt)}</span>
+
+                      {/* Go to session */}
+                      {todo.sessionId && todo.agentId ? (
+                        <button
+                          onClick={() => router.push(`/flows/agents?agent=${todo.agentId}&session=${todo.sessionId}`)}
+                          className="rounded p-1 text-zinc-300 transition-colors hover:bg-blue-50 hover:text-blue-500 dark:text-zinc-600 dark:hover:bg-blue-950/30 dark:hover:text-blue-400"
+                          title="跳转到会话"
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                        </button>
+                      ) : (
+                        <span />
+                      )}
 
                       {/* Delete */}
                       <button

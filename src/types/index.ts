@@ -359,6 +359,7 @@ export interface TodoItem {
   status: TodoStatus;
   priority: TodoPriority;
   agentId?: string;
+  sessionId?: string;
   projectKey?: string;
   createdAt: string;
   updatedAt: string;

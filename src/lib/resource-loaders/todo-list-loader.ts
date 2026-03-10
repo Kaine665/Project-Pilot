@@ -59,6 +59,11 @@ export class TodoListLoader implements ResourceLoader {
       todos = todos.filter(t => t.projectKey === ctx.projectKey);
     }
 
+    // 按 Agent 过滤：有 agentId 时，只显示分配给该 agent 或未分配的 todos
+    if (ctx.agentId) {
+      todos = todos.filter(t => !t.agentId || t.agentId === ctx.agentId);
+    }
+
     if (todos.length === 0) {
       return {
         ref,
@@ -78,9 +83,20 @@ export class TodoListLoader implements ResourceLoader {
 
     const todoList = `### 当前待办（共 ${todos.length} 项）\n\n${lines.join('\n\n')}`;
 
+    const STATUS_GUIDE = `### 任务状态管理
+
+当你完成了某个待办任务后，请主动更新其状态：
+\`\`\`bash
+curl -s -X PATCH http://localhost:4000/api/todos/<todo-id> -H "Content-Type: application/json" -d '{"status":"done"}'
+\`\`\`
+如果你开始处理某个待办，先将其标记为进行中：
+\`\`\`bash
+curl -s -X PATCH http://localhost:4000/api/todos/<todo-id> -H "Content-Type: application/json" -d '{"status":"in_progress"}'
+\`\`\``;
+
     return {
       ref,
-      content: API_GUIDE + '\n\n' + todoList,
+      content: API_GUIDE + '\n\n' + todoList + '\n\n' + STATUS_GUIDE,
       sectionTitle: 'AI 待办系统',
       ok: true,
     };
