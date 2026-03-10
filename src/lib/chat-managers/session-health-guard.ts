@@ -11,6 +11,7 @@
  */
 
 import { spawnClaude } from '@/lib/claude-cli';
+import { getAppWorkingDir } from '@/lib/app-paths';
 import { buildClaudeEnv, buildClaudeModelArgs } from '@/lib/settings-manager';
 import { StreamParser, LineBuffer } from '@/lib/claude-stream-parser';
 import type { RunStatus } from './types';
@@ -144,7 +145,7 @@ function callClaudeLightweight(prompt: string): Promise<string> {
       '--output-format', 'stream-json',
       ...modelArgs,
     ], {
-      cwd: process.cwd(),
+      cwd: getAppWorkingDir(),
       shell: false,
       env,
     });
