@@ -13,6 +13,33 @@ import {
 } from '@/lib/file-store';
 import type { ContextEntry, ContextIndexData } from '@/types';
 
+/** 纯规则摘要生成（不依赖 AI），用于创建/更新时自动回填 summary */
+export function generateContextSummary(content: string, format: 'json' | 'markdown' | 'text'): string {
+  const MAX = 800;
+  if (format === 'json') {
+    try {
+      const obj = JSON.parse(content);
+      if (Array.isArray(obj)) {
+        const firstItem = obj[0];
+        const firstStr = firstItem ? JSON.stringify(firstItem, null, 2).slice(0, 300) : '';
+        return `JSON 数组，${obj.length} 项。首项结构：\n${firstStr}`.slice(0, MAX);
+      }
+      const keys = Object.keys(obj);
+      return `JSON 对象，字段: ${keys.join(', ')}`.slice(0, MAX);
+    } catch {
+      return content.slice(0, MAX);
+    }
+  }
+  if (format === 'markdown') {
+    const lines = content.split('\n');
+    const headings = lines.filter(l => /^#{1,3}\s/.test(l));
+    if (headings.length > 0) {
+      return headings.slice(0, 15).join('\n').slice(0, MAX);
+    }
+  }
+  return content.slice(0, MAX);
+}
+
 const DEFAULT_INDEX: ContextIndexData = { entries: [] };
 
 async function readIndex(): Promise<ContextIndexData> {
@@ -37,7 +64,7 @@ export async function GET(request: NextRequest) {
 
 /** POST /api/context — create a new context entry + content file */
 export async function POST(request: NextRequest) {
-  const { label, description, fileName, format, content, group, sourcePath, tags, status, sourceAgentSessionId, producedAt, projectKey } = await request.json();
+  const { label, description, fileName, format, content, group, sourcePath, tags, status, sourceAgentSessionId, producedAt, projectKey, summary: manualSummary } = await request.json();
 
   if (!label?.trim()) {
     return NextResponse.json({ error: 'label is required' }, { status: 400 });
@@ -65,6 +92,13 @@ export async function POST(request: NextRequest) {
   const trimmedSourceAgentSessionId = sourceAgentSessionId?.trim() || undefined;
   const trimmedProducedAt = producedAt?.trim() || undefined;
 
+  // 自动生成 summary（用户手动提供时优先使用，否则从内容提取）
+  const trimmedManualSummary = typeof manualSummary === 'string' ? manualSummary.trim() : undefined;
+  const autoSummary = (!trimmedManualSummary && content && !trimmedSourcePath)
+    ? generateContextSummary(content, format)
+    : undefined;
+  const finalSummary = trimmedManualSummary || autoSummary;
+
   const entry: ContextEntry = {
     id: `ctx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     label: label.trim(),
@@ -78,6 +112,7 @@ export async function POST(request: NextRequest) {
     ...(trimmedStatus ? { status: trimmedStatus } : {}),
     ...(trimmedSourceAgentSessionId ? { sourceAgentSessionId: trimmedSourceAgentSessionId } : {}),
     ...(trimmedProducedAt ? { producedAt: trimmedProducedAt } : {}),
+    ...(finalSummary ? { summary: finalSummary } : {}),
     createdAt: now,
     updatedAt: now,
   };

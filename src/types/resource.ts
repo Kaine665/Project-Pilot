@@ -59,6 +59,12 @@ export interface ResourceRef {
   priority?: number;
   /** Human-readable label for UI display */
   label?: string;
+  /**
+   * 注入模式（仅对 context 类型生效）：
+   * - 'summary'（默认）：注入摘要文本，节省 token
+   * - 'full'：注入完整文件内容（向后兼容：明确配置到 Agent 资源列表的 context）
+   */
+  injectMode?: 'summary' | 'full';
 }
 
 // ── Specialised Refs ──
