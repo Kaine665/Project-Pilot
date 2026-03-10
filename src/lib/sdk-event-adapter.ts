@@ -79,6 +79,28 @@ export class SdkEventAdapter {
       if (msg.subtype !== 'success') {
         events.push({ type: 'error', message: `SDK query ended: ${msg.subtype}` });
       }
+      // 从 modelUsage 提取精确的累计 token 用量（含跨工具调用的所有轮次）
+      // modelUsage 字段使用 camelCase，且包含 contextWindow，是最可靠的数据来源
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const modelUsage = (msg as any).modelUsage as Record<string, { inputTokens?: number; outputTokens?: number; contextWindow?: number }> | undefined;
+      if (modelUsage) {
+        let inputTokens = 0;
+        let outputTokens = 0;
+        let contextWindow = 0;
+        for (const mu of Object.values(modelUsage)) {
+          inputTokens += mu.inputTokens ?? 0;
+          outputTokens += mu.outputTokens ?? 0;
+          contextWindow = Math.max(contextWindow, mu.contextWindow ?? 0);
+        }
+        if (inputTokens > 0 || outputTokens > 0) {
+          events.push({
+            type: 'token_usage',
+            inputTokens,
+            outputTokens,
+            ...(contextWindow > 0 ? { contextWindow } : {}),
+          });
+        }
+      }
       // NOTE: 不在此处 emit done — done 由 AgentChatManager 在 query 迭代结束后统一处理
       return events;
     }
