@@ -61,12 +61,34 @@ const LEGACY_FLOWS_DIR = path.join(process.cwd(), 'src', 'data', 'flows');
 let _flowsMigrated = false;
 
 /**
+ * 首次启动时创建所有数据子目录。
+ * 幂等操作，仅在 ensureFlowsMigrated() 首次调用时执行。
+ */
+async function ensureDataDirInitialized(): Promise<void> {
+  const dirs = [
+    getFlowsDir(),
+    getPromptsDir(),
+    getContextDir(),
+    getDesignDocsDir(),
+    getSkillsDir(),
+    getProjectPromptsDir(),
+    path.join(DATA_DIR, 'orchestrations'),
+    path.join(DATA_DIR, '_snapshots'),
+  ];
+  await Promise.all(dirs.map(d => fs.mkdir(d, { recursive: true })));
+}
+
+/**
  * 懒迁移：如果用户目录没有 flows 数据但源码目录有，自动复制过去。
  * 仅在首次调用时执行，后续调用直接返回。
+ * 同时确保所有数据子目录已创建。
  */
 export async function ensureFlowsMigrated(): Promise<void> {
   if (_flowsMigrated) return;
   _flowsMigrated = true;
+
+  // 确保所有数据子目录存在
+  await ensureDataDirInitialized();
 
   const destDir = getFlowsDir();
   const destIndex = getFlowIndexPath();

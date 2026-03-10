@@ -13,8 +13,16 @@ export interface CliResolverConfig {
   npmCliJsRelativePath: string;
 }
 
+export interface CliHealthResult {
+  ok: boolean;
+  resolved: CliInvocation;
+  /** 当 ok=false 时，提供用户可读的诊断信息 */
+  diagnostic?: string;
+}
+
 export interface CliResolver {
   resolveInvocation: () => CliInvocation;
+  checkHealth: () => CliHealthResult;
   spawnCli: (args: string[], options: SpawnOptions) => ChildProcess;
   execCli: (args: string[], options?: ExecFileOptions) => Promise<{ stdout: string; stderr: string }>;
   clearCache: () => void;
@@ -171,9 +179,39 @@ export function createCliResolver(config: CliResolverConfig): CliResolver {
     });
   };
 
+  const checkHealth = (): CliHealthResult => {
+    const cli = resolveInvocation();
+
+    // 如果解析结果只是裸命令名（没有完整路径），说明 PATH 和全局目录都没找到
+    if (cli.command === config.binName && cli.preArgs.length === 0) {
+      const installCmd = 'npm install -g @anthropic-ai/claude-code';
+      return {
+        ok: false,
+        resolved: cli,
+        diagnostic: [
+          `"${config.binName}" 命令未找到。`,
+          `请先安装 Claude Code CLI：${installCmd}`,
+          `或设置环境变量 ${config.overrideEnvVar} 指向 CLI 可执行文件路径。`,
+        ].join('\n'),
+      };
+    }
+
+    // 解析到了具体文件路径，检查文件是否确实存在
+    const target = cli.preArgs.length > 0 ? cli.preArgs[cli.preArgs.length - 1] : cli.command;
+    if (!isUsableFile(target)) {
+      return {
+        ok: false,
+        resolved: cli,
+        diagnostic: `CLI 文件不可用：${target}\n请重新安装或检查路径。`,
+      };
+    }
+
+    return { ok: true, resolved: cli };
+  };
+
   const clearCache = (): void => {
     cachedInvocation = null;
   };
 
-  return { resolveInvocation, spawnCli, execCli, clearCache };
+  return { resolveInvocation, checkHealth, spawnCli, execCli, clearCache };
 }
