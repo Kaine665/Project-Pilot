@@ -452,3 +452,32 @@ export interface InboxItem {
 export interface ProjectInbox {
   items: InboxItem[];
 }
+
+// ==================== Agent Schedules（定时运行） ====================
+
+/**
+ * Agent 定时运行配置。
+ * 每条记录对应一个"每到 cron 时间就启动一次 Agent 会话"的规则。
+ */
+export interface AgentSchedule {
+  id: string;           // sched-{timestamp}-{random4}
+  agentId: string;      // 关联的 Agent ID
+  /** cron 表达式，标准 5 段格式（分 时 日 月 周）*/
+  cron: string;
+  /** 启动时发送的初始消息 */
+  message: string;
+  /** 可选：绑定的项目 key（会加载项目流程数据） */
+  projectKey?: string;
+  /** 是否启用，默认 true */
+  enabled: boolean;
+  /** 备注名称（方便用户识别） */
+  label?: string;
+  lastRunAt?: string;   // ISO timestamp，上次触发时间
+  nextRunAt?: string;   // ISO timestamp，下次预计触发时间（前端展示用）
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentSchedulesData {
+  schedules: AgentSchedule[];
+}
