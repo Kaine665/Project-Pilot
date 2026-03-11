@@ -4,11 +4,11 @@ import { memo, useState, useRef, useCallback, useEffect } from 'react';
 import { Send, Square, X, Paperclip, UserPlus } from 'lucide-react';
 import type { Agent } from '@/types';
 
-/** 将 token 数格式化为易读字符串，如 "3.2k"、"120k" */
+/** 将 token 数格式化为易读字符串，如 "3.2k"、"12.3k" */
 function formatTokens(n: number): string {
   if (n <= 0) return '0';
   if (n < 1000) return String(n);
-  return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k`;
+  return `${(n / 1000).toFixed(1)}k`;
 }
 
 /** 上下文窗口圆环（Cursor 风格），颜色随用量变化：绿 → 黄 → 橙 → 红 */
@@ -361,8 +361,12 @@ export const ChatInput = memo(function ChatInput({
             ? tokenInfo.inputTokens + tokenInfo.outputTokens
             : tokenInfo.promptEstimate;
           if (usedTokens <= 0) return null;
+          // line1 始终显示提示词估算；line2 仅在有实际 token 数据时显示，
+          // 避免对话开始前两行显示相同的估算值
           const line1 = `提示词：~${formatTokens(tokenInfo.promptEstimate)}`;
-          const line2 = `已用/总（含提示词）：${hasActual ? '' : '~'}${formatTokens(usedTokens)}/${formatTokens(tokenInfo.contextWindow)}`;
+          const line2 = hasActual
+            ? `已用/总（含提示词）：${formatTokens(usedTokens)}/${formatTokens(tokenInfo.contextWindow)}`
+            : null;
           return (
             <div className="relative flex items-center group">
               <div className="flex h-[22px] w-[22px] items-center justify-center cursor-default">
@@ -372,7 +376,7 @@ export const ChatInput = memo(function ChatInput({
               <div className="pointer-events-none absolute bottom-full left-0 mb-1.5 hidden group-hover:block z-50 whitespace-nowrap">
                 <div className="rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 shadow-md dark:border-zinc-700 dark:bg-zinc-900">
                   <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{line1}</p>
-                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{line2}</p>
+                  {line2 && <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{line2}</p>}
                 </div>
               </div>
             </div>
