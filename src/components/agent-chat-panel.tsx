@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { flushSync } from 'react-dom';
 import { Loader2, Maximize2, Minimize2, Bot, Sparkles, Plus, MessageSquare, Trash2, Settings, FileDown, ClipboardList, ArrowLeft, GitFork } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from '@/i18n/routing';
@@ -487,12 +488,14 @@ export function AgentChatPanel({
     const toolCalls = toolCallsRef.current;
     const blocks = blocksRef.current;
 
-    // 先清空流式显示，防止消息重复
-    setIsStreaming(false);
-    setStreamingBlocks([]);
-    setInPlanMode(false);
+    // 用 flushSync 强制同步渲染：先清空流式气泡，确保 DOM 更新完成后
+    // 再添加已提交消息，彻底杜绝"流式气泡 + 已提交消息"同时出现的问题
+    flushSync(() => {
+      setIsStreaming(false);
+      setStreamingBlocks([]);
+      setInPlanMode(false);
+    });
 
-    // 然后添加消息到历史
     if (!isStaleStream && (fullText || toolCalls.length > 0)) {
       const cleanedText = stripSessionTitleTag(fullText);
       const assistantMsg: ChatMessage = {
