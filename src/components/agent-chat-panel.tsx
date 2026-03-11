@@ -487,6 +487,12 @@ export function AgentChatPanel({
     const toolCalls = toolCallsRef.current;
     const blocks = blocksRef.current;
 
+    // 先清空流式显示，防止消息重复
+    setIsStreaming(false);
+    setStreamingBlocks([]);
+    setInPlanMode(false);
+
+    // 然后添加消息到历史
     if (!isStaleStream && (fullText || toolCalls.length > 0)) {
       const cleanedText = stripSessionTitleTag(fullText);
       const assistantMsg: ChatMessage = {
@@ -499,10 +505,6 @@ export function AgentChatPanel({
       };
       setMessages((prev) => [...prev, assistantMsg]);
     }
-
-    setIsStreaming(false);
-    setStreamingBlocks([]);
-    setInPlanMode(false);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
