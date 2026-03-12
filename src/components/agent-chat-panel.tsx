@@ -15,6 +15,7 @@ import { GuestAgentOverlay } from '@/components/guest-agent-overlay';
 import { SessionConfigPanel } from '@/components/session-config-panel';
 import { PlanViewerPanel } from '@/components/plan-viewer-panel';
 import { SessionCompressDialog } from '@/components/session-compress-dialog';
+import { FilePreviewDialog } from '@/components/file-preview-dialog';
 import type { SessionNavLink } from '@/components/agent-session-utils';
 import { buildSessionUrl } from '@/components/agent-session-utils';
 import { PROVIDER_REGISTRY, getProviderPreset, getModelContextWindow } from '@/lib/provider-registry';
@@ -132,6 +133,9 @@ export function AgentChatPanel({
   const [planContent, setPlanContent] = useState<string | null>(null);
   const [isPlanOpen, setIsPlanOpen] = useState(false);
   const [inPlanMode, setInPlanMode] = useState(false);
+
+  // File preview
+  const [previewFilePath, setPreviewFilePath] = useState<string | null>(null);
 
   // Token usage tracking
   const [tokenInputs, setTokenInputs] = useState(0);
@@ -1309,6 +1313,11 @@ export function AgentChatPanel({
     setIsPlanOpen(true);
   }, []);
 
+  // Open in-app file preview from a clickable path in chat messages
+  const handleFileClick = useCallback((filePath: string) => {
+    setPreviewFilePath(filePath);
+  }, []);
+
   // Plan side panel element (reused across modes)
   const planPanel = planContent ? (
     <div
@@ -1361,6 +1370,7 @@ export function AgentChatPanel({
           onRetry={handleRetry}
           hasSendError={!!errorMsg && msg.role === 'user' && msg.id === messages[messages.length - 1]?.id}
           onViewPlan={handleViewPlan}
+          onFileClick={handleFileClick}
         />
       ))}
 
@@ -1460,6 +1470,14 @@ export function AgentChatPanel({
           <SaveKnowledgeDialog
             content={saveDialogContent}
             onClose={() => setSaveDialogContent(null)}
+          />
+        )}
+
+        {/* File preview overlay */}
+        {previewFilePath && (
+          <FilePreviewDialog
+            filePath={previewFilePath}
+            onClose={() => setPreviewFilePath(null)}
           />
         )}
 
@@ -1711,6 +1729,14 @@ export function AgentChatPanel({
         <SaveKnowledgeDialog
           content={saveDialogContent}
           onClose={() => setSaveDialogContent(null)}
+        />
+      )}
+
+      {/* File preview overlay */}
+      {previewFilePath && (
+        <FilePreviewDialog
+          filePath={previewFilePath}
+          onClose={() => setPreviewFilePath(null)}
         />
       )}
 
