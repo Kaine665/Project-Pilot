@@ -1195,17 +1195,21 @@ export function AgentChatPanel({
     setMessages(prev => prev.filter(m => m.id !== messageId));
   }, []);
 
-  // Branch: create a new session from this message and switch to it
+  // Branch: create a new session from this message and switch to it.
+  // Works even during streaming — aborts the current stream before switching.
   const handleBranch = useCallback(async (messageId: string) => {
     if (!sessionId) return;
-    // messageId is "restored-{index}" or "msg-{timestamp}-{random}" — extract index from messages array
     const msgIndex = messages.findIndex(m => m.id === messageId);
     if (msgIndex < 0) return;
     try {
       const res = await fetch('/api/agent-chat/sessions/branch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sourceSessionId: sessionId, branchAtIndex: msgIndex }),
+        body: JSON.stringify({
+          sourceSessionId: sessionId,
+          branchAtIndex: msgIndex,
+          frontendMessageCount: messages.length,
+        }),
       });
       if (!res.ok) return;
       const data = await res.json();
@@ -1216,13 +1220,44 @@ export function AgentChatPanel({
         unreadCount: 0,
       };
       setSessionList(prev => [newItem, ...prev]);
-      handleSwitchSession(newItem);
+
+      // Abort streaming if active so the session switch is not blocked
+      if (streamAbortRef.current) {
+        streamAbortRef.current.abort();
+        streamAbortRef.current = null;
+      }
+      flushSync(() => {
+        setIsStreaming(false);
+        setStreamingBlocks([]);
+        setInPlanMode(false);
+      });
+      blocksRef.current = [];
+      fullTextRef.current = '';
+      toolCallsRef.current = [];
+      streamTargetSessionRef.current = null;
+      finalizingRef.current = false;
+
+      // Switch to the branched session inline (bypasses handleSwitchSession's
+      // isStreaming guard which could silently skip the switch).
+      initTokenRef.current += 1;
+      const token = initTokenRef.current;
+      setSessionIdSync(newItem.id);
+      setSessionTitle(newItem.title);
+      setMessages([]);
+      setSessionConfig({});
+      setShowConfig(false);
+      setCompressDismissed(false);
+      setTokenInputs(0);
+      setTokenOutputs(0);
+      pendingAnswerRef.current = null;
+      await loadSessionData(newItem.id, token);
+
       // Notify parent to update sidebar and opened session tab
       onSessionChange?.(newItem);
     } catch {
       // ignore
     }
-  }, [isStreaming, sessionId, messages, handleSwitchSession, onSessionChange]);
+  }, [sessionId, messages, loadSessionData, setSessionIdSync, onSessionChange]);
 
   // Regenerate: remove the last assistant message and resend the last user message
   const handleRegenerate = useCallback(() => {

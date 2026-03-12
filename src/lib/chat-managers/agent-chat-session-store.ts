@@ -189,15 +189,35 @@ export async function deleteSessionFromDisk(sessionId: string): Promise<boolean>
 export async function branchSession(
   sourceSessionId: string,
   branchAtIndex: number,
+  frontendMessageCount?: number,
 ): Promise<AgentChatSession> {
   const source = await loadSession(sourceSessionId);
   if (!source) throw new Error('Source session not found');
 
-  if (branchAtIndex < 0 || branchAtIndex >= source.messages.length) {
+  if (branchAtIndex < 0) {
     throw new Error('Message index out of range');
   }
 
-  const branchedMessages = source.messages.slice(0, branchAtIndex + 1);
+  // When the frontend's message array is out of sync with disk (e.g. local
+  // deletions, streaming messages not yet persisted), the index may refer to
+  // a different position on disk. Clamp to disk bounds to avoid silent data
+  // loss or errors, and prefer using the relative position from the end when
+  // the frontend has extra messages that disk doesn't.
+  let effectiveIndex = branchAtIndex;
+  const diskLen = source.messages.length;
+  if (frontendMessageCount !== undefined && frontendMessageCount !== diskLen) {
+    // Frontend has more messages (e.g. streaming assistant not yet persisted):
+    // the user's intended offset from the end is more reliable than absolute index.
+    const fromEnd = frontendMessageCount - 1 - branchAtIndex;
+    effectiveIndex = Math.max(0, diskLen - 1 - fromEnd);
+  }
+  effectiveIndex = Math.min(effectiveIndex, diskLen - 1);
+
+  if (diskLen === 0) {
+    throw new Error('Source session has no messages');
+  }
+
+  const branchedMessages = source.messages.slice(0, effectiveIndex + 1);
   const now = new Date().toISOString();
   const newId = generateSessionId();
   const newSession: AgentChatSession = {

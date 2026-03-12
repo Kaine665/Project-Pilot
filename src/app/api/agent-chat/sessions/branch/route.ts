@@ -9,7 +9,7 @@ import { branchSession } from '@/lib/agent-chat-manager';
  */
 export async function POST(req: NextRequest) {
   try {
-    const { sourceSessionId, branchAtIndex } = await req.json();
+    const { sourceSessionId, branchAtIndex, frontendMessageCount } = await req.json();
     if (!sourceSessionId || typeof branchAtIndex !== 'number') {
       return NextResponse.json(
         { error: 'sourceSessionId (string) and branchAtIndex (number) are required' },
@@ -17,7 +17,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const newSession = await branchSession(sourceSessionId, branchAtIndex);
+    const newSession = await branchSession(
+      sourceSessionId,
+      branchAtIndex,
+      typeof frontendMessageCount === 'number' ? frontendMessageCount : undefined,
+    );
 
     return NextResponse.json({
       sessionId: newSession.id,
