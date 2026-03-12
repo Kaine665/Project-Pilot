@@ -722,6 +722,11 @@ class AgentChatManager {
         if (!result?.abnormal) return;
 
         const memRun = this.runs.get(run.sessionId);
+        // 竞态：用户可能在 Health Guard 检查期间已发送新消息，会话已在运行
+        if (memRun?.status === 'running') {
+          console.log(`${LOG_PREFIX} Session ${run.sessionId} already running (user retried), skip resume`);
+          return;
+        }
         if (memRun) {
           memRun._guardRetryCount = (memRun._guardRetryCount ?? 0) + 1;
         }
@@ -732,7 +737,12 @@ class AgentChatManager {
           await this.start(run.sessionId, run.agentId, guardMsg);
           console.log(`${LOG_PREFIX} Health guard resumed session ${run.sessionId}`);
         } catch (err) {
-          console.error(`${LOG_PREFIX} Health guard failed to resume session:`, err);
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes('already running')) {
+            console.log(`${LOG_PREFIX} Session ${run.sessionId} already running (race), skip resume`);
+          } else {
+            console.error(`${LOG_PREFIX} Health guard failed to resume session:`, err);
+          }
         }
       }).catch(err => console.error(`${LOG_PREFIX} Health guard error:`, err));
     }
