@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { schedulerManager } from '@/lib/scheduler-manager';
+import { sidecarFetch } from '@/lib/sidecar-bridge';
 
 /**
  * GET /api/schedules
@@ -7,8 +7,8 @@ import { schedulerManager } from '@/lib/scheduler-manager';
  */
 export async function GET() {
   try {
-    const schedules = await schedulerManager.listSchedules();
-    return NextResponse.json({ schedules });
+    const res = await sidecarFetch('/schedules');
+    return NextResponse.json(await res.json());
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }
@@ -48,15 +48,19 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const schedule = await schedulerManager.createSchedule({
-      agentId,
-      cron,
-      message,
-      projectKey,
-      label: label ? String(label).slice(0, 100) : undefined,
-      enabled: enabled !== false,
+    const res = await sidecarFetch('/schedules', {
+      method: 'POST',
+      body: JSON.stringify({
+        agentId,
+        cron,
+        message,
+        projectKey,
+        label: label ? String(label).slice(0, 100) : undefined,
+        enabled,
+      }),
     });
-    return NextResponse.json({ schedule }, { status: 201 });
+    const data = await res.json();
+    return NextResponse.json(data, { status: res.status });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });
   }

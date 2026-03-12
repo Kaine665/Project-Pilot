@@ -180,7 +180,7 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
           >
             {/* Icon strip — always visible */}
             <TooltipProvider delayDuration={300}>
-            <div className="flex w-13 flex-col items-center border-r border-zinc-200 bg-zinc-50 py-2 gap-1 dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="flex w-13 flex-col items-center border-r border-zinc-200 bg-zinc-50/50 py-4 gap-2 dark:border-zinc-800 dark:bg-zinc-950">
               <SidebarIconButton icon={FolderKanban} tooltip="项目管理" isActive={!isSubRoute && panelOpen} onClick={handleToggleProjects} />
               <SidebarIconButton icon={Bot} tooltip="Agents" isActive={isAgentsPage} onClick={handleNavigateAgents} />
               <SidebarIconButton icon={Layers} tooltip="信息角度" isActive={isDimensionsPage} onClick={handleNavigateDimensions} />

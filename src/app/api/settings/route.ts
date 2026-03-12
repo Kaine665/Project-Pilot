@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSettings, saveSettings } from '@/lib/settings-manager';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
-import type { ClaudeAuthMode, ProviderId, EffortLevel, OpenAIReasoningEffort, AppSettings, DangerCategory, DangerActionLevel } from '@/types';
-import { DEFAULT_DANGER_SETTINGS } from '@/types';
+import type { ClaudeAuthMode, ProviderId, EffortLevel, OpenAIReasoningEffort, AppSettings, DangerCategory, DangerActionLevel, CustomProviderConfig } from '@/types';
+import { DEFAULT_DANGER_SETTINGS, BUILT_IN_PROVIDER_IDS } from '@/types';
 
 const VALID_AUTH_MODES: ClaudeAuthMode[] = ['api_key', 'oauth'];
 const VALID_EFFORT_LEVELS: EffortLevel[] = ['low', 'medium', 'high'];
 const VALID_OPENAI_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
-const VALID_PROVIDERS: ProviderId[] = PROVIDER_REGISTRY.map((p) => p.id);
+
+function isValidProvider(id: string, customProviders?: CustomProviderConfig[]): id is ProviderId {
+  if (BUILT_IN_PROVIDER_IDS.includes(id as (typeof BUILT_IN_PROVIDER_IDS)[number])) return true;
+  if (id.startsWith('custom-') && customProviders?.some((cp) => cp.id === id)) return true;
+  return false;
+}
 const VALID_DANGER_LEVELS: DangerActionLevel[] = ['critical', 'warning', 'disabled'];
 const VALID_DANGER_CATEGORIES: DangerCategory[] = [
   'dataDirectory', 'sqlDestructive', 'diskFormat',
@@ -39,6 +44,13 @@ export async function GET() {
     masked.claude.providerApiKeys = maskedKeys;
   }
 
+  // 脱敏自定义供应商的 apiKey
+  if (masked.claude.customProviders) {
+    masked.claude.customProviders = masked.claude.customProviders.map((cp) =>
+      cp.apiKey ? { ...cp, apiKey: maskKey(cp.apiKey) } : cp,
+    );
+  }
+
   return NextResponse.json(masked);
 }
 
@@ -58,7 +70,7 @@ export async function POST(request: NextRequest) {
   if (body.claude?.authMode !== undefined && !VALID_AUTH_MODES.includes(body.claude.authMode)) {
     return NextResponse.json({ error: 'Invalid authMode' }, { status: 400 });
   }
-  if (body.claude?.provider !== undefined && !VALID_PROVIDERS.includes(body.claude.provider)) {
+  if (body.claude?.provider !== undefined && !isValidProvider(body.claude.provider, current.claude.customProviders)) {
     return NextResponse.json({ error: 'Invalid provider' }, { status: 400 });
   }
   // model: 自由字符串，仅验证类型和长度
@@ -95,7 +107,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'providerApiKeys must be an object' }, { status: 400 });
     }
     for (const [pid, val] of Object.entries(body.claude.providerApiKeys)) {
-      if (!VALID_PROVIDERS.includes(pid as ProviderId)) {
+      if (!isValidProvider(pid, current.claude.customProviders)) {
         return NextResponse.json({ error: `Invalid provider in providerApiKeys: ${pid}` }, { status: 400 });
       }
       if (val !== null && val !== '' && typeof val !== 'string') {
@@ -126,7 +138,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'providerBaseUrls must be an object' }, { status: 400 });
     }
     for (const [pid, val] of Object.entries(body.claude.providerBaseUrls)) {
-      if (!VALID_PROVIDERS.includes(pid as ProviderId)) {
+      if (!isValidProvider(pid, current.claude.customProviders)) {
         return NextResponse.json({ error: `Invalid provider in providerBaseUrls: ${pid}` }, { status: 400 });
       }
       if (val !== null && val !== '' && typeof val !== 'string') {
@@ -158,6 +170,49 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // customProviders 字段验证
+  if (body.claude?.customProviders !== undefined) {
+    if (!Array.isArray(body.claude.customProviders)) {
+      return NextResponse.json({ error: 'customProviders must be an array' }, { status: 400 });
+    }
+    if (body.claude.customProviders.length > 50) {
+      return NextResponse.json({ error: 'customProviders max 50' }, { status: 400 });
+    }
+    const seen = new Set<string>();
+    for (const cp of body.claude.customProviders as CustomProviderConfig[]) {
+      if (!cp || typeof cp !== 'object') {
+        return NextResponse.json({ error: 'Each customProvider must be an object' }, { status: 400 });
+      }
+      if (!cp.id || !cp.id.startsWith('custom-')) {
+        return NextResponse.json({ error: 'customProvider.id must start with custom-' }, { status: 400 });
+      }
+      if (seen.has(cp.id)) {
+        return NextResponse.json({ error: `Duplicate customProvider id: ${cp.id}` }, { status: 400 });
+      }
+      seen.add(cp.id);
+      if (!cp.name || typeof cp.name !== 'string' || cp.name.length > 100) {
+        return NextResponse.json({ error: 'customProvider.name required, max 100 chars' }, { status: 400 });
+      }
+      if (!['anthropic', 'openai'].includes(cp.apiProtocol)) {
+        return NextResponse.json({ error: 'customProvider.apiProtocol must be anthropic or openai' }, { status: 400 });
+      }
+      if (!cp.baseUrl || typeof cp.baseUrl !== 'string' || cp.baseUrl.length > 500) {
+        return NextResponse.json({ error: 'customProvider.baseUrl required, max 500 chars' }, { status: 400 });
+      }
+      if (!['AUTH_TOKEN', 'API_KEY'].includes(cp.authMethod)) {
+        return NextResponse.json({ error: 'customProvider.authMethod must be AUTH_TOKEN or API_KEY' }, { status: 400 });
+      }
+      if (!Array.isArray(cp.modelIds) || cp.modelIds.length === 0 || cp.modelIds.length > 50) {
+        return NextResponse.json({ error: 'customProvider.modelIds must be non-empty array, max 50' }, { status: 400 });
+      }
+      for (const mid of cp.modelIds) {
+        if (typeof mid !== 'string' || mid.length > 200) {
+          return NextResponse.json({ error: 'customProvider.modelIds entries must be strings, max 200' }, { status: 400 });
+        }
+      }
+    }
+  }
+
   // titleGeneration 字段验证
   if (body.titleGeneration !== undefined) {
     if (typeof body.titleGeneration !== 'object' || body.titleGeneration === null) {
@@ -174,7 +229,7 @@ export async function POST(request: NextRequest) {
         if (!entry.provider || !entry.model) {
           return NextResponse.json({ error: 'Each chain entry must have provider and model' }, { status: 400 });
         }
-        if (!VALID_PROVIDERS.includes(entry.provider)) {
+        if (!isValidProvider(entry.provider, current.claude.customProviders)) {
           return NextResponse.json({ error: `Invalid provider in chain: ${entry.provider}` }, { status: 400 });
         }
       }
@@ -278,6 +333,19 @@ export async function POST(request: NextRequest) {
   // OpenAI reasoning effort
   if (body.claude?.openaiReasoningEffort !== undefined) {
     updated.claude.openaiReasoningEffort = body.claude.openaiReasoningEffort;
+  }
+
+  // Custom providers（apiKey 掩码回传时保留原值）
+  if (body.claude?.customProviders !== undefined) {
+    const incoming = body.claude.customProviders as CustomProviderConfig[];
+    const existing = current.claude.customProviders ?? [];
+    updated.claude.customProviders = incoming.map((cp) => {
+      if (cp.apiKey?.startsWith('••') && cp.id) {
+        const prev = existing.find((e) => e.id === cp.id);
+        return { ...cp, apiKey: prev?.apiKey ?? cp.apiKey };
+      }
+      return cp;
+    });
   }
 
   await saveSettings(updated);

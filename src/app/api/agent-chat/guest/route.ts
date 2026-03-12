@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { agentChatManager, generateSessionId, listGuestSessions } from '@/lib/agent-chat-manager';
+import { generateSessionId, listGuestSessions } from '@/lib/agent-chat-manager';
 import { isValidSessionId } from '@/lib/security';
+import { sidecarFetch } from '@/lib/sidecar-bridge';
 
 /**
  * POST /api/agent-chat/guest
@@ -65,14 +66,21 @@ export async function POST(request: NextRequest) {
   const guestSessionId = requestedGuestSessionId || generateSessionId();
 
   try {
-    const runId = await agentChatManager.startGuest(
-      guestSessionId,
-      agentId,
-      message,
-      parentSessionId,
-      resolvedImportedTurns,
-    );
-    return NextResponse.json({ runId, sessionId: guestSessionId, parentSessionId });
+    const res = await sidecarFetch('/agent-chat/guest', {
+      method: 'POST',
+      body: JSON.stringify({
+        guestSessionId,
+        agentId,
+        message,
+        parentSessionId,
+        importedTurnIndices: resolvedImportedTurns,
+      }),
+    });
+    const data = await res.json() as { runId?: string; error?: string };
+    if (!res.ok) {
+      return NextResponse.json({ error: data.error ?? 'Sidecar error' }, { status: res.status });
+    }
+    return NextResponse.json({ runId: data.runId, sessionId: guestSessionId, parentSessionId });
   } catch (err) {
     return NextResponse.json(
       { error: (err as Error).message },

@@ -177,6 +177,7 @@ async function pollSession(sessionId: string, port: number): Promise<{ status: '
 
   const statusData = JSON.parse(statusResult.body);
   const status: string = statusData.status;
+  const statusMessages: Array<{ role: string; content: string }> = statusData.messages || [];
 
   if (status === 'running') {
     return { status: 'running' };
@@ -184,6 +185,11 @@ async function pollSession(sessionId: string, port: number): Promise<{ status: '
 
   if (status === 'failed' || status === 'stopped') {
     return { status: 'failed', error: `Session ${status}` };
+  }
+
+  const inMemoryAssistant = [...statusMessages].reverse().find(m => m.role === 'assistant');
+  if (inMemoryAssistant) {
+    return { status: 'completed', result: inMemoryAssistant.content };
   }
 
   // completed or none — fetch full session
@@ -196,7 +202,9 @@ async function pollSession(sessionId: string, port: number): Promise<{ status: '
   });
 
   if (sessionResult.statusCode === 404) {
-    return { status: 'failed', error: 'Session not found' };
+    return status === 'none'
+      ? { status: 'running' }
+      : { status: 'failed', error: 'Session not found' };
   }
   if (sessionResult.statusCode !== 200) {
     return { status: 'failed', error: `Fetch failed: HTTP ${sessionResult.statusCode}` };
@@ -207,7 +215,7 @@ async function pollSession(sessionId: string, port: number): Promise<{ status: '
   const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
 
   if (!lastAssistant) {
-    if (status === 'none') {
+    if (status === 'none' || status === 'completed') {
       return { status: 'running' };
     }
     return { status: 'failed', error: 'No assistant response' };
@@ -240,6 +248,7 @@ async function runBatch(
     result?: string;
     error?: string;
     startTime?: number;
+    endTime?: number;
   }>();
 
   tasks.forEach((task, index) => {
@@ -267,6 +276,7 @@ async function runBatch(
         } catch (err) {
           s.status = 'failed';
           s.error = (err as Error).message;
+          s.endTime = Date.now();
           process.stderr.write(`[batch] Task ${index} failed to start: ${s.error}\n`);
         }
 
@@ -305,6 +315,7 @@ async function runBatch(
         if (elapsed > timeoutMs) {
           s.status = 'timeout';
           s.error = `Timeout after ${timeoutSeconds}s`;
+          s.endTime = Date.now();
           running.delete(index);
           process.stderr.write(`[batch] Task ${index} timeout\n`);
           // Try to start next
@@ -318,6 +329,7 @@ async function runBatch(
           if (poll.status === 'completed') {
             s.status = 'completed';
             s.result = poll.result;
+            s.endTime = Date.now();
             running.delete(index);
             process.stderr.write(`[batch] Task ${index} completed (${s.result?.length || 0} chars)\n`);
             // Try to start next
@@ -325,6 +337,7 @@ async function runBatch(
           } else if (poll.status === 'failed') {
             s.status = 'failed';
             s.error = poll.error;
+            s.endTime = Date.now();
             running.delete(index);
             process.stderr.write(`[batch] Task ${index} failed: ${poll.error}\n`);
             // Try to start next
@@ -355,7 +368,7 @@ async function runBatch(
       sessionId: s.sessionId || '',
       result: s.result,
       error: s.error,
-      durationMs: s.startTime ? totalDuration - s.startTime : 0,
+      durationMs: s.startTime ? (s.endTime ?? Date.now()) - s.startTime : 0,
     });
   }
 

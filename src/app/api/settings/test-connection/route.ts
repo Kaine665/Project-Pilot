@@ -22,13 +22,28 @@ const TEST_TIMEOUT_MS = 60_000;
 const OAUTH_CHECK_TIMEOUT_MS = 25_000;
 
 /**
- * OAuth 模式：通过 Claude CLI 检测认证状态。
- * 使用 execClaude 以兼容 Windows 上的 .cmd/.bat 路径解析。
+ * OAuth 模式：按 provider 选择 CLI 检测认证状态。
+ * - anthropic: claude auth status
+ * - openai: codex login status（Codex OAuth 与 Claude CLI 独立）
  */
-async function testOAuthConnection(_provider: ProviderId): Promise<NextResponse> {
+async function testOAuthConnection(provider: ProviderId): Promise<NextResponse> {
   try {
-    const { stdout, stderr } = await execClaude(['auth', 'status'], { timeout: OAUTH_CHECK_TIMEOUT_MS });
-    const output = (stdout + stderr).trim();
+    let output: string;
+
+    if (provider === 'openai') {
+      const { execCodex } = await import('@/lib/codex-cli');
+      const { stdout, stderr } = await execCodex(['login', 'status'], { timeout: OAUTH_CHECK_TIMEOUT_MS });
+      output = (stdout + stderr).trim();
+    } else if (provider === 'anthropic') {
+      const { stdout, stderr } = await execClaude(['auth', 'status'], { timeout: OAUTH_CHECK_TIMEOUT_MS });
+      output = (stdout + stderr).trim();
+    } else {
+      return NextResponse.json({
+        ok: false,
+        error: `OAuth 不支持供应商: ${provider}`,
+      });
+    }
+
     if (parseAuthStatusText(output)) {
       return NextResponse.json({ ok: true });
     }
@@ -84,7 +99,7 @@ async function runSingleTest(
   baseUrl: string,
   current: Awaited<ReturnType<typeof getSettings>>,
 ): Promise<{ ok: boolean; error?: string }> {
-  const preset = getProviderPreset(provider);
+  const preset = getProviderPreset(provider, current.claude.customProviders);
 
   // 写入 providerBaseUrls（scoped），不碰全局 baseUrl，避免竞态污染
   const mergedForTest = {
@@ -167,7 +182,8 @@ async function testConversationConnection(
   model: string,
   baseUrl: string | undefined,
 ): Promise<NextResponse> {
-  const preset = getProviderPreset(provider);
+  const settings = await getSettings();
+  const preset = getProviderPreset(provider as ProviderId, settings.claude.customProviders);
   const key = typeof apiKey === 'string' ? apiKey.trim() : '';
   if (!key || key.startsWith('••')) {
     return NextResponse.json({ ok: false, error: '请先填写 API 密钥' }, { status: 400 });
@@ -176,9 +192,13 @@ async function testConversationConnection(
   const current = await getSettings();
   const savedProviderUrl = current.claude.providerBaseUrls?.[provider];
   const userProvidedUrl = baseUrl?.trim() || undefined;
+  // 自定义供应商：baseUrl 在配置中
+  const customBaseUrl = provider.startsWith('custom-')
+    ? current.claude.customProviders?.find((c) => c.id === provider)?.baseUrl
+    : undefined;
 
-  // 用户手动填了 baseUrl，或已有探测成功的 URL：直接测试
-  const effectiveBaseUrl = userProvidedUrl || savedProviderUrl;
+  // 用户手动填了 baseUrl，或已有探测成功的 URL，或自定义供应商配置中的 URL
+  const effectiveBaseUrl = userProvidedUrl || savedProviderUrl || customBaseUrl;
   if (effectiveBaseUrl) {
     const result = await runSingleTest(provider, key, model, effectiveBaseUrl, current);
     if (result.ok) {
@@ -216,14 +236,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Missing provider' }, { status: 400 });
     }
 
-    const preset = getProviderPreset(provider as ProviderId);
+    const settings = await getSettings();
+    const preset = getProviderPreset(provider as ProviderId, settings.claude.customProviders);
 
     if (typeof apiKey === 'string' && apiKey.startsWith('••')) {
-      const settings = await getSettings();
       const savedKey = getProviderScopedApiKey(settings.claude, provider as ProviderId);
       if (savedKey) apiKey = savedKey;
       if (!model) model = getProviderScopedModel(settings.claude, provider as ProviderId);
-      if (!baseUrl && settings.claude.baseUrl) baseUrl = settings.claude.baseUrl;
+      if (!baseUrl) baseUrl = settings.claude.providerBaseUrls?.[provider as ProviderId] || settings.claude.baseUrl;
     }
 
     if (authMode === 'oauth') {

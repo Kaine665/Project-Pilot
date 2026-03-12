@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { agentChatManager } from '@/lib/agent-chat-manager';
 import { listSessions, listSessionsByProject, listAllSessions, deleteSessionFromDisk } from '@/lib/agent-chat-manager';
+import { sidecarFetch } from '@/lib/sidecar-bridge';
 
 /**
  * GET /api/agent-chat/sessions?agentId=xxx&projectKey=yyy
@@ -38,8 +38,12 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: 'sessionId is required' }, { status: 400 });
   }
 
-  // Clear from in-memory runs + delete from disk
-  agentChatManager.clear(sessionId);
+  // Clear in-memory run from sidecar + delete from disk
+  sidecarFetch('/agent-chat/clear', {
+    method: 'POST',
+    body: JSON.stringify({ sessionId }),
+  }).catch(() => { /* best-effort, sidecar auto-sweeps anyway */ });
+
   const deleted = await deleteSessionFromDisk(sessionId);
   if (!deleted) {
     return NextResponse.json({ error: 'Session not found' }, { status: 404 });

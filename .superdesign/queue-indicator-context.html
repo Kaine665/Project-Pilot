@@ -1,0 +1,22 @@
+<!--
+  Agent Chat - Message Queue Indicator 当前实现
+  当 AI 正在回复时，用户继续输入的消息会进入等待队列。
+  当前 UI：纯文本，样式简陋。
+-->
+<div class="chat-messages-area space-y-3 p-4">
+  <!-- 已有的 AI 回复气泡 -->
+  <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900/50">
+    AI 正在流式回复中...
+  </div>
+
+  <!-- 当前实现：等待队列提示（太丑） -->
+  <div class="text-xs text-blue-500 dark:text-blue-400">
+    Queued 2 message(s). They will send automatically after current reply.
+  </div>
+</div>
+
+<!-- 参考：同页面中 "AI is planning" 的样式（更美观的 inline 提示） -->
+<div class="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs text-blue-600 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400">
+  <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+  <span>AI is planning...</span>
+</div>

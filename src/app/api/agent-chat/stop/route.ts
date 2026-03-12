@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { agentChatManager } from '@/lib/agent-chat-manager';
+import { sidecarFetch } from '@/lib/sidecar-bridge';
 
 /**
  * POST /api/agent-chat/stop
- * Stop a running agent chat process.
+ * Stop a running agent chat session.
  * Body: { sessionId: string }
  */
 export async function POST(request: NextRequest) {
@@ -14,6 +14,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'sessionId is required' }, { status: 400 });
   }
 
-  const stopped = agentChatManager.stop(sessionId);
-  return NextResponse.json({ stopped });
+  try {
+    const res = await sidecarFetch('/agent-chat/stop', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId }),
+    });
+    return NextResponse.json(await res.json());
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+  }
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { agentChatManager } from '@/lib/agent-chat-manager';
+import { sidecarFetch } from '@/lib/sidecar-bridge';
 
 /**
  * GET /api/agent-chat/status?sessionId=xxx
@@ -11,9 +11,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'sessionId is required' }, { status: 400 });
   }
 
-  const info = agentChatManager.getStatus(sessionId);
-  const messages = agentChatManager.getMessages(sessionId);
-  return NextResponse.json({ ...info, messages }, {
-    headers: { 'Cache-Control': 'no-store' },
-  });
+  try {
+    const res = await sidecarFetch(
+      `/agent-chat/status?sessionId=${encodeURIComponent(sessionId)}`,
+    );
+    return NextResponse.json(await res.json(), {
+      headers: { 'Cache-Control': 'no-store' },
+    });
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+  }
 }

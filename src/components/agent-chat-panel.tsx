@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { flushSync } from 'react-dom';
-import { Loader2, Maximize2, Minimize2, Bot, Sparkles, Plus, MessageSquare, Trash2, Settings, FileDown, ClipboardList, ArrowLeft, GitFork } from 'lucide-react';
+import { Loader2, Maximize2, Minimize2, Bot, Sparkles, Plus, MessageSquare, Trash2, Settings, FileDown, ClipboardList, ArrowLeft, GitFork, ArrowUp, ChevronDown, ChevronUp, Layers, FolderOpen } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from '@/i18n/routing';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import { SessionConfigPanel } from '@/components/session-config-panel';
 import { PlanViewerPanel } from '@/components/plan-viewer-panel';
 import { SessionCompressDialog } from '@/components/session-compress-dialog';
 import { FilePreviewDialog } from '@/components/file-preview-dialog';
+import { FolderExplorerPanel } from '@/components/folder-explorer-panel';
 import type { SessionNavLink } from '@/components/agent-session-utils';
 import { buildSessionUrl } from '@/components/agent-session-utils';
 import { PROVIDER_REGISTRY, getProviderPreset, getModelContextWindow } from '@/lib/provider-registry';
@@ -41,9 +42,9 @@ interface AgentChatPanelProps {
   variant?: 'sidebar' | 'full';
   /** Project scope (butler mode). When set, flow context is injected. */
   projectKey?: string | null;
-  /** Pre-loaded agents list from parent — skips redundant /api/agents fetch */
+  /** Pre-loaded agents list from parent; skips redundant /api/agents fetch */
   cachedAgents?: Agent[];
-  /** Pre-loaded settings (provider, model, effort) from parent — skips /api/settings fetch */
+  /** Pre-loaded settings (provider, model, effort) from parent; skips /api/settings fetch */
   cachedSettings?: {
     provider: ProviderId;
     model: string;
@@ -68,8 +69,8 @@ const PROVIDER_LABELS: Record<ProviderId, string> = {
   custom: 'Custom',
 };
 
-// 标题由 session-title-generator 异步生成，不再需要流式标签过滤。
-// 保留 strip 函数供向后兼容（旧 AI 回复中可能仍含标签）。
+// Title is generated asynchronously by session-title-generator.
+// Keep this strip function for backward compatibility with older replies.
 function stripSessionTitleTag(text: string): string {
   return text.replace(/<session-title>[\s\S]*?<\/session-title>\s*/, '');
 }
@@ -98,7 +99,7 @@ export function AgentChatPanel({
   // Session management
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionList, setSessionList] = useState<SessionListItem[]>([]);
-  const [sessionTitle, setSessionTitle] = useState(hasProject ? t('chat.newSession') : '新会话');
+  const [sessionTitle, setSessionTitle] = useState(hasProject ? t('chat.newSession') : 'New Session');
 
   // Provider / model routing
   const [chatProvider, setChatProvider] = useState<ProviderId>('anthropic');
@@ -108,7 +109,7 @@ export function AgentChatPanel({
   ]);
   const [chatEffort, setChatEffort] = useState<OpenAIReasoningEffort>('xhigh');
 
-  // Guest Agent（旁听 Agent）
+  // Guest Agent (observer)
   const [guestAgent, setGuestAgent] = useState<Agent | null>(null);
   const [guestAgents, setGuestAgents] = useState<Agent[]>([]);
 
@@ -128,6 +129,7 @@ export function AgentChatPanel({
   // Session config
   const [sessionConfig, setSessionConfig] = useState<SessionConfig>({});
   const [showConfig, setShowConfig] = useState(false);
+  const [showFolderExplorer, setShowFolderExplorer] = useState(false);
 
   // Plan viewer
   const [planContent, setPlanContent] = useState<string | null>(null);
@@ -161,6 +163,10 @@ export function AgentChatPanel({
   const doSendRef = useRef<(text: string, images?: string[]) => void>(() => {});
   const isStreamingRef = useRef(false);
   const pendingAnswerRef = useRef<{ answer: string; targetSessionId: string } | null>(null);
+  const pendingUserMessagesRef = useRef<Array<{ text: string; images: string[]; targetSessionId: string }>>([]);
+  const [pendingUserQueueCount, setPendingUserQueueCount] = useState(0);
+  const [pendingUserMessages, setPendingUserMessages] = useState<Array<{ text: string; images: string[] }>>([]);
+  const [queueExpanded, setQueueExpanded] = useState(true);
 
   // Sync sessionId to both state and ref atomically (avoids stale ref between renders)
   const setSessionIdSync = useCallback((id: string | null) => {
@@ -172,12 +178,33 @@ export function AgentChatPanel({
     isStreamingRef.current = isStreaming;
   }, [isStreaming]);
 
-  // Abort any in-flight stream when the component unmounts (e.g. agent view → session view switch)
+  // Abort any in-flight stream when the component unmounts (e.g. agent view -> session view switch)
   useEffect(() => {
     return () => {
       streamAbortRef.current?.abort();
       pendingAnswerRef.current = null;
+      pendingUserMessagesRef.current = [];
+      setPendingUserMessages([]);
+      setPendingUserQueueCount(0);
     };
+  }, []);
+
+  const flushQueuedUserMessage = useCallback((targetSessionId: string, delayMs = 200) => {
+    setTimeout(() => {
+      if (sessionIdRef.current !== targetSessionId) return;
+      if (scrollRef.current?.offsetParent === null) return;
+      if (isStreamingRef.current) return;
+
+      const nextIndex = pendingUserMessagesRef.current.findIndex(
+        (item) => item.targetSessionId === targetSessionId,
+      );
+      if (nextIndex < 0) return;
+      const [next] = pendingUserMessagesRef.current.splice(nextIndex, 1);
+      const list = pendingUserMessagesRef.current.filter((m) => m.targetSessionId === targetSessionId).map((m) => ({ text: m.text, images: m.images }));
+      setPendingUserMessages(list);
+      setPendingUserQueueCount(pendingUserMessagesRef.current.length);
+      doSendRef.current(next.text, next.images);
+    }, delayMs);
   }, []);
 
   // Stable streaming message object
@@ -319,7 +346,7 @@ export function AgentChatPanel({
             }
           }
         } catch {
-          // ignore — fallback to static models
+          // ignore - fallback to static models
         }
         if (!cancelled) {
           setChatModelOptions(options);
@@ -359,7 +386,7 @@ export function AgentChatPanel({
           setContextWindow(data.contextWindow ?? getModelContextWindow(chatModel));
         }
       } catch {
-        // ignore — fallback to local estimate
+        // ignore - fallback to local estimate
       }
     })();
 
@@ -386,13 +413,13 @@ export function AgentChatPanel({
     }
   }, []);
 
-  // 加载父/子会话导航链接
+  // Load parent/child session navigation links
   const loadSessionNavLinks = useCallback(async (sid: string, parentSid?: string) => {
     setParentSession(null);
     setChildSessions([]);
     setShowChildList(false);
 
-    // 父会话
+    // Parent session
     if (parentSid) {
       try {
         const res = await fetch(`/api/agent-chat/sessions/${parentSid}`, { cache: 'no-store' });
@@ -403,7 +430,7 @@ export function AgentChatPanel({
       } catch { /* ignore */ }
     }
 
-    // 子会话
+    // Child sessions
     try {
       const res = await fetch(`/api/agent-chat/sessions/${sid}/children`, { cache: 'no-store' });
       if (res.ok) {
@@ -450,7 +477,7 @@ export function AgentChatPanel({
         }),
       );
       setMessages(restored);
-      setSessionTitle(data.title ?? '新会话');
+      setSessionTitle(data.title ?? 'New Session');
       const loadedConfig = data.config ?? {};
       setSessionConfig(loadedConfig);
       // Session model config has highest priority (overrides agent default and global settings)
@@ -474,7 +501,7 @@ export function AgentChatPanel({
     }
   }, []);
 
-  // Finalize streaming → commit assistant message
+  // Finalize streaming -> commit assistant message
   const finalizeStream = useCallback(() => {
     if (finalizingRef.current) return;
     finalizingRef.current = true;
@@ -492,8 +519,7 @@ export function AgentChatPanel({
     const toolCalls = toolCallsRef.current;
     const blocks = blocksRef.current;
 
-    // 用 flushSync 强制同步渲染：先清空流式气泡，确保 DOM 更新完成后
-    // 再添加已提交消息，彻底杜绝"流式气泡 + 已提交消息"同时出现的问题
+    // Use flushSync to ensure streaming bubble is cleared before committing final message.
     flushSync(() => {
       setIsStreaming(false);
       setStreamingBlocks([]);
@@ -551,8 +577,13 @@ export function AgentChatPanel({
           doSendRef.current(pending.answer);
         }
       }, 300);
+      return;
     }
-  }, [agent.id, projectKey, fetchSessionList, onSessionChange]);
+
+    if (currentSid) {
+      flushQueuedUserMessage(currentSid);
+    }
+  }, [agent.id, projectKey, fetchSessionList, onSessionChange, flushQueuedUserMessage]);
 
   // Connect to SSE stream
   const connectToStream = useCallback((targetSessionId: string, since: number) => {
@@ -635,7 +666,7 @@ export function AgentChatPanel({
               blocks.push({ type: 'tool_call', toolCall: tc });
               chunkHasDisplayEvents = true;
 
-              // Detect Write to .claude/plans/ → capture plan content
+              // Detect Write to .claude/plans/ -> capture plan content
               if (event.toolName === 'Write') {
                 try {
                   const parsed = typeof event.input === 'string' ? JSON.parse(event.input) : event.input;
@@ -660,7 +691,7 @@ export function AgentChatPanel({
                 tc.status = event.status;
                 chunkHasDisplayEvents = true;
 
-                // ExitPlanMode → extract plan content from output as fallback
+                // ExitPlanMode -> extract plan content from output as fallback
                 if (tc.toolName === 'ExitPlanMode') {
                   setInPlanMode(false);
                   const out = (event.output ?? '').trim();
@@ -678,8 +709,7 @@ export function AgentChatPanel({
               setSessionList(prev => prev.map(s =>
                 s.id === targetSessionId ? { ...s, title: event.title } : s,
               ));
-              // 传递标题更新信息，让 parent 直接更新侧栏，
-              // 不依赖 fetchAllSessions（此时 persistAfterClose 可能尚未完成）
+              // Notify parent immediately to update sidebar title.
               onSessionChange?.({
                 id: targetSessionId,
                 title: event.title,
@@ -737,7 +767,7 @@ export function AgentChatPanel({
     setErrorMsg(null);
     setInPlanMode(false);
     setSessionIdSync(null);
-    setSessionTitle(hasProject ? t('chat.newSession') : '新会话');
+    setSessionTitle(hasProject ? t('chat.newSession') : 'New Session');
     setSessionList([]);
     setTokenInputs(0);
     setTokenOutputs(0);
@@ -766,7 +796,7 @@ export function AgentChatPanel({
     // In project mode without projectKey, nothing to load
     if (hasProject && !projectKey) return;
 
-    // Plain mode with null initialSessionId → new empty session
+    // Plain mode with null initialSessionId -> new empty session
     if (!hasProject && initialSessionId === null) return;
 
     // Helper: reconnect to a running stream
@@ -809,7 +839,7 @@ export function AgentChatPanel({
         return;
       }
 
-      // ── Standard path: butler/project mode — need session list ──
+      // Standard path: butler/project mode; need session list
       const sessions: SessionListItem[] = await fetchSessionList(agent.id, projectKey);
       if (isStale()) return;
 
@@ -932,7 +962,7 @@ export function AgentChatPanel({
     let targetSessionId = sessionId;
     if (!targetSessionId) {
       targetSessionId = `agent-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      const quickTitle = text.trim().slice(0, 10) || (hasProject ? t('chat.newSession') : '新会话');
+      const quickTitle = text.trim().slice(0, 10) || (hasProject ? t('chat.newSession') : 'New Session');
       setSessionIdSync(targetSessionId);
       setSessionTitle(quickTitle);
       // Insert into session list immediately so it appears in history
@@ -946,8 +976,7 @@ export function AgentChatPanel({
     }
 
     try {
-      // 展开 /skill-name 命令：将 skill 的完整内容替换 /name 前缀发送给后端
-      // UI 中显示的仍是用户原始输入（/name），不影响聊天记录
+      // Expand /skill-name command into skill body before sending to backend.
       let messageToSend = text.trim();
       const slashMatch = messageToSend.match(/^\/(\S+)([\s\S]*)$/);
       if (slashMatch) {
@@ -962,7 +991,7 @@ export function AgentChatPanel({
               messageToSend = extraText ? `${skillBody}\n\n${extraText}` : skillBody;
             }
           }
-        } catch { /* skill 不存在或获取失败，保持原始文本 */ }
+        } catch { /* keep original text if skill fetch fails */ }
       }
 
       const res = await fetch('/api/agent-chat', {
@@ -1040,6 +1069,13 @@ export function AgentChatPanel({
     return () => window.removeEventListener('toggle-session-config', handler);
   }, []);
 
+  // Listen for toggle-folder-explorer event (from parent page header)
+  useEffect(() => {
+    const handler = () => setShowFolderExplorer(v => !v);
+    window.addEventListener('toggle-folder-explorer', handler);
+    return () => window.removeEventListener('toggle-folder-explorer', handler);
+  }, []);
+
   // Listen for toggle-session-compress event (from parent page header)
   // Only respond if sessionId matches (prevents butler panel from also opening)
   useEffect(() => {
@@ -1055,6 +1091,23 @@ export function AgentChatPanel({
 
   // ChatInput submit handler
   const handleChatInputSubmit = useCallback((text: string, images: string[], _files: Array<{ name: string; content: string }>) => {
+    const hasPayload = !!text.trim() || images.length > 0;
+    if (!hasPayload) return;
+
+    // Allow user to continue submitting while streaming: queue and auto-send later.
+    if (isStreamingRef.current && sessionIdRef.current) {
+      const sid = sessionIdRef.current;
+      pendingUserMessagesRef.current.push({
+        text,
+        images,
+        targetSessionId: sid,
+      });
+      const list = pendingUserMessagesRef.current.filter((m) => m.targetSessionId === sid).map((m) => ({ text: m.text, images: m.images }));
+      setPendingUserMessages(list);
+      setPendingUserQueueCount(pendingUserMessagesRef.current.length);
+      return;
+    }
+
     doSend(text, images);
   }, [doSend]);
 
@@ -1075,6 +1128,47 @@ export function AgentChatPanel({
     }
     finalizeStream();
   };
+
+  // Send a queued message immediately (interrupt current reply)
+  const handleSendNow = useCallback(async (index: number) => {
+    if (!sessionId) return;
+    const items = pendingUserMessagesRef.current.filter((m) => m.targetSessionId === sessionId);
+    const item = items[index];
+    if (!item) return;
+    const refIndex = pendingUserMessagesRef.current.indexOf(item);
+    if (refIndex >= 0) pendingUserMessagesRef.current.splice(refIndex, 1);
+    const list = pendingUserMessagesRef.current.filter((m) => m.targetSessionId === sessionId).map((m) => ({ text: m.text, images: m.images }));
+    setPendingUserMessages(list);
+    setPendingUserQueueCount(pendingUserMessagesRef.current.length);
+    try {
+      await fetch('/api/agent-chat/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+      });
+    } catch {
+      // ignore
+    }
+    if (streamAbortRef.current) {
+      streamAbortRef.current.abort();
+      streamAbortRef.current = null;
+    }
+    finalizeStream();
+    doSendRef.current(item.text, item.images);
+  }, [sessionId]);
+
+  // Remove a queued message without sending
+  const handleRemoveFromQueue = useCallback((index: number) => {
+    if (!sessionId) return;
+    const items = pendingUserMessagesRef.current.filter((m) => m.targetSessionId === sessionId);
+    const item = items[index];
+    if (!item) return;
+    const refIndex = pendingUserMessagesRef.current.indexOf(item);
+    if (refIndex >= 0) pendingUserMessagesRef.current.splice(refIndex, 1);
+    const list = pendingUserMessagesRef.current.filter((m) => m.targetSessionId === sessionId).map((m) => ({ text: m.text, images: m.images }));
+    setPendingUserMessages(list);
+    setPendingUserQueueCount(pendingUserMessagesRef.current.length);
+  }, [sessionId]);
 
   // Delete current session
   const handleDelete = async () => {
@@ -1112,7 +1206,7 @@ export function AgentChatPanel({
           body: JSON.stringify({ action: 'updateConfig', config }),
         });
       } catch {
-        // ignore — config is already in local state for next message
+        // ignore - config is already in local state for next message
       }
     }
   }, [sessionId]);
@@ -1125,7 +1219,7 @@ export function AgentChatPanel({
       streamAbortRef.current = null;
     }
     setSessionIdSync(null);
-    setSessionTitle(hasProject ? t('chat.newSession') : '新会话');
+    setSessionTitle(hasProject ? t('chat.newSession') : 'New Session');
     setMessages([]);
     setSessionConfig({});
     setShowConfig(false);
@@ -1133,6 +1227,9 @@ export function AgentChatPanel({
     setParentSession(null);
     setChildSessions([]);
     setShowChildList(false);
+    pendingUserMessagesRef.current = [];
+    setPendingUserQueueCount(0);
+    setPendingUserMessages([]);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
@@ -1172,6 +1269,9 @@ export function AgentChatPanel({
     toolCallsRef.current = [];
     // Clear any queued answer from the previous session's AskUserQuestion
     pendingAnswerRef.current = null;
+    pendingUserMessagesRef.current = [];
+    setPendingUserQueueCount(0);
+    setPendingUserMessages([]);
     // Mark as read
     if (target.unreadCount) {
       setSessionList(prev => prev.map(s => s.id === target.id ? { ...s, unreadCount: 0 } : s));
@@ -1188,7 +1288,7 @@ export function AgentChatPanel({
     setSaveDialogContent(content);
   }, []);
 
-  // Compress: confirm handler (持久化已由 dialog 内部完成)
+  // Compress: confirm handler (dialog persists changes internally)
   const handleCompressConfirm = useCallback((compressedMessages: ChatMessage[]) => {
     setMessages(compressedMessages);
     setCompressDialogOpen(false);
@@ -1334,12 +1434,12 @@ export function AgentChatPanel({
   // ── Message list (shared between modes) ──
   const renderMessages = () => (
     <>
-      {/* 自动压缩提示条 */}
+      {/* Auto-compress hint */}
       {messages.length > 20 && !compressDismissed && !isStreaming && (
         <div className="mb-2 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs dark:border-amber-800 dark:bg-amber-950/30">
           <FileDown className="h-3.5 w-3.5 shrink-0 text-amber-500" />
           <span className="flex-1 text-amber-700 dark:text-amber-400">
-            会话较长（{messages.length}条消息），建议压缩历史以延长上下文
+            Session is getting long ({messages.length} messages). Compress history to keep context available.
           </span>
           <button
             onClick={() => setCompressDialogOpen(true)}
@@ -1392,7 +1492,7 @@ export function AgentChatPanel({
       {inPlanMode && isStreaming && (
         <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs text-blue-600 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400">
           <ClipboardList className="h-3.5 w-3.5" />
-          <span>AI 正在规划中…</span>
+          <span>AI is planning...</span>
         </div>
       )}
 
@@ -1408,15 +1508,92 @@ export function AgentChatPanel({
   if (!hasProject) {
     return (
       <div className="flex h-full">
-      <div className="relative flex h-full flex-1 flex-col min-w-0">
-        {/* Messages */}
-        <div ref={scrollRef} onScroll={handleChatScroll} className="flex-1 space-y-3 overflow-y-auto p-4">
-          {messages.length === 0 && !isStreaming ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
-              <Bot className="h-10 w-10 stroke-1" />
-              <p className="text-sm">向 {agent.name} 发送消息开始对话</p>
-            </div>
-          ) : renderMessages()}
+      <div className="flex h-full flex-1 flex-col min-w-0">
+        {/* Messages + Queue overlay — relative wrapper so queue overlays messages only */}
+        <div className="relative flex-1 min-h-0">
+          <div
+            ref={scrollRef}
+            onScroll={handleChatScroll}
+            className={`h-full space-y-3 overflow-y-auto p-4 ${isStreaming && pendingUserMessages.length > 0 ? 'pb-44' : ''}`}
+          >
+            {messages.length === 0 && !isStreaming ? (
+              <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
+                <Bot className="h-10 w-10 stroke-1" />
+                <p className="text-sm">Send a message to {agent.name} to start chatting.</p>
+              </div>
+            ) : renderMessages()}
+          </div>
+
+          {/* Queue indicator — overlay on messages for true 镂空 (content shows through) */}
+          {isStreaming && pendingUserMessages.length > 0 && (
+            <div className="absolute bottom-0 left-0 right-0 z-10 px-6 pb-2 pointer-events-none">
+            <div className="mx-auto w-96 pointer-events-auto">
+              {queueExpanded ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setQueueExpanded(false)}
+                    className="flex w-full items-center justify-between gap-2 rounded-t-xl border border-b-0 border-blue-200/80 bg-blue-50/60 px-3 py-2 text-left text-xs font-medium text-blue-700 backdrop-blur-md transition-colors hover:bg-blue-50/80 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/60"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Layers className="h-3.5 w-3.5" />
+                      {pendingUserMessages.length} 条消息排队
+                    </span>
+                    <span className="flex items-center gap-1">
+                      [收起]
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </span>
+                  </button>
+                  <div className="space-y-1.5 rounded-b-xl border border-blue-200/80 border-t-0 bg-white/70 px-3 py-2 backdrop-blur-md dark:border-blue-800/80 dark:bg-zinc-900/70">
+                    {pendingUserMessages.map((m, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center justify-between gap-2 rounded-lg border border-blue-100/80 bg-white/50 px-2.5 py-1.5 backdrop-blur-sm dark:border-blue-800/60 dark:bg-zinc-800/40"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-xs text-zinc-700 dark:text-zinc-300">
+                          {i + 1}. {m.text.trim().slice(0, 80)}{m.text.length > 80 ? '…' : ''}
+                        </span>
+                        <div className="flex shrink-0 items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleSendNow(i)}
+                            className="rounded p-1 text-blue-500 hover:bg-blue-100 hover:text-blue-600 dark:text-blue-400 dark:hover:bg-blue-900/50"
+                            title="立即发送"
+                          >
+                            <ArrowUp className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveFromQueue(i)}
+                            className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/50"
+                            title="从队列移除"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setQueueExpanded(true)}
+                  className="flex w-full items-center justify-between gap-2 rounded-xl border border-blue-200/80 bg-blue-50/60 px-3 py-2 text-left text-xs font-medium text-blue-700 backdrop-blur-md transition-colors hover:bg-blue-50/80 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/60"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Layers className="h-3.5 w-3.5" />
+                    {pendingUserMessages.length} 条消息排队
+                  </span>
+                  <span className="flex items-center gap-1">
+                    [展开]
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
         </div>
 
         {/* Notifications */}
@@ -1435,7 +1612,7 @@ export function AgentChatPanel({
             onSubmit={handleChatInputSubmit}
             onAbort={handleAbort}
             isStreaming={isStreaming}
-            placeholder={`向 ${agent.name} 发送消息...`}
+            placeholder={`Send a message to ${agent.name}...`}
             providerOptions={providerOptions}
             providerValue={chatProvider}
             onProviderChange={(next) => setChatProvider(next as ProviderId)}
@@ -1508,6 +1685,16 @@ export function AgentChatPanel({
           />
         </div>
       </div>
+      {/* Right-side folder explorer */}
+      <div
+        className={`shrink-0 overflow-hidden border-l border-zinc-200 transition-[width] duration-200 ease-in-out dark:border-zinc-800 ${
+          showFolderExplorer ? 'w-[280px]' : 'w-0 border-l-0'
+        }`}
+      >
+        <div className="h-full w-[280px]">
+          <FolderExplorerPanel onClose={() => setShowFolderExplorer(false)} />
+        </div>
+      </div>
       {planPanel}
       </div>
     );
@@ -1530,12 +1717,12 @@ export function AgentChatPanel({
       {/* Header */}
       <div className="flex items-center justify-between border-b border-zinc-100 px-3 py-1.5 dark:border-zinc-800">
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          {/* 父会话返回按钮 */}
+          {/* Parent session back button */}
           {parentSession && (
             <button
               onClick={() => router.push(buildSessionUrl(parentSession.agentId, parentSession.id))}
               className="flex items-center gap-0.5 shrink-0 text-xs text-blue-500 hover:text-blue-700 dark:hover:text-blue-300 mr-1"
-              title={`返回父会话: ${parentSession.title}`}
+              title={`Back to parent session: ${parentSession.title}`}
             >
               <ArrowLeft className="h-3 w-3" />
             </button>
@@ -1566,7 +1753,7 @@ export function AgentChatPanel({
               </button>
               {showChildList && (
                 <div className="absolute left-0 top-full mt-1 z-50 min-w-[200px] max-w-[300px] rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
-                  <div className="px-2 py-1.5 text-[10px] font-medium text-zinc-400 border-b border-zinc-100 dark:border-zinc-700">子会话</div>
+                  <div className="px-2 py-1.5 text-[10px] font-medium text-zinc-400 border-b border-zinc-100 dark:border-zinc-700">Child Sessions</div>
                   {childSessions.map(cs => (
                     <button
                       key={cs.id}
@@ -1576,7 +1763,7 @@ export function AgentChatPanel({
                       }}
                       className="block w-full text-left px-2 py-1.5 text-xs text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-700 truncate"
                     >
-                      {cs.title || '未命名会话'}
+                      {cs.title || 'Untitled Session'}
                     </button>
                   ))}
                 </div>
@@ -1645,12 +1832,17 @@ export function AgentChatPanel({
         </div>
       </div>
 
-      {/* Messages */}
-      <div ref={scrollRef} onScroll={handleChatScroll} className="flex-1 space-y-3 overflow-y-auto p-3">
+      {/* Messages + Queue overlay */}
+      <div className="relative flex-1 min-h-0">
+        <div
+          ref={scrollRef}
+          onScroll={handleChatScroll}
+          className={`h-full space-y-3 overflow-y-auto p-3 ${isStreaming && pendingUserMessages.length > 0 ? 'pb-44' : ''}`}
+        >
         {/* 会话过长自动提示 */}
         {messages.length >= 20 && !compressDismissed && !isStreaming && (
           <div className="flex items-center justify-between rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
-            <span>会话较长（{messages.length} 条消息），建议压缩历史以延长上下文</span>
+            <span>Session is getting long ({messages.length} messages). Consider compressing history.</span>
             <div className="flex items-center gap-1.5 ml-2 shrink-0">
               <button
                 onClick={() => setCompressDialogOpen(true)}
@@ -1673,6 +1865,78 @@ export function AgentChatPanel({
             <p className="text-xs">{t('chat.plannerHint')}</p>
           </div>
         ) : renderMessages()}
+        </div>
+
+        {/* Queue indicator — overlay on messages for true 镂空 */}
+        {isStreaming && pendingUserMessages.length > 0 && (
+          <div className="absolute bottom-0 left-0 right-0 z-10 px-6 pb-2 pointer-events-none">
+            <div className="mx-auto w-96 pointer-events-auto">
+            {queueExpanded ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setQueueExpanded(false)}
+                  className="flex w-full items-center justify-between gap-2 rounded-t-xl border border-b-0 border-blue-200/80 bg-blue-50/60 px-3 py-2 text-left text-xs font-medium text-blue-700 backdrop-blur-md transition-colors hover:bg-blue-50/80 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/60"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Layers className="h-3.5 w-3.5" />
+                    {pendingUserMessages.length} 条消息排队
+                  </span>
+                  <span className="flex items-center gap-1">
+                    [收起]
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  </span>
+                </button>
+                <div className="space-y-1.5 rounded-b-xl border border-blue-200/80 border-t-0 bg-white/70 px-3 py-2 backdrop-blur-md dark:border-blue-800/80 dark:bg-zinc-900/70">
+                  {pendingUserMessages.map((m, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-blue-100/80 bg-white/50 px-2.5 py-1.5 backdrop-blur-sm dark:border-blue-800/60 dark:bg-zinc-800/40"
+                    >
+                      <span className="min-w-0 flex-1 truncate text-xs text-zinc-700 dark:text-zinc-300">
+                        {i + 1}. {m.text.trim().slice(0, 80)}{m.text.length > 80 ? '…' : ''}
+                      </span>
+                      <div className="flex shrink-0 items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleSendNow(i)}
+                          className="rounded p-1 text-blue-500 hover:bg-blue-100 hover:text-blue-600 dark:text-blue-400 dark:hover:bg-blue-900/50"
+                          title="立即发送"
+                        >
+                          <ArrowUp className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFromQueue(i)}
+                          className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/50"
+                          title="从队列移除"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setQueueExpanded(true)}
+                className="flex w-full items-center justify-between gap-2 rounded-xl border border-blue-200/80 bg-blue-50/60 px-3 py-2 text-left text-xs font-medium text-blue-700 backdrop-blur-md transition-colors hover:bg-blue-50/80 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/60"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Layers className="h-3.5 w-3.5" />
+                  {pendingUserMessages.length} 条消息排队
+                </span>
+                <span className="flex items-center gap-1">
+                  [展开]
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       </div>
 
       {/* Input area */}
@@ -1824,3 +2088,5 @@ export function AgentChatPanel({
   // Sidebar mode
   return chatArea;
 }
+
+

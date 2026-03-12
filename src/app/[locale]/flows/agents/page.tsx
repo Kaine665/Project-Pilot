@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Bot, Plus, Trash2, X, ChevronRight, Minimize2,
   Settings, MessageSquare, Archive, ArchiveRestore,
-  Download, Upload, FileDown,
+  Download, Upload, FileDown, FolderOpen,
 } from 'lucide-react';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
 import { AgentChatPanel } from '@/components/agent-chat-panel';
@@ -527,15 +527,15 @@ export default function AgentsPage() {
   return (
     <div className="flex h-full">
       {/* Left sidebar */}
-      <div className="flex w-72 shrink-0 flex-col border-r border-zinc-200 dark:border-zinc-800">
+      <div className="flex w-72 shrink-0 flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
         {/* ── Tab switcher ── */}
-        <div className="flex border-b border-zinc-200 dark:border-zinc-800">
+        <div className="flex gap-1 px-4 pt-4 pb-2">
           <button
             onClick={() => setSidebarTab('conversations')}
-            className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors ${
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-all ${
               sidebarTab === 'conversations'
-                ? 'border-b-2 border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100'
-                : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+                ? 'bg-zinc-900 text-white shadow-sm dark:bg-zinc-100 dark:text-zinc-900'
+                : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 dark:hover:text-zinc-300'
             }`}
           >
             <MessageSquare className="h-3.5 w-3.5" />
@@ -543,10 +543,10 @@ export default function AgentsPage() {
           </button>
           <button
             onClick={() => setSidebarTab('agents')}
-            className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors ${
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-all ${
               sidebarTab === 'agents'
-                ? 'border-b-2 border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100'
-                : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+                ? 'bg-zinc-900 text-white shadow-sm dark:bg-zinc-100 dark:text-zinc-900'
+                : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 dark:hover:text-zinc-300'
             }`}
           >
             <Bot className="h-3.5 w-3.5" />
@@ -558,22 +558,22 @@ export default function AgentsPage() {
         {sidebarTab === 'conversations' ? (
           <div className="flex flex-1 flex-col overflow-hidden">
             {/* New session button */}
-            <div className="relative flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
-              <div className="text-xs font-medium text-zinc-400">
-                {allSessions.length > 0 && `${allSessions.length} 个对话`}
+            <div className="relative flex items-center justify-between px-5 py-4">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+                {allSessions.length > 0 ? `活跃会话 (${allSessions.length})` : '活跃会话'}
               </div>
               <button
                 onClick={() => setShowAgentPicker(v => !v)}
-                className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-zinc-50 text-zinc-500 transition-all hover:bg-zinc-900 hover:text-white dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-100 dark:hover:text-zinc-900"
                 title="新建对话"
               >
-                <Plus className="h-4 w-4" />
+                <Plus className="h-3.5 w-3.5" />
               </button>
               {/* Agent picker dropdown */}
               {showAgentPicker && (
                 <div
                   ref={agentPickerRef}
-                  className="absolute right-2 top-full z-20 mt-1 w-56 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+                  className="absolute right-4 top-full z-20 mt-1 w-56 rounded-xl border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
                 >
                   <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400">
                     选择 Agent 开始对话
@@ -592,17 +592,17 @@ export default function AgentsPage() {
               )}
             </div>
             {/* Session list */}
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto px-2 pb-4">
               {allSessions.length === 0 ? (
-                <div className="px-4 py-12 text-center text-xs text-zinc-400">
+                <div className="px-4 py-12 text-center text-xs text-zinc-400 dark:text-zinc-500">
                   <MessageSquare className="mx-auto mb-2 h-8 w-8 text-zinc-300 dark:text-zinc-600" />
                   <p>暂无对话</p>
                   <p className="mt-1">点击右上角 + 开始新对话</p>
                 </div>
               ) : (
                 groupedSessions.map(group => (
-                  <div key={group.label}>
-                    <div className="sticky top-0 bg-zinc-50 px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400 dark:bg-zinc-900 dark:text-zinc-500">
+                  <div key={group.label} className="space-y-1">
+                    <div className="px-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
                       {group.label}
                     </div>
                     {group.items.map(s => {
@@ -612,32 +612,36 @@ export default function AgentsPage() {
                         <div
                           key={s.id}
                           onClick={() => handleSessionClick(s)}
-                          className={`group/session flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors ${
+                          className={`group/session flex cursor-pointer items-center gap-3.5 rounded-xl border px-3 py-3.5 transition-all ${
                             isActive
-                              ? 'bg-zinc-100 dark:bg-zinc-800'
-                              : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                              ? 'bg-zinc-50 border-zinc-100 shadow-sm dark:bg-zinc-800 dark:border-zinc-700'
+                              : 'border-transparent hover:bg-zinc-50 hover:border-zinc-100 dark:hover:bg-zinc-800/50 dark:hover:border-zinc-700/50'
                           } ${s.archived ? 'opacity-45' : ''}`}
                         >
-                          <AgentIcon iconKey={s.agentIcon} className={`h-4 w-4 shrink-0 ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-400'}`} />
+                          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ${
+                            isActive ? 'bg-white shadow-sm ring-zinc-200 dark:bg-zinc-700 dark:ring-zinc-600' : 'bg-zinc-50 ring-zinc-100 dark:bg-zinc-800 dark:ring-zinc-700'
+                          }`}>
+                            <AgentIcon iconKey={s.agentIcon} className={`h-5 w-5 ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400'}`} />
+                          </div>
                           <div className="min-w-0 flex-1">
-                            <div className={`truncate text-sm font-medium ${s.archived ? 'text-zinc-400 dark:text-zinc-500' : 'text-zinc-900 dark:text-zinc-100'}`}>
+                            <div className={`truncate text-[13px] ${s.archived ? 'font-medium text-zinc-400 dark:text-zinc-500' : 'font-semibold text-zinc-900 dark:text-zinc-100'}`}>
                               {s.title}
                             </div>
-                            <div className={`truncate ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-400'}`} style={{ fontSize: 13 }}>
+                            <div className={`truncate text-[11px] ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400'}`}>
                               {s.agentName}
                             </div>
                           </div>
                           {!isActive && !!s.unreadCount && s.unreadCount > 0 && !s.archived && (
-                            <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-medium leading-none text-white">
+                            <span className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-zinc-900 px-1.5 text-[10px] font-bold text-white dark:bg-zinc-100 dark:text-zinc-900">
                               {s.unreadCount > 99 ? '99+' : s.unreadCount}
                             </span>
                           )}
                           <button
                             onClick={(e) => handleArchiveToggle(s, e)}
-                            className="shrink-0 rounded-md p-1 text-zinc-300 opacity-0 transition-opacity hover:bg-zinc-100 hover:text-zinc-500 group-hover/session:opacity-100 dark:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-400"
+                            className="shrink-0 rounded-lg p-1.5 text-zinc-400 opacity-0 transition-all hover:bg-zinc-100 hover:text-zinc-600 group-hover/session:opacity-100 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-400"
                             title={s.archived ? '取消归档' : '归档'}
                           >
-                            {s.archived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
+                            {s.archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
                           </button>
                         </div>
                       );
@@ -650,30 +654,30 @@ export default function AgentsPage() {
         ) : (
           /* ── Agents tab ── */
           <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
-              <div className="text-xs font-medium text-zinc-400">
-                {filteredAgents.length > 0 && `${filteredAgents.length} 个 Agent`}
+            <div className="flex items-center justify-between px-5 py-4">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+                {filteredAgents.length > 0 ? `${filteredAgents.length} 个 Agent` : 'Agents'}
               </div>
               <div className="flex items-center gap-0.5">
                 <button
                   onClick={handleImport}
-                  className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                  className="rounded-lg p-1.5 text-zinc-400 transition-all hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
                   title="导入 .ppagent"
                 >
                   <Upload className="h-4 w-4" />
                 </button>
                 <button
                   onClick={handleStartCreate}
-                  className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                  className="rounded-lg p-1.5 text-zinc-400 transition-all hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
                   title="新建 Agent"
                 >
                   <Plus className="h-4 w-4" />
                 </button>
               </div>
             </div>
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto px-2 pb-4 space-y-1">
               {filteredAgents.length === 0 ? (
-                <div className="px-4 py-8 text-center text-xs text-zinc-400">
+                <div className="px-4 py-8 text-center text-xs text-zinc-400 dark:text-zinc-500">
                   暂无 Agent
                 </div>
               ) : (
@@ -681,15 +685,21 @@ export default function AgentsPage() {
                   <div
                     key={a.id}
                     onClick={() => handleAgentClick(a)}
-                    className={`group flex cursor-pointer items-center gap-3 border-b border-zinc-100 px-4 py-3 transition-colors dark:border-zinc-800/50 ${
+                    className={`group flex cursor-pointer items-center gap-3.5 rounded-xl border px-3 py-3.5 transition-all ${
                       activePanel?.type === 'agent' && activePanel.agentId === a.id
-                        ? 'bg-zinc-100 dark:bg-zinc-800'
-                        : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                        ? 'bg-zinc-50 border-zinc-100 shadow-sm dark:bg-zinc-800 dark:border-zinc-700'
+                        : 'border-transparent hover:bg-zinc-50 hover:border-zinc-100 dark:hover:bg-zinc-800/50 dark:hover:border-zinc-700/50'
                     }`}
                   >
-                    <AgentIcon iconKey={a.icon} className="h-4 w-4 shrink-0 text-zinc-400" />
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ${
+                      activePanel?.type === 'agent' && activePanel.agentId === a.id
+                        ? 'bg-white shadow-sm ring-zinc-200 dark:bg-zinc-700 dark:ring-zinc-600'
+                        : 'bg-zinc-50 ring-zinc-100 dark:bg-zinc-800 dark:ring-zinc-700'
+                    }`}>
+                      <AgentIcon iconKey={a.icon} className="h-5 w-5 text-zinc-500 dark:text-zinc-400" />
+                    </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                      <div className="flex items-center gap-1.5 truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">
                         <span className="truncate">{a.name}</span>
                         {a.builtIn && (
                           <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
@@ -703,7 +713,7 @@ export default function AgentsPage() {
                         )}
                       </div>
                       {a.description && (
-                        <div className="truncate text-xs text-zinc-400 dark:text-zinc-500">
+                        <div className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
                           {a.description}
                         </div>
                       )}
@@ -916,13 +926,21 @@ export default function AgentsPage() {
                   </button>
                   <button
                     onClick={() => {
-                      // Dispatch a custom event that AgentChatPanel listens for
                       window.dispatchEvent(new CustomEvent('toggle-session-config'));
                     }}
                     className="shrink-0 rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
                     title="会话配置"
                   >
                     <Settings className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      window.dispatchEvent(new CustomEvent('toggle-folder-explorer'));
+                    }}
+                    className="shrink-0 rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                    title="打开本地文件夹"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" />
                   </button>
                 </div>
               </div>
@@ -990,16 +1008,24 @@ export default function AgentsPage() {
           </>
         ) : (
           /* ── Empty state ── */
-          <div className="flex h-full flex-col items-center justify-center text-zinc-400">
-            <MessageSquare className="mb-3 h-10 w-10" />
-            <p className="text-sm">选择一个对话，或开始新的对话</p>
-            <button
-              onClick={() => { setSidebarTab('conversations'); setShowAgentPicker(true); }}
-              className="mt-4 flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm text-white hover:bg-zinc-700 transition-colors dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-            >
-              <Plus className="h-4 w-4" />
-              新建对话
-            </button>
+          <div className="flex flex-1 flex-col overflow-hidden bg-zinc-50/30 dark:bg-zinc-950/50">
+            <div className="flex h-full flex-col items-center justify-center p-12 text-center">
+              <div className="relative mb-6">
+                <div className="absolute -inset-4 rounded-full bg-zinc-100/50 blur-xl dark:bg-zinc-800/30" />
+                <MessageSquare className="relative h-16 w-16 text-zinc-200 dark:text-zinc-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-2">ProjectPilot Agents</h3>
+              <p className="text-sm text-zinc-400 dark:text-zinc-500 max-w-xs leading-relaxed">
+                选择左侧的一个对话继续，或者通过新建对话来让 AI 协助你完成项目任务。
+              </p>
+              <button
+                onClick={() => { setSidebarTab('conversations'); setShowAgentPicker(true); }}
+                className="mt-8 flex items-center gap-2 rounded-xl bg-zinc-900 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-zinc-200 transition-all hover:-translate-y-0.5 hover:shadow-zinc-300 dark:bg-zinc-100 dark:text-zinc-900 dark:shadow-zinc-800 dark:hover:bg-zinc-200"
+              >
+                <Plus className="h-4 w-4" />
+                开启新对话
+              </button>
+            </div>
           </div>
         )}
       </div>

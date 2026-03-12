@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { agentChatManager, generateSessionId } from '@/lib/agent-chat-manager';
-import type { FlowContext, ImageAttachment, ImageMediaType } from '@/lib/agent-chat-manager';
+import { generateSessionId } from '@/lib/agent-chat-manager';
+import type { ImageAttachment, ImageMediaType, FlowContext } from '@/lib/agent-chat-manager';
 import type { SessionConfig } from '@/types/agent-chat';
 import { getFlowDataPath, getFlowIndexPath, readJsonFile, ensureFlowsMigrated } from '@/lib/file-store';
 import { isValidProjectKey, isValidSessionId } from '@/lib/security';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import type { OpenAIReasoningEffort, ProviderId } from '@/types';
+import { sidecarFetch } from '@/lib/sidecar-bridge';
 
 interface ProjectIndex {
   projects: Array<{ key: string; name: string }>;
@@ -132,13 +133,27 @@ export async function POST(request: NextRequest) {
       };
     }
 
-    const runId = await agentChatManager.start(
-      sessionId, agentId, message, flowContext, validatedImages, initialTitle, config, parentSessionId,
-      normalizedProvider || undefined,
-      normalizedModel || undefined,
-      normalizedEffort || undefined,
-    );
-    return NextResponse.json({ runId, sessionId });
+    const res = await sidecarFetch('/agent-chat/start', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId,
+        agentId,
+        message,
+        flowContext,
+        images: validatedImages,
+        initialTitle,
+        config,
+        parentSessionId,
+        providerOverride: normalizedProvider || undefined,
+        modelOverride: normalizedModel || undefined,
+        effortOverride: normalizedEffort || undefined,
+      }),
+    });
+    const data = await res.json() as { runId?: string; error?: string };
+    if (!res.ok) {
+      return NextResponse.json({ error: data.error ?? 'Sidecar error' }, { status: res.status });
+    }
+    return NextResponse.json({ runId: data.runId, sessionId });
   } catch (err) {
     return NextResponse.json(
       { error: (err as Error).message },

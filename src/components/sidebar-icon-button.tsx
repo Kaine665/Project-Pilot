@@ -15,10 +15,10 @@ export function SidebarIconButton({ icon: Icon, tooltip, isActive, onClick }: Si
     <Tooltip>
       <TooltipTrigger asChild>
         <button
-          className={`flex h-11 w-11 items-center justify-center rounded-md transition-colors ${
+          className={`flex h-10 w-10 items-center justify-center rounded-lg transition-all ${
             isActive
-              ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-              : 'text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200'
+              ? 'bg-zinc-900 text-white shadow-md shadow-zinc-200 dark:bg-zinc-100 dark:text-zinc-900 dark:shadow-zinc-800'
+              : 'text-zinc-400 hover:bg-white hover:text-zinc-900 hover:shadow-sm dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200'
           }`}
           onClick={onClick}
         >

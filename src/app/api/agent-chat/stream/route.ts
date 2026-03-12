@@ -1,67 +1,29 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { agentChatManager } from '@/lib/agent-chat-manager';
-import type { ChatSSEEvent } from '@/types';
+import { NextRequest } from 'next/server';
+import { proxySidecarSSE } from '@/lib/sidecar-bridge';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/agent-chat/stream?sessionId=xxx&since=0
- * SSE endpoint that streams events from a running agent chat process.
+ * Proxy SSE stream from Agent Sidecar process.
  */
 export async function GET(request: NextRequest) {
   const sessionId = request.nextUrl.searchParams.get('sessionId');
-  const since = parseInt(request.nextUrl.searchParams.get('since') ?? '0', 10);
+  const since = request.nextUrl.searchParams.get('since') ?? '0';
 
   if (!sessionId) {
-    return NextResponse.json({ error: 'sessionId is required' }, { status: 400 });
+    return new Response(
+      `data: ${JSON.stringify({ type: 'error', message: 'sessionId is required' })}\n\n`,
+      {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+        },
+      },
+    );
   }
 
-  const encoder = new TextEncoder();
-  let unsubscribeFn: (() => void) | null = null;
-
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(encoder.encode(`:ok\n\n`));
-
-      const push = (event: ChatSSEEvent, index: number) => {
-        try {
-          const payload = JSON.stringify({ ...event, _idx: index });
-          controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
-        } catch {
-          // Controller may be closed
-        }
-
-        if (event.type === 'done') {
-          try {
-            controller.close();
-          } catch {
-            // Already closed
-          }
-        }
-      };
-
-      unsubscribeFn = agentChatManager.subscribe(sessionId!, since, push);
-
-      if (!unsubscribeFn) {
-        const noRunPayload = JSON.stringify({ type: 'done' as const, _idx: -1 });
-        controller.enqueue(encoder.encode(`data: ${noRunPayload}\n\n`));
-        controller.close();
-      }
-    },
-    cancel() {
-      if (unsubscribeFn) {
-        unsubscribeFn();
-        unsubscribeFn = null;
-      }
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
-      'Connection': 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    },
-  });
+  return proxySidecarSSE(`/agent-chat/stream?sessionId=${encodeURIComponent(sessionId)}&since=${since}`);
 }

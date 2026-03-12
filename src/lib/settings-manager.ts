@@ -7,7 +7,7 @@
 
 import { getSettingsPath, readJsonFile, writeJsonFile } from '@/lib/file-store';
 import { getProviderPreset } from '@/lib/provider-registry';
-import type { AgentCapabilities, AppSettings, ClaudeSettings, ProviderId } from '@/types';
+import type { AgentCapabilities, AppSettings, ClaudeSettings, CustomProviderConfig, ProviderId } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_APP_SETTINGS } from '@/types';
 
 const CACHE_TTL_MS = 30_000;
@@ -39,12 +39,17 @@ export function invalidateCache(): void {
 
 /**
  * 获取指定供应商的 API Key。
- * 优先级：providerApiKeys[provider] > 旧的 flat apiKey（仅 anthropic 时回退）
+ * 优先级：providerApiKeys[provider] > 自定义供应商.apiKey > 旧的 flat apiKey（仅 anthropic 时回退）
  */
 export function getProviderScopedApiKey(claude: ClaudeSettings, provider?: ProviderId): string | undefined {
   const p = provider ?? claude.provider ?? 'anthropic';
   const scoped = claude.providerApiKeys?.[p];
   if (scoped) return scoped;
+  // 自定义供应商：从 customProvider.apiKey 取
+  if (p.startsWith('custom-') && claude.customProviders) {
+    const cp = claude.customProviders.find((c) => c.id === p);
+    if (cp?.apiKey) return cp.apiKey;
+  }
   // 向后兼容：旧数据只有 flat apiKey，仅 anthropic 时回退
   if (p === 'anthropic' && claude.apiKey) return claude.apiKey;
   return undefined;
@@ -100,7 +105,7 @@ export async function buildClaudeEnv(providerOverride?: ProviderId, effortOverri
   const settings = await getSettings();
   const claude = settings.claude;
   const provider = providerOverride ?? claude.provider ?? 'anthropic';
-  const preset = getProviderPreset(provider);
+  const preset = getProviderPreset(provider, claude.customProviders);
 
   const env: NodeJS.ProcessEnv = { ...process.env };
 
@@ -122,11 +127,12 @@ export async function buildClaudeEnv(providerOverride?: ProviderId, effortOverri
       env.ANTHROPIC_BASE_URL = baseUrl;
     }
 
-    // Kimi Code 官方文档要求用 ANTHROPIC_API_KEY；其他第三方用 AUTH_TOKEN。
+    // Kimi、自定义 API_KEY 模式：用 ANTHROPIC_API_KEY；其他第三方用 AUTH_TOKEN。
     // 必须强制覆盖（不检查 process.env），并删除对立变量，
     // 因为 Claude Code SDK 用 ?? 选择 token——空字符串不会穿透。
     if (scopedKey) {
-      if (provider === 'kimi') {
+      const useApiKey = provider === 'kimi' || preset.authMethod === 'API_KEY';
+      if (useApiKey) {
         env.ANTHROPIC_API_KEY = scopedKey;
         delete env.ANTHROPIC_AUTH_TOKEN;
       } else {
@@ -153,6 +159,23 @@ export async function buildClaudeEnv(providerOverride?: ProviderId, effortOverri
   // 显式移除 CLAUDECODE，防止 Claude CLI 嵌套检测误判
   delete env.CLAUDECODE;
 
+  return env;
+}
+
+/**
+ * 构造 Codex CLI exec 的环境变量。
+ * Codex 使用 CODEX_API_KEY（仅 codex exec 支持）或 OAuth（~/.codex/auth.json）。
+ * 调用方应确保仅在 provider=openai 时使用。
+ */
+export async function buildCodexExecEnv(): Promise<NodeJS.ProcessEnv> {
+  const settings = await getSettings();
+  const claude = settings.claude;
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  const scopedKey = getProviderScopedApiKey(claude, 'openai');
+  if (claude.authMode === 'api_key' && scopedKey && !process.env.CODEX_API_KEY) {
+    env.CODEX_API_KEY = scopedKey;
+  }
+  env.FORCE_COLOR = '0';
   return env;
 }
 
@@ -189,6 +212,15 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   subAgent: ['Task', 'TaskOutput', 'TaskStop'],
 };
 
+/**
+ * Task 子代理如果拿不到任何读取工具，就会出现“成功发起但实际不可用”：
+ * Explore / Plan 能启动，但无法搜索或读取代码。
+ *
+ * 因此当开启 subAgent 且未开启 fileAccess 时，自动补一组只读工具，
+ * 既保留最小权限，也保证子代理至少能完成探索类任务。
+ */
+const SUBAGENT_READONLY_TOOLS = ['Read', 'Glob', 'Grep'];
+
 /** Meta tools that should always be available regardless of capability settings */
 const META_TOOLS = [
   'EnterPlanMode', 'ExitPlanMode',
@@ -217,6 +249,10 @@ export function buildAgentToolArgs(capabilities: AgentCapabilities | undefined):
     if (caps[key]) {
       allowed.push(...CAPABILITY_TOOL_MAP[key]);
     }
+  }
+
+  if (caps.subAgent && !caps.fileAccess) {
+    allowed.push(...SUBAGENT_READONLY_TOOLS);
   }
 
   return ['--allowedTools', allowed.join(',')];
@@ -259,6 +295,9 @@ export function buildSdkAllowedTools(capabilities: AgentCapabilities | undefined
     if (caps[key]) {
       allowed.push(...CAPABILITY_TOOL_MAP[key]);
     }
+  }
+  if (caps.subAgent && !caps.fileAccess) {
+    allowed.push(...SUBAGENT_READONLY_TOOLS);
   }
   return allowed;
 }

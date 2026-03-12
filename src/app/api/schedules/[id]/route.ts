@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { schedulerManager } from '@/lib/scheduler-manager';
+import { sidecarFetch } from '@/lib/sidecar-bridge';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -9,12 +9,12 @@ type Params = { params: Promise<{ id: string }> };
  */
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
-  const schedules = await schedulerManager.listSchedules();
-  const schedule = schedules.find(s => s.id === id);
-  if (!schedule) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    const res = await sidecarFetch(`/schedules/${encodeURIComponent(id)}`);
+    return NextResponse.json(await res.json(), { status: res.status });
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }
-  return NextResponse.json({ schedule });
 }
 
 /**
@@ -42,17 +42,17 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   }
 
   try {
-    const updated = await schedulerManager.updateSchedule(id, {
-      ...(cron !== undefined ? { cron } : {}),
-      ...(message !== undefined ? { message } : {}),
-      ...(label !== undefined ? { label: String(label).slice(0, 100) } : {}),
-      ...(enabled !== undefined ? { enabled: Boolean(enabled) } : {}),
-      ...(projectKey !== undefined ? { projectKey } : {}),
+    const res = await sidecarFetch(`/schedules/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        ...(cron !== undefined ? { cron } : {}),
+        ...(message !== undefined ? { message } : {}),
+        ...(label !== undefined ? { label: String(label).slice(0, 100) } : {}),
+        ...(enabled !== undefined ? { enabled: Boolean(enabled) } : {}),
+        ...(projectKey !== undefined ? { projectKey } : {}),
+      }),
     });
-    if (!updated) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    }
-    return NextResponse.json({ schedule: updated });
+    return NextResponse.json(await res.json(), { status: res.status });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });
   }
@@ -64,9 +64,12 @@ export async function PATCH(request: NextRequest, { params }: Params) {
  */
 export async function DELETE(_req: NextRequest, { params }: Params) {
   const { id } = await params;
-  const deleted = await schedulerManager.deleteSchedule(id);
-  if (!deleted) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    const res = await sidecarFetch(`/schedules/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    return NextResponse.json(await res.json(), { status: res.status });
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }
-  return NextResponse.json({ success: true });
 }

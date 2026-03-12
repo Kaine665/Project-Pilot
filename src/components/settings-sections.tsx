@@ -14,7 +14,7 @@ import {
 import type { DangerCategory, DangerActionLevel, DangerDetectorSettings, TitleGenerationChainEntry } from '@/types';
 import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
 import type { Theme } from '@/components/theme-provider';
-import type { ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort } from '@/types';
+import type { CustomProviderConfig, ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort } from '@/types';
 
 // ── Shared props ──
 
@@ -42,6 +42,7 @@ interface AIConfigSectionProps extends TranslationProps {
   oauthStatus: 'unknown' | 'checking' | 'authenticated' | 'not_authenticated';
   loginPending: boolean;
   loginUrl: string | null;
+  loginCode: string | null; // OpenAI device code（在网页输入，非粘贴回调）
   loginFlowActive: boolean;
   oauthCode: string;
   codeSubmitting: boolean;
@@ -64,13 +65,16 @@ interface AIConfigSectionProps extends TranslationProps {
   onCodeSubmit: () => void;
   onCancelLoginFlow: () => void;
   onTestConnection: () => void;
+  customProviders?: CustomProviderConfig[];
+  onAddCustomProvider?: () => void;
+  onDeleteCustomProvider?: (id: `custom-${string}`) => void;
 }
 
 export function SettingsAISection({
   t, tActions, btnActive, btnInactive,
   provider, authMode, apiKey, model, customModel, baseUrl,
   openaiReasoningEffort, openaiReasoningOptions,
-  oauthStatus, loginPending, loginUrl, loginFlowActive, oauthCode, codeSubmitting, oauthSubmitError,
+  oauthStatus, loginPending, loginUrl, loginCode, loginFlowActive, oauthCode, codeSubmitting, oauthSubmitError,
   testState, testMessage,
   preset, isPresetModel, modelSelectOptions,
   onProviderChange, onAuthModeChange, onApiKeyChange,
@@ -78,6 +82,9 @@ export function SettingsAISection({
   onOpenAIReasoningEffortChange,
   onCheckOAuthStatus, onTriggerOAuthLogin, onOauthCodeChange, onCodeSubmit, onCancelLoginFlow,
   onTestConnection,
+  customProviders = [],
+  onAddCustomProvider,
+  onDeleteCustomProvider,
 }: AIConfigSectionProps) {
   return (
     <>
@@ -90,7 +97,7 @@ export function SettingsAISection({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="grid grid-cols-4 gap-2">
+          <div className="flex flex-wrap gap-2">
             {PROVIDER_REGISTRY.map((p) => (
               <button
                 key={p.id}
@@ -102,6 +109,38 @@ export function SettingsAISection({
                 {t(`providers.${p.id}`)}
               </button>
             ))}
+            {customProviders.map((cp) => (
+              <div key={cp.id} className="flex items-center gap-1">
+                <button
+                  onClick={() => onProviderChange(cp.id)}
+                  className={`rounded-md px-3 py-2 text-xs font-medium transition-colors ${
+                    provider === cp.id ? btnActive : btnInactive
+                  }`}
+                >
+                  {cp.name}
+                </button>
+                {onDeleteCustomProvider && (
+                  <button
+                    type="button"
+                    onClick={() => onDeleteCustomProvider(cp.id)}
+                    className="rounded p-1 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
+                    title={tActions('delete')}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            ))}
+            {onAddCustomProvider && (
+              <button
+                type="button"
+                onClick={onAddCustomProvider}
+                className={`flex items-center gap-1 rounded-md border border-dashed border-zinc-300 px-3 py-2 text-xs font-medium transition-colors ${btnInactive} hover:border-zinc-400 dark:border-zinc-600 dark:hover:border-zinc-500`}
+              >
+                <Plus className="h-3 w-3" />
+                {t('addCustomProvider')}
+              </button>
+            )}
           </div>
           <p className="text-xs text-zinc-500">{t(`providerHints.${provider}`)}</p>
         </CardContent>
@@ -224,35 +263,63 @@ export function SettingsAISection({
                   ) : (
                     <p className="text-xs text-zinc-500">{t('oauthWaiting')}</p>
                   )}
-                  <p className="text-xs text-zinc-500">{t('oauthPasteCode')}</p>
+                  {loginCode ? (
+                    <>
+                      <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">{t('oauthDeviceCodeLabel')}</p>
+                      <div className="flex gap-2 items-center">
+                        <span className="font-mono text-sm font-semibold tracking-wider px-2 py-1 rounded bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700">
+                          {loginCode}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => navigator.clipboard.writeText(loginCode)}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                      <p className="text-xs text-zinc-500">{t('oauthDeviceCodeHint')}</p>
+                    </>
+                  ) : provider !== 'openai' && (
+                    <p className="text-xs text-zinc-500">{t('oauthPasteCode')}</p>
+                  )}
                   {oauthSubmitError && (
                     <p className="text-xs text-red-600 dark:text-red-400">{oauthSubmitError}</p>
                   )}
-                  <div className="flex gap-2">
-                    <Input
-                      value={oauthCode}
-                      onChange={(e) => onOauthCodeChange(e.target.value)}
-                      placeholder={t('oauthCodePlaceholder')}
-                      className="font-mono text-xs"
-                    />
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={onCodeSubmit}
-                      disabled={!oauthCode.trim() || codeSubmitting}
-                    >
-                      {codeSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : tActions('submit')}
-                    </Button>
+                  {provider !== 'openai' && (
+                    <div className="flex gap-2">
+                      <Input
+                        value={oauthCode}
+                        onChange={(e) => onOauthCodeChange(e.target.value)}
+                        placeholder={t('oauthCodePlaceholder')}
+                        className="font-mono text-xs"
+                      />
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={onCodeSubmit}
+                        disabled={!oauthCode.trim() || codeSubmitting}
+                      >
+                        {codeSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : tActions('submit')}
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={onCancelLoginFlow}>
+                        {tActions('cancel')}
+                      </Button>
+                    </div>
+                  )}
+                  {provider === 'openai' && (
                     <Button variant="ghost" size="sm" onClick={onCancelLoginFlow}>
                       {tActions('cancel')}
                     </Button>
-                  </div>
+                  )}
                 </div>
               )}
 
               {!loginFlowActive && (
                 <div className="space-y-1">
-                  <p className="text-xs text-zinc-500">{t('oauthHint')}</p>
+                  <p className="text-xs text-zinc-500">
+                    {provider === 'openai' ? t('oauthHintOpenAI') : t('oauthHint')}
+                  </p>
                   {provider === 'anthropic' && (
                     <p className="text-xs text-amber-600 dark:text-amber-500">{t('oauthHintRedirect')}</p>
                   )}

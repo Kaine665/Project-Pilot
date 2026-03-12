@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Menu } from 'electron';
+import { app, BrowserWindow, dialog, Menu, ipcMain, shell } from 'electron';
 import { ChildProcess } from 'child_process';
 import path from 'path';
 import { findAvailablePort } from './port-finder';
@@ -7,6 +7,7 @@ import { checkCliHealth } from './cli-check';
 
 const isDev = !!process.env.ELECTRON_DEV;
 const DEV_PORT = 4000;
+const APP_ENTRY_PATH = '/zh/flows/projects';
 
 let mainWindow: BrowserWindow | null = null;
 let serverProcess: ChildProcess | null = null;
@@ -26,34 +27,54 @@ app.on('second-instance', () => {
   }
 });
 
-// ── 创建主窗口 ────────────────────────────────────────
+// ── IPC: 打开文件夹选择对话框 ──
+ipcMain.handle('open-folder-dialog', async () => {
+  const win = mainWindow ?? BrowserWindow.getFocusedWindow() ?? undefined;
+  const options = { properties: ['openDirectory' as const], title: '选择文件夹' };
+  const result = win
+    ? await dialog.showOpenDialog(win, options)
+    : await dialog.showOpenDialog(options);
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
+// ── IPC: 用系统默认应用打开文件 ──
+ipcMain.handle('open-file', async (_event, filePath: string) => {
+  if (!filePath || typeof filePath !== 'string') return { error: 'Invalid path' };
+  try {
+    const err = await shell.openPath(filePath);
+    return err ? { error: err } : { ok: true };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+});
+
+// ── 创建主窗�?────────────────────────────────────────
 function createMainWindow() {
+  Menu.setApplicationMenu(null);
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 900,
     minHeight: 600,
     title: 'ProjectPilot',
-    show: false,
+    show: isDev, // 开发模式立即显示，避免 5s 加载期间用户误以为未启动
+    autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
     },
   });
+  mainWindow.removeMenu();
 
-  mainWindow.loadURL(`http://127.0.0.1:${serverPort}`);
+  mainWindow.loadURL(`http://127.0.0.1:${serverPort}${APP_ENTRY_PATH}`);
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
+    if (!mainWindow) return;
+    if (!isDev) mainWindow.show();
+    mainWindow.focus();
   });
-
-  if (isDev) {
-    mainWindow.webContents.openDevTools();
-  } else {
-    // 生产环境不需要菜单栏
-    Menu.setApplicationMenu(null);
-  }
-
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -62,13 +83,13 @@ function createMainWindow() {
 // ── 启动流程 ──────────────────────────────────────────
 app.whenReady().then(async () => {
   if (isDev) {
-    // Dev 模式：假设 Next.js dev server 已在外部运行
+    // Dev 模式：假�?Next.js dev server 已在外部运行
     serverPort = DEV_PORT;
     createMainWindow();
     return;
   }
 
-  // 生产模式：启动内嵌 standalone server
+  // 生产模式：启动内�?standalone server
   let splash: BrowserWindow | null = null;
 
   try {
@@ -83,18 +104,18 @@ app.whenReady().then(async () => {
     });
     splash.loadFile(path.join(__dirname, 'splash.html'));
 
-    // 找端口
+    // 找端�?
     serverPort = await findAvailablePort(4000);
 
     // 启动 server
     serverProcess = await startNextServer(serverPort);
 
-    // 关 splash，开主窗口
+    // �?splash，开主窗�?
     splash.close();
     splash = null;
     createMainWindow();
 
-    // 延迟检测 CLI
+    // 延迟检�?CLI
     setTimeout(() => {
       checkCliHealth(serverPort).catch(() => {});
     }, 3000);
@@ -125,3 +146,4 @@ function gracefulShutdown() {
     serverProcess = null;
   }
 }
+

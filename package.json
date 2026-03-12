@@ -12,9 +12,11 @@
     "demo:load": "node scripts/load-demo-data.js",
     "demo:load-en": "node scripts/load-demo-data.js en",
     "migrate:data": "node scripts/migrate-data.js",
-    "electron:dev": "concurrently --kill-others \"npm run dev\" \"wait-on http://127.0.0.1:4000 && cross-env ELECTRON_DEV=1 electron .\"",
+    "dev:sidecar": "tsx --tsconfig tsconfig.json src/sidecar/server.ts",
+    "build:sidecar": "node -e \"require('esbuild').buildSync({entryPoints:['src/sidecar/server.ts'],bundle:true,platform:'node',outfile:'electron/dist/sidecar.js',tsconfig:'tsconfig.json',external:['electron']})\"",
+    "electron:dev": "concurrently --kill-others \"npm run dev\" \"wait-on tcp:127.0.0.1:4000 && cross-env ELECTRON_DEV=1 electron .\"",
     "electron:compile": "tsc -p electron/tsconfig.json",
-    "electron:build": "cross-env NODE_ENV=production BUILD_TARGET=electron next build && npm run electron:compile && electron-builder --win",
+    "electron:build": "cross-env NODE_ENV=production BUILD_TARGET=electron next build && npm run electron:compile && npm run build:sidecar && electron-builder --win",
     "electron:start": "electron ."
   },
   "build": {
@@ -57,6 +59,8 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@modelcontextprotocol/sdk": "^1.26.0",
+    "@openai/codex": "^0.114.0",
+    "@openai/codex-sdk": "^0.114.0",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-label": "^2.1.8",
     "@radix-ui/react-slot": "^1.2.4",

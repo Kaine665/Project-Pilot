@@ -15,16 +15,12 @@ import { writeFile, unlink } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
-import { query, type Query as SdkQuery } from '@anthropic-ai/claude-agent-sdk';
-import { SdkEventAdapter } from '@/lib/sdk-event-adapter';
 import { getAppWorkingDir } from '@/lib/app-paths';
 import { getPromptFilePath, getContextIndexPath, readJsonFile } from '@/lib/file-store';
 import type { ContextIndexData } from '@/types';
 import { resolveSystemPrompt, createRuntimePromptCopy } from '@/lib/agent-prompt-store';
-import {
-  buildSdkQueryOptions,
-  getSettings,
-} from '@/lib/settings-manager';
+import { getSettings } from '@/lib/settings-manager';
+import { createAgentRunner, type IAgentRunner } from './agent-runner';
 import { detectDangerousCommand } from '@/lib/danger-detector';
 import type { ChatSSEEvent, ContentBlock, Agent, AgentCapabilities, ProviderId } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_DANGER_SETTINGS } from '@/types';
@@ -85,8 +81,8 @@ export interface AgentChatRun {
   projectKey?: string;
   sessionTitle?: string;
 
-  // SDK query handle (replaces ChildProcess)
-  sdkQuery: SdkQuery | null;
+  /** 当前运行的 SDK runner（统一 Claude Agent SDK / Codex SDK 抽象） */
+  runner: IAgentRunner | null;
 
   // Run lifecycle
   status: RunStatus;
@@ -198,6 +194,17 @@ class AgentChatManager {
       ...(resolvedModel ? { model: resolvedModel } : {}),
     };
 
+    // OpenAI 协议的自定义供应商暂不支持 Agent Chat（仅内置 openai 支持 Codex CLI）
+    if (resolvedProvider?.startsWith('custom-')) {
+      const settings = await getSettings();
+      const cp = settings.claude.customProviders?.find((c) => c.id === resolvedProvider);
+      if (cp?.apiProtocol === 'openai') {
+        throw new Error(
+          'OpenAI 协议的自定义供应商暂不支持 Agent 对话。请使用 Anthropic 协议的自定义供应商或切换至内置 OpenAI。',
+        );
+      }
+    }
+
     // Build prompt
     const sessionProjectKey = flowContext?.projectKey ?? existing?.projectKey;
 
@@ -225,16 +232,6 @@ class AgentChatManager {
     // Merge capabilities
     const effectiveCaps = mergeCapabilities(agent.capabilities, persistedConfig?.capabilities);
 
-    // Build SDK query options
-    const sdkOpts = await buildSdkQueryOptions({
-      capabilities: effectiveCaps,
-      providerOverride: resolvedProvider,
-      modelOverride: resolvedModel,
-      effortOverride,
-      resumeSessionId: isResume ? existing!.claudeSessionId : undefined,
-      cwd: getAppWorkingDir(),
-    });
-
     // Eagerly save user turn before starting query
     if (!ephemeral) {
       await eagerlySaveUserTurn({
@@ -258,7 +255,7 @@ class AgentChatManager {
       agentId,
       projectKey: flowContext?.projectKey ?? existing?.projectKey,
       sessionTitle: existing?.sessionTitle ?? initialTitle,
-      sdkQuery: null,
+      runner: null,
       status: 'running',
       startedAt: Date.now(),
       events: [],
@@ -285,24 +282,27 @@ class AgentChatManager {
 
     this.runs.set(sessionId, run);
 
-    // ── Launch SDK query ──
+    // ── Launch runner（provider 无关）──
     try {
-      const sdkQuery = query({
-        prompt: promptContent,
-        options: sdkOpts,
+      const runner = await createAgentRunner({
+        provider: resolvedProvider ?? 'anthropic',
+        capabilities: effectiveCaps,
+        model: resolvedModel,
+        effortOverride,
+        resumeSessionId: isResume ? existing?.claudeSessionId : undefined,
+        cwd: getAppWorkingDir(),
       });
-      run.sdkQuery = sdkQuery;
+      run.runner = runner;
 
-      // Start consuming events in background (non-blocking)
-      this.consumeSdkStream(run, sdkQuery).catch(err => {
-        console.error(`${LOG_PREFIX} SDK stream error for ${sessionId}:`, err);
+      this.consumeRunnerStream(run, runner, promptContent).catch(err => {
+        console.error(`${LOG_PREFIX} Runner stream error for ${sessionId}:`, err);
       });
     } catch (err) {
-      this.trackAndEmit(run, { type: 'error', message: `Failed to start SDK query: ${err instanceof Error ? err.message : String(err)}` });
+      this.trackAndEmit(run, { type: 'error', message: `Failed to start runner: ${err instanceof Error ? err.message : String(err)}` });
       this.trackAndEmit(run, { type: 'done' });
       run.status = 'failed';
       run.completedAt = Date.now();
-      run.sdkQuery = null;
+      run.runner = null;
       await this.persistAfterClose(run, false);
     }
 
@@ -351,11 +351,11 @@ class AgentChatManager {
 
     const promptContent = await buildGuestAgentPrompt(agent, message, selectedTurns);
 
-    const sdkOpts = await buildSdkQueryOptions({
-      capabilities: agent.capabilities,
-      resumeSessionId: isResume ? existing!.claudeSessionId : undefined,
-      cwd: getAppWorkingDir(),
-    });
+    // ── Resolve provider — host session config → agent default → anthropic ──
+    const resolvedProvider: ProviderId =
+      hostSession.config?.provider
+      ?? agent.defaultProvider
+      ?? 'anthropic';
 
     // Create run
     const runId = `run-${guestSessionId}-${Date.now()}`;
@@ -364,7 +364,7 @@ class AgentChatManager {
       sessionId: guestSessionId,
       agentId,
       sessionTitle: existing?.sessionTitle,
-      sdkQuery: null,
+      runner: null,
       status: 'running',
       startedAt: Date.now(),
       events: [],
@@ -388,21 +388,26 @@ class AgentChatManager {
 
     this.runs.set(guestSessionId, run);
 
+    // ── Launch runner（provider 无关）──
     try {
-      const sdkQuery = query({
-        prompt: promptContent,
-        options: sdkOpts,
+      const runner = await createAgentRunner({
+        provider: resolvedProvider,
+        capabilities: agent.capabilities,
+        model: agent.defaultModel,
+        resumeSessionId: isResume ? existing?.claudeSessionId : undefined,
+        cwd: getAppWorkingDir(),
       });
-      run.sdkQuery = sdkQuery;
-      this.consumeSdkStream(run, sdkQuery).catch(err => {
-        console.error(`${LOG_PREFIX} SDK stream error for guest ${guestSessionId}:`, err);
+      run.runner = runner;
+
+      this.consumeRunnerStream(run, runner, promptContent).catch(err => {
+        console.error(`${LOG_PREFIX} Runner stream error for guest ${guestSessionId}:`, err);
       });
     } catch (err) {
-      this.trackAndEmit(run, { type: 'error', message: `Failed to start SDK query: ${err instanceof Error ? err.message : String(err)}` });
+      this.trackAndEmit(run, { type: 'error', message: `Failed to start runner: ${err instanceof Error ? err.message : String(err)}` });
       this.trackAndEmit(run, { type: 'done' });
       run.status = 'failed';
       run.completedAt = Date.now();
-      run.sdkQuery = null;
+      run.runner = null;
     }
 
     return run.runId;
@@ -455,9 +460,8 @@ class AgentChatManager {
     const run = this.runs.get(runKey);
     if (!run || run.status !== 'running') return false;
     run.status = 'stopped';
-    if (run.sdkQuery) {
-      run.sdkQuery.close();
-    }
+    run.runner?.abort();
+    run.runner = null;
     return true;
   }
 
@@ -509,24 +513,22 @@ class AgentChatManager {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Private: SDK stream consumption
+  // Private: runner stream consumption
   // ═══════════════════════════════════════════════════════════════════════
 
   /**
-   * 消费 SDK query 的事件流并转换为 ChatSSEEvent。
-   * 替代旧 CLI stdout 解析 + close 处理的核心逻辑。
+   * 统一的 runner 流消费逻辑。
+   * ClaudeAgentRunner / CodexAgentRunner 都经由此处驱动，AgentChatManager 不感知差异。
    */
-  private async consumeSdkStream(run: AgentChatRun, sdkQuery: SdkQuery): Promise<void> {
-    const adapter = new SdkEventAdapter();
-
+  private async consumeRunnerStream(
+    run: AgentChatRun,
+    runner: IAgentRunner,
+    prompt: string,
+  ): Promise<void> {
     try {
-      for await (const msg of sdkQuery) {
+      for await (const event of runner.stream(prompt)) {
         if (run.status === 'stopped') break;
-
-        const events = adapter.adapt(msg);
-        for (const event of events) {
-          this.trackAndEmit(run, event);
-        }
+        this.trackAndEmit(run, event);
       }
     } catch (err) {
       if (run.status !== 'stopped') {
@@ -535,15 +537,21 @@ class AgentChatManager {
       }
     }
 
-    // ── Stream ended — finalize ──
     const aborted = run.status === 'stopped';
-    run.sdkQuery = null;
+    run.runner = null;
 
-    // Capture session ID for resume
-    if (adapter.sessionId) {
-      run.claudeSessionId = adapter.sessionId;
+    if (runner.capturedSessionId) {
+      run.claudeSessionId = runner.capturedSessionId;
     }
 
+    await this.finalizeRun(run, aborted);
+  }
+
+  /**
+   * 流结束后的统一收尾逻辑（Claude SDK 和 Codex SDK 共享）。
+   * 清理临时文件 → 处理 Agent Actions → 生成标题 → 持久化 → emit done。
+   */
+  private async finalizeRun(run: AgentChatRun, aborted: boolean): Promise<void> {
     // Clean up temp image files
     if (run._tempImagePaths) {
       for (const tmpPath of run._tempImagePaths) {
@@ -657,9 +665,8 @@ class AgentChatManager {
           if (danger.level === 'critical') {
             console.warn(`${LOG_PREFIX} CRITICAL danger detected, auto-stopping: ${danger.reason}`);
             run.status = 'stopped';
-            if (run.sdkQuery) {
-              run.sdkQuery.close();
-            }
+            run.runner?.abort();
+            run.runner = null;
           }
         }
       }
@@ -758,7 +765,7 @@ class AgentChatManager {
       sessionId: diskSession.id,
       agentId: diskSession.agentId,
       projectKey: diskSession.projectKey,
-      sdkQuery: null,
+      runner: null,
       status: 'completed',
       events: [],
       listeners: new Set(),

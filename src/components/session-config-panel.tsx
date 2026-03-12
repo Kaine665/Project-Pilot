@@ -166,54 +166,54 @@ export function SessionConfigPanel({
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-100 dark:border-zinc-800">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100 dark:border-zinc-800">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">会话配置</span>
+          <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">会话配置</span>
           {hasChanges && (
-            <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+            <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
           )}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
           {hasChanges && (
             <button
               onClick={handleSave}
               disabled={saving}
-              className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              className="min-h-[40px] rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
             >
               {saving ? '保存中...' : '保存'}
             </button>
           )}
           <button
             onClick={onClose}
-            className="rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+            className="flex h-10 w-10 min-h-[40px] min-w-[40px] items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
           >
-            <X className="h-3.5 w-3.5" />
+            <X className="h-5 w-5" />
           </button>
         </div>
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
 
         {/* ── 模型配置 ── */}
-        <div className="rounded-lg border border-zinc-150 bg-zinc-50/50 p-3 dark:border-zinc-700/50 dark:bg-zinc-800/30">
-          <div className="mb-2 flex items-center gap-1.5">
-            <Cpu className="h-3.5 w-3.5 text-zinc-400" />
-            <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">模型配置</span>
+        <div className="rounded-xl border border-zinc-200 bg-zinc-50/50 p-4 shadow-sm dark:border-zinc-700/50 dark:bg-zinc-800/30">
+          <div className="mb-3 flex items-center gap-2">
+            <Cpu className="h-4 w-4 text-zinc-400" />
+            <span className="text-sm font-medium text-zinc-600 dark:text-zinc-400">模型配置</span>
             {(sessionProvider || sessionModel) && (
               <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-400">
                 已自定义
               </span>
             )}
           </div>
-          <div className="space-y-2">
+          <div className="space-y-3">
             <select
               value={sessionProvider}
               onChange={e => {
                 setSessionProvider(e.target.value as ProviderId | '');
                 setSessionModel('');
               }}
-              className="w-full rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500"
+              className="h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500"
             >
               <option value="">{agent?.defaultProvider ? `继承 Agent (${agent.defaultProvider})` : '继承全局默认'}</option>
               {PROVIDER_REGISTRY.map(p => (
@@ -224,7 +224,7 @@ export function SessionConfigPanel({
               <select
                 value={sessionModel}
                 onChange={e => setSessionModel(e.target.value)}
-                className="w-full rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500"
+                className="h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500"
               >
                 <option value="">{agent?.defaultModel ? `继承 Agent (${agent.defaultModel})` : '继承默认'}</option>
                 {getProviderPreset(sessionProvider as ProviderId).models.map(m => (
@@ -235,43 +235,43 @@ export function SessionConfigPanel({
               <input
                 disabled
                 placeholder={agent?.defaultModel ? `继承 Agent 默认: ${agent.defaultModel}` : '先选择供应商'}
-                className="w-full rounded-md border border-zinc-200 px-2 py-1.5 text-[11px] text-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/50"
+                className="h-11 w-full rounded-lg border border-zinc-200 px-3 py-2.5 text-sm text-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/50"
               />
             )}
           </div>
-          <p className="mt-1.5 text-[10px] text-zinc-400">
+          <p className="mt-2 text-xs text-zinc-400">
             覆盖此会话的模型，留空则继承 Agent 或全局配置
           </p>
         </div>
 
         {/* ── 系统提示词覆盖 ── */}
-        <div className="rounded-lg border border-zinc-150 bg-zinc-50/50 p-3 dark:border-zinc-700/50 dark:bg-zinc-800/30">
+        <div className="rounded-xl border border-zinc-200 bg-zinc-50/50 p-4 shadow-sm dark:border-zinc-700/50 dark:bg-zinc-800/30">
           <button
             type="button"
             onClick={() => setPromptSectionOpen(v => !v)}
-            className="flex w-full items-center gap-1.5"
+            className="flex min-h-[44px] w-full items-center gap-2 rounded-lg px-2 -mx-2 transition-colors hover:bg-zinc-100/50 dark:hover:bg-zinc-700/30"
           >
-            <Code className="h-3.5 w-3.5 text-zinc-400" />
-            <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">系统提示词</span>
+            <Code className="h-4 w-4 text-zinc-400" />
+            <span className="text-sm font-medium text-zinc-600 dark:text-zinc-400">系统提示词</span>
             {systemPromptOverride.trim() && (
               <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-400">
                 已覆盖
               </span>
             )}
-            <ChevronDown className={`ml-auto h-3 w-3 text-zinc-400 transition-transform ${promptSectionOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`ml-auto h-4 w-4 text-zinc-400 transition-transform ${promptSectionOpen ? 'rotate-180' : ''}`} />
           </button>
           {promptSectionOpen && (
-            <div className="mt-2 space-y-1.5">
+            <div className="mt-3 space-y-2">
               <textarea
                 ref={promptTextareaRef}
                 value={systemPromptOverride || (agentSystemPrompt ?? '')}
                 onChange={e => setSystemPromptOverride(e.target.value)}
                 placeholder="定义此会话的系统提示词（留空使用 Agent 默认）"
                 rows={6}
-                className="w-full resize-y rounded-md border border-zinc-200 bg-white px-2.5 py-2 text-xs leading-relaxed font-mono outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500 dark:focus:ring-blue-500/30"
+                className="w-full resize-y rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm leading-relaxed font-mono outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500 dark:focus:ring-blue-500/30"
               />
               <div className="flex items-center justify-between">
-                <p className="text-[10px] text-zinc-400">
+                <p className="text-xs text-zinc-400">
                   {systemPromptOverride.trim() ? '已覆盖 Agent 默认提示词' : '当前显示 Agent 默认提示词，编辑即覆盖'}
                 </p>
                 {systemPromptOverride.trim() && (
@@ -288,10 +288,10 @@ export function SessionConfigPanel({
         </div>
 
         {/* ── 补充提示词 ── */}
-        <div className="rounded-lg border border-zinc-150 bg-zinc-50/50 p-3 dark:border-zinc-700/50 dark:bg-zinc-800/30">
-          <div className="mb-2 flex items-center gap-1.5">
-            <FileText className="h-3.5 w-3.5 text-zinc-400" />
-            <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">补充提示词</span>
+        <div className="rounded-xl border border-zinc-200 bg-zinc-50/50 p-4 shadow-sm dark:border-zinc-700/50 dark:bg-zinc-800/30">
+          <div className="mb-3 flex items-center gap-2">
+            <FileText className="h-4 w-4 text-zinc-400" />
+            <span className="text-sm font-medium text-zinc-600 dark:text-zinc-400">补充提示词</span>
           </div>
           <textarea
             ref={textareaRef}
@@ -299,31 +299,31 @@ export function SessionConfigPanel({
             onChange={e => setSupplementaryPrompt(e.target.value)}
             placeholder="为本次会话追加的额外指令…"
             rows={2}
-            className="w-full resize-none rounded-md border border-zinc-200 bg-white px-2.5 py-2 text-xs leading-relaxed outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500 dark:focus:ring-blue-500/30"
+            className="w-full resize-none rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm leading-relaxed outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500 dark:focus:ring-blue-500/30"
           />
-          <p className="mt-1.5 text-[10px] text-zinc-400">
+          <p className="mt-2 text-xs text-zinc-400">
             附加在系统提示词之后，不替换
           </p>
         </div>
 
         {/* ── 能力开关 ── */}
-        <div className="rounded-lg border border-zinc-150 bg-zinc-50/50 p-3 dark:border-zinc-700/50 dark:bg-zinc-800/30">
+        <div className="rounded-xl border border-zinc-200 bg-zinc-50/50 p-4 shadow-sm dark:border-zinc-700/50 dark:bg-zinc-800/30">
           <button
             type="button"
             onClick={() => setCapsSectionOpen(v => !v)}
-            className="flex w-full items-center gap-1.5"
+            className="flex min-h-[44px] w-full items-center gap-2 rounded-lg px-2 -mx-2 transition-colors hover:bg-zinc-100/50 dark:hover:bg-zinc-700/30"
           >
-            <Shield className="h-3.5 w-3.5 text-zinc-400" />
-            <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">能力开关</span>
+            <Shield className="h-4 w-4 text-zinc-400" />
+            <span className="text-sm font-medium text-zinc-600 dark:text-zinc-400">能力开关</span>
             {Object.keys(capsOverride).length > 0 && (
               <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-400">
                 已自定义
               </span>
             )}
-            <ChevronDown className={`ml-auto h-3 w-3 text-zinc-400 transition-transform ${capsSectionOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`ml-auto h-4 w-4 text-zinc-400 transition-transform ${capsSectionOpen ? 'rotate-180' : ''}`} />
           </button>
           {capsSectionOpen && (
-            <div className="mt-2 space-y-0.5">
+            <div className="mt-3 space-y-1">
               {CAPABILITY_ITEMS.map(({ key, label, description, icon: Icon, danger }) => {
                 const agentEnabled = baseCaps[key];
                 const sessionVal = capsOverride[key];
@@ -332,24 +332,24 @@ export function SessionConfigPanel({
                 return (
                   <div
                     key={key}
-                    className={`flex items-center justify-between rounded-md px-2 py-1.5 transition-colors ${
+                    className={`flex min-h-[48px] items-center justify-between rounded-lg px-3 py-2.5 transition-colors ${
                       danger && effective ? 'bg-red-50/50 dark:bg-red-950/20' : ''
                     } ${!agentEnabled ? 'opacity-50' : ''}`}
                   >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Icon className={`h-3 w-3 shrink-0 ${
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Icon className={`h-4 w-4 shrink-0 ${
                         danger && effective ? 'text-red-400' : 'text-zinc-400'
                       }`} />
                       <div className="min-w-0">
-                        <div className="flex items-center gap-1">
-                          <span className={`text-[11px] font-medium ${
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-sm font-medium ${
                             danger && effective ? 'text-red-600 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-300'
                           }`}>{label}</span>
                           {isOverridden && (
-                            <span className="h-1 w-1 rounded-full bg-blue-500" />
+                            <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
                           )}
                         </div>
-                        <div className="text-[10px] text-zinc-400 truncate">{description}</div>
+                        <div className="text-xs text-zinc-400 truncate">{description}</div>
                       </div>
                     </div>
                     <button
@@ -370,14 +370,14 @@ export function SessionConfigPanel({
                         });
                       }}
                       disabled={!agentEnabled}
-                      className={`relative ml-2 h-4 w-7 shrink-0 rounded-full transition-colors ${
+                      className={`relative ml-3 h-7 w-12 shrink-0 rounded-full transition-colors ${
                         effective
                           ? danger ? 'bg-red-500' : 'bg-blue-600'
                           : 'bg-zinc-300 dark:bg-zinc-600'
                       } ${!agentEnabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                     >
-                      <span className={`absolute top-0.5 left-0.5 h-3 w-3 rounded-full bg-white transition-transform ${
-                        effective ? 'translate-x-3' : ''
+                      <span className={`absolute top-0.5 left-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${
+                        effective ? 'translate-x-5' : ''
                       }`} />
                     </button>
                   </div>
@@ -401,60 +401,60 @@ export function SessionConfigPanel({
         </div>
 
         {/* ── Skills 绑定 ── */}
-        <div className="rounded-lg border border-zinc-150 bg-zinc-50/50 p-3 dark:border-zinc-700/50 dark:bg-zinc-800/30">
+        <div className="rounded-xl border border-zinc-200 bg-zinc-50/50 p-4 shadow-sm dark:border-zinc-700/50 dark:bg-zinc-800/30">
             <button
               type="button"
               onClick={() => setSkillsOpen(v => !v)}
-              className="mb-2 flex w-full items-center gap-1.5"
+              className="mb-2 flex min-h-[44px] w-full items-center gap-2 rounded-lg px-2 -mx-2 transition-colors hover:bg-zinc-100/50 dark:hover:bg-zinc-700/30"
             >
-              <Zap className="h-3.5 w-3.5 text-zinc-400" />
-              <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">追加 Skills</span>
+              <Zap className="h-4 w-4 text-zinc-400" />
+              <span className="text-sm font-medium text-zinc-600 dark:text-zinc-400">追加 Skills</span>
               {skillNames.length > 0 && (
                 <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-400">
                   {skillNames.length}
                 </span>
               )}
-              <ChevronDown className={`ml-auto h-3 w-3 text-zinc-400 transition-transform ${skillsOpen ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`ml-auto h-4 w-4 text-zinc-400 transition-transform ${skillsOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {/* 已选 chips（折叠时展示） */}
             {skillNames.length > 0 && !skillsOpen && (
-              <div className="flex flex-wrap gap-1 mt-1">
+              <div className="flex flex-wrap gap-2 mt-2">
                 {availableSkills
                   .filter(s => skillNames.includes(s.name))
                   .map(s => (
                     <button
                       key={s.name}
                       onClick={() => toggleSkill(s.name)}
-                      className="group flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] text-blue-700 hover:bg-red-50 hover:text-red-600 transition-colors dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                      className="group flex min-h-[36px] items-center gap-4 rounded-full bg-blue-50 px-3 py-1.5 text-xs text-blue-700 transition-colors hover:bg-red-50 hover:text-red-600 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-red-900/30 dark:hover:text-red-400"
                     >
                       <span className="truncate max-w-[120px]">{s.name}</span>
-                      <X className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <X className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </button>
                   ))}
               </div>
             )}
 
             {skillsOpen && (
-              <div className="mt-1 space-y-2">
+              <div className="mt-2 space-y-2">
                 {/* 搜索 */}
                 {availableSkills.length > 5 && (
                   <div className="relative">
-                    <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-zinc-400" />
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
                     <input
                       type="text"
                       value={skillFilter}
                       onChange={e => setSkillFilter(e.target.value)}
                       placeholder="搜索 skills…"
-                      className="w-full rounded-md border border-zinc-200 bg-white py-1.5 pl-7 pr-2 text-[11px] outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500"
+                      className="h-11 w-full rounded-lg border border-zinc-200 bg-white py-2.5 pl-10 pr-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500"
                     />
                   </div>
                 )}
 
                 {/* 列表 */}
-                <div className="max-h-52 space-y-0.5 overflow-y-auto">
+                <div className="max-h-52 space-y-1 overflow-y-auto">
                   {availableSkills.length === 0 && (
-                    <p className="py-3 text-center text-[11px] text-zinc-400">暂无可用 Skills</p>
+                    <p className="py-4 text-center text-sm text-zinc-400">暂无可用 Skills</p>
                   )}
                   {availableSkills
                     .filter(s => !skillFilter.trim() ||
@@ -468,25 +468,25 @@ export function SessionConfigPanel({
                           key={skill.name}
                           type="button"
                           onClick={() => toggleSkill(skill.name)}
-                          className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
+                          className={`flex min-h-[48px] w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
                             checked
                               ? 'bg-blue-50 dark:bg-blue-900/20'
                               : 'hover:bg-zinc-100 dark:hover:bg-zinc-700/50'
                           }`}
                         >
-                          <div className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-colors ${
+                          <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
                             checked
                               ? 'border-blue-600 bg-blue-600 dark:border-blue-500 dark:bg-blue-500'
                               : 'border-zinc-300 dark:border-zinc-600'
                           }`}>
-                            {checked && <Check className="h-2.5 w-2.5 text-white" />}
+                            {checked && <Check className="h-3 w-3 text-white" />}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-xs text-zinc-900 dark:text-zinc-100">
+                            <div className="truncate text-sm text-zinc-900 dark:text-zinc-100">
                               {skill.name}
                             </div>
                             {skill.description && (
-                              <div className="truncate text-[10px] text-zinc-400">
+                              <div className="truncate text-xs text-zinc-400">
                                 {skill.description}
                               </div>
                             )}
@@ -501,64 +501,64 @@ export function SessionConfigPanel({
 
         {/* ── 上下文绑定 ── */}
         {contextEntries.length > 0 && (
-          <div className="rounded-lg border border-zinc-150 bg-zinc-50/50 p-3 dark:border-zinc-700/50 dark:bg-zinc-800/30">
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50/50 p-4 shadow-sm dark:border-zinc-700/50 dark:bg-zinc-800/30">
             <button
               type="button"
               onClick={() => setContextOpen(v => !v)}
-              className="mb-2 flex w-full items-center gap-1.5"
+              className="mb-2 flex min-h-[44px] w-full items-center gap-2 rounded-lg px-2 -mx-2 transition-colors hover:bg-zinc-100/50 dark:hover:bg-zinc-700/30"
             >
-              <BookOpen className="h-3.5 w-3.5 text-zinc-400" />
-              <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">追加上下文</span>
+              <BookOpen className="h-4 w-4 text-zinc-400" />
+              <span className="text-sm font-medium text-zinc-600 dark:text-zinc-400">追加上下文</span>
               {contextIds.length > 0 && (
                 <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-400">
                   {contextIds.length}
                 </span>
               )}
-              <ChevronDown className={`ml-auto h-3 w-3 text-zinc-400 transition-transform ${contextOpen ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`ml-auto h-4 w-4 text-zinc-400 transition-transform ${contextOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {/* 已选上下文 chips */}
             {selectedEntries.length > 0 && !contextOpen && (
-              <div className="flex flex-wrap gap-1 mt-1">
+              <div className="flex flex-wrap gap-2 mt-2">
                 {selectedEntries.map(entry => (
                   <button
                     key={entry.id}
                     onClick={() => toggleContext(entry.id)}
-                    className="group flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] text-blue-700 hover:bg-red-50 hover:text-red-600 transition-colors dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                    className="group flex min-h-[36px] items-center gap-4 rounded-full bg-blue-50 px-3 py-1.5 text-xs text-blue-700 transition-colors hover:bg-red-50 hover:text-red-600 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-red-900/30 dark:hover:text-red-400"
                   >
                     <span className="truncate max-w-[120px]">{entry.label}</span>
-                    <X className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <X className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity" />
                   </button>
                 ))}
               </div>
             )}
 
             {contextOpen && (
-              <div className="mt-1 space-y-2">
+              <div className="mt-2 space-y-2">
                 {/* 搜索 */}
                 {contextEntries.length > 5 && (
                   <div className="relative">
-                    <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-zinc-400" />
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
                     <input
                       type="text"
                       value={contextFilter}
                       onChange={e => setContextFilter(e.target.value)}
                       placeholder="搜索上下文…"
-                      className="w-full rounded-md border border-zinc-200 bg-white py-1.5 pl-7 pr-2 text-[11px] outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500"
+                      className="h-11 w-full rounded-lg border border-zinc-200 bg-white py-2.5 pl-10 pr-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500"
                     />
                   </div>
                 )}
 
                 {/* 列表 */}
-                <div className="max-h-52 space-y-2 overflow-y-auto">
+                <div className="max-h-52 space-y-1 overflow-y-auto">
                   {contextGroups.map(({ group, entries }) => (
                     <div key={group ?? '__ungrouped'}>
                       {group && (
-                        <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                        <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
                           {group}
                         </div>
                       )}
-                      <div className="space-y-0.5">
+                      <div className="space-y-1">
                         {entries.map(entry => {
                           const checked = contextIds.includes(entry.id);
                           return (
@@ -566,25 +566,25 @@ export function SessionConfigPanel({
                               key={entry.id}
                               type="button"
                               onClick={() => toggleContext(entry.id)}
-                              className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
+                              className={`flex min-h-[48px] w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
                                 checked
                                   ? 'bg-blue-50 dark:bg-blue-900/20'
                                   : 'hover:bg-zinc-100 dark:hover:bg-zinc-700/50'
                               }`}
                             >
-                              <div className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-colors ${
+                              <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
                                 checked
                                   ? 'border-blue-600 bg-blue-600 dark:border-blue-500 dark:bg-blue-500'
                                   : 'border-zinc-300 dark:border-zinc-600'
                               }`}>
-                                {checked && <Check className="h-2.5 w-2.5 text-white" />}
+                                {checked && <Check className="h-3 w-3 text-white" />}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="truncate text-xs text-zinc-900 dark:text-zinc-100">
+                                <div className="truncate text-sm text-zinc-900 dark:text-zinc-100">
                                   {entry.label}
                                 </div>
                                 {entry.description && (
-                                  <div className="truncate text-[10px] text-zinc-400">
+                                  <div className="truncate text-xs text-zinc-400">
                                     {entry.description}
                                   </div>
                                 )}
@@ -596,7 +596,7 @@ export function SessionConfigPanel({
                     </div>
                   ))}
                   {contextGroups.length === 0 && contextFilter && (
-                    <p className="py-3 text-center text-[11px] text-zinc-400">无匹配结果</p>
+                    <p className="py-4 text-center text-sm text-zinc-400">无匹配结果</p>
                   )}
                 </div>
               </div>
@@ -607,12 +607,12 @@ export function SessionConfigPanel({
 
       {/* Footer - simplified */}
       {hasChanges && (
-        <div className="border-t border-zinc-100 px-3 py-2 dark:border-zinc-800">
-          <div className="flex items-center gap-2">
+        <div className="border-t border-zinc-100 px-4 py-3 dark:border-zinc-800">
+          <div className="flex items-center gap-3">
             <button
               onClick={handleSave}
               disabled={saving}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              className="min-h-[44px] flex-1 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
             >
               {saving ? '保存中...' : '保存配置'}
             </button>
@@ -626,7 +626,7 @@ export function SessionConfigPanel({
                 setSystemPromptOverride(config.systemPrompt ?? '');
                 setCapsOverride(config.capabilities ?? {});
               }}
-              className="px-2 py-1.5 text-xs text-zinc-400 hover:text-zinc-600 transition-colors"
+              className="min-h-[44px] px-4 py-2.5 text-sm text-zinc-400 transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
             >
               撤销修改
             </button>

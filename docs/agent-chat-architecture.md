@@ -3,6 +3,8 @@
 > 关联：`src/lib/chat-managers/agent-chat-manager.ts`、`src/app/api/agent-chat/`、`src/components/agent-chat-panel.tsx`
 >
 > 更新时间：2026-03-02
+>
+> **参见**：[供应商/模型/SDK 支持关系](./provider-model-support.md) — Agent Chat 仅支持 Anthropic，OpenAI 需走 Codex SDK
 
 ---
 

@@ -74,7 +74,7 @@ export const ToolExecutionWindow = memo(function ToolExecutionWindow({
         <div ref={listRef} className="border-t border-zinc-200 dark:border-zinc-700 max-h-[200px] overflow-y-auto">
           {toolCalls.map((tc, i) => (
             <div
-              key={tc.id || i}
+              key={tc.id ? `${tc.id}-${i}` : `tool-${i}`}
               className="flex items-center gap-1.5 px-2 py-1 border-b border-zinc-100 last:border-b-0 dark:border-zinc-800"
             >
               <span className="shrink-0">

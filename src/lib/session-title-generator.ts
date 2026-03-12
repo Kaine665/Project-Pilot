@@ -9,7 +9,7 @@
 import { getSettings, getProviderScopedApiKey, getProviderScopedBaseUrl, buildClaudeEnv } from '@/lib/settings-manager';
 import { getProviderPreset } from '@/lib/provider-registry';
 import { execClaude } from '@/lib/claude-cli';
-import type { ProviderId, TitleGenerationChainEntry, TitleGenerationSettings } from '@/types';
+import type { ClaudeSettings, ProviderId, TitleGenerationChainEntry, TitleGenerationSettings } from '@/types';
 import { DEFAULT_TITLE_GENERATION } from '@/types';
 
 // ── 配置 ──
@@ -145,15 +145,12 @@ function cleanTitle(raw: string): string | null {
 async function callProviderApi(
   entry: TitleGenerationChainEntry,
   prompt: string,
-  claude: { authMode?: string; baseUrl?: string; providerApiKeys?: Partial<Record<ProviderId, string>>; apiKey?: string; provider?: ProviderId },
+  claude: ClaudeSettings,
 ): Promise<string | null> {
-  const apiKey = getProviderScopedApiKey(
-    claude as Parameters<typeof getProviderScopedApiKey>[0],
-    entry.provider,
-  );
+  const apiKey = getProviderScopedApiKey(claude, entry.provider);
   if (!apiKey) return null;
 
-  const preset = getProviderPreset(entry.provider);
+  const preset = getProviderPreset(entry.provider, claude.customProviders);
 
   if (entry.provider === 'anthropic') {
     return callAnthropicApi(apiKey, entry.model, prompt, claude.baseUrl);
@@ -161,11 +158,7 @@ async function callProviderApi(
 
   // OpenAI-compatible API（openai, deepseek, qwen, zhipu, minimax, kimi, openrouter, ollama, custom）
   // 使用 getProviderScopedBaseUrl 正确获取 baseUrl（支持 providerBaseUrls 中保存的探测后 URL）
-  const baseUrl = getProviderScopedBaseUrl(
-    claude as Parameters<typeof getProviderScopedBaseUrl>[0],
-    preset,
-    entry.provider,
-  );
+  const baseUrl = getProviderScopedBaseUrl(claude, preset, entry.provider);
 
   if (!baseUrl) return null;
   return callOpenAiCompatibleApi(apiKey, entry.model, prompt, baseUrl);

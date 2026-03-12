@@ -37,7 +37,7 @@ export function TopNav({ children, plannerOpen }: { children?: React.ReactNode; 
   };
 
   return (
-    <header className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
+    <header className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-6 py-3 dark:border-zinc-800 dark:bg-zinc-950">
       <div className="flex items-center gap-1">
         <nav className="flex items-center gap-1">
           {navItems.map(({ href, label, icon: Icon }) => {
@@ -47,10 +47,10 @@ export function TopNav({ children, plannerOpen }: { children?: React.ReactNode; 
                 key={href}
                 href={href}
                 className={cn(
-                  'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                  'flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-all',
                   isActive
-                    ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                    : 'text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-300',
+                    ? 'bg-zinc-100 text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100'
+                    : 'text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-300',
                 )}
               >
                 <Icon className="h-4 w-4" />
@@ -61,18 +61,18 @@ export function TopNav({ children, plannerOpen }: { children?: React.ReactNode; 
         </nav>
       </div>
       <ProjectSwitcher />
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         <button
           onClick={handleOpenPlanner}
           className={cn(
-            'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
+            'flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all shadow-sm',
             isOpen
               ? 'bg-ai-subtle text-ai dark:bg-ai-subtle dark:text-ai'
-              : 'bg-ai-subtle text-ai hover:bg-ai-subtle dark:bg-ai-subtle dark:text-ai dark:hover:bg-ai-subtle',
+              : 'bg-ai-subtle text-ai hover:brightness-95 dark:bg-ai-subtle dark:text-ai dark:hover:brightness-95',
           )}
           title={t('nav.aiAssistant')}
         >
-          <Sparkles className="h-3.5 w-3.5" />
+          <Sparkles className="h-4 w-4" />
           <span>{t('nav.aiAssistant')}</span>
         </button>
         <LanguageSwitcher />
@@ -105,7 +105,7 @@ function ProjectSwitcher() {
     <div ref={containerRef} className="relative">
       <button
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 transition-colors dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-200"
+        className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-4 py-1.5 text-sm font-medium text-zinc-600 shadow-sm transition-all hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
       >
         <span className="max-w-[200px] truncate">
           {activeProject ? activeProject.name : '无项目'}

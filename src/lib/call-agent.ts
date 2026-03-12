@@ -157,6 +157,7 @@ async function pollSession(sessionId: string, port: number): Promise<void> {
 
   const statusData = JSON.parse(statusResult.body);
   const status: string = statusData.status;
+  const statusMessages: Array<{ role: string; content: string }> = statusData.messages || [];
 
   if (status === 'running') {
     process.stdout.write('RUNNING');
@@ -166,6 +167,12 @@ async function pollSession(sessionId: string, port: number): Promise<void> {
   if (status === 'failed' || status === 'stopped') {
     process.stderr.write(`[call-agent] Session ${status}: ${sessionId}\n`);
     process.exit(1);
+  }
+
+  const inMemoryAssistant = [...statusMessages].reverse().find(m => m.role === 'assistant');
+  if (inMemoryAssistant) {
+    process.stdout.write(inMemoryAssistant.content);
+    return;
   }
 
   // status === 'completed' 或 'none'（已从内存清除）→ 从磁盘读取结果
@@ -178,6 +185,10 @@ async function pollSession(sessionId: string, port: number): Promise<void> {
   });
 
   if (sessionResult.statusCode === 404) {
+    if (status === 'none' || status === 'completed') {
+      process.stdout.write('RUNNING');
+      process.exit(POLL_EXIT_RUNNING);
+    }
     throw new Error(`Session not found: ${sessionId}`);
   }
   if (sessionResult.statusCode !== 200) {
@@ -192,7 +203,7 @@ async function pollSession(sessionId: string, port: number): Promise<void> {
 
   if (!lastAssistant) {
     // 有 session 记录但无 assistant 回复 — 可能还在跑（eagerly saved 但未完成）
-    if (status === 'none') {
+    if (status === 'none' || status === 'completed') {
       process.stdout.write('RUNNING');
       process.exit(POLL_EXIT_RUNNING);
     }

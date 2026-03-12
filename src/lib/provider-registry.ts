@@ -3,9 +3,10 @@
  *
  * 每个供应商预设了 baseUrl、可选模型列表、认证方式说明。
  * 第三方供应商均使用原生 Anthropic 兼容端点，无需代理。
+ * 自定义供应商通过 customProviders 传入，转为 ProviderPreset。
  */
 
-import type { ProviderId } from '@/types';
+import type { ProviderId, CustomProviderConfig } from '@/types';
 
 export interface ModelOption {
   id: string;
@@ -16,7 +17,7 @@ export interface ModelOption {
 
 export interface ProviderPreset {
   id: ProviderId;
-  /** i18n key: settings.providers.<id> */
+  /** i18n key 或显示名称（自定义供应商用 name） */
   nameKey: string;
   /** 固定 baseUrl，undefined 表示不需要（如 Anthropic 官方用默认） */
   baseUrl?: string;
@@ -36,6 +37,10 @@ export interface ProviderPreset {
   extraEnv?: Record<string, string>;
   /** 是否使用 API Key（而非 OAuth）进行认证。默认 true for 第三方，false for 官方 */
   useApiKeyForAuth?: boolean;
+  /** 自定义供应商：API 协议（anthropic 兼容时走 ANTHROPIC_BASE_URL） */
+  apiProtocol?: 'anthropic' | 'openai';
+  /** 自定义供应商：认证方式 */
+  authMethod?: 'AUTH_TOKEN' | 'API_KEY';
 }
 
 export const PROVIDER_REGISTRY: ProviderPreset[] = [
@@ -60,7 +65,9 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
     id: 'openai',
     nameKey: 'settings.providers.openai',
     models: [
+      { id: 'gpt-5.4', label: 'GPT-5.4' },
       { id: 'gpt-5.3-codex', label: 'GPT-5.3 Codex' },
+      { id: 'gpt-5.3-codex-spark', label: 'GPT-5.3 Codex Spark' },
       { id: 'gpt-5.2-codex', label: 'GPT-5.2 Codex' },
       { id: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max' },
       { id: 'gpt-5.2', label: 'GPT-5.2' },
@@ -242,8 +249,27 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
   },
 ];
 
-/** 按 ID 查找供应商预设 */
-export function getProviderPreset(id: ProviderId): ProviderPreset {
+/** 按 ID 查找供应商预设，支持自定义供应商 */
+export function getProviderPreset(id: ProviderId, customProviders?: CustomProviderConfig[]): ProviderPreset {
+  if (id.startsWith('custom-') && customProviders) {
+    const cp = customProviders.find((c) => c.id === id);
+    if (cp) {
+      return {
+        id: cp.id,
+        nameKey: cp.name,
+        baseUrl: cp.baseUrl,
+        models: cp.modelIds.map((mid) => ({ id: mid, label: mid })),
+        supportsOAuth: false,
+        editableBaseUrl: false,
+        editableModel: true,
+        apiKeyPlaceholder: cp.authMethod === 'API_KEY' ? 'sk-...' : 'token...',
+        useApiKeyForAuth: true,
+        apiProtocol: cp.apiProtocol,
+        authMethod: cp.authMethod,
+        extraEnv: { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' },
+      };
+    }
+  }
   return PROVIDER_REGISTRY.find((p) => p.id === id) ?? PROVIDER_REGISTRY[0];
 }
 

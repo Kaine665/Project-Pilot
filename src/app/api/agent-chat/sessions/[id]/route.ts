@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { agentChatManager } from '@/lib/agent-chat-manager';
-import { loadSession, markAsRead, setArchived, updateConfigOnDisk } from '@/lib/agent-chat-manager';
+import { loadSession, markAsRead, setArchived } from '@/lib/agent-chat-manager';
+import { sidecarFetch } from '@/lib/sidecar-bridge';
 
 /**
  * GET /api/agent-chat/sessions/[id]
@@ -60,10 +60,17 @@ export async function PATCH(
 
   if (body.action === 'updateConfig') {
     const config = body.config ?? {};
-    // Update in-memory run if present + persist to disk
-    const found = await agentChatManager.updateConfig(id, config);
-    if (!found) {
-      return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    try {
+      const res = await sidecarFetch('/agent-chat/update-config', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: id, config }),
+      });
+      if (!res.ok) {
+        const data = await res.json() as { error?: string };
+        return NextResponse.json({ error: data.error ?? 'Sidecar error' }, { status: res.status });
+      }
+    } catch {
+      // Sidecar unreachable — config update is best-effort when no run is active
     }
     return NextResponse.json({ ok: true });
   }

@@ -117,12 +117,12 @@ export function ToggleSwitch({ checked, onChange, danger }: { checked: boolean; 
       role="switch"
       aria-checked={checked}
       onClick={onChange}
-      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+      className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
         checked ? activeColor : inactiveColor
       }`}
     >
       <span
-        className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform dark:bg-zinc-900 ${
+        className={`pointer-events-none inline-block h-6 w-6 rounded-full bg-white shadow ring-0 transition-transform dark:bg-zinc-900 ${
           checked ? 'translate-x-5' : 'translate-x-0'
         }`}
       />
@@ -224,10 +224,10 @@ export function SettingsForm({
             </h2>
             <button
               onClick={onClose}
-              className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+              className="flex h-10 w-10 min-h-[40px] min-w-[40px] items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
               title="关闭"
             >
-              <X className="h-4 w-4" />
+              <X className="h-5 w-5" />
             </button>
           </div>
         )}
@@ -244,7 +244,7 @@ export function SettingsForm({
               value={form.name}
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
               placeholder="给 Agent 起个名字"
-              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+              className="h-11 w-full rounded-lg border border-zinc-300 px-4 py-2.5 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
             />
           </div>
 
@@ -272,7 +272,7 @@ export function SettingsForm({
               value={form.description}
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
               placeholder="简要描述这个 Agent 的用途"
-              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+              className="h-11 w-full rounded-lg border border-zinc-300 px-4 py-2.5 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
             />
           </div>
 
@@ -309,7 +309,7 @@ export function SettingsForm({
             <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
               图标
             </label>
-            <div className="grid grid-cols-5 gap-2">
+            <div className="grid grid-cols-5 gap-3">
               {AGENT_ICON_OPTIONS.map(({ key, icon: Icon, label }) => {
                 const selected = form.icon === key || (!form.icon && key === 'bot');
                 return (
@@ -318,13 +318,13 @@ export function SettingsForm({
                     type="button"
                     onClick={() => setForm(f => ({ ...f, icon: key }))}
                     title={label}
-                    className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-2.5 text-xs transition-colors ${
+                    className={`flex min-h-[56px] flex-col items-center justify-center gap-1.5 rounded-xl border px-3 py-3 text-xs transition-colors ${
                       selected
                         ? 'border-zinc-900 bg-zinc-100 text-zinc-900 dark:border-zinc-100 dark:bg-zinc-800 dark:text-zinc-100'
                         : 'border-zinc-200 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:text-zinc-300'
                     }`}
                   >
-                    <Icon className="h-5 w-5" />
+                    <Icon className="h-6 w-6" />
                     <span className="truncate w-full text-center">{label}</span>
                   </button>
                 );
@@ -340,10 +340,10 @@ export function SettingsForm({
               </label>
               <button
                 onClick={onExpandPrompt}
-                className="rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                className="flex h-10 w-10 min-h-[40px] min-w-[40px] items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
                 title="全屏编辑"
               >
-                <Maximize2 className="h-3.5 w-3.5" />
+                <Maximize2 className="h-4 w-4" />
               </button>
             </div>
             <textarea
@@ -351,7 +351,7 @@ export function SettingsForm({
               onChange={e => setForm(f => ({ ...f, systemPrompt: e.target.value }))}
               placeholder="定义 Agent 的行为和能力，例如：你是一个专注于代码审查的助手..."
               rows={8}
-              className="w-full resize-y rounded-md border border-zinc-300 px-3 py-2 text-sm leading-relaxed outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+              className="w-full resize-y rounded-lg border border-zinc-300 px-4 py-2.5 text-sm leading-relaxed outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
             />
           </div>
 
@@ -365,7 +365,7 @@ export function SettingsForm({
               onChange={e => setForm(f => ({ ...f, requiredParamsText: e.target.value }))}
               placeholder={'该 Agent 执行任务所需的参数，每行一个\n例如：\nSUPABASE_URL\nSUPABASE_SERVICE_ROLE_KEY'}
               rows={3}
-              className="w-full resize-y rounded-md border border-zinc-300 px-3 py-2 text-sm leading-relaxed font-mono outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+              className="w-full resize-y rounded-lg border border-zinc-300 px-4 py-2.5 text-sm leading-relaxed font-mono outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
             />
             <p className="mt-1 text-xs text-zinc-400">
               仅声明参数名，实际值在项目或任务中配置
@@ -377,11 +377,11 @@ export function SettingsForm({
             <label className="mb-3 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
               能力配置
             </label>
-            <div className="space-y-1 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
+            <div className="space-y-1 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
               {CAPABILITY_ITEMS.map(({ key, label, description, icon: Icon, danger }) => (
                 <div
                   key={key}
-                  className={`flex items-center justify-between rounded-md px-3 py-2.5 transition-colors ${
+                  className={`flex min-h-[52px] items-center justify-between rounded-lg px-4 py-3 transition-colors ${
                     danger && form.capabilities[key]
                       ? 'bg-red-50/50 dark:bg-red-950/20'
                       : ''
@@ -404,14 +404,16 @@ export function SettingsForm({
                       <div className="text-xs text-zinc-400">{description}</div>
                     </div>
                   </div>
-                  <ToggleSwitch
-                    checked={form.capabilities[key]}
-                    onChange={() => setForm(f => ({
-                      ...f,
-                      capabilities: { ...f.capabilities, [key]: !f.capabilities[key] },
-                    }))}
-                    danger={danger}
-                  />
+                  <div className="shrink-0">
+                    <ToggleSwitch
+                      checked={form.capabilities[key]}
+                      onChange={() => setForm(f => ({
+                        ...f,
+                        capabilities: { ...f.capabilities, [key]: !f.capabilities[key] },
+                      }))}
+                      danger={danger}
+                    />
+                  </div>
                 </div>
               ))}
             </div>
@@ -426,7 +428,7 @@ export function SettingsForm({
               <p className="mb-2 text-xs text-zinc-400">
                 选中的上下文内容将在对话时自动展开注入，Agent 无需手动读取
               </p>
-              <div className="space-y-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700 max-h-60 overflow-y-auto">
+              <div className="space-y-1 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700 max-h-60 overflow-y-auto">
                 {contextGroups.map(({ group, entries }) => (
                   <div key={group ?? '__ungrouped'}>
                     {group && (
@@ -442,13 +444,13 @@ export function SettingsForm({
                             key={entry.id}
                             type="button"
                             onClick={() => toggleContext(entry.id)}
-                            className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors ${
+                            className={`flex min-h-[48px] w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
                               checked
                                 ? 'bg-zinc-100 dark:bg-zinc-800'
                                 : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
                             }`}
                           >
-                            <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
+                            <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
                               checked
                                 ? 'border-zinc-900 bg-zinc-900 dark:border-zinc-100 dark:bg-zinc-100'
                                 : 'border-zinc-300 dark:border-zinc-600'
@@ -456,7 +458,7 @@ export function SettingsForm({
                               {checked && <Check className="h-3 w-3 text-white dark:text-zinc-900" />}
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className="truncate text-sm text-zinc-900 dark:text-zinc-100">
+                              <div className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
                                 {entry.label}
                               </div>
                               {entry.description && (
@@ -489,7 +491,7 @@ export function SettingsForm({
               <p className="mb-2 text-xs text-zinc-400">
                 选中的 Skill 名称和描述将在会话启动时注入，让 Agent 知道可以使用哪些技能
               </p>
-              <div className="space-y-0.5 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700 max-h-48 overflow-y-auto">
+              <div className="space-y-1 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700 max-h-48 overflow-y-auto">
                 {availableSkills.map(skill => {
                   const checked = form.skillIds.includes(skill.name);
                   return (
@@ -497,13 +499,13 @@ export function SettingsForm({
                       key={skill.name}
                       type="button"
                       onClick={() => toggleSkill(skill.name)}
-                      className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors ${
+                      className={`flex min-h-[48px] w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
                         checked
                           ? 'bg-zinc-100 dark:bg-zinc-800'
                           : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
                       }`}
                     >
-                      <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
+                      <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
                         checked
                           ? 'border-zinc-900 bg-zinc-900 dark:border-zinc-100 dark:bg-zinc-100'
                           : 'border-zinc-300 dark:border-zinc-600'
@@ -511,7 +513,7 @@ export function SettingsForm({
                         {checked && <Check className="h-3 w-3 text-white dark:text-zinc-900" />}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm text-zinc-900 dark:text-zinc-100">
+                        <div className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
                           {skill.name}
                         </div>
                         {skill.description && (
@@ -548,7 +550,7 @@ export function SettingsForm({
                   defaultProvider: e.target.value as ProviderId | '',
                   defaultModel: '',
                 }))}
-                className="w-36 shrink-0 rounded-md border border-zinc-300 bg-white px-2 py-2 text-sm outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+                className="h-11 w-36 shrink-0 rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
               >
                 <option value="">继承全局</option>
                 {PROVIDER_REGISTRY.map(p => (
@@ -559,7 +561,7 @@ export function SettingsForm({
                 <select
                   value={form.defaultModel}
                   onChange={e => setForm(f => ({ ...f, defaultModel: e.target.value }))}
-                  className="flex-1 rounded-md border border-zinc-300 bg-white px-2 py-2 text-sm outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+                  className="h-11 flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
                 >
                   <option value="">继承全局</option>
                   {getProviderPreset(form.defaultProvider as ProviderId).models.map(m => (
@@ -582,17 +584,17 @@ export function SettingsForm({
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-3 pt-2">
+          <div className="flex items-center gap-3 pt-4">
             <button
               onClick={onSave}
               disabled={!form.name.trim() || saving || !hasChanges}
-              className="rounded-md bg-zinc-900 px-5 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+              className="min-h-[44px] rounded-lg bg-zinc-900 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
             >
               {saving ? '保存中...' : creating ? '创建' : '保存'}
             </button>
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-600 transition-colors"
+              className="min-h-[44px] px-5 py-2.5 text-sm text-zinc-400 transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
             >
               取消
             </button>

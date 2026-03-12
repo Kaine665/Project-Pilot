@@ -36,11 +36,18 @@ function extractOAuthUrl(text: string): string | null {
   return null;
 }
 
-/** 从 Codex 输出中提取 device code */
+/** 从 Codex 输出中提取 device code（支持多种格式） */
 function extractDeviceCode(text: string): string | null {
-  // Codex outputs something like "Enter code: XXXX-XXXX" or "code: XXXX-XXXX"
-  const match = text.match(/code[:\s]+([A-Z0-9]{4}-[A-Z0-9]{4})/i);
-  return match ? match[1].toUpperCase() : null;
+  // XXXX-XXXX 或 XXXXX-XXXXX 等格式
+  const patterns = [
+    /(?:code|enter)[:\s]+([A-Z0-9]{4,6}-[A-Z0-9]{4,8})/i,
+    /([A-Z0-9]{4,6}-[A-Z0-9]{4,8})(?:\s|$|\.)/,
+  ];
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (m) return m[1].toUpperCase();
+  }
+  return null;
 }
 
 /**
@@ -128,6 +135,7 @@ async function startAnthropicLogin(): Promise<NextResponse> {
 async function startOpenAILogin(): Promise<NextResponse> {
   try {
     const { spawnCodex } = await import('@/lib/codex-cli');
+    // 浏览器 OAuth：BROWSER=echo 捕获 URL，用户复制到浏览器打开，回调到 localhost 完成
     const child = spawnCodex(['login'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, BROWSER: 'echo' },

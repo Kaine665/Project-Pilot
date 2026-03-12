@@ -55,26 +55,48 @@ export type ClaudeAuthMode = 'api_key' | 'oauth';
 /** Supported Claude model IDs */
 export type ClaudeModel = 'claude-opus-4-6' | 'claude-sonnet-4-5-20250929' | 'claude-haiku-4-5-20250929' | 'claude-haiku-4-5-20251001';
 
+/** 内置供应商 ID */
+export const BUILT_IN_PROVIDER_IDS = [
+  'anthropic', 'openai', 'deepseek', 'qwen', 'zhipu', 'minimax', 'kimi',
+  'openrouter', 'ollama', 'custom',
+] as const;
+
+export type BuiltInProviderId = (typeof BUILT_IN_PROVIDER_IDS)[number];
+
 /**
  * AI 供应商 ID。
- *
- * - anthropic: Anthropic 官方（默认）
- * - deepseek / qwen / zhipu / minimax: 中国厂商（原生 Anthropic 兼容端点）
- * - openrouter: 聚合网关
- * - ollama: 本地模型
- * - custom: 用户自定义端点
+ * - 内置：anthropic, openai, deepseek, qwen, zhipu, minimax, kimi, openrouter, ollama, custom
+ * - 自定义：custom-{id}，来自用户添加的自定义供应商
  */
-export type ProviderId =
-  | 'anthropic'
-  | 'openai'
-  | 'deepseek'
-  | 'qwen'
-  | 'zhipu'
-  | 'minimax'
-  | 'kimi'
-  | 'openrouter'
-  | 'ollama'
-  | 'custom';
+export type ProviderId = BuiltInProviderId | `custom-${string}`;
+
+/** API 协议：Anthropic 兼容 或 OpenAI 兼容 */
+export type CustomProviderApiProtocol = 'anthropic' | 'openai';
+
+/** 自定义供应商认证方式 */
+export type CustomProviderAuthMethod = 'AUTH_TOKEN' | 'API_KEY';
+
+/**
+ * 自定义供应商配置（规范 schema，与「添加自定义供应商」表单一致）
+ */
+export interface CustomProviderConfig {
+  /** 唯一 ID，格式 custom-{id} */
+  id: `custom-${string}`;
+  /** 供应商名称，必填 */
+  name: string;
+  /** 服务商标签，可选，如「云服务商」 */
+  tag?: string;
+  /** API 协议：anthropic 或 openai */
+  apiProtocol: CustomProviderApiProtocol;
+  /** API Base URL，必填 */
+  baseUrl: string;
+  /** 认证方式：AUTH_TOKEN 或 API_KEY */
+  authMethod: CustomProviderAuthMethod;
+  /** 模型 ID 列表，至少一个 */
+  modelIds: string[];
+  /** API Key / Token，可选，可稍后设置 */
+  apiKey?: string;
+}
 
 /** 推理努力等级 */
 export type EffortLevel = 'low' | 'medium' | 'high';
@@ -110,6 +132,8 @@ export interface ClaudeSettings {
   providerBaseUrls?: Partial<Record<ProviderId, string>>;
   /** OpenAI 推理努力等级 */
   openaiReasoningEffort?: OpenAIReasoningEffort;
+  /** 用户添加的自定义供应商列表（规范 schema） */
+  customProviders?: CustomProviderConfig[];
 }
 
 /** 通用设置 */
