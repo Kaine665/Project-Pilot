@@ -30,10 +30,18 @@ export const FilePreviewDialog = memo(function FilePreviewDialog({
 
     (async () => {
       try {
-        const res = await fetch(
+        // Try the path directly first
+        let res = await fetch(
           `/api/fs/read-file?path=${encodeURIComponent(filePath)}`,
           { cache: 'no-store' },
         );
+        // If 404 and the path looks relative, try resolving via the data directory
+        if (res.status === 404 && !filePath.match(/^([a-zA-Z]:[/\\]|\/)/)) {
+          res = await fetch(
+            `/api/fs/read-file?path=${encodeURIComponent(filePath)}&resolve=data`,
+            { cache: 'no-store' },
+          );
+        }
         if (cancelled) return;
         const data = await res.json();
         if (!res.ok) {

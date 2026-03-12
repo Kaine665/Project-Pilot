@@ -199,17 +199,30 @@ export const FormattedText = memo(function FormattedText({ text, className = '',
               {children}
             </td>
           ),
-          // Links
-          a: ({ href, children }) => (
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-600 dark:text-blue-400 underline underline-offset-2 hover:text-blue-700 dark:hover:text-blue-300"
-            >
-              {children}
-            </a>
-          ),
+          // Links — intercept file-path hrefs to open in-app preview
+          a: ({ href, children }) => {
+            if (onFileClick && href && !href.startsWith('http://') && !href.startsWith('https://') && !href.startsWith('mailto:') && looksLikeFilePath(href)) {
+              return (
+                <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); onFileClick(href); }}
+                  className="inline text-blue-600 dark:text-blue-400 underline underline-offset-2 hover:text-blue-700 dark:hover:text-blue-300 cursor-pointer"
+                >
+                  {children}
+                </button>
+              );
+            }
+            return (
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 dark:text-blue-400 underline underline-offset-2 hover:text-blue-700 dark:hover:text-blue-300"
+              >
+                {children}
+              </a>
+            );
+          },
           // Horizontal rule
           hr: () => (
             <hr className="my-2 border-zinc-200 dark:border-zinc-700" />
