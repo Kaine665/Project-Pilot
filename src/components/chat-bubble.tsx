@@ -34,6 +34,8 @@ interface ChatBubbleProps {
   hasSendError?: boolean;
   /** Callback to view plan content in side panel */
   onViewPlan?: (content: string) => void;
+  /** Callback when a file path in the message is clicked */
+  onFileClick?: (filePath: string) => void;
 }
 
 export const ChatBubble = memo(function ChatBubble({
@@ -50,6 +52,7 @@ export const ChatBubble = memo(function ChatBubble({
   onRetry,
   hasSendError,
   onViewPlan,
+  onFileClick,
 }: ChatBubbleProps) {
   const t = useTranslations();
   const isUser = message.role === 'user';
@@ -160,7 +163,7 @@ export const ChatBubble = memo(function ChatBubble({
         }
         return (
           <div key={i} className="wrap-break-word">
-            <FormattedText text={block.text} className="leading-relaxed space-y-1.5" />
+            <FormattedText text={block.text} className="leading-relaxed space-y-1.5" onFileClick={onFileClick} />
             {isStreaming && i === lastTextIdx && (
               <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-current opacity-60" />
             )}
@@ -201,7 +204,7 @@ export const ChatBubble = memo(function ChatBubble({
           {isUser ? (
             <div className="whitespace-pre-wrap leading-relaxed">{message.content}</div>
           ) : (
-            <FormattedText text={message.content} className="leading-relaxed space-y-1.5" />
+            <FormattedText text={message.content} className="leading-relaxed space-y-1.5" onFileClick={onFileClick} />
           )}
         </div>
       )}

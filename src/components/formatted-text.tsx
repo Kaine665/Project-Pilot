@@ -52,12 +52,26 @@ function CodeBlock({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Known text-file extensions for click-to-preview detection
+const FILE_EXTENSIONS = /\.(md|mdx|txt|json|js|ts|tsx|jsx|mjs|cjs|css|scss|html|xml|yaml|yml|py|rb|go|rs|java|kt|swift|c|h|cpp|hpp|sql|sh|bash|toml|ini|cfg|conf|env|log)$/i;
+
+function looksLikeFilePath(text: string): boolean {
+  const t = text.trim();
+  if (!t || t.includes('\n') || t.length > 260) return false;
+  if (!FILE_EXTENSIONS.test(t)) return false;
+  // Must contain a path separator or be a bare filename with extension
+  if (/[/\\]/.test(t)) return true;
+  // Bare filenames like "README.md" also count
+  return /^[\w.@~-]+$/.test(t);
+}
+
 interface FormattedTextProps {
   text: string;
   className?: string;
+  onFileClick?: (filePath: string) => void;
 }
 
-export const FormattedText = memo(function FormattedText({ text, className = '' }: FormattedTextProps) {
+export const FormattedText = memo(function FormattedText({ text, className = '', onFileClick }: FormattedTextProps) {
   // 检测是否包含 json:plan 代码块
   const planMatch = text.match(/```json:plan\s*\n([\s\S]*?)```/);
 
@@ -68,11 +82,11 @@ export const FormattedText = memo(function FormattedText({ text, className = '' 
 
     return (
       <div className={className}>
-        {beforePlan && <FormattedText text={beforePlan} className="" />}
+        {beforePlan && <FormattedText text={beforePlan} className="" onFileClick={onFileClick} />}
         <div className="my-3">
           <PlanRenderer planJson={planJson} />
         </div>
-        {afterPlan && <FormattedText text={afterPlan} className="" />}
+        {afterPlan && <FormattedText text={afterPlan} className="" onFileClick={onFileClick} />}
       </div>
     );
   }
@@ -113,7 +127,7 @@ export const FormattedText = memo(function FormattedText({ text, className = '' 
               {children}
             </strong>
           ),
-          // Inline code
+          // Inline code — detect file paths and make them clickable
           code: ({ className: codeClassName, children, ...props }) => {
             // Multi-line code block (rendered by <pre><code>)
             const isBlock = codeClassName?.startsWith('language-');
@@ -124,7 +138,22 @@ export const FormattedText = memo(function FormattedText({ text, className = '' 
                 </code>
               );
             }
-            // Inline code
+            // Check if this inline code looks like a file path
+            const raw = extractText(children);
+            if (onFileClick && looksLikeFilePath(raw)) {
+              return (
+                <code
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => { e.preventDefault(); onFileClick(raw.trim()); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') onFileClick(raw.trim()); }}
+                  className="cursor-pointer rounded bg-blue-50 dark:bg-blue-950/40 px-1 py-0.5 text-xs font-mono text-blue-700 dark:text-blue-300 underline underline-offset-2 decoration-blue-300 dark:decoration-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+                >
+                  {children}
+                </code>
+              );
+            }
+            // Regular inline code
             return (
               <code className="rounded bg-zinc-200/70 dark:bg-zinc-700 px-1 py-0.5 text-xs font-mono text-zinc-800 dark:text-zinc-200">
                 {children}
