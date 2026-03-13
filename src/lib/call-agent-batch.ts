@@ -138,6 +138,7 @@ async function startSession(
     message,
     projectKey: projectKey || undefined,
     parentSessionId: parentSessionId || undefined,
+    depth,
   });
 
   const postResult = await httpRequest({
@@ -161,8 +162,13 @@ async function startSession(
   return parsed.sessionId;
 }
 
+/**
+ * Poll a session's status. With the unified state source:
+ * - `completed` guarantees data is on disk (no more race window)
+ * - `running` includes `finalizing` (server maps it for backward compat)
+ */
 async function pollSession(sessionId: string, port: number): Promise<{ status: 'running' | 'completed' | 'failed'; result?: string; error?: string }> {
-  // Check status
+  // Step 1: Check in-memory status
   const statusResult = await httpRequest({
     method: 'GET',
     hostname: '127.0.0.1',
@@ -187,12 +193,15 @@ async function pollSession(sessionId: string, port: number): Promise<{ status: '
     return { status: 'failed', error: `Session ${status}` };
   }
 
-  const inMemoryAssistant = [...statusMessages].reverse().find(m => m.role === 'assistant');
-  if (inMemoryAssistant) {
-    return { status: 'completed', result: inMemoryAssistant.content };
+  // status === 'completed': data guaranteed on disk. Try in-memory messages first.
+  if (status === 'completed') {
+    const inMemoryAssistant = [...statusMessages].reverse().find(m => m.role === 'assistant');
+    if (inMemoryAssistant) {
+      return { status: 'completed', result: inMemoryAssistant.content };
+    }
   }
 
-  // completed or none — fetch full session
+  // status === 'completed' (no in-mem msgs) or 'none' → fetch from disk
   const sessionResult = await httpRequest({
     method: 'GET',
     hostname: '127.0.0.1',
@@ -202,9 +211,11 @@ async function pollSession(sessionId: string, port: number): Promise<{ status: '
   });
 
   if (sessionResult.statusCode === 404) {
-    return status === 'none'
-      ? { status: 'running' }
-      : { status: 'failed', error: 'Session not found' };
+    if (status === 'none') {
+      // Memory cleared, disk missing — treat as still starting or deleted
+      return { status: 'running' };
+    }
+    return { status: 'failed', error: 'Session completed but not found on disk' };
   }
   if (sessionResult.statusCode !== 200) {
     return { status: 'failed', error: `Fetch failed: HTTP ${sessionResult.statusCode}` };
@@ -212,12 +223,15 @@ async function pollSession(sessionId: string, port: number): Promise<{ status: '
 
   const session = JSON.parse(sessionResult.body);
   const messages: Array<{ role: string; content: string }> = session.messages || [];
-  const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
 
+  // Check execution record (unified state source)
+  const execution = session.execution as { status?: string; result?: { error?: { message: string } } } | undefined;
+  if (execution?.status === 'failed' || execution?.status === 'stopped') {
+    return { status: 'failed', error: execution.result?.error?.message ?? `Session ${execution.status}` };
+  }
+
+  const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
   if (!lastAssistant) {
-    if (status === 'none' || status === 'completed') {
-      return { status: 'running' };
-    }
     return { status: 'failed', error: 'No assistant response' };
   }
 

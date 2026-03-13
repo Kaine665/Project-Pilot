@@ -489,7 +489,10 @@ export async function eagerlySaveUserTurn(opts: {
  * v2: Overwrites the JSONL file with the full message array (the run holds the
  * authoritative message list after streaming completes), then updates index metadata.
  */
-export async function persistSessionToDisk(session: AgentChatSession): Promise<void> {
+export async function persistSessionToDisk(
+  session: AgentChatSession,
+  execution?: import('./types').SessionExecution,
+): Promise<void> {
   // Write all messages to JSONL (authoritative after run completes)
   await writeAllMessages(session.id, session.messages);
 
@@ -505,6 +508,11 @@ export async function persistSessionToDisk(session: AgentChatSession): Promise<v
         ...incomingMeta,
         messageCount: session.messages.length,
       };
+
+      // Write execution record (unified state source for sub-agent callers)
+      if (execution) {
+        meta.execution = execution;
+      }
 
       if (idx >= 0) {
         // Preserve fields from existing index entry

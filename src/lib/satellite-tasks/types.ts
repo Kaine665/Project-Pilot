@@ -24,6 +24,8 @@ export interface SatelliteContext {
   assistantTurnCount: number;
   /** Final run status */
   runStatus: RunStatus;
+  /** Whether the user explicitly stopped the run */
+  userStopped?: boolean;
   /** How many times health guard has already retried */
   guardRetryCount: number;
   /** Current session title (if any) */

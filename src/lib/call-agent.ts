@@ -81,6 +81,7 @@ async function startSession(opts: {
     message,
     projectKey: projectKey || undefined,
     parentSessionId: parentSessionId || undefined,
+    depth,
   });
 
   const postResult = await httpRequest({
@@ -136,10 +137,15 @@ const POLL_EXIT_RUNNING = 2;
 
 /**
  * 查询会话状态和结果。
- * - running → 输出 "RUNNING"，exit 2
- * - completed → 输出 assistant 最终文本，exit 0
- * - failed/stopped → 输出错误信息，exit 1
- * - none（已从内存清除）→ 回退到磁盘读取
+ *
+ * 统一状态源策略：
+ * 1. 先查内存状态 (/api/agent-chat/status)
+ *    - `running` → 仍在执行，exit 2
+ *    - `completed` → 数据保证已落盘（finalizing→completed 原子化），直接取结果
+ *    - `failed`/`stopped` → exit 1
+ *    - `none` → 内存已清除，回退到磁盘
+ * 2. 内存 completed 时：优先使用内存消息（零延迟），否则从磁盘读取
+ * 3. 内存 none 时：从磁盘会话索引读取 execution 记录
  */
 async function pollSession(sessionId: string, port: number): Promise<void> {
   // Step 1: 查询内存中的运行状态
@@ -169,13 +175,17 @@ async function pollSession(sessionId: string, port: number): Promise<void> {
     process.exit(1);
   }
 
-  const inMemoryAssistant = [...statusMessages].reverse().find(m => m.role === 'assistant');
-  if (inMemoryAssistant) {
-    process.stdout.write(inMemoryAssistant.content);
-    return;
+  // status === 'completed': data is guaranteed on disk (finalizing→completed is atomic).
+  // Try in-memory messages first (faster), then disk.
+  if (status === 'completed') {
+    const inMemoryAssistant = [...statusMessages].reverse().find(m => m.role === 'assistant');
+    if (inMemoryAssistant) {
+      process.stdout.write(inMemoryAssistant.content);
+      return;
+    }
   }
 
-  // status === 'completed' 或 'none'（已从内存清除）→ 从磁盘读取结果
+  // status === 'completed' (no in-memory msgs) or 'none' → read from disk
   const sessionResult = await httpRequest({
     method: 'GET',
     hostname: '127.0.0.1',
@@ -185,13 +195,11 @@ async function pollSession(sessionId: string, port: number): Promise<void> {
   });
 
   if (sessionResult.statusCode === 404) {
-    if (status === 'completed') {
-      // 竞态：内存刚标记 completed 但 persistAfterClose 尚未写盘，稍后重试
-      process.stdout.write('RUNNING');
-      process.exit(POLL_EXIT_RUNNING);
+    if (status === 'none') {
+      throw new Error(`Session not found: ${sessionId}. It may have been deleted or never persisted.`);
     }
-    // status === 'none'：内存已清除且磁盘也无记录 → 会话根本不存在
-    throw new Error(`Session not found on disk: ${sessionId}. It may have been deleted or never persisted.`);
+    // completed but 404 should never happen now, but handle gracefully
+    throw new Error(`Session ${sessionId} completed but not found on disk (unexpected)`);
   }
   if (sessionResult.statusCode !== 200) {
     throw new Error(`GET /api/agent-chat/sessions/${sessionId} failed: HTTP ${sessionResult.statusCode}`);
@@ -200,16 +208,16 @@ async function pollSession(sessionId: string, port: number): Promise<void> {
   const session = JSON.parse(sessionResult.body);
   const messages: Array<{ role: string; content: string }> = session.messages || [];
 
-  // 找最后一条 assistant 消息
-  const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+  // Check execution record for terminal status (unified state source)
+  const execution = session.execution as { status?: string; result?: { status: string; summary: string; error?: { message: string } } } | undefined;
+  if (execution?.status === 'failed' || execution?.status === 'stopped') {
+    const errMsg = execution.result?.error?.message ?? `Session ${execution.status}`;
+    process.stderr.write(`[call-agent] Session ${execution.status}: ${errMsg}\n`);
+    process.exit(1);
+  }
 
+  const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
   if (!lastAssistant) {
-    if (status === 'completed') {
-      // 有磁盘记录但无 assistant 回复，且内存刚标 completed — 写盘竞态，稍后重试
-      process.stdout.write('RUNNING');
-      process.exit(POLL_EXIT_RUNNING);
-    }
-    // status === 'none'：会话确实无 assistant 回复（ephemeral 或数据异常）
     throw new Error(`Session ${sessionId} has no assistant response`);
   }
 

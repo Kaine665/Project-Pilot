@@ -447,24 +447,35 @@ async function _modifyJsonFileImpl<T>(
   await fs.mkdir(dirPath, { recursive: true });
 
   let data: T;
-  try {
-    // 🔒 Security: check file size before reading
-    const stats = await fs.stat(filePath);
-    if (stats.size > MAX_JSON_SIZE) {
-      throw new Error(`File too large: ${stats.size} bytes (max ${MAX_JSON_SIZE})`);
-    }
+  // Read with retry — transient EPERM/EACCES on Windows (antivirus, other process writing)
+  const READ_RETRIES = 4;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      // 🔒 Security: check file size before reading
+      const stats = await fs.stat(filePath);
+      if (stats.size > MAX_JSON_SIZE) {
+        throw new Error(`File too large: ${stats.size} bytes (max ${MAX_JSON_SIZE})`);
+      }
 
-    const content = await fs.readFile(filePath, 'utf-8');
-    data = parseJsonSafe<T>(content);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    // File not found → use default, but re-throw size errors
-    if (code === 'ENOENT') {
-      data = defaultValue;
-    } else if (error instanceof Error && error.message.includes('too large')) {
+      const content = await fs.readFile(filePath, 'utf-8');
+      data = parseJsonSafe<T>(content);
+      break;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      // File not found → use default
+      if (code === 'ENOENT') {
+        data = defaultValue;
+        break;
+      }
+      // Transient file lock errors → retry with backoff
+      if ((code === 'EPERM' || code === 'EACCES') && attempt < READ_RETRIES - 1) {
+        await new Promise(r => setTimeout(r, 50 * Math.pow(2, attempt)));
+        continue;
+      }
+      // All other errors or retries exhausted → throw to prevent data loss.
+      // Previously, these errors silently used defaultValue and then wrote it
+      // back, wiping all existing data.
       throw error;
-    } else {
-      data = defaultValue;
     }
   }
 

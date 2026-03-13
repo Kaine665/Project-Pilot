@@ -9,13 +9,17 @@
 
 import { spawnClaude } from '@/lib/claude-cli';
 import { getAppWorkingDir } from '@/lib/app-paths';
-import { buildClaudeEnv, buildClaudeModelArgs } from '@/lib/settings-manager';
+import { buildClaudeEnv } from '@/lib/settings-manager';
 import { StreamParser, LineBuffer } from '@/lib/claude-stream-parser';
 
+const LOG = '[LightweightAI]';
 const DEFAULT_TIMEOUT_MS = 30_000;
+// 卫星任务统一使用最便宜的模型，不跟随用户的主模型设置
+const CHEAP_MODEL = 'claude-haiku-4-5-20251001';
 
 /**
  * Make a one-shot lightweight AI call via Claude CLI.
+ * Always uses Haiku (cheapest model) regardless of user's main model setting.
  * Returns the raw text response, or null on failure/timeout.
  */
 export async function callLightweightAI(
@@ -24,20 +28,21 @@ export async function callLightweightAI(
 ): Promise<string | null> {
   return new Promise(async (resolve) => {
     let env: NodeJS.ProcessEnv;
-    let modelArgs: string[];
 
     try {
       env = await buildClaudeEnv();
-      modelArgs = await buildClaudeModelArgs();
-    } catch {
+    } catch (err) {
+      console.warn(`${LOG} Failed to build env:`, err instanceof Error ? err.message : err);
       return resolve(null);
     }
+
+    console.log(`${LOG} Spawning claude -p --model ${CHEAP_MODEL} (timeout: ${timeoutMs}ms)`);
 
     const claude = spawnClaude([
       '-p',
       '--verbose',
       '--output-format', 'stream-json',
-      ...modelArgs,
+      '--model', CHEAP_MODEL,
     ], {
       cwd: getAppWorkingDir(),
       shell: false,
@@ -82,13 +87,20 @@ export async function callLightweightAI(
         }
       }
 
-      resolve(code === 0 ? fullText.trim() || null : null);
+      const text = fullText.trim() || null;
+      if (code === 0 && text) {
+        console.log(`${LOG} Success (${text.length} chars)`);
+      } else {
+        console.warn(`${LOG} CLI exited code=${code}, text=${text ? text.length + ' chars' : 'empty'}`);
+      }
+      resolve(code === 0 ? text : null);
     });
 
-    claude.on('error', () => {
+    claude.on('error', (err) => {
       clearTimeout(timer);
       if (!settled) {
         settled = true;
+        console.error(`${LOG} Spawn error:`, err.message);
         resolve(null);
       }
     });
