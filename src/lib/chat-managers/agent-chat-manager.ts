@@ -169,8 +169,6 @@ class AgentChatManager {
       throw new Error('This session is already running');
     }
 
-    const isResume = !!existing?.claudeSessionId;
-
     const messages = existing?.messages ? [...existing.messages] : [];
     const dataUrls = images?.map(img => `data:${img.mediaType};base64,${img.data}`);
     messages.push({ role: 'user', content: message, images: dataUrls?.length ? dataUrls : undefined });
@@ -186,6 +184,20 @@ class AgentChatManager {
       || sessionConfig?.model
       || agent.defaultModel
       || undefined;
+
+    // 切换 provider/model 后，旧的 resume session 可能不兼容（常见于同会话切换渠道）。
+    // 这种情况下必须放弃 resume，避免 Claude SDK 直接 error_during_execution / code 1。
+    const prevProvider = existing?.config?.provider;
+    const prevModel = existing?.config?.model;
+    const hasResumeId = !!existing?.claudeSessionId;
+    const lastRole = existing?.messages?.[existing.messages.length - 1]?.role;
+    const previousTurnIncomplete = lastRole === 'user';
+    const providerChanged =
+      hasResumeId && !!prevProvider && !!resolvedProvider && prevProvider !== resolvedProvider;
+    const modelChanged =
+      hasResumeId && !!prevModel && !!resolvedModel && prevModel !== resolvedModel;
+    const isResume = hasResumeId && !providerChanged && !modelChanged && !previousTurnIncomplete;
+    const resumeSessionId = isResume ? existing?.claudeSessionId : undefined;
 
     // Persist resolved provider/model into session config
     const persistedConfig: SessionConfig = {
@@ -240,7 +252,7 @@ class AgentChatManager {
         projectKey: flowContext?.projectKey ?? existing?.projectKey,
         sessionTitle: existing?.sessionTitle ?? initialTitle,
         messages,
-        claudeSessionId: existing?.claudeSessionId,
+        claudeSessionId: resumeSessionId,
         config: persistedConfig,
         parentSessionId: parentSessionId ?? existing?.parentSessionId,
         importedTurnIndices: undefined,
@@ -263,7 +275,7 @@ class AgentChatManager {
       assistantText: '',
       contentBlocks: [],
       toolCalls: [],
-      claudeSessionId: existing?.claudeSessionId,
+      claudeSessionId: resumeSessionId,
       messages,
       config: persistedConfig,
       parentSessionId: parentSessionId ?? existing?.parentSessionId,
@@ -289,7 +301,7 @@ class AgentChatManager {
         capabilities: effectiveCaps,
         model: resolvedModel,
         effortOverride,
-        resumeSessionId: isResume ? existing?.claudeSessionId : undefined,
+        resumeSessionId,
         cwd: getAppWorkingDir(),
       });
       run.runner = runner;
@@ -611,6 +623,21 @@ class AgentChatManager {
       run.status = aborted ? 'stopped' : 'completed';
     }
     run.completedAt = Date.now();
+
+    // 如果本轮在执行阶段直接失败且没有任何新输出，通常是 resume 上下文损坏或与当前渠道不兼容。
+    // 清空 claudeSessionId，避免用户后续每次重试都复用同一坏会话而持续 code 1。
+    const hasExecutionError = run.events.some(
+      (e) =>
+        e.type === 'error'
+        && (
+          e.message.includes('error_during_execution')
+          || e.message.includes('process exited with code 1')
+          || e.message.includes('Claude Code process exited with code 1')
+        ),
+    );
+    if (!aborted && !run.assistantText.trim() && hasExecutionError) {
+      run.claudeSessionId = undefined;
+    }
 
     try {
       await this.persistAfterClose(run, aborted);

@@ -107,6 +107,7 @@ export function AgentChatPanel({
   const [chatModelOptions, setChatModelOptions] = useState<ModelSelectOption[]>([
     { value: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5' },
   ]);
+  const [chatProviderModelLibrary, setChatProviderModelLibrary] = useState<Partial<Record<ProviderId, string[]>>>({});
   const [chatEffort, setChatEffort] = useState<OpenAIReasoningEffort>('xhigh');
 
   // Guest Agent (observer)
@@ -250,16 +251,16 @@ export function AgentChatPanel({
     [],
   );
 
-  // Load provider/model from global settings (skip if parent provided cached values)
+  // Load provider/model from global settings.
+  // Even when parent provides cached settings, still pull providerModelLibrary for cross-provider model options.
   useEffect(() => {
+    let cancelled = false;
     if (cachedSettings) {
       setChatProvider(cachedSettings.provider);
       setChatModel(cachedSettings.model);
       setChatModelOptions(cachedSettings.modelOptions);
       setChatEffort(cachedSettings.effort);
-      return;
     }
-    let cancelled = false;
     (async () => {
       try {
         const res = await fetch('/api/settings', { cache: 'no-store' });
@@ -274,6 +275,8 @@ export function AgentChatPanel({
         const providerModelLib = (claude.providerModelLibrary && typeof claude.providerModelLibrary === 'object')
           ? claude.providerModelLibrary as Partial<Record<ProviderId, string[]>>
           : {};
+        setChatProviderModelLibrary(providerModelLib);
+        if (cachedSettings) return;
         // Build model options for loaded provider
         const preset = getProviderPreset(loadedProvider);
         const optionMap = new Map<string, string>();
@@ -324,7 +327,22 @@ export function AgentChatPanel({
   useEffect(() => {
     let cancelled = false;
     const preset = getProviderPreset(chatProvider);
-    const options = preset.models.map((m) => ({ value: m.id, label: m.label || m.id }));
+    const optionMap = new Map<string, string>();
+    for (const m of preset.models) optionMap.set(m.id, m.label || m.id);
+    const libModels = Array.isArray(chatProviderModelLibrary[chatProvider]) ? chatProviderModelLibrary[chatProvider] : [];
+    for (const raw of libModels) {
+      const id = typeof raw === 'string' ? raw.trim() : '';
+      if (id && !optionMap.has(id)) optionMap.set(id, id);
+    }
+    const applyOptions = () => {
+      const options = Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
+      if (!cancelled && options.length > 0) {
+        setChatModelOptions(options);
+        if (!options.some((o) => o.value === chatModel)) {
+          setChatModel(options[0].value);
+        }
+      }
+    };
 
     if (chatProvider === 'openai') {
       // Fetch dynamic OpenAI model catalog
@@ -334,37 +352,23 @@ export function AgentChatPanel({
           const data = await res.json();
           if (cancelled) return;
           if (res.ok && data?.ok && Array.isArray(data.models)) {
-            const knownIds = new Set(options.map((o) => o.value));
             for (const r of data.models) {
               if (r && typeof r === 'object' && typeof r.id === 'string') {
                 const id = r.id.trim();
-                if (id && !knownIds.has(id)) {
-                  options.push({ value: id, label: typeof r.displayName === 'string' ? r.displayName : id });
-                  knownIds.add(id);
-                }
+                if (id && !optionMap.has(id)) optionMap.set(id, typeof r.displayName === 'string' ? r.displayName : id);
               }
             }
           }
         } catch {
           // ignore - fallback to static models
         }
-        if (!cancelled) {
-          setChatModelOptions(options);
-          if (!options.some((o) => o.value === chatModel)) {
-            setChatModel(options[0]?.value || '');
-          }
-        }
+        applyOptions();
       })();
     } else {
-      if (options.length > 0) {
-        setChatModelOptions(options);
-        if (!options.some((o) => o.value === chatModel)) {
-          setChatModel(options[0].value);
-        }
-      }
+      applyOptions();
     }
     return () => { cancelled = true; };
-  }, [chatProvider]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [chatProvider, chatProviderModelLibrary]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch prompt info (system prompt size + context window for current model)
   useEffect(() => {

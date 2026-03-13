@@ -43,6 +43,24 @@ export interface ProviderPreset {
   authMethod?: 'AUTH_TOKEN' | 'API_KEY';
 }
 
+const KIMI_CODE_BASE_URL = 'https://api.kimi.com/coding/';
+const KIMI_MOONSHOT_BASE_URLS = [
+  'https://api.moonshot.cn/anthropic',
+  'https://api.moonshot.ai/anthropic',
+] as const;
+const KIMI_CODE_MODEL_IDS = new Set([
+  'kimi-for-coding',
+  // 历史别名，继续兼容已保存配置
+  'k2p5',
+]);
+const KIMI_MOONSHOT_MODEL_IDS = new Set([
+  'kimi-k2.5',
+  'kimi-k2',
+  'kimi-k2-thinking',
+  'kimi-k2-turbo',
+  'kimi-k2-thinking-turbo',
+]);
+
 export const PROVIDER_REGISTRY: ProviderPreset[] = [
   // ── Anthropic 官方 ──
   {
@@ -170,16 +188,14 @@ export const PROVIDER_REGISTRY: ProviderPreset[] = [
     id: 'kimi',
     nameKey: 'settings.providers.kimi',
     // Claude Code 要求 base 不带 /v1，SDK 会拼接 /v1/messages
-    baseUrl: 'https://api.kimi.com/coding/',
+    baseUrl: KIMI_CODE_BASE_URL,
     candidateBaseUrls: [
-      'https://api.kimi.com/coding/',
-      'https://api.moonshot.ai/anthropic',
-      'https://api.moonshot.cn/anthropic',
+      KIMI_CODE_BASE_URL,
+      ...KIMI_MOONSHOT_BASE_URLS,
     ],
     models: [
       // Kimi Code (api.kimi.com) 模型，官方文档唯一正确 ID
       { id: 'kimi-for-coding', label: 'Kimi For Coding (K2.5)' },
-      { id: 'k2p5', label: 'Kimi K2.5 (Code)' },
       // Moonshot (api.moonshot.ai) 模型
       { id: 'kimi-k2.5', label: 'Kimi K2.5 (Moonshot)' },
       { id: 'kimi-k2', label: 'Kimi K2' },
@@ -271,6 +287,42 @@ export function getProviderPreset(id: ProviderId, customProviders?: CustomProvid
     }
   }
   return PROVIDER_REGISTRY.find((p) => p.id === id) ?? PROVIDER_REGISTRY[0];
+}
+
+export function getKimiModelChannel(modelId: string): 'code' | 'moonshot' | 'unknown' {
+  const id = modelId.trim().toLowerCase();
+  if (!id) return 'unknown';
+  if (KIMI_CODE_MODEL_IDS.has(id)) return 'code';
+  if (KIMI_MOONSHOT_MODEL_IDS.has(id)) return 'moonshot';
+  return 'unknown';
+}
+
+export function getKimiCandidateBaseUrls(modelId: string, preferredBaseUrl?: string): string[] {
+  const channel = getKimiModelChannel(modelId);
+  const ordered: string[] = [];
+  const add = (url?: string) => {
+    const value = (url || '').trim();
+    if (value && !ordered.includes(value)) ordered.push(value);
+  };
+
+  if (channel === 'code') {
+    add(KIMI_CODE_BASE_URL);
+    return ordered;
+  }
+
+  if (channel === 'moonshot') {
+    if (preferredBaseUrl && preferredBaseUrl.includes('api.moonshot')) {
+      add(preferredBaseUrl);
+    }
+    for (const url of KIMI_MOONSHOT_BASE_URLS) add(url);
+    return ordered;
+  }
+
+  // 未知模型：保守提供全部候选，优先保留用户/历史选择
+  add(preferredBaseUrl);
+  add(KIMI_CODE_BASE_URL);
+  for (const url of KIMI_MOONSHOT_BASE_URLS) add(url);
+  return ordered;
 }
 
 /**
