@@ -10,7 +10,9 @@
  */
 
 import { query, type Query as SdkQuery } from '@anthropic-ai/claude-agent-sdk';
-import { Codex, type Thread } from '@openai/codex-sdk';
+// @openai/codex-sdk 是纯 ESM 包，静态 import 在 CJS 运行时（tsx/node）会失败。
+// 使用动态 import() 绕过这个限制——动态导入走 Node 的 ESM loader，可以加载 ESM-only 包。
+import type { Thread } from '@openai/codex-sdk';
 import { SdkEventAdapter } from '@/lib/sdk-event-adapter';
 import { adaptCodexEvent } from '@/lib/codex-sdk-adapter';
 import { resolveCodexBinaryPath } from '@/lib/codex-cli';
@@ -73,6 +75,8 @@ export async function createAgentRunner(opts: AgentRunnerCreateOptions): Promise
     const codexPathOverride = resolveCodexBinaryPath();
     console.log(`[AgentRunner] Codex binary override: ${codexPathOverride ?? '(none, SDK will resolve)'}`);
 
+    // 动态 import 确保在 CJS 环境（tsx/sidecar）也能加载 ESM-only 的 codex-sdk
+    const { Codex } = await import('@openai/codex-sdk');
     const codex = new Codex({
       env: envRecord,
       ...(codexPathOverride ? { codexPathOverride } : {}),

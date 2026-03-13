@@ -85,20 +85,48 @@ function spawnSidecar(port: number): Promise<number> {
     const script = resolveSidecarScript();
     const isProd = !script.endsWith('.ts');
 
-    // 开发模式：用 tsx 运行 .ts 文件（tsx 在 PATH 中或 node_modules/.bin）
-    // 生产模式：用 node 运行编译后的 .js 文件
-    const executable = isProd
-      ? resolveNodeExecutable()
-      : (() => {
-          const tsxBin = path.join(process.cwd(), 'node_modules', '.bin', 'tsx');
-          return tsxBin;
-        })();
+    // Windows 下 node_modules/.bin/ 里是 .cmd 文件，需要用 shell:true 或直接调用 node + tsx 包入口。
+    // 最可靠的方式：始终用当前 node 可执行文件，开发时加载 tsx/dist/esm/bin.mjs 作为 loader。
+    let executable: string;
+    let args: string[];
 
-    const args = isProd ? [script] : [script];
+    if (isProd) {
+      executable = resolveNodeExecutable();
+      args = [script];
+    } else {
+      // 用 node 直接执行 tsx 的入口脚本（跨平台，避免 .cmd 问题）
+      const tsxEntry = (() => {
+        // tsx bin 入口（优先 cli.mjs，兼容不同版本）
+        const candidates = [
+          path.join(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs'),
+          path.join(process.cwd(), 'node_modules', 'tsx', 'dist', 'esm', 'index.cjs'),
+          path.join(process.cwd(), 'node_modules', 'tsx', 'dist', 'esm', 'bin.mjs'),
+        ];
+        for (const c of candidates) {
+          if (fs.existsSync(c)) return c;
+        }
+        // fallback: 直接用 .cmd 但开 shell（只在 Windows 生效）
+        return null;
+      })();
+
+      if (tsxEntry) {
+        executable = resolveNodeExecutable();
+        args = [tsxEntry, script];
+      } else {
+        // shell:true fallback — 对 .cmd 文件有效
+        const tsxCmd = path.join(process.cwd(), 'node_modules', '.bin',
+          process.platform === 'win32' ? 'tsx.cmd' : 'tsx');
+        executable = tsxCmd;
+        args = [script];
+      }
+    }
+
+    const useShell = !isProd && executable.endsWith('.cmd');
 
     const child = spawn(executable, args, {
       detached: true,
       stdio: 'ignore',
+      shell: useShell,
       env: {
         ...process.env,
         SIDECAR_PORT: String(port),
