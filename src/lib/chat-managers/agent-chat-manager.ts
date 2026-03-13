@@ -113,6 +113,8 @@ export interface AgentChatRun {
   _guardRetryCount?: number;
   /** 临时测试会话，不持久化到会话列表 */
   _ephemeral?: boolean;
+  /** 用户主动触发的停止（区别于意外中止），不触发 Health Guard 自动恢复 */
+  _userStopped?: boolean;
 }
 
 // ── Constants ──
@@ -460,6 +462,7 @@ class AgentChatManager {
     const run = this.runs.get(runKey);
     if (!run || run.status !== 'running') return false;
     run.status = 'stopped';
+    run._userStopped = true; // 标记为用户主动停止，Health Guard 不自动恢复
     run.runner?.abort();
     run.runner = null;
     return true;
@@ -716,6 +719,7 @@ class AgentChatManager {
     // Session Health Guard
     if (
       (run.status === 'failed' || run.status === 'stopped')
+      && !run._userStopped  // 用户主动停止不触发自动恢复
       && !(run._guardRetryCount && run._guardRetryCount >= 1)
     ) {
       const tailText = run.assistantText.slice(-100);

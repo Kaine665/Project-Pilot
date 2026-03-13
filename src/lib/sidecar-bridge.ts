@@ -154,13 +154,30 @@ function spawnSidecar(port: number): Promise<number> {
 
     child.unref(); // 父进程不等待 sidecar 退出
 
+    // 追踪子进程是否已退出（端口冲突/启动崩溃时快速失败，无需等足 10 秒）
+    let childExited = false;
+    let childExitCode: number | null = null;
+
     child.on('error', (err) => {
       reject(new Error(`Failed to spawn sidecar: ${err.message}`));
+    });
+
+    child.on('close', (code) => {
+      childExited = true;
+      childExitCode = code;
     });
 
     // 轮询 /health 直到 sidecar 就绪
     const deadline = Date.now() + HEALTH_TIMEOUT_MS;
     const poll = async (): Promise<void> => {
+      // 子进程已退出（如 EADDRINUSE 导致启动崩溃），立即失败，无需等到超时
+      if (childExited) {
+        reject(new Error(
+          `Sidecar process exited unexpectedly (code=${childExitCode ?? 'null'}). ` +
+          `Port ${port} may already be in use. Check ~/.project-pilot/sidecar.log for details.`
+        ));
+        return;
+      }
       if (await pingHealth(port)) {
         resolve(port);
         return;
@@ -230,6 +247,8 @@ export async function ensureSidecar(): Promise<number> {
  * 向 sidecar 发送 HTTP 请求，返回原始 Response。
  * 调用方可以 `.json()` 或 `.text()` 处理响应。
  */
+const SIDECAR_FETCH_TIMEOUT_MS = 30_000; // sidecar 无响应时的最大等待时间
+
 export async function sidecarFetch(
   pathname: string,
   init?: RequestInit,
@@ -238,6 +257,7 @@ export async function sidecarFetch(
   const url = `http://127.0.0.1:${port}${pathname}`;
   return fetch(url, {
     ...init,
+    signal: AbortSignal.timeout(SIDECAR_FETCH_TIMEOUT_MS),
     headers: {
       'Content-Type': 'application/json',
       ...(init?.headers ?? {}),
