@@ -163,6 +163,51 @@ async function deleteMessageFile(sessionId: string): Promise<void> {
   await fs.unlink(filePath).catch(() => {});
 }
 
+// ── Streaming Draft (crash recovery) ──
+
+/**
+ * Get the path for a session's streaming draft file.
+ * The draft stores partial raw assistant text while a stream is active.
+ * If the server crashes mid-stream, loadSession() recovers the partial text on next read.
+ */
+function getStreamingDraftPath(sessionId: string): string {
+  return path.join(getAgentChatMessagesDir(), `${sessionId}.streaming.json`);
+}
+
+/**
+ * Overwrite the streaming draft for a session with the latest accumulated text.
+ * Exported so AgentChatManager can call it during streaming (fire-and-forget).
+ */
+export async function writeStreamingDraft(sessionId: string, text: string): Promise<void> {
+  const draftPath = getStreamingDraftPath(sessionId);
+  const dir = getAgentChatMessagesDir();
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(draftPath, JSON.stringify({ text, ts: Date.now() }), 'utf-8');
+}
+
+/**
+ * Delete the streaming draft file. Safe to call even if the file doesn't exist.
+ * Exported so AgentChatManager can call it after a run completes normally.
+ */
+export async function deleteStreamingDraft(sessionId: string): Promise<void> {
+  await fs.unlink(getStreamingDraftPath(sessionId)).catch(() => {});
+}
+
+/**
+ * Strip known ProjectPilot action tags from raw streaming text.
+ * Called during crash recovery to avoid exposing internal XML tags to the user.
+ * Only handles the statically known tag set — new tag types remain visible as raw text,
+ * which is acceptable since crash recovery is an exceptional path.
+ */
+function stripActionTags(text: string): string {
+  return text
+    .replace(/<save-doc[^>]*>[\s\S]*?<\/save-doc>/g, '')
+    .replace(/<save-knowledge[^>]*>[\s\S]*?<\/save-knowledge>/g, '')
+    .replace(/<suspend-task[^>]*>[\s\S]*?<\/suspend-task>/g, '')
+    .replace(/<complete-suspended-task[^>]*/g, '')
+    .trim();
+}
+
 // ── Auto-migration from v1 (monolithic) to v2 (index + JSONL) ──
 
 async function migrateIfNeeded(): Promise<void> {
@@ -237,6 +282,28 @@ export async function loadSession(sessionId: string): Promise<AgentChatSession |
   if (!meta) return null;
 
   const messages = await readMessages(sessionId);
+
+  // Crash recovery: check for leftover streaming draft.
+  // A draft file means the previous run was interrupted before finalizeRun() could
+  // write the assistant message and clean up. Recover the partial text and delete
+  // the draft so we don't append it again on the next load.
+  const draftPath = getStreamingDraftPath(sessionId);
+  try {
+    const draftRaw = await fs.readFile(draftPath, 'utf-8');
+    const draft = JSON.parse(draftRaw) as { text: string; ts: number };
+    if (draft.text && draft.text.trim()) {
+      const cleaned = stripActionTags(draft.text);
+      const recoveredContent = cleaned
+        ? cleaned + '\n\n*(回复在传输中被中断)*'
+        : '*(回复在传输中被中断)*';
+      messages.push({ role: 'assistant', content: recoveredContent });
+    }
+    // Always delete the draft after reading — avoid duplicate recovery on next load
+    await fs.unlink(draftPath).catch(() => {});
+  } catch {
+    // No draft file or malformed JSON — normal case, ignore
+  }
+
   return { ...meta, messages };
 }
 
@@ -530,6 +597,9 @@ export async function persistSessionToDisk(
     },
   );
   invalidateIndexCache();
+
+  // Delete streaming draft — the run completed normally, draft is superseded
+  deleteStreamingDraft(session.id).catch(() => {});
 }
 
 export async function incrementGuardRetryCountOnDisk(sessionId: string): Promise<void> {

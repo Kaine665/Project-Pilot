@@ -49,6 +49,7 @@ import {
   incrementGuardRetryCountOnDisk,
   deleteSessionFromDisk,
   updateConfigOnDisk,
+  writeStreamingDraft,
 } from './agent-chat-session-store';
 
 // ── Types ──
@@ -116,6 +117,11 @@ export interface AgentChatRun {
   _ephemeral?: boolean;
   /** 用户主动触发的停止（区别于意外中止），不触发 Health Guard 自动恢复 */
   _userStopped?: boolean;
+
+  /** 流式草稿防抖：上次刷盘时 assistantText 的长度 */
+  _draftFlushedLen?: number;
+  /** 流式草稿防抖：上次刷盘的时间戳（ms） */
+  _draftFlushAt?: number;
 
   /** Sub Agent 调用深度（0=顶层，服务端自动追踪） */
   depth?: number;
@@ -685,6 +691,22 @@ class AgentChatManager {
         last.text += event.text;
       } else {
         run.contentBlocks.push({ type: 'text', text: event.text });
+      }
+
+      // Streaming draft flush (crash recovery).
+      // Write accumulated text to a sidecar .streaming.json file so that if the
+      // process crashes before finalizeRun() we can recover the partial reply.
+      // Conditions: non-ephemeral session, and either ≥500 new chars or ≥2s elapsed.
+      if (!run._ephemeral) {
+        const now = Date.now();
+        const charsSinceLast = run.assistantText.length - (run._draftFlushedLen ?? 0);
+        const msSinceLast = now - (run._draftFlushAt ?? 0);
+        if (charsSinceLast >= 500 || msSinceLast >= 2000) {
+          run._draftFlushedLen = run.assistantText.length;
+          run._draftFlushAt = now;
+          // Fire-and-forget: do not await, never block the streaming event loop
+          writeStreamingDraft(run.sessionId, run.assistantText).catch(() => {});
+        }
       }
     } else if (event.type === 'tool_use_start') {
       const tc: ChatToolCall = {
