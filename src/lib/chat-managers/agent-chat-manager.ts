@@ -35,7 +35,7 @@ import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-pr
 import '@/lib/satellite-tasks';  // side-effect: registers satellite tasks
 import { runSatelliteTasks } from '@/lib/satellite-tasks';
 import type { SatelliteContext } from '@/lib/satellite-tasks';
-import type { RunStatus, RunStatusInfo } from './types';
+import type { RunStatus, RunStatusInfo, SubAgentResult, SessionExecution } from './types';
 
 // Re-export store functions so existing callers don't break during migration
 export { generateSessionId } from './agent-chat-session-store';
@@ -116,6 +116,9 @@ export interface AgentChatRun {
   _ephemeral?: boolean;
   /** 用户主动触发的停止（区别于意外中止），不触发 Health Guard 自动恢复 */
   _userStopped?: boolean;
+
+  /** Sub Agent 调用深度（0=顶层，服务端自动追踪） */
+  depth?: number;
 }
 
 // ── Constants ──
@@ -154,6 +157,7 @@ class AgentChatManager {
     modelOverride?: string,
     effortOverride?: string,
     ephemeral?: boolean,
+    depth?: number,
   ): Promise<string> {
     const agent = await loadAgent(agentId);
 
@@ -168,7 +172,7 @@ class AgentChatManager {
       }
     }
 
-    if (existing?.status === 'running') {
+    if (existing?.status === 'running' || existing?.status === 'finalizing') {
       throw new Error('This session is already running');
     }
 
@@ -273,6 +277,7 @@ class AgentChatManager {
       _tempImagePaths: tempPaths,
       _guardRetryCount: existing?._guardRetryCount,
       _ephemeral: ephemeral,
+      depth,
     };
 
     // Snapshot danger detector settings
@@ -302,11 +307,11 @@ class AgentChatManager {
       });
     } catch (err) {
       this.trackAndEmit(run, { type: 'error', message: `Failed to start runner: ${err instanceof Error ? err.message : String(err)}` });
-      this.trackAndEmit(run, { type: 'done' });
       run.status = 'failed';
       run.completedAt = Date.now();
       run.runner = null;
-      await this.persistAfterClose(run, false);
+      await this.persistAfterClose(run, false, 'failed');
+      this.trackAndEmit(run, { type: 'done' });
     }
 
     return run.runId;
@@ -432,7 +437,7 @@ class AgentChatManager {
       listener(run.events[i], i);
     }
 
-    if (run.status !== 'running') {
+    if (run.status !== 'running' && run.status !== 'finalizing') {
       return () => {};
     }
 
@@ -450,8 +455,11 @@ class AgentChatManager {
     const lastError = run.events.filter((e): e is { type: 'error'; message: string } =>
       e.type === 'error' && 'message' in e
     ).pop();
+    // `finalizing` is an internal state — external callers see it as `running`
+    // because the result is not yet safe to read from disk.
+    const externalStatus = run.status === 'finalizing' ? 'running' : run.status;
     return {
-      status: run.status,
+      status: externalStatus,
       runId: run.runId,
       eventCount: run.events.length,
       startedAt: new Date(run.startedAt).toISOString(),
@@ -495,7 +503,7 @@ class AgentChatManager {
 
   clear(sessionId: string): void {
     const run = this.runs.get(sessionId);
-    if (run?.status === 'running') return;
+    if (run?.status === 'running' || run?.status === 'finalizing') return;
     this.runs.delete(sessionId);
   }
 
@@ -589,8 +597,11 @@ class AgentChatManager {
       });
     }
 
+    // Transition to `finalizing` — stream ended but persistence not yet done.
+    // This eliminates the "completed but not persisted" race window.
+    const terminalStatus: RunStatus = aborted ? 'stopped' : 'completed';
     if (run.status === 'running') {
-      run.status = aborted ? 'stopped' : 'completed';
+      run.status = 'finalizing';
     }
     run.completedAt = Date.now();
 
@@ -604,7 +615,7 @@ class AgentChatManager {
       assistantText: run.assistantText,
       assistantTurnCount,
       sessionTitle: run.sessionTitle,
-      runStatus: run.status,
+      runStatus: terminalStatus,
       userStopped: run._userStopped,
       guardRetryCount: run._guardRetryCount,
       emit: (event: ChatSSEEvent) => this.trackAndEmit(run, event),
@@ -650,10 +661,14 @@ class AgentChatManager {
     this.trackAndEmit(run, { type: 'session_title_set', title: run.sessionTitle });
 
     try {
-      await this.persistAfterClose(run, aborted);
+      await this.persistAfterClose(run, aborted, terminalStatus);
     } catch (err) {
       console.error(`${LOG_PREFIX} persistAfterClose error:`, err);
     }
+
+    // Only NOW set the terminal status — guarantees data is on disk when
+    // callers see `completed`. This eliminates the state/persistence split.
+    run.status = terminalStatus;
 
     this.trackAndEmit(run, { type: 'done' });
   }
@@ -730,10 +745,44 @@ class AgentChatManager {
   // Private: persistence
   // ═══════════════════════════════════════════════════════════════════════
 
-  private async persistAfterClose(run: AgentChatRun, _aborted: boolean): Promise<void> {
+  private async persistAfterClose(
+    run: AgentChatRun,
+    _aborted: boolean,
+    terminalStatus: RunStatus,
+  ): Promise<void> {
     if (run._ephemeral) return;
 
     const now = new Date().toISOString();
+
+    // Build execution record — the single source of truth for run outcome
+    const execution: SessionExecution = {
+      status: terminalStatus as 'completed' | 'failed' | 'stopped',
+      startedAt: new Date(run.startedAt).toISOString(),
+      completedAt: now,
+    };
+
+    // Build structured result for sub-agent callers (行动项 3)
+    if (run.parentSessionId) {
+      const lastAssistant = [...run.messages].reverse().find(m => m.role === 'assistant');
+      const summary = lastAssistant
+        ? lastAssistant.content.slice(0, 500)
+        : (terminalStatus === 'completed' ? '(no output)' : '');
+      const result: SubAgentResult = {
+        status: terminalStatus as SubAgentResult['status'],
+        summary,
+      };
+      if (terminalStatus !== 'completed') {
+        const lastError = run.events
+          .filter((e): e is { type: 'error'; message: string } => e.type === 'error' && 'message' in e)
+          .pop();
+        result.error = {
+          code: terminalStatus,
+          message: lastError?.message ?? `Run ${terminalStatus}`,
+        };
+      }
+      execution.result = result;
+    }
+
     const session: AgentChatSession = {
       id: run.sessionId,
       agentId: run.agentId,
@@ -747,8 +796,9 @@ class AgentChatManager {
       guardRetryCount: run._guardRetryCount,
       parentSessionId: run.parentSessionId,
       importedTurnIndices: run.importedTurnIndices,
+      depth: run.depth,
     };
-    await persistSessionToDisk(session);
+    await persistSessionToDisk(session, execution);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -782,6 +832,7 @@ class AgentChatManager {
     for (const [key, run] of this.runs) {
       if (
         run.status !== 'running' &&
+        run.status !== 'finalizing' &&
         run.completedAt &&
         now - run.completedAt > COMPLETED_TTL_MS
       ) {

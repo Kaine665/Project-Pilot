@@ -2,6 +2,8 @@
  * Agent 聊天会话类型定义
  */
 
+import type { SessionExecution } from '@/lib/chat-managers/types';
+
 /**
  * 会话级别的可选配置。
  *
@@ -64,6 +66,9 @@ export interface AgentChatSession {
   parentSessionId?: string;
   /** 从宿主会话导入的轮次索引（message index，0-based） */
   importedTurnIndices?: number[];
+
+  /** Sub Agent 调用深度（0=顶层，服务端自动追踪，用于递归保护） */
+  depth?: number;
 }
 
 /**
@@ -74,6 +79,9 @@ export interface AgentChatSession {
 export type SessionMeta = Omit<AgentChatSession, 'messages'> & {
   /** 消息总数（冗余缓存，避免读 JSONL 文件只为计数） */
   messageCount?: number;
+
+  /** 最近一次运行的执行记录（含状态、结构化结果等） */
+  execution?: SessionExecution;
 };
 
 /**
