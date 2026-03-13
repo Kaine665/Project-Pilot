@@ -68,6 +68,18 @@ ${tableHeader}
 ${callable.map(toRow).join('\n')}
 ${hintsSection}
 
+### 输出格式
+
+所有模式的 stdout 都输出**结构化 JSON**（一行），便于机器解析：
+
+\`\`\`
+同步完成: {"status":"completed","sessionId":"...","content":"..."}
+异步启动: {"status":"started","sessionId":"..."}
+轮询完成: {"status":"completed","sessionId":"...","content":"..."}
+轮询运行中: {"status":"running","sessionId":"..."}
+失败:     {"status":"failed","sessionId":"...","error":"..."}
+\`\`\`
+
 ### 同步调用（默认，等待完成）
 
 \`\`\`bash
@@ -85,18 +97,20 @@ cd "$PROJECT_ROOT" && npx tsx src/lib/call-agent.ts \\
 当你不需要立即获取结果时，使用异步模式。适合耗时任务或可并行的委托。
 
 \`\`\`bash
-# 1. 发起异步调用（立即返回 sessionId）
-SESSION_ID=$(cd "$PROJECT_ROOT" && npx tsx src/lib/call-agent.ts \\
+# 1. 发起异步调用（返回 JSON，从中提取 sessionId）
+ASYNC_RESULT=$(cd "$PROJECT_ROOT" && npx tsx src/lib/call-agent.ts \\
   --agent-id <AGENT_ID> \\
   --message "你的指令" \\
   --async \\
   [--project <PROJECT_KEY>] \\
   [--depth <当前深度+1>])
+# ASYNC_RESULT = {"status":"started","sessionId":"xxx"}
 
 # 2. 继续做你自己的事...
 
 # 3. 稍后检查结果（exit 0=完成, 2=仍在运行, 1=失败）
-RESULT=$(cd "$PROJECT_ROOT" && npx tsx src/lib/call-agent.ts --poll "$SESSION_ID")
+POLL_RESULT=$(cd "$PROJECT_ROOT" && npx tsx src/lib/call-agent.ts --poll <sessionId>)
+# POLL_RESULT = {"status":"completed","sessionId":"xxx","content":"..."}
 \`\`\`
 
 **何时用异步**：当子任务独立且你有其他事可做时（如委派审查、并行调研）。
