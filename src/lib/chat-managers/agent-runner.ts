@@ -10,7 +10,6 @@
  */
 
 import { query, type Query as SdkQuery } from '@anthropic-ai/claude-agent-sdk';
-import { Codex, type Thread } from '@openai/codex-sdk';
 import { SdkEventAdapter } from '@/lib/sdk-event-adapter';
 import { adaptCodexEvent } from '@/lib/codex-sdk-adapter';
 import { resolveCodexBinaryPath } from '@/lib/codex-cli';
@@ -47,6 +46,13 @@ export interface AgentRunnerCreateOptions {
   cwd?: string;
 }
 
+interface CodexThreadLike {
+  runStreamed(
+    prompt: string,
+    options: { signal: AbortSignal },
+  ): Promise<{ events: AsyncIterable<unknown> }>;
+}
+
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 /**
@@ -57,6 +63,7 @@ export async function createAgentRunner(opts: AgentRunnerCreateOptions): Promise
   const cwd = opts.cwd ?? getAppWorkingDir();
 
   if (opts.provider === 'openai') {
+    const { Codex } = await import('@openai/codex-sdk');
     const settings = await getSettings();
     const model =
       opts.model
@@ -147,7 +154,7 @@ class CodexAgentRunner implements IAgentRunner {
   private _abortController: AbortController | null = null;
   private _capturedSessionId: string | null = null;
 
-  constructor(private readonly thread: Thread) {}
+  constructor(private readonly thread: CodexThreadLike) {}
 
   async *stream(prompt: string): AsyncIterable<ChatSSEEvent> {
     this._abortController = new AbortController();

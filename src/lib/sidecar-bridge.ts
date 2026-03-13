@@ -71,8 +71,9 @@ function resolveSidecarScript(): string {
     return path.join(path.dirname(process.execPath), 'resources', 'sidecar.js');
   }
 
-  // 开发/standalone 环境：相对于本文件（src/lib/sidecar-bridge.ts → src/sidecar/server.ts）
-  return path.join(__dirname, '..', 'sidecar', 'server.ts');
+  // 开发环境必须基于项目根目录解析源码路径。
+  // 在 Next dev 下 __dirname 会落到 .next 输出目录，不能用于定位 src/sidecar/server.ts。
+  return path.join(process.cwd(), 'src', 'sidecar', 'server.ts');
 }
 
 function resolveNodeExecutable(): string {
@@ -80,21 +81,20 @@ function resolveNodeExecutable(): string {
   return process.execPath;
 }
 
+function resolveTsxCli(): string {
+  return path.join(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs');
+}
+
 function spawnSidecar(port: number): Promise<number> {
   return new Promise((resolve, reject) => {
     const script = resolveSidecarScript();
     const isProd = !script.endsWith('.ts');
 
-    // 开发模式：用 tsx 运行 .ts 文件（tsx 在 PATH 中或 node_modules/.bin）
-    // 生产模式：用 node 运行编译后的 .js 文件
-    const executable = isProd
-      ? resolveNodeExecutable()
-      : (() => {
-          const tsxBin = path.join(process.cwd(), 'node_modules', '.bin', 'tsx');
-          return tsxBin;
-        })();
-
-    const args = isProd ? [script] : [script];
+    // 开发模式也统一走当前 node，可避免 Windows 下直接 spawn .bin shim 失败。
+    // 生产模式：node sidecar.js
+    // 开发模式：node tsx/dist/cli.mjs sidecar.ts
+    const executable = resolveNodeExecutable();
+    const args = isProd ? [script] : [resolveTsxCli(), script];
 
     const child = spawn(executable, args, {
       detached: true,
