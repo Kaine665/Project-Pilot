@@ -1,44 +1,31 @@
 /**
  * Health Guard satellite task.
  *
- * Migrated from session-health-guard.ts.
- * Detects abnormal session endings (crashed, tool failure, etc.)
- * and automatically resumes the session with an error description.
+ * Detects abnormal session endings (crashes, tool failures, incomplete output)
+ * and auto-resumes the session with an error description.
  *
- * The original session-health-guard.ts is no longer needed —
- * all logic lives here now.
+ * requiresAI = true — uses callLightweightAI() for the health check judgment.
  */
 
 import type { SatelliteTask, SatelliteContext } from '../types';
-import { callLightweightAI } from '../lightweight-ai';
-
-// ── Types ──
 
 interface HealthCheckResult {
   abnormal: boolean;
   reason: string;
 }
 
-// ── Constants ──
-
-const MAX_GUARD_RETRIES = 1;
-
-// ── Task Definition ──
-
 export const healthGuardTask: SatelliteTask<HealthCheckResult> = {
   id: 'health-guard',
-  description: 'Detect abnormal session endings and auto-resume',
-  priority: 20, // After title generation
+  description: '检测异常结束的会话并自动恢复',
+  priority: 20,
   requiresAI: true,
 
   shouldRun(ctx: SatelliteContext): boolean {
     // Only check failed/stopped sessions
     if (ctx.runStatus !== 'failed' && ctx.runStatus !== 'stopped') return false;
-    // Don't auto-resume user-initiated stops
-    if (ctx.userStopped) return false;
-    // Respect retry limit
-    if ((ctx.guardRetryCount ?? 0) >= MAX_GUARD_RETRIES) return false;
-    // Need some text to analyze
+    // Respect retry limit (max 1)
+    if (ctx.guardRetryCount >= 1) return false;
+    // Need tail text to judge
     const tailText = ctx.assistantText.slice(-100).trim();
     if (!tailText) return false;
     return true;
@@ -90,6 +77,7 @@ ${tailText}
       `原因: ${result.reason}\n` +
       `请检查并继续完成之前的任务。`;
 
-    await ctx.resumeSession(guardMsg);
+    // Defer resume to after finalization completes
+    ctx.resumeSession(guardMsg);
   },
 };

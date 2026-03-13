@@ -605,8 +605,7 @@ class AgentChatManager {
       assistantTurnCount,
       sessionTitle: run.sessionTitle,
       runStatus: run.status,
-      userStopped: run._userStopped,
-      guardRetryCount: run._guardRetryCount,
+      guardRetryCount: run._guardRetryCount ?? 0,
       emit: (event: ChatSSEEvent) => this.trackAndEmit(run, event),
       setSessionTitle: (title: string) => { run.sessionTitle = title; },
       resumeSession: async (message: string) => {

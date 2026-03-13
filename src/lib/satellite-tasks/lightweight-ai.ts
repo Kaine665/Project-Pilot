@@ -1,67 +1,99 @@
 /**
  * Lightweight AI call utility for satellite tasks.
  *
- * Uses Claude Agent SDK query() with all tools disabled — pure text in/out.
- * Shared by satellite tasks that need AI judgment (e.g. health-guard).
- *
- * Note: title-generation uses its own provider chain + CLI fallback,
- * so it doesn't go through this module.
+ * Uses the existing session-health-guard's CLI-based approach
+ * (claude -p with stream-json output) for a one-shot AI call.
+ * This avoids the heavier SDK query() path and keeps satellite
+ * calls cheap and fast.
  */
 
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { spawnClaude } from '@/lib/claude-cli';
 import { getAppWorkingDir } from '@/lib/app-paths';
-import { buildSdkQueryOptions } from '@/lib/settings-manager';
-import { SdkEventAdapter } from '@/lib/sdk-event-adapter';
+import { buildClaudeEnv, buildClaudeModelArgs } from '@/lib/settings-manager';
+import { StreamParser, LineBuffer } from '@/lib/claude-stream-parser';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 /**
- * Make a one-shot AI call with all tools disabled.
- * Returns the full text response, or throws on timeout/error.
+ * Make a one-shot lightweight AI call via Claude CLI.
+ * Returns the raw text response, or null on failure/timeout.
  */
 export async function callLightweightAI(
   prompt: string,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
-): Promise<string> {
-  const abortController = new AbortController();
+): Promise<string | null> {
+  return new Promise(async (resolve) => {
+    let env: NodeJS.ProcessEnv;
+    let modelArgs: string[];
 
-  const timeoutHandle = setTimeout(() => {
-    abortController.abort();
-  }, timeoutMs);
-
-  try {
-    const sdkOpts = await buildSdkQueryOptions({
-      capabilities: {
-        bash: false,
-        fileAccess: false,
-        web: false,
-        subAgent: false,
-        skipReview: false,
-        todoRead: false,
-        exposePromptPath: false,
-        dataStore: false,
-      },
-      cwd: getAppWorkingDir(),
-    });
-
-    const adapter = new SdkEventAdapter();
-    let fullText = '';
-
-    const sdkQuery = query({
-      prompt,
-      options: { ...sdkOpts, abortController },
-    });
-
-    for await (const msg of sdkQuery) {
-      for (const event of adapter.adapt(msg)) {
-        if (event.type === 'text_delta') {
-          fullText += event.text;
-        }
-      }
+    try {
+      env = await buildClaudeEnv();
+      modelArgs = await buildClaudeModelArgs();
+    } catch {
+      return resolve(null);
     }
 
-    return fullText.trim();
-  } finally {
-    clearTimeout(timeoutHandle);
-  }
+    const claude = spawnClaude([
+      '-p',
+      '--verbose',
+      '--output-format', 'stream-json',
+      ...modelArgs,
+    ], {
+      cwd: getAppWorkingDir(),
+      shell: false,
+      env,
+    });
+
+    const lineBuffer = new LineBuffer();
+    const streamParser = new StreamParser();
+    let fullText = '';
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        claude.kill('SIGTERM');
+        resolve(null);
+      }
+    }, timeoutMs);
+
+    claude.stdout?.on('data', (chunk: Buffer) => {
+      for (const line of lineBuffer.feed(chunk.toString('utf-8'))) {
+        for (const event of streamParser.parse(line)) {
+          if (event.type === 'text_delta') {
+            fullText += event.text;
+          }
+        }
+      }
+    });
+
+    claude.on('close', (code) => {
+      clearTimeout(timer);
+      if (settled) return;
+      settled = true;
+
+      // Flush remaining
+      const remaining = lineBuffer.flush();
+      if (remaining) {
+        for (const event of streamParser.parse(remaining)) {
+          if (event.type === 'text_delta') {
+            fullText += event.text;
+          }
+        }
+      }
+
+      resolve(code === 0 ? fullText.trim() || null : null);
+    });
+
+    claude.on('error', () => {
+      clearTimeout(timer);
+      if (!settled) {
+        settled = true;
+        resolve(null);
+      }
+    });
+
+    claude.stdin?.write(prompt);
+    claude.stdin?.end();
+  });
 }

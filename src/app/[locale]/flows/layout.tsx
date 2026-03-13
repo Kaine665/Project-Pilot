@@ -8,7 +8,7 @@ const AgentChatPanel = dynamic(
   { ssr: false },
 );
 import { useProject } from '@/components/project-context';
-import { FolderKanban, Plus, Trash2, Network, Bot, Layers, BookOpen, FileText, ListTodo, Table2, Timer } from 'lucide-react';
+import { FolderKanban, Plus, Trash2, Network, Bot, Layers, BookOpen, FileText, ListTodo, Table2, Timer, Satellite } from 'lucide-react';
 import { SidebarIconButton } from '@/components/sidebar-icon-button';
 import { BUTLER_AGENT_ID } from '@/lib/default-agents';
 import type { Agent } from '@/types';
@@ -55,7 +55,8 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   const isOrchestratorPage = pathname.startsWith('/flows/orchestrator');
   const isBitablePage = pathname.startsWith('/flows/bitable');
   const isSchedulesPage = pathname.startsWith('/flows/schedules');
-  const isSubRoute = isAgentsPage || isDimensionsPage || isContextPage || isDocsPage || isRecycleBinPage || isButlerPage || isTodosPage || isOrchestratorPage || isBitablePage || isSchedulesPage;
+  const isSatelliteTasksPage = pathname.startsWith('/flows/satellite-tasks');
+  const isSubRoute = isAgentsPage || isDimensionsPage || isContextPage || isDocsPage || isRecycleBinPage || isButlerPage || isTodosPage || isOrchestratorPage || isBitablePage || isSchedulesPage || isSatelliteTasksPage;
 
   // Auto-close expandable panel when on sub-route pages
   useEffect(() => {
@@ -190,6 +191,7 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
               <SidebarIconButton icon={Table2} tooltip="多维表格" isActive={isBitablePage} onClick={() => router.push('/flows/bitable')} />
               <SidebarIconButton icon={Network} tooltip="Agent 编排" isActive={isOrchestratorPage} onClick={() => router.push('/flows/orchestrator')} />
               <SidebarIconButton icon={Timer} tooltip="定时运行" isActive={isSchedulesPage} onClick={() => router.push('/flows/schedules')} />
+              <SidebarIconButton icon={Satellite} tooltip="卫星任务" isActive={isSatelliteTasksPage} onClick={() => router.push('/flows/satellite-tasks')} />
               <SidebarIconButton icon={Trash2} tooltip="回收站" isActive={isRecycleBinPage} onClick={handleNavigateRecycleBin} />
             </div>
             </TooltipProvider>

@@ -1,8 +1,5 @@
 /**
- * SatelliteRegistry — singleton registry for satellite tasks.
- *
- * Tasks are registered at import time (side-effect) and consumed
- * by the SatelliteScheduler during finalizeRun.
+ * SatelliteRegistry — HMR-safe singleton that holds all registered satellite tasks.
  */
 
 import type { SatelliteTask } from './types';
@@ -21,9 +18,13 @@ class SatelliteRegistry {
     return this.tasks.get(id);
   }
 
-  /** Get all tasks sorted by priority (ascending) */
+  getAll(): SatelliteTask[] {
+    return [...this.tasks.values()];
+  }
+
+  /** Return tasks sorted by priority (ascending = lower priority number first). */
   getAllSorted(): SatelliteTask[] {
-    return [...this.tasks.values()].sort((a, b) => a.priority - b.priority);
+    return this.getAll().sort((a, b) => a.priority - b.priority);
   }
 }
 

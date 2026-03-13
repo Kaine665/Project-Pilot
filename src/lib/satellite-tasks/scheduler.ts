@@ -1,43 +1,41 @@
 /**
- * SatelliteScheduler — runs eligible satellite tasks after each conversation turn.
+ * SatelliteScheduler — runs all registered satellite tasks sequentially
+ * after each Agent conversation turn.
  *
- * Called from AgentChatManager.finalizeRun() after agent actions are processed.
- * Tasks run sequentially in priority order. Each task is isolated —
- * a failure in one task does not affect others.
+ * - Tasks execute in priority order (lower number = earlier)
+ * - Each task is error-isolated (one failure doesn't block others)
+ * - Checks enabled/disabled config before running each task
+ * - AI tasks call callLightweightAI() then parseResult() → execute()
+ * - Non-AI tasks call execute() directly with undefined result
  */
 
-import type { SatelliteContext, SatelliteTask } from './types';
 import { satelliteRegistry } from './registry';
+import { isTaskEnabled } from './config';
 import { callLightweightAI } from './lightweight-ai';
+import type { SatelliteContext, SatelliteTask } from './types';
 
 const LOG_PREFIX = '[Satellite]';
 
-/**
- * Run all eligible satellite tasks for the current turn.
- *
- * @param ctx - The satellite context built from the current run state
- */
 export async function runSatelliteTasks(ctx: SatelliteContext): Promise<void> {
   const tasks = satelliteRegistry.getAllSorted();
-  if (tasks.length === 0) return;
 
   for (const task of tasks) {
     try {
-      if (!task.shouldRun(ctx)) continue;
+      // Check enabled config
+      const enabled = await isTaskEnabled(task.id);
+      if (!enabled) continue;
 
-      console.log(`${LOG_PREFIX} Running: ${task.id}`);
+      // Check runtime condition
+      if (!task.shouldRun(ctx)) continue;
 
       if (task.requiresAI) {
         await runAITask(task, ctx);
       } else {
-        // Non-AI task: execute directly with undefined result
+        // Non-AI task handles everything in execute()
         await task.execute(undefined as never, ctx);
       }
-
-      console.log(`${LOG_PREFIX} Completed: ${task.id}`);
     } catch (err) {
-      // Isolate failures — log and continue to next task
-      console.error(`${LOG_PREFIX} Failed: ${task.id}`, err);
+      console.error(`${LOG_PREFIX} Task "${task.id}" failed:`, err);
     }
   }
 }
@@ -45,6 +43,10 @@ export async function runSatelliteTasks(ctx: SatelliteContext): Promise<void> {
 async function runAITask(task: SatelliteTask, ctx: SatelliteContext): Promise<void> {
   const prompt = task.buildPrompt(ctx);
   const raw = await callLightweightAI(prompt);
+  if (!raw) {
+    console.warn(`${LOG_PREFIX} AI returned empty for task "${task.id}"`);
+    return;
+  }
   const result = task.parseResult(raw);
   await task.execute(result, ctx);
 }

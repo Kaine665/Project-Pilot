@@ -1,88 +1,73 @@
 /**
- * Satellite Tasks — pluggable meta-cognition layer for Agent sessions.
+ * Satellite Task System — core type definitions.
  *
- * Satellite tasks run after each conversation turn (in finalizeRun),
- * observing the conversation and making auxiliary decisions
- * (title updates, health checks, etc.) without participating in the main task.
+ * A SatelliteTask is a lightweight meta-cognition unit that runs
+ * after each Agent conversation turn. Unlike the main Agent which
+ * executes user tasks, satellites handle auxiliary decisions:
+ * title updates, health checks, topic completion detection, etc.
  */
 
 import type { ChatSSEEvent } from '@/types';
 import type { RunStatus } from '@/lib/chat-managers/types';
 
-// ── Satellite Context ──
+// ── Satellite context (passed to every task) ──
 
-/**
- * Context passed to each satellite task, containing session state
- * and side-effect callbacks.
- */
 export interface SatelliteContext {
   sessionId: string;
   agentId: string;
   projectKey?: string;
-
-  /** All messages in the session (including the latest assistant turn) */
+  /** Full message history */
   messages: Array<{ role: string; content: string }>;
-  /** Raw assistant text from the current turn (before action stripping) */
+  /** Raw assistant text from this turn */
   assistantText: string;
-  /** How many assistant turns have been completed (including this one) */
+  /** Number of assistant turns so far (including this one) */
   assistantTurnCount: number;
-
-  /** Current session title (may be undefined for new sessions) */
-  sessionTitle?: string;
-  /** How the run ended */
+  /** Final run status */
   runStatus: RunStatus;
-  /** Whether the user explicitly stopped the session */
-  userStopped?: boolean;
-  /** How many times Health Guard has already retried */
-  guardRetryCount?: number;
+  /** How many times health guard has already retried */
+  guardRetryCount: number;
+  /** Current session title (if any) */
+  sessionTitle?: string;
 
   // ── Side-effect callbacks ──
-
-  /** Emit an SSE event to the frontend */
   emit: (event: ChatSSEEvent) => void;
-  /** Update the session title */
   setSessionTitle: (title: string) => void;
-  /** Resume the session with a new user message (for health guard) */
-  resumeSession: (message: string) => Promise<void>;
+  /**
+   * Resume the session with a new user message.
+   * Implementation should use setTimeout(0) to defer
+   * until after current finalization completes.
+   */
+  resumeSession: (message: string) => void;
 }
 
-// ── Satellite Task Interface ──
+// ── Satellite task interface ──
 
-/**
- * A satellite task that runs alongside the main Agent conversation.
- *
- * Each task decides whether to run (shouldRun), optionally calls AI (requiresAI),
- * and executes side-effects based on the result.
- */
 export interface SatelliteTask<TResult = unknown> {
   /** Unique task identifier */
   readonly id: string;
   /** Human-readable description */
   readonly description: string;
-  /** Execution priority (lower = runs first) */
+  /** Execution priority (lower = earlier) */
   readonly priority: number;
-  /** Whether this task needs an AI call, or is pure local logic */
+  /** Whether this task needs an AI call (true) or handles it internally (false) */
   readonly requiresAI: boolean;
 
-  /** Determine if this task should run for the current turn */
+  /** Determine if this task should run given the current context */
   shouldRun(ctx: SatelliteContext): boolean;
 
   /**
-   * Build the prompt for AI evaluation.
-   * Only called when requiresAI is true and shouldRun returns true.
+   * Build prompt for AI call. Only called when requiresAI is true.
+   * For non-AI tasks, this is never called.
    */
   buildPrompt(ctx: SatelliteContext): string;
 
-  /**
-   * Parse AI response into a structured result.
-   * Only called when requiresAI is true.
-   */
+  /** Parse raw AI response into structured result */
   parseResult(raw: string): TResult;
 
   /**
-   * Execute side-effects based on the result.
-   * For non-AI tasks, called directly (result will be undefined).
-   * For AI tasks, called with the parsed result.
+   * Execute the side-effect.
+   * For AI tasks: called with parsed result.
+   * For non-AI tasks: called with undefined (task handles its own logic).
    */
   execute(result: TResult, ctx: SatelliteContext): Promise<void>;
 }
