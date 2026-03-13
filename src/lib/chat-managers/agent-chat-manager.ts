@@ -32,8 +32,9 @@ import '@/lib/agent-actions';    // side-effect: registers actions + their loade
 import { actionRegistry } from '@/lib/agent-actions';
 import { migrateAgentToResources } from '@/lib/resource-migration';
 import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
-import { checkSessionHealth, buildGuardMessage } from './session-health-guard';
-import { shouldGenerateTitle, generateSessionTitle } from '@/lib/session-title-generator';
+import '@/lib/satellite-tasks';  // side-effect: registers satellite tasks
+import { runSatelliteTasks } from '@/lib/satellite-tasks';
+import type { SatelliteContext } from '@/lib/satellite-tasks';
 import type { RunStatus, RunStatusInfo } from './types';
 
 // Re-export store functions so existing callers don't break during migration
@@ -586,34 +587,67 @@ class AgentChatManager {
         content: cleaned,
         contentBlocks: cleanedBlocks.length > 0 ? cleanedBlocks : undefined,
       });
-
-      // Async title generation
-      const assistantTurnCount = run.messages.filter(m => m.role === 'assistant').length;
-      if (shouldGenerateTitle(assistantTurnCount)) {
-        try {
-          const aiTitle = await generateSessionTitle(
-            run.messages.map(m => ({ role: m.role, content: m.content })),
-            run.sessionTitle,
-          );
-          if (aiTitle) run.sessionTitle = aiTitle;
-        } catch (err) {
-          console.error(`${LOG_PREFIX} Title generation failed:`, err);
-        }
-      }
-
-      if (!run.sessionTitle) {
-        const firstUserMsg = run.messages.find(m => m.role === 'user')?.content;
-        const defaultTitle = run.parentSessionId ? '旁听会话' : '新会话';
-        run.sessionTitle = firstUserMsg ? firstUserMsg.slice(0, 30) + '...' : defaultTitle;
-      }
-
-      this.trackAndEmit(run, { type: 'session_title_set', title: run.sessionTitle });
     }
 
     if (run.status === 'running') {
       run.status = aborted ? 'stopped' : 'completed';
     }
     run.completedAt = Date.now();
+
+    // ── Run satellite tasks (title generation, health guard, etc.) ──
+    const assistantTurnCount = run.messages.filter(m => m.role === 'assistant').length;
+    const satelliteCtx: SatelliteContext = {
+      sessionId: run.sessionId,
+      agentId: run.agentId,
+      projectKey: run.projectKey,
+      messages: run.messages.map(m => ({ role: m.role, content: m.content })),
+      assistantText: run.assistantText,
+      assistantTurnCount,
+      sessionTitle: run.sessionTitle,
+      runStatus: run.status,
+      userStopped: run._userStopped,
+      guardRetryCount: run._guardRetryCount,
+      emit: (event: ChatSSEEvent) => this.trackAndEmit(run, event),
+      setSessionTitle: (title: string) => { run.sessionTitle = title; },
+      resumeSession: async (message: string) => {
+        // Increment guard retry count
+        run._guardRetryCount = (run._guardRetryCount ?? 0) + 1;
+        await incrementGuardRetryCountOnDisk(run.sessionId);
+        // Schedule resume after current finalization completes
+        setTimeout(async () => {
+          const memRun = this.runs.get(run.sessionId);
+          if (memRun?.status === 'running') {
+            console.log(`${LOG_PREFIX} Session ${run.sessionId} already running, skip resume`);
+            return;
+          }
+          try {
+            await this.start(run.sessionId, run.agentId, message);
+            console.log(`${LOG_PREFIX} Health guard resumed session ${run.sessionId}`);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.includes('already running')) {
+              console.log(`${LOG_PREFIX} Session ${run.sessionId} already running (race), skip resume`);
+            } else {
+              console.error(`${LOG_PREFIX} Health guard failed to resume session:`, err);
+            }
+          }
+        }, 0);
+      },
+    };
+
+    try {
+      await runSatelliteTasks(satelliteCtx);
+    } catch (err) {
+      console.error(`${LOG_PREFIX} Satellite tasks error:`, err);
+    }
+
+    // Apply title fallback if no satellite task set a title
+    if (!run.sessionTitle) {
+      const firstUserMsg = run.messages.find(m => m.role === 'user')?.content;
+      const defaultTitle = run.parentSessionId ? '旁听会话' : '新会话';
+      run.sessionTitle = firstUserMsg ? firstUserMsg.slice(0, 30) + '...' : defaultTitle;
+    }
+    this.trackAndEmit(run, { type: 'session_title_set', title: run.sessionTitle });
 
     try {
       await this.persistAfterClose(run, aborted);
@@ -715,48 +749,6 @@ class AgentChatManager {
       importedTurnIndices: run.importedTurnIndices,
     };
     await persistSessionToDisk(session);
-
-    // Session Health Guard
-    if (
-      (run.status === 'failed' || run.status === 'stopped')
-      && !run._userStopped  // 用户主动停止不触发自动恢复
-      && !(run._guardRetryCount && run._guardRetryCount >= 1)
-    ) {
-      const tailText = run.assistantText.slice(-100);
-      checkSessionHealth({
-        sessionId: run.sessionId,
-        agentId: run.agentId,
-        status: run.status,
-        tailText,
-        guardRetryCount: run._guardRetryCount ?? 0,
-      }).then(async (result) => {
-        if (!result?.abnormal) return;
-
-        const memRun = this.runs.get(run.sessionId);
-        // 竞态：用户可能在 Health Guard 检查期间已发送新消息，会话已在运行
-        if (memRun?.status === 'running') {
-          console.log(`${LOG_PREFIX} Session ${run.sessionId} already running (user retried), skip resume`);
-          return;
-        }
-        if (memRun) {
-          memRun._guardRetryCount = (memRun._guardRetryCount ?? 0) + 1;
-        }
-        await incrementGuardRetryCountOnDisk(run.sessionId);
-
-        const guardMsg = buildGuardMessage(run.status, result.reason);
-        try {
-          await this.start(run.sessionId, run.agentId, guardMsg);
-          console.log(`${LOG_PREFIX} Health guard resumed session ${run.sessionId}`);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (msg.includes('already running')) {
-            console.log(`${LOG_PREFIX} Session ${run.sessionId} already running (race), skip resume`);
-          } else {
-            console.error(`${LOG_PREFIX} Health guard failed to resume session:`, err);
-          }
-        }
-      }).catch(err => console.error(`${LOG_PREFIX} Health guard error:`, err));
-    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════
