@@ -1,19 +1,19 @@
 /**
- * Session Health Guard — lightweight Claude CLI call that checks whether
+ * Session Health Guard — lightweight Claude SDK call that checks whether
  * an Agent session ended abnormally and, if so, automatically resumes
  * the session with an error description injected as a user message.
  *
  * Design:
- * - Triggered only for `failed` or `stopped` sessions
- * - Uses a one-shot `claude -p` call (no AgentChatManager overhead)
+ * - Triggered only for `failed` or `stopped` sessions (not user-initiated stops)
+ * - Uses query() from @anthropic-ai/claude-agent-sdk (no CLI subprocess needed)
  * - Checks the last 100 characters of assistant output
  * - Fires at most once per session (guardRetryCount >= 1 → skip)
  */
 
-import { spawnClaude } from '@/lib/claude-cli';
+import { query } from '@anthropic-ai/claude-agent-sdk';
 import { getAppWorkingDir } from '@/lib/app-paths';
-import { buildClaudeEnv, buildClaudeModelArgs } from '@/lib/settings-manager';
-import { StreamParser, LineBuffer } from '@/lib/claude-stream-parser';
+import { buildSdkQueryOptions } from '@/lib/settings-manager';
+import { SdkEventAdapter } from '@/lib/sdk-event-adapter';
 import type { RunStatus } from './types';
 
 // ── Types ──
@@ -127,83 +127,48 @@ function parseCheckResult(raw: string): HealthCheckResult {
   }
 }
 
-function callClaudeLightweight(prompt: string): Promise<string> {
-  return new Promise(async (resolve, reject) => {
-    let env: NodeJS.ProcessEnv;
-    let modelArgs: string[];
+async function callClaudeLightweight(prompt: string): Promise<string> {
+  const abortController = new AbortController();
 
-    try {
-      env = await buildClaudeEnv();
-      modelArgs = await buildClaudeModelArgs();
-    } catch (err) {
-      return reject(err);
+  // 超时后中止 SDK query
+  const timeoutHandle = setTimeout(() => {
+    abortController.abort();
+  }, GUARD_TIMEOUT_MS);
+
+  try {
+    // 使用与主流程一致的 SDK options，完全关闭工具（纯文本一次性回复）
+    const sdkOpts = await buildSdkQueryOptions({
+      capabilities: {
+        bash: false,
+        fileAccess: false,
+        web: false,
+        subAgent: false,
+        skipReview: false,
+        todoRead: false,
+        exposePromptPath: false,
+        dataStore: false,
+      },
+      cwd: getAppWorkingDir(),
+    });
+
+    const adapter = new SdkEventAdapter();
+    let fullText = '';
+
+    const sdkQuery = query({
+      prompt,
+      options: { ...sdkOpts, abortController },
+    });
+
+    for await (const msg of sdkQuery) {
+      for (const event of adapter.adapt(msg)) {
+        if (event.type === 'text_delta') {
+          fullText += event.text;
+        }
+      }
     }
 
-    const claude = spawnClaude([
-      '-p',
-      '--verbose',
-      '--output-format', 'stream-json',
-      ...modelArgs,
-    ], {
-      cwd: getAppWorkingDir(),
-      shell: false,
-      env,
-    });
-
-    const lineBuffer = new LineBuffer();
-    const streamParser = new StreamParser();
-    let fullText = '';
-    let settled = false;
-
-    const timeout = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        claude.kill('SIGTERM');
-        reject(new Error('Health guard timed out'));
-      }
-    }, GUARD_TIMEOUT_MS);
-
-    claude.stdout?.on('data', (chunk: Buffer) => {
-      for (const line of lineBuffer.feed(chunk.toString('utf-8'))) {
-        for (const event of streamParser.parse(line)) {
-          if (event.type === 'text_delta') {
-            fullText += event.text;
-          }
-        }
-      }
-    });
-
-    claude.on('close', (code) => {
-      clearTimeout(timeout);
-      if (settled) return;
-      settled = true;
-
-      // Flush remaining
-      const remaining = lineBuffer.flush();
-      if (remaining) {
-        for (const event of streamParser.parse(remaining)) {
-          if (event.type === 'text_delta') {
-            fullText += event.text;
-          }
-        }
-      }
-
-      if (code === 0) {
-        resolve(fullText.trim());
-      } else {
-        reject(new Error(`Claude exited with code ${code}`));
-      }
-    });
-
-    claude.on('error', (err) => {
-      clearTimeout(timeout);
-      if (!settled) {
-        settled = true;
-        reject(err);
-      }
-    });
-
-    claude.stdin?.write(prompt);
-    claude.stdin?.end();
-  });
+    return fullText.trim();
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
 }

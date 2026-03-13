@@ -185,11 +185,13 @@ async function pollSession(sessionId: string, port: number): Promise<void> {
   });
 
   if (sessionResult.statusCode === 404) {
-    if (status === 'none' || status === 'completed') {
+    if (status === 'completed') {
+      // 竞态：内存刚标记 completed 但 persistAfterClose 尚未写盘，稍后重试
       process.stdout.write('RUNNING');
       process.exit(POLL_EXIT_RUNNING);
     }
-    throw new Error(`Session not found: ${sessionId}`);
+    // status === 'none'：内存已清除且磁盘也无记录 → 会话根本不存在
+    throw new Error(`Session not found on disk: ${sessionId}. It may have been deleted or never persisted.`);
   }
   if (sessionResult.statusCode !== 200) {
     throw new Error(`GET /api/agent-chat/sessions/${sessionId} failed: HTTP ${sessionResult.statusCode}`);
@@ -202,11 +204,12 @@ async function pollSession(sessionId: string, port: number): Promise<void> {
   const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
 
   if (!lastAssistant) {
-    // 有 session 记录但无 assistant 回复 — 可能还在跑（eagerly saved 但未完成）
-    if (status === 'none' || status === 'completed') {
+    if (status === 'completed') {
+      // 有磁盘记录但无 assistant 回复，且内存刚标 completed — 写盘竞态，稍后重试
       process.stdout.write('RUNNING');
       process.exit(POLL_EXIT_RUNNING);
     }
+    // status === 'none'：会话确实无 assistant 回复（ephemeral 或数据异常）
     throw new Error(`Session ${sessionId} has no assistant response`);
   }
 
