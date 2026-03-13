@@ -37,6 +37,8 @@ interface SidecarLock {
 
 let _cachedPort: number | null = null;
 let _spawning: Promise<number> | null = null;
+let _lastSpawnFailure = 0;
+const SPAWN_COOLDOWN_MS = 30_000; // spawn 失败后 30 秒内不重试
 
 // ── 内部辅助 ─────────────────────────────────────────────────────────────────
 
@@ -188,13 +190,20 @@ export async function ensureSidecar(): Promise<number> {
   // 需要启动新 sidecar
   if (_spawning) return _spawning;
 
+  // 冷却期内不重试 spawn，直接抛出
+  if (_lastSpawnFailure && Date.now() - _lastSpawnFailure < SPAWN_COOLDOWN_MS) {
+    throw new Error('Sidecar recently failed to start, waiting before retry');
+  }
+
   const port = lock?.port ?? DEFAULT_PORT;
 
   _spawning = spawnSidecar(port).then((p) => {
     _cachedPort = p;
+    _lastSpawnFailure = 0;
     _spawning = null;
     return p;
   }).catch((err) => {
+    _lastSpawnFailure = Date.now();
     _spawning = null;
     throw err;
   });
