@@ -130,8 +130,13 @@ function spawnSidecar(port: number): Promise<number> {
     fs.mkdirSync(logDir, { recursive: true });
     const logFd = fs.openSync(path.join(logDir, 'sidecar.log'), 'a');
 
+    // Windows 上 detached:true 会弹出控制台窗口，但 Windows 子进程本身就独立于父进程，
+    // 父进程退出后子进程不会被杀掉，所以不需要 detached。
+    // Unix 上需要 detached:true 创建新 session，确保子进程不随父进程组被 kill。
+    const isWin = process.platform === 'win32';
+
     const child = spawn(executable, args, {
-      detached: true,
+      detached: !isWin,
       stdio: ['ignore', logFd, logFd],
       shell: useShell,
       windowsHide: true,
