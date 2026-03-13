@@ -26,7 +26,7 @@ const DEFAULT_SESSIONS_DATA: AgentChatSessionsData = { sessions: [] };
 // ── Sessions data cache (reduce repeated full-file reads) ──
 let _sessionsCache: AgentChatSessionsData | null = null;
 let _sessionsCacheTs = 0;
-const SESSIONS_CACHE_TTL = 3_000; // 3s
+const SESSIONS_CACHE_TTL = 500; // 500ms — cross-process (sidecar writes, Next.js reads) needs short TTL
 
 async function getSessionsData(): Promise<AgentChatSessionsData> {
   const now = Date.now();
