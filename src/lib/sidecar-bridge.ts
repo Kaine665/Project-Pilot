@@ -73,8 +73,9 @@ function resolveSidecarScript(): string {
     return path.join(path.dirname(process.execPath), 'resources', 'sidecar.js');
   }
 
-  // 开发/standalone 环境：相对于本文件（src/lib/sidecar-bridge.ts → src/sidecar/server.ts）
-  return path.join(__dirname, '..', 'sidecar', 'server.ts');
+  // 开发环境：Next.js 编译后 __dirname 指向 .next/server/...，不能用。
+  // 使用 process.cwd()（项目根目录）确保路径正确。
+  return path.join(process.cwd(), 'src', 'sidecar', 'server.ts');
 }
 
 function resolveNodeExecutable(): string {
