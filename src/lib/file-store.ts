@@ -351,7 +351,7 @@ function snapshotBeforeWrite(filePath: string): void {
  * Unix 上 rename 是原子操作不受影响；Windows 上目标文件被占用（读取/杀毒扫描）时
  * rename 会失败，短暂等待后重试即可成功。
  */
-async function renameWithRetry(src: string, dest: string, retries = 5): Promise<void> {
+async function renameWithRetry(src: string, dest: string, retries = 8): Promise<void> {
   for (let i = 0; i < retries; i++) {
     try {
       await fs.rename(src, dest);
@@ -359,8 +359,20 @@ async function renameWithRetry(src: string, dest: string, retries = 5): Promise<
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if ((code === 'EPERM' || code === 'EACCES') && i < retries - 1) {
-        await new Promise(r => setTimeout(r, 20 * (i + 1)));
+        // Exponential backoff: 50, 100, 200, 400, 800, 1600, 3200ms
+        await new Promise(r => setTimeout(r, 50 * Math.pow(2, i)));
         continue;
+      }
+      // All rename retries exhausted — fallback to copyFile + unlink.
+      // Non-atomic but preserves data (better than losing writes entirely).
+      if (code === 'EPERM' || code === 'EACCES') {
+        try {
+          await fs.copyFile(src, dest);
+          await fs.unlink(src).catch(() => {}); // best-effort cleanup
+          return;
+        } catch {
+          // copyFile also failed — re-throw original rename error
+        }
       }
       throw err;
     }
