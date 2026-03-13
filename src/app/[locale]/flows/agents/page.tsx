@@ -156,9 +156,15 @@ export default function AgentsPage() {
     const cacheKey = key ?? CACHE_KEY_ALL;
 
     // 切换项目时立即展示缓存数据（如有）
+    // 使用函数式更新，避免覆盖乐观插入的新会话
     const cached = sessionCacheRef.current.get(cacheKey);
     if (cached) {
-      setAllSessions(cached);
+      setAllSessions(prev => {
+        // 保留 prev 中已有但 cached 中没有的条目（乐观插入的新会话）
+        const cachedIds = new Set(cached.map(s => s.id));
+        const optimistic = prev.filter(s => !cachedIds.has(s.id));
+        return optimistic.length > 0 ? [...optimistic, ...cached] : cached;
+      });
     }
 
     try {
