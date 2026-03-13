@@ -28,17 +28,20 @@ export interface SessionConfig {
   capabilities?: Partial<import('./index').AgentCapabilities>;
 }
 
+/** 单条消息 */
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  images?: string[];
+  contentBlocks?: import('./index').ContentBlock[];
+}
+
 export interface AgentChatSession {
   id: string;                    // "agent-chat-{timestamp}-{random}"
   agentId: string;
   projectKey?: string;           // 项目作用域（管家侧边栏/全屏模式）
   title: string;                 // AI 生成或 fallback
-  messages: Array<{
-    role: 'user' | 'assistant';
-    content: string;
-    images?: string[];
-    contentBlocks?: import('./index').ContentBlock[];
-  }>;
+  messages: ChatMessage[];
   claudeSessionId?: string;      // 用于 --resume
   createdAt: string;
   updatedAt: string;
@@ -63,6 +66,20 @@ export interface AgentChatSession {
   importedTurnIndices?: number[];
 }
 
+/**
+ * 索引文件中的会话元数据（不含 messages，消息存储在单独的 JSONL 文件中）。
+ * 索引文件路径：agent-chat-sessions.json
+ * 消息文件路径：agent-chat-messages/{sessionId}.jsonl
+ */
+export type SessionMeta = Omit<AgentChatSession, 'messages'> & {
+  /** 消息总数（冗余缓存，避免读 JSONL 文件只为计数） */
+  messageCount?: number;
+};
+
+/**
+ * 索引文件结构（v2：仅元数据，不含消息）。
+ * 向后兼容：如果 sessions[i] 包含 messages 字段，说明是旧格式，需要自动迁移。
+ */
 export interface AgentChatSessionsData {
-  sessions: AgentChatSession[];
+  sessions: SessionMeta[];
 }

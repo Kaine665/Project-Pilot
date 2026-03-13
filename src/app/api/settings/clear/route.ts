@@ -7,10 +7,12 @@ import {
   getFlowIndexPath,
   getAgentsPath,
   getAgentChatSessionsPath,
+  getAgentChatMessagesDir,
   getPromptsDir,
   writeJsonFile,
   readJsonFile,
 } from '@/lib/file-store';
+import { deleteAllMessageFiles } from '@/lib/chat-managers/agent-chat-session-store';
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
 import { invalidateAgentsCache } from '@/app/api/agents/route';
 import type { AgentsData } from '@/types';
@@ -77,11 +79,13 @@ export async function POST(request: NextRequest) {
       );
       cleared.sessions = sessionsData.sessions.length;
 
-      // 备份 sessions 相关
+      // 备份 sessions index + JSONL message files
       await backupFile(getAgentChatSessionsPath());
+      await backupDir2(getAgentChatMessagesDir());
 
-      // 清空
+      // 清空 index + JSONL files
       await writeJsonFile(getAgentChatSessionsPath(), { sessions: [] });
+      await deleteAllMessageFiles();
 
       // 清理所有运行时 prompt 副本（.runtime/ 目录）
       try {

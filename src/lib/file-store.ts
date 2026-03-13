@@ -73,6 +73,7 @@ async function ensureDataDirInitialized(): Promise<void> {
     getSkillsDir(),
     getProjectPromptsDir(),
     getAgentDataDir(),
+    getAgentChatMessagesDir(),
     path.join(DATA_DIR, 'orchestrations'),
     path.join(DATA_DIR, '_snapshots'),
   ];
@@ -139,6 +140,20 @@ export function getDimensionsPath(): string {
 
 export function getAgentChatSessionsPath(): string {
   return path.join(DATA_DIR, 'agent-chat-sessions.json');
+}
+
+/** 每个会话的消息 JSONL 文件目录 */
+export function getAgentChatMessagesDir(): string {
+  return path.join(DATA_DIR, 'agent-chat-messages');
+}
+
+/** 单个会话的消息 JSONL 文件路径 */
+export function getAgentChatMessagePath(sessionId: string): string {
+  const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 200) {
+    throw new Error(`Invalid session id: ${sessionId}`);
+  }
+  return path.join(DATA_DIR, 'agent-chat-messages', `${safe}.jsonl`);
 }
 
 export function getWorktreePortsPath(): string {

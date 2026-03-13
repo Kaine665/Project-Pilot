@@ -1,23 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  getAgentChatSessionsPath,
-  modifyJsonFile,
-  readJsonFile,
-} from '@/lib/file-store';
 import { spawnClaude } from '@/lib/claude-cli';
-import type { AgentChatSession, AgentChatSessionsData } from '@/types/agent-chat';
+import {
+  loadSession,
+  readMessages,
+  replaceSessionMessages,
+} from '@/lib/chat-managers/agent-chat-session-store';
+import type { AgentChatSession, ChatMessage } from '@/types/agent-chat';
 
-const DEFAULT_SESSIONS_DATA: AgentChatSessionsData = { sessions: [] };
-
-/** 保留最后 N 条消息不参与压缩 */
+/** Keep last N messages out of compression */
 const KEEP_RECENT_COUNT = 4;
 
 /**
  * POST /api/agent-chat/sessions/[id]/compress
  *
  * Actions:
- *   - preview: 生成压缩预览（AI 摘要 + 保留的最后 4 条消息）
- *   - apply:   将压缩后的消息写回 session
+ *   - preview: AI summary + last 4 messages
+ *   - apply:   write compressed messages back to session
  */
 export async function POST(
   request: NextRequest,
@@ -53,22 +51,15 @@ export async function POST(
 // ── Preview ──
 
 async function handlePreview(sessionId: string) {
-  // 读取 session
-  const data = await readJsonFile<AgentChatSessionsData>(
-    getAgentChatSessionsPath(),
-    DEFAULT_SESSIONS_DATA,
-  );
-  const session = data.sessions.find(s => s.id === sessionId);
-  if (!session) {
-    return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+  const messages = await readMessages(sessionId);
+
+  if (messages.length === 0) {
+    return NextResponse.json({ error: 'Session not found or empty' }, { status: 404 });
   }
 
-  const messages = session.messages;
-
-  // 消息不够多，无需压缩
   if (messages.length <= KEEP_RECENT_COUNT) {
     return NextResponse.json(
-      { error: '消息数量不足，无需压缩' },
+      { error: '\u6D88\u606F\u6570\u91CF\u4E0D\u8DB3\uFF0C\u65E0\u9700\u538B\u7F29' },
       { status: 400 },
     );
   }
@@ -76,18 +67,15 @@ async function handlePreview(sessionId: string) {
   const messagesToCompress = messages.slice(0, -KEEP_RECENT_COUNT);
   const recentMessages = messages.slice(-KEEP_RECENT_COUNT);
 
-  // 调用 Claude CLI 生成摘要
-  const prompt = `请将以下对话历史压缩为一段简洁的摘要。保留关键决策、结论和重要上下文，去除过程性细节。
+  const prompt = `\u8BF7\u5C06\u4EE5\u4E0B\u5BF9\u8BDD\u5386\u53F2\u538B\u7F29\u4E3A\u4E00\u6BB5\u7B80\u6D01\u7684\u6458\u8981\u3002\u4FDD\u7559\u5173\u952E\u51B3\u7B56\u3001\u7ED3\u8BBA\u548C\u91CD\u8981\u4E0A\u4E0B\u6587\uFF0C\u53BB\u9664\u8FC7\u7A0B\u6027\u7EC6\u8282\u3002
 
 <conversation>
 ${messagesToCompress.map(m => `[${m.role}]: ${m.content}`).join('\n\n')}
 </conversation>
 
-请直接输出摘要内容，不要加任何前缀或解释。摘要应该是第三人称叙述，概括对话的要点。`;
+\u8BF7\u76F4\u63A5\u8F93\u51FA\u6458\u8981\u5185\u5BB9\uFF0C\u4E0D\u8981\u52A0\u4EFB\u4F55\u524D\u7F00\u6216\u89E3\u91CA\u3002\u6458\u8981\u5E94\u8BE5\u662F\u7B2C\u4E09\u4EBA\u79F0\u53D9\u8FF0\uFF0C\u6982\u62EC\u5BF9\u8BDD\u7684\u8981\u70B9\u3002`;
 
   try {
-    // 用 stdin 传 prompt，避免 Windows 命令行长度限制
-    // 用 stall 检测代替硬超时：每 30s 检查输出是否仍在增长
     const summary = await new Promise<string>((resolve, reject) => {
       const child = spawnClaude(['--print', '-p', '-'], {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -98,7 +86,7 @@ ${messagesToCompress.map(m => `[${m.role}]: ${m.content}`).join('\n\n')}
       let stderr = '';
       let prevLen = 0;
       let stallCount = 0;
-      const MAX_STALLS = 2; // 连续 2 次无增长（~60s）才判定停滞
+      const MAX_STALLS = 2;
 
       const stallCheck = setInterval(() => {
         if (stdout.length === prevLen) {
@@ -106,7 +94,6 @@ ${messagesToCompress.map(m => `[${m.role}]: ${m.content}`).join('\n\n')}
           if (stallCount >= MAX_STALLS) {
             clearInterval(stallCheck);
             child.kill();
-            // 停滞时返回已收集的输出，而非报错
             resolve(stdout.trim());
           }
         } else {
@@ -120,7 +107,6 @@ ${messagesToCompress.map(m => `[${m.role}]: ${m.content}`).join('\n\n')}
       child.on('error', (err) => { clearInterval(stallCheck); reject(err); });
       child.on('close', (code) => {
         clearInterval(stallCheck);
-        // 非零退出但有输出时，仍返回已收集的内容
         if (code !== 0 && !stdout.trim()) {
           reject(new Error(`claude exited ${code}: ${stderr}`));
         } else {
@@ -134,18 +120,16 @@ ${messagesToCompress.map(m => `[${m.role}]: ${m.content}`).join('\n\n')}
 
     if (!summary) {
       return NextResponse.json(
-        { error: 'AI 返回了空摘要' },
+        { error: 'AI \u8FD4\u56DE\u4E86\u7A7A\u6458\u8981' },
         { status: 500 },
       );
     }
 
-    // 构建摘要消息
     const summaryMessage: AgentChatSession['messages'][number] = {
       role: 'assistant',
-      content: `[会话摘要]\n${summary}`,
+      content: `[\u4F1A\u8BDD\u6458\u8981]\n${summary}`,
     };
 
-    // 返回压缩后的消息列表（摘要 + 保留的最后 4 条）
     const compressedMessages = [
       { ...summaryMessage, id: `compress-summary-${Date.now()}`, timestamp: new Date().toISOString() },
       ...recentMessages,
@@ -153,9 +137,9 @@ ${messagesToCompress.map(m => `[${m.role}]: ${m.content}`).join('\n\n')}
 
     return NextResponse.json({ messages: compressedMessages });
   } catch (err) {
-    console.error('[compress/preview] AI 摘要生成失败:', err);
+    console.error('[compress/preview] AI \u6458\u8981\u751F\u6210\u5931\u8D25:', err);
     return NextResponse.json(
-      { error: 'AI 摘要生成失败' },
+      { error: 'AI \u6458\u8981\u751F\u6210\u5931\u8D25' },
       { status: 500 },
     );
   }
@@ -171,37 +155,19 @@ async function handleApply(
 
   if (!Array.isArray(messages)) {
     return NextResponse.json(
-      { error: 'messages 字段必须是数组' },
+      { error: 'messages \u5B57\u6BB5\u5FC5\u987B\u662F\u6570\u7EC4' },
       { status: 400 },
     );
   }
 
   try {
-    await modifyJsonFile<AgentChatSessionsData>(
-      getAgentChatSessionsPath(),
-      DEFAULT_SESSIONS_DATA,
-      (data) => {
-        const idx = data.sessions.findIndex(s => s.id === sessionId);
-        if (idx === -1) {
-          throw new Error('SESSION_NOT_FOUND');
-        }
-
-        data.sessions[idx] = {
-          ...data.sessions[idx],
-          messages: messages as AgentChatSession['messages'],
-          updatedAt: new Date().toISOString(),
-        };
-
-        return data;
-      },
-    );
-
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    if (err instanceof Error && err.message === 'SESSION_NOT_FOUND') {
+    const found = await replaceSessionMessages(sessionId, messages as ChatMessage[]);
+    if (!found) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
-    console.error('[compress/apply] 写入失败:', err);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error('[compress/apply] \u5199\u5165\u5931\u8D25:', err);
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }
