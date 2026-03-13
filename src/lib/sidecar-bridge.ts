@@ -125,10 +125,16 @@ function spawnSidecar(port: number): Promise<number> {
 
     const useShell = !isProd && executable.endsWith('.cmd');
 
+    // 将 sidecar 的 stdout/stderr 写入日志文件，方便排查启动失败
+    const logDir = path.join(os.homedir(), '.project-pilot');
+    fs.mkdirSync(logDir, { recursive: true });
+    const logFd = fs.openSync(path.join(logDir, 'sidecar.log'), 'a');
+
     const child = spawn(executable, args, {
       detached: true,
-      stdio: 'ignore',
+      stdio: ['ignore', logFd, logFd],
       shell: useShell,
+      windowsHide: true,
       env: {
         ...process.env,
         SIDECAR_PORT: String(port),
@@ -136,6 +142,9 @@ function spawnSidecar(port: number): Promise<number> {
       },
       cwd: process.cwd(),
     });
+
+    // spawn 后关闭父进程持有的 fd，不影响子进程继续写入
+    fs.closeSync(logFd);
 
     child.unref(); // 父进程不等待 sidecar 退出
 
