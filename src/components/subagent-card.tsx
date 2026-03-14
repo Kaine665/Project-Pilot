@@ -31,17 +31,15 @@ export const SubagentCard = memo(function SubagentCard({ toolCall }: SubagentCar
 
   const parsed = useMemo(() => {
     try {
-      return JSON.parse(toolCall.input) as Record<string, string>;
+      const p = JSON.parse(toolCall.input);
+      return { agentType: p.subagent_type || '', description: p.description || '', prompt: p.prompt || '' };
     } catch {
       return null;
     }
   }, [toolCall.input]);
 
   if (!parsed) return null;
-
-  const agentType = parsed.subagent_type || '';
-  const description = parsed.description || '';
-  const prompt = parsed.prompt || '';
+  const { agentType, description, prompt } = parsed;
 
   const typeInfo = agentTypeLabels[agentType] || { label: agentType, color: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400' };
   const isRunning = toolCall.status === 'running';
