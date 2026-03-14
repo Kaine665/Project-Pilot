@@ -236,12 +236,13 @@ export default function AgentsPage() {
   }, [effectiveProjectKey]);
 
   // ── Clock for running-session elapsed display ──
+  const hasRunningSession = useMemo(() => allSessions.some(s => s.isRunning), [allSessions]);
   const [listClockNow, setListClockNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!allSessions.some(s => s.isRunning)) return;
+    if (!hasRunningSession) return;
     const timer = setInterval(() => setListClockNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [allSessions]);
+  }, [hasRunningSession]);
 
   // ── Grouped sessions for display ──
   const groupedSessions = useMemo(() => groupSessionsByDay(allSessions), [allSessions]);
@@ -529,23 +530,29 @@ export default function AgentsPage() {
   const selectedAgent = agents.find(a => a.id === selectedAgentId) ?? null;
   const agentViewMode = activePanel?.type === 'agent' ? activePanel.mode : 'chat';
 
-  const hasChanges = creating
-    ? form.name.trim().length > 0
-    : selectedAgent
-      ? form.name !== selectedAgent.name
-        || form.description !== (selectedAgent.description ?? '')
-        || form.systemPrompt !== (selectedAgent.systemPrompt ?? '')
-        || form.icon !== (selectedAgent.icon ?? '')
-        || JSON.stringify(form.capabilities) !== JSON.stringify(selectedAgent.capabilities ?? DEFAULT_AGENT_CAPABILITIES)
-        || form.requiredParamsText !== (selectedAgent.requiredParams ?? []).join('\n')
-        || JSON.stringify([...form.contextIds].sort()) !== JSON.stringify([...(selectedAgent.contextIds ?? [])].sort())
-        || JSON.stringify([...form.skillIds].sort()) !== JSON.stringify(
-            [...(selectedAgent.defaultResources ?? []).filter(r => r.type === 'skill').map(r => r.id)].sort()
-          )
-        || form.projectKey !== (selectedAgent.projectKey ?? '')
-        || form.defaultProvider !== (selectedAgent.defaultProvider ?? '')
-        || form.defaultModel !== (selectedAgent.defaultModel ?? '')
-      : false;
+  const hasChanges = useMemo(() => {
+    if (creating) return form.name.trim().length > 0;
+    if (!selectedAgent) return false;
+    return form.name !== selectedAgent.name
+      || form.description !== (selectedAgent.description ?? '')
+      || form.systemPrompt !== (selectedAgent.systemPrompt ?? '')
+      || form.icon !== (selectedAgent.icon ?? '')
+      || JSON.stringify(form.capabilities) !== JSON.stringify(selectedAgent.capabilities ?? DEFAULT_AGENT_CAPABILITIES)
+      || form.requiredParamsText !== (selectedAgent.requiredParams ?? []).join('\n')
+      || JSON.stringify([...form.contextIds].sort()) !== JSON.stringify([...(selectedAgent.contextIds ?? [])].sort())
+      || JSON.stringify([...form.skillIds].sort()) !== JSON.stringify(
+          [...(selectedAgent.defaultResources ?? []).filter(r => r.type === 'skill').map(r => r.id)].sort()
+        )
+      || form.projectKey !== (selectedAgent.projectKey ?? '')
+      || form.defaultProvider !== (selectedAgent.defaultProvider ?? '')
+      || form.defaultModel !== (selectedAgent.defaultModel ?? '');
+  }, [creating, form, selectedAgent]);
+
+  // ── Pre-computed active session ID for sidebar highlight ──
+  const activeSessionId = useMemo(() => {
+    if (activePanel?.type !== 'session') return null;
+    return openedSessions.find(o => o.key === activePanel.key)?.sessionId ?? null;
+  }, [activePanel, openedSessions]);
 
   // ── Active session info (for header display) ──
   const activeOpened = activePanel?.type === 'session'
@@ -640,8 +647,7 @@ export default function AgentsPage() {
                       {group.label}
                     </div>
                     {group.items.map(s => {
-                      const isActive = activePanel?.type === 'session'
-                        && openedSessions.find(o => o.key === activePanel.key)?.sessionId === s.id;
+                      const isActive = activeSessionId === s.id;
                       return (
                         <div
                           key={s.id}
