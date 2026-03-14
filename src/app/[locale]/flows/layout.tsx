@@ -201,8 +201,7 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
               <SidebarIconButton icon={Timer} tooltip="定时运行" isActive={isSchedulesPage} onClick={() => router.push('/flows/schedules')} />
               <SidebarIconButton icon={Satellite} tooltip="卫星任务" isActive={isSatelliteTasksPage} onClick={() => router.push('/flows/satellite-tasks')} />
 
-              {/* Spacer pushes chat to bottom */}
-              <div className="flex-1" />
+              <div className="w-6 border-t border-zinc-200 dark:border-zinc-700" />
 
               {/* Group: Communication */}
               <SidebarIconButton icon={MessageSquare} tooltip="P2P 聊天" isActive={isChatPage} onClick={() => router.push('/flows/chat')} />
