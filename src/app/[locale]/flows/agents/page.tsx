@@ -225,6 +225,16 @@ export default function AgentsPage() {
 
   useEffect(() => { fetchAllSessions(); }, [fetchAllSessions]);
 
+  // ── Clear opened session panels when project changes ──
+  const prevProjectKeyRef = useRef(effectiveProjectKey);
+  useEffect(() => {
+    if (prevProjectKeyRef.current !== effectiveProjectKey) {
+      prevProjectKeyRef.current = effectiveProjectKey;
+      setOpenedSessions([]);
+      setActivePanel(null);
+    }
+  }, [effectiveProjectKey]);
+
   // ── Clock for running-session elapsed display ──
   const [listClockNow, setListClockNow] = useState(() => Date.now());
   useEffect(() => {
