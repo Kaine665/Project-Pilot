@@ -163,7 +163,7 @@ export function NotificationPreferences() {
           <Button
             onClick={handleTestNotification}
             disabled={isSaving || testInProgress || !(settings.enabled ?? true)}
-            variant="secondary"
+            variant="outline"
             size="sm"
             className="w-full"
           >

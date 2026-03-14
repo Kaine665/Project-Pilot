@@ -63,17 +63,19 @@ ipcMain.handle(
     }
   ) => {
     try {
-      const notification = new Notification({
+      const notificationOptions: any = {
         title: options.title,
         body: options.body,
         icon: options.icon,
         // Phase 3: 持久化 - 使通知在系统通知中心中保持可见
         // 用户需要手动关闭，而不是自动消失
         requireInteraction: true,
-      });
+      };
+
+      const notification = new Notification(notificationOptions);
 
       // Phase 3: 点击处理 - 点击通知时聚焦应用并导航到会话
-      notification.onclick = () => {
+      (notification as any).onclick = () => {
         // 聚焦主窗口
         if (mainWindow) {
           if (mainWindow.isMinimized()) mainWindow.restore();
@@ -89,7 +91,7 @@ ipcMain.handle(
       };
 
       // Phase 3: 关闭处理 - 跟踪通知关闭状态（用于分析）
-      notification.onclose = () => {
+      (notification as any).onclose = () => {
         console.debug(`[Notification] 用户关闭通知: ${options.title}`);
       };
 
