@@ -7,8 +7,8 @@
 
 import { getSettingsPath, readJsonFile, writeJsonFile } from '@/lib/file-store';
 import { getProviderPreset } from '@/lib/provider-registry';
-import type { AgentCapabilities, AppSettings, ClaudeSettings, CustomProviderConfig, ProviderId } from '@/types';
-import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_APP_SETTINGS } from '@/types';
+import type { AgentCapabilities, AppSettings, ClaudeSettings, CustomProviderConfig, ProviderId, NotificationSettings } from '@/types';
+import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_APP_SETTINGS, DEFAULT_NOTIFICATION_SETTINGS } from '@/types';
 
 const CACHE_TTL_MS = 30_000;
 
@@ -377,4 +377,30 @@ export async function buildSdkQueryOptions(opts: {
   };
 
   return sdkOpts;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 通知和音频设置管理
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * 获取通知设置
+ */
+export async function getNotificationSettings(): Promise<NotificationSettings> {
+  const settings = await getSettings();
+  return settings.notifications ?? DEFAULT_NOTIFICATION_SETTINGS;
+}
+
+/**
+ * 更新通知设置
+ */
+export async function updateNotificationSettings(
+  updates: Partial<NotificationSettings>,
+): Promise<void> {
+  const settings = await getSettings();
+  settings.notifications = {
+    ...settings.notifications,
+    ...updates,
+  };
+  await saveSettings(settings);
 }

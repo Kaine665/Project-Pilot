@@ -7,3 +7,12 @@ contextBridge.exposeInMainWorld('electron', {
   openFolderDialog: () => ipcRenderer.invoke('open-folder-dialog'),
   openFile: (path: string) => ipcRenderer.invoke('open-file', path),
 });
+
+contextBridge.exposeInMainWorld('electronAPI', {
+  showNotification: (options: {
+    title: string;
+    body: string;
+    icon?: string;
+    tag?: string;
+  }) => ipcRenderer.invoke('show-notification', options),
+});

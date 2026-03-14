@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Menu, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, Menu, ipcMain, shell, Notification } from 'electron';
 import { ChildProcess } from 'child_process';
 import path from 'path';
 import { findAvailablePort } from './port-finder';
@@ -48,6 +48,33 @@ ipcMain.handle('open-file', async (_event, filePath: string) => {
     return { error: (e as Error).message };
   }
 });
+
+// ── IPC: 显示系统通知 ──
+ipcMain.handle(
+  'show-notification',
+  async (
+    _event,
+    options: {
+      title: string;
+      body: string;
+      icon?: string;
+      tag?: string;
+    }
+  ) => {
+    try {
+      const notification = new Notification({
+        title: options.title,
+        body: options.body,
+        icon: options.icon,
+      });
+      notification.show();
+      return true;
+    } catch (error) {
+      console.error('Notification error:', error);
+      return false;
+    }
+  }
+);
 
 // ── 创建主窗�?────────────────────────────────────────
 function createMainWindow() {
