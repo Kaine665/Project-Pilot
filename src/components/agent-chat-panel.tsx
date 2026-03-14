@@ -10,6 +10,7 @@ import { ChatBubble } from '@/components/chat-bubble';
 import { ChatInput } from '@/components/chat-input';
 import { ChatNotificationBanners } from '@/components/chat-notification-banners';
 import { useNotificationManager } from '@/hooks/use-notification-manager';
+import { useModelConfig } from '@/hooks/use-model-config';
 import { SaveKnowledgeDialog } from '@/components/save-knowledge-dialog';
 import { SessionDropdown } from '@/components/session-dropdown';
 import { GuestAgentOverlay } from '@/components/guest-agent-overlay';
@@ -20,7 +21,7 @@ import { FilePreviewDialog } from '@/components/file-preview-dialog';
 import { FolderExplorerPanel } from '@/components/folder-explorer-panel';
 import type { SessionNavLink } from '@/components/agent-session-utils';
 import { buildSessionUrl } from '@/components/agent-session-utils';
-import { PROVIDER_REGISTRY, getProviderPreset, getModelContextWindow } from '@/lib/provider-registry';
+import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import { imageAttachmentFromDataUrl } from '@/lib/image-assets';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
 import type { PendingUserQueueItem, PendingUserQueueState, SessionConfig } from '@/types/agent-chat';
@@ -320,13 +321,13 @@ export function AgentChatPanel({
   const { id: sessionId, title: sessionTitle, list: sessionList, config: sessionConfig, parentSession, childSessions, showChildList } = session;
   const [sessionClockNow, setSessionClockNow] = useState(() => Date.now());
 
-  // Provider / model routing
-  const [chatProvider, setChatProvider] = useState<ProviderId>('anthropic');
-  const [chatModel, setChatModel] = useState('claude-sonnet-4-5-20250929');
-  const [chatModelOptions, setChatModelOptions] = useState<ModelSelectOption[]>([
-    { value: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5' },
-  ]);
-  const [chatEffort, setChatEffort] = useState<OpenAIReasoningEffort>('xhigh');
+  // Provider / model routing (extracted to useModelConfig hook)
+  const modelConfig = useModelConfig(agent, projectKey, cachedSettings);
+  const { provider: chatProvider, model: chatModel, options: chatModelOptions, effort: chatEffort, contextWindow, promptEstimate } = modelConfig;
+  const setChatProvider = modelConfig.setProvider;
+  const setChatModel = modelConfig.setModel;
+  const setChatModelOptions = modelConfig.setOptions;
+  const setChatEffort = modelConfig.setEffort;
 
   // Guest Agent (observer)
   const [guestAgent, setGuestAgent] = useState<Agent | null>(null);
@@ -356,9 +357,9 @@ export function AgentChatPanel({
   // File preview
   const [previewFilePath, setPreviewFilePath] = useState<string | null>(null);
 
-  // Token usage tracking (tokenInputs + tokenOutputs are in chatReducer)
-  const [promptEstimate, setPromptEstimate] = useState(0);
-  const [contextWindow, setContextWindow] = useState(200000);
+  // SSE-reported contextWindow override (takes precedence over model-based value from hook)
+  const [sseContextWindow, setSseContextWindow] = useState<number | null>(null);
+  const effectiveContextWindow = sseContextWindow ?? contextWindow;
 
   // 父子会话导航 (parentSession, childSessions, showChildList are in sessionReducer)
 
@@ -377,9 +378,7 @@ export function AgentChatPanel({
   const messagesRef = useRef<ChatMessage[]>([]);
   const pendingAnswerRef = useRef<{ answer: string; targetSessionId: string } | null>(null);
   const pendingUserMessagesRef = useRef<PendingUserQueueItem[]>([]);
-  // OpenAI 模型列表缓存（5 分钟 TTL，避免每次切换都发请求）
-  const openaiModelsCacheRef = useRef<{ options: { value: string; label: string }[]; cachedAt: number } | null>(null);
-  const OPENAI_MODELS_CACHE_TTL = 5 * 60 * 1000;
+  // OpenAI model cache is now inside useModelConfig hook
   const [pendingUserQueueCount, setPendingUserQueueCount] = useState(0);
   const [pendingUserMessages, setPendingUserMessages] = useState<PendingUserQueueItem[]>([]);
   const [queueExpanded, setQueueExpanded] = useState(true);
@@ -514,162 +513,7 @@ export function AgentChatPanel({
     [],
   );
 
-  // Load provider/model from global settings (skip if parent provided cached values)
-  useEffect(() => {
-    if (cachedSettings) {
-      setChatProvider(cachedSettings.provider);
-      setChatModel(cachedSettings.model);
-      setChatModelOptions(cachedSettings.modelOptions);
-      setChatEffort(cachedSettings.effort);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch('/api/settings', { cache: 'no-store' });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (cancelled) return;
-        const claude = data?.claude ?? {};
-        const loadedProvider = (claude.provider as ProviderId) || 'anthropic';
-        const providerModelsMap = (claude.providerModels && typeof claude.providerModels === 'object')
-          ? claude.providerModels as Partial<Record<ProviderId, string>>
-          : {};
-        const providerModelLib = (claude.providerModelLibrary && typeof claude.providerModelLibrary === 'object')
-          ? claude.providerModelLibrary as Partial<Record<ProviderId, string[]>>
-          : {};
-        // Build model options for loaded provider
-        const preset = getProviderPreset(loadedProvider);
-        const optionMap = new Map<string, string>();
-        for (const m of preset.models) optionMap.set(m.id, m.label || m.id);
-        const libModels = Array.isArray(providerModelLib[loadedProvider]) ? providerModelLib[loadedProvider] : [];
-        for (const raw of libModels) {
-          const id = typeof raw === 'string' ? raw.trim() : '';
-          if (id && !optionMap.has(id)) optionMap.set(id, id);
-        }
-        const fallbackModel = (providerModelsMap[loadedProvider] || claude.model || '').trim();
-        if (fallbackModel && !optionMap.has(fallbackModel)) optionMap.set(fallbackModel, fallbackModel);
-        const options = Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
-        const selected = options.some((o) => o.value === fallbackModel) ? fallbackModel : (options[0]?.value || '');
-        // Apply agent default model (overrides global settings, can be overridden by session config)
-        const effectiveProvider = agent.defaultProvider ?? loadedProvider;
-        if (agent.defaultProvider) {
-          const agentPreset = getProviderPreset(agent.defaultProvider);
-          const agentOptionMap = new Map<string, string>();
-          for (const m of agentPreset.models) agentOptionMap.set(m.id, m.label || m.id);
-          const agentDefaultModel = agent.defaultModel ?? '';
-          if (agentDefaultModel && !agentOptionMap.has(agentDefaultModel)) agentOptionMap.set(agentDefaultModel, agentDefaultModel);
-          const agentOptions = Array.from(agentOptionMap.entries()).map(([value, label]) => ({ value, label }));
-          const agentSelected = agentOptions.some(o => o.value === agentDefaultModel)
-            ? agentDefaultModel
-            : agentOptions[0]?.value || '';
-          setChatProvider(effectiveProvider);
-          setChatModelOptions(agentOptions.length > 0 ? agentOptions : options);
-          setChatModel(agentSelected || selected);
-        } else {
-          setChatProvider(loadedProvider);
-          setChatModelOptions(options);
-          setChatModel(selected);
-        }
-        // Load OpenAI reasoning effort
-        const VALID_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
-        const savedEffort = claude.openaiReasoningEffort;
-        if (typeof savedEffort === 'string' && VALID_EFFORTS.includes(savedEffort as OpenAIReasoningEffort)) {
-          setChatEffort(savedEffort as OpenAIReasoningEffort);
-        }
-      } catch {
-        // ignore
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Update model options when provider changes (+ fetch OpenAI catalog)
-  useEffect(() => {
-    let cancelled = false;
-    const preset = getProviderPreset(chatProvider);
-    const staticOptions = preset.models.map((m) => ({ value: m.id, label: m.label || m.id }));
-
-    if (chatProvider === 'openai') {
-      // 立即显示静态选项，不等待网络请求
-      setChatModelOptions(staticOptions);
-      if (!staticOptions.some((o) => o.value === chatModel)) {
-        setChatModel(staticOptions[0]?.value || '');
-      }
-
-      // 检查缓存（5 分钟 TTL），命中则直接用，不发请求
-      const cache = openaiModelsCacheRef.current;
-      if (cache && Date.now() - cache.cachedAt < OPENAI_MODELS_CACHE_TTL) {
-        setChatModelOptions(cache.options);
-        return () => { cancelled = true; };
-      }
-
-      // 后台 fetch 动态模型目录，merge 到静态选项里
-      (async () => {
-        try {
-          const res = await fetch('/api/settings/openai-models', { cache: 'no-store' });
-          const data = await res.json();
-          if (cancelled) return;
-          if (res.ok && data?.ok && Array.isArray(data.models)) {
-            const merged = [...staticOptions];
-            const knownIds = new Set(merged.map((o) => o.value));
-            for (const r of data.models) {
-              if (r && typeof r === 'object' && typeof r.id === 'string') {
-                const id = r.id.trim();
-                if (id && !knownIds.has(id)) {
-                  merged.push({ value: id, label: typeof r.displayName === 'string' ? r.displayName : id });
-                  knownIds.add(id);
-                }
-              }
-            }
-            if (!cancelled) {
-              openaiModelsCacheRef.current = { options: merged, cachedAt: Date.now() };
-              setChatModelOptions(merged);
-            }
-          }
-        } catch {
-          // ignore - fallback to static models already shown
-        }
-      })();
-    } else {
-      if (staticOptions.length > 0) {
-        setChatModelOptions(staticOptions);
-        if (!staticOptions.some((o) => o.value === chatModel)) {
-          setChatModel(staticOptions[0].value);
-        }
-      }
-    }
-    return () => { cancelled = true; };
-  }, [chatProvider]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 模型切换时立即更新 contextWindow（纯本地计算，无需网络请求）
-  useEffect(() => {
-    setContextWindow(getModelContextWindow(chatModel || 'claude-sonnet-4-6'));
-  }, [chatModel]);
-
-  // Fetch prompt info (system prompt size)
-  // 注意：estimatedTokens 只依赖 agent/project，与 model 无关；contextWindow 已在上方本地计算。
-  // 因此切换 model 时无需重新 fetch，只在 agent 或 project 变化时才请求。
-  useEffect(() => {
-    let cancelled = false;
-    const params = new URLSearchParams({ agentId: agent.id });
-    if (projectKey) params.set('projectKey', projectKey);
-
-    (async () => {
-      try {
-        const res = await fetch(`/api/agent-chat/prompt-info?${params}`, { cache: 'no-store' });
-        if (cancelled || !res.ok) return;
-        const data = await res.json();
-        if (!cancelled) {
-          setPromptEstimate(data.estimatedTokens ?? 0);
-        }
-      } catch {
-        // ignore - fallback to local estimate
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [agent.id, projectKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Provider/model init and effects are now handled by useModelConfig hook
 
   // Fetch session list
   const fetchSessionList = useCallback(async (agentId: string, pk?: string | null) => {
@@ -819,18 +663,7 @@ export function AgentChatPanel({
       replacePendingUserQueue(loadedQueue);
       setQueueExpanded(loadedQueueState?.expanded !== false);
       // Session model config has highest priority (overrides agent default and global settings)
-      if (loadedConfig.provider) {
-        setChatProvider(loadedConfig.provider);
-        const sessionPreset = getProviderPreset(loadedConfig.provider);
-        const sessionOptionMap = new Map<string, string>();
-        for (const m of sessionPreset.models) sessionOptionMap.set(m.id, m.label || m.id);
-        if (loadedConfig.model && !sessionOptionMap.has(loadedConfig.model)) {
-          sessionOptionMap.set(loadedConfig.model, loadedConfig.model);
-        }
-        const sessionOptions = Array.from(sessionOptionMap.entries()).map(([value, label]) => ({ value, label }));
-        if (sessionOptions.length > 0) setChatModelOptions(sessionOptions);
-        if (loadedConfig.model) setChatModel(loadedConfig.model);
-      }
+      modelConfig.applySessionConfig(loadedConfig);
 
       // 加载父子会话导航信息（fire-and-forget，不阻塞主流程）
       loadSessionNavLinks(sid, data.parentSessionId);
@@ -1089,7 +922,7 @@ export function AgentChatPanel({
 
             case 'token_usage':
               chatDispatch({ type: 'STREAM_TOKENS', input: event.inputTokens, output: event.outputTokens });
-              if (event.contextWindow && event.contextWindow > 0) setContextWindow(event.contextWindow);
+              if (event.contextWindow && event.contextWindow > 0) setSseContextWindow(event.contextWindow);
               break;
 
             case 'error':
@@ -1570,16 +1403,7 @@ export function AgentChatPanel({
   const handleSaveConfig = useCallback(async (config: SessionConfig) => {
     sessionDispatch({ type: 'SET_CONFIG', config });
     // Sync model/provider to chat panel state if session config has them
-    if (config.provider) {
-      setChatProvider(config.provider);
-      const cfgPreset = getProviderPreset(config.provider);
-      const cfgOptionMap = new Map<string, string>();
-      for (const m of cfgPreset.models) cfgOptionMap.set(m.id, m.label || m.id);
-      if (config.model && !cfgOptionMap.has(config.model)) cfgOptionMap.set(config.model, config.model);
-      const cfgOptions = Array.from(cfgOptionMap.entries()).map(([value, label]) => ({ value, label }));
-      if (cfgOptions.length > 0) setChatModelOptions(cfgOptions);
-      if (config.model) setChatModel(config.model);
-    }
+    modelConfig.applySessionConfig(config);
     // Persist to backend if session exists on disk
     if (sessionId) {
       try {
@@ -1612,17 +1436,7 @@ export function AgentChatPanel({
     fullTextRef.current = '';
     toolCallsRef.current = [];
     // Reset model to agent default (session config cleared, fall back to agent/global defaults)
-    if (agent.defaultProvider) {
-      setChatProvider(agent.defaultProvider);
-      const agentPreset = getProviderPreset(agent.defaultProvider);
-      const agentOptions = agentPreset.models.map(m => ({ value: m.id, label: m.label || m.id }));
-      if (agentOptions.length > 0) setChatModelOptions(agentOptions);
-      if (agent.defaultModel) {
-        setChatModel(agent.defaultModel);
-      } else if (agentOptions.length > 0) {
-        setChatModel(agentOptions[0].value);
-      }
-    }
+    modelConfig.resetToAgentDefaults(agent);
   }, [isStreaming, hasProject, t, setSessionIdSync, agent, replacePendingUserQueue]);
 
   // Switch to an existing session
@@ -1999,7 +1813,7 @@ export function AgentChatPanel({
             onSelectGuest={handleSelectGuest}
             draftKey={sessionId ?? undefined}
             enableSlashCommands
-            tokenInfo={{ promptEstimate, inputTokens: tokenInputs, outputTokens: tokenOutputs, contextWindow }}
+            tokenInfo={{ promptEstimate, inputTokens: tokenInputs, outputTokens: tokenOutputs, contextWindow: effectiveContextWindow }}
           />
         </div>
 
@@ -2335,7 +2149,7 @@ export function AgentChatPanel({
           onSelectGuest={handleSelectGuest}
           draftKey={sessionId ?? undefined}
           enableSlashCommands
-          tokenInfo={{ promptEstimate, inputTokens: tokenInputs, outputTokens: tokenOutputs, contextWindow }}
+          tokenInfo={{ promptEstimate, inputTokens: tokenInputs, outputTokens: tokenOutputs, contextWindow: effectiveContextWindow }}
         />
       </div>
 
