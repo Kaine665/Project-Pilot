@@ -14,5 +14,7 @@ satelliteRegistry.register(healthGuardTask);
 // Re-exports
 export { satelliteRegistry } from './registry';
 export { runSatelliteTasks } from './scheduler';
-export type { SatelliteContext, SatelliteTask } from './types';
-export { getSatelliteTaskConfig, setTaskEnabled } from './config';
+export type { SatelliteContext, SatelliteTask, TaskConfigSchema, ConfigFieldSchema } from './types';
+export { getSatelliteTaskConfig, setTaskEnabled, getTaskParams, setTaskParams } from './config';
+export { appendRun, getRunsByTask, clearRunsByTask, getRunStats } from './run-store';
+export type { SatelliteTaskRun } from './run-store';

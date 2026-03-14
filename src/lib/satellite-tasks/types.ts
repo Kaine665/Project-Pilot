@@ -42,6 +42,22 @@ export interface SatelliteContext {
   resumeSession: (message: string) => void;
 }
 
+// ── Config schema (JSON Schema subset for dynamic forms) ──
+
+export interface ConfigFieldSchema {
+  type: 'number' | 'string' | 'boolean' | 'array';
+  title: string;
+  description?: string;
+  default?: unknown;
+  minimum?: number;
+  maximum?: number;
+  /** For array type: item type */
+  items?: { type: 'number' | 'string' };
+}
+
+/** Task config schema: field name → field definition */
+export type TaskConfigSchema = Record<string, ConfigFieldSchema>;
+
 // ── Satellite task interface ──
 
 export interface SatelliteTask<TResult = unknown> {
@@ -72,4 +88,11 @@ export interface SatelliteTask<TResult = unknown> {
    * For non-AI tasks: called with undefined (task handles its own logic).
    */
   execute(result: TResult, ctx: SatelliteContext): Promise<void>;
+
+  /**
+   * Optional: return a JSON-Schema-like definition of configurable parameters.
+   * UI will render a dynamic form from this schema.
+   * If not implemented, the task has no configurable params.
+   */
+  getConfigSchema?(): TaskConfigSchema;
 }

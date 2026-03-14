@@ -1,8 +1,8 @@
 /**
  * Lightweight AI call utility for satellite tasks.
  *
- * Uses the existing session-health-guard's CLI-based approach
- * (claude -p with stream-json output) for a one-shot AI call.
+ * Uses Claude CLI (claude -p with stream-json output)
+ * for a one-shot AI call.
  * This avoids the heavier SDK query() path and keeps satellite
  * calls cheap and fast.
  */

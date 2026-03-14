@@ -5,9 +5,14 @@
  * and auto-resumes the session with an error description.
  *
  * requiresAI = true — uses callLightweightAI() for the health check judgment.
+ *
+ * Configurable: maxRetries — max number of auto-resume attempts (default 1).
  */
 
-import type { SatelliteTask, SatelliteContext } from '../types';
+import type { SatelliteTask, SatelliteContext, TaskConfigSchema } from '../types';
+import { getTaskParams } from '../config';
+
+const DEFAULT_MAX_RETRIES = 1;
 
 interface HealthCheckResult {
   abnormal: boolean;
@@ -20,11 +25,26 @@ export const healthGuardTask: SatelliteTask<HealthCheckResult> = {
   priority: 20,
   requiresAI: true,
 
+  getConfigSchema(): TaskConfigSchema {
+    return {
+      maxRetries: {
+        type: 'number',
+        title: '最大重试次数',
+        description: '检测到异常后最多自动恢复几次',
+        default: DEFAULT_MAX_RETRIES,
+        minimum: 0,
+        maximum: 5,
+      },
+    };
+  },
+
   shouldRun(ctx: SatelliteContext): boolean {
     // Only check failed/stopped sessions
     if (ctx.runStatus !== 'failed' && ctx.runStatus !== 'stopped') return false;
-    // Respect retry limit (max 1)
-    if (ctx.guardRetryCount >= 1) return false;
+    // User-initiated stops are intentional, not abnormal
+    if (ctx.userStopped) return false;
+    // Respect retry limit — use cached value (sync)
+    if (ctx.guardRetryCount >= _maxRetriesCache) return false;
     // Need tail text to judge
     const tailText = ctx.assistantText.slice(-100).trim();
     if (!tailText) return false;
@@ -81,3 +101,24 @@ ${tailText}
     ctx.resumeSession(guardMsg);
   },
 };
+
+// ── Max retries cache ──
+// shouldRun() is sync but config is async. Refresh periodically.
+
+let _maxRetriesCache = DEFAULT_MAX_RETRIES;
+let _lastCacheRefresh = 0;
+const CACHE_TTL_MS = 30_000;
+
+/** Refresh maxRetries from config. Call before shouldRun in scheduler. */
+export async function refreshHealthGuardCache(): Promise<void> {
+  const now = Date.now();
+  if (now - _lastCacheRefresh < CACHE_TTL_MS) return;
+  _lastCacheRefresh = now;
+  try {
+    const params = await getTaskParams('health-guard');
+    const val = typeof params.maxRetries === 'number' ? params.maxRetries : DEFAULT_MAX_RETRIES;
+    _maxRetriesCache = Math.max(0, Math.min(5, val));
+  } catch {
+    // Keep existing cache
+  }
+}
