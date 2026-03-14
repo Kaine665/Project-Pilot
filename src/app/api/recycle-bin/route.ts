@@ -11,7 +11,7 @@ import {
   ensureFlowsMigrated,
 } from '@/lib/file-store';
 import { deletePromptFile } from '@/lib/agent-prompt-store';
-import { invalidateAgentsCache } from '@/app/api/agents/route';
+import { invalidateAgentsCache } from '@/lib/agents-store';
 import type { AgentsData, DimensionsData, ProjectIndex } from '@/types';
 
 type RecycleBinCategory = 'project' | 'agent' | 'dimension';

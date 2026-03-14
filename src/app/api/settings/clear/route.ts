@@ -14,7 +14,7 @@ import {
 } from '@/lib/file-store';
 import { deleteAllMessageFiles } from '@/lib/chat-managers/agent-chat-session-store';
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
-import { invalidateAgentsCache } from '@/app/api/agents/route';
+import { invalidateAgentsCache } from '@/lib/agents-store';
 import type { AgentsData } from '@/types';
 import type { AgentChatSessionsData } from '@/types/agent-chat';
 

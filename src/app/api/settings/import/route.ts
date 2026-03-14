@@ -14,7 +14,7 @@ import {
 import { importSessionsWithMessages } from '@/lib/chat-managers/agent-chat-session-store';
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
 import { writePromptFile } from '@/lib/agent-prompt-store';
-import { invalidateAgentsCache } from '@/app/api/agents/route';
+import { invalidateAgentsCache } from '@/lib/agents-store';
 import type { Agent, AgentsData } from '@/types';
 import type { AgentChatSession } from '@/types/agent-chat';
 
