@@ -10,32 +10,15 @@ import {
   createContext,
   useContext,
 } from 'react';
-import {
-  Plus,
-  GripVertical,
-  Bot,
-} from 'lucide-react';
+import { Bot } from 'lucide-react';
 import { ItemActionsPanel, ItemAgentPickerPanel } from './miller-item-panels';
 import * as Dialog from '@radix-ui/react-dialog';
 import { TaskContextDialog } from './task-context-dialog';
 import { useRouter } from '@/i18n/routing';
 import { useTranslations } from 'next-intl';
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-  useSortable,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import dynamic from 'next/dynamic';
+
+const DndSortableList = dynamic(() => import('./miller-columns-dnd'), { ssr: false });
 import { useFlowData, filterTreeItems } from './flow-editor';
 import {
   nextStatus,
@@ -396,42 +379,6 @@ const MillerColumnItem = memo(function MillerColumnItem({
   );
 });
 
-// --- SortableMillerColumnItem ---
-
-const SortableMillerColumnItem = memo(function SortableMillerColumnItem({
-  item,
-  depth,
-  sectionItems,
-}: {
-  item: TreeItem;
-  depth: number;
-  sectionItems: TreeItem[];
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
-
-  const style = useMemo(() => ({
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    position: 'relative' as const,
-    zIndex: isDragging ? 10 : undefined,
-  }), [transform, transition, isDragging]);
-
-  return (
-    <div ref={setNodeRef} style={style} {...attributes} className="flex items-stretch">
-      <button
-        className="flex items-center px-0.5 cursor-grab active:cursor-grabbing text-zinc-300 hover:text-zinc-500 opacity-0 group-hover/col:opacity-100 transition-opacity shrink-0"
-        {...listeners}
-      >
-        <GripVertical className="w-3 h-3" />
-      </button>
-      <div className="flex-1 min-w-0">
-        <MillerColumnItem item={item} depth={depth} sectionItems={sectionItems} />
-      </div>
-    </div>
-  );
-});
-
 // --- MillerColumn ---
 
 const MillerColumn = memo(function MillerColumn({
@@ -457,24 +404,15 @@ const MillerColumn = memo(function MillerColumn({
   );
 
   const sortableIds = useMemo(() => visibleItems.map(i => i.id), [visibleItems]);
+  const itemMap = useMemo(() => new Map(visibleItems.map(i => [i.id, i])), [visibleItems]);
 
   const isAddingHere = parentItemId !== null && addingToItemId === parentItemId;
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
-
-  const handleDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event;
-    if (over && active.id !== over.id && parentItemId && ctx) {
-      const oldIndex = visibleItems.findIndex(i => i.id === active.id);
-      const newIndex = visibleItems.findIndex(i => i.id === over.id);
-      if (oldIndex !== -1 && newIndex !== -1) {
-        actions.reorderItems(ctx.sectionId, parentItemId, oldIndex, newIndex);
-      }
+  const handleReorder = useCallback((oldIndex: number, newIndex: number) => {
+    if (parentItemId && ctx) {
+      actions.reorderItems(ctx.sectionId, parentItemId, oldIndex, newIndex);
     }
-  }, [visibleItems, parentItemId, ctx, actions]);
+  }, [parentItemId, ctx, actions]);
 
   // Auto-scroll this column into view when it appears
   useEffect(() => {
@@ -490,18 +428,12 @@ const MillerColumn = memo(function MillerColumn({
     >
       {/* Items */}
       <div className="flex-1 overflow-y-auto">
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
-            {visibleItems.map(item => (
-              <SortableMillerColumnItem
-                key={item.id}
-                item={item}
-                depth={depth}
-                sectionItems={sectionItems}
-              />
-            ))}
-          </SortableContext>
-        </DndContext>
+        <DndSortableList itemIds={sortableIds} onReorder={handleReorder}>
+          {(id: string) => {
+            const item = itemMap.get(id);
+            return item ? <MillerColumnItem item={item} depth={depth} sectionItems={sectionItems} /> : null;
+          }}
+        </DndSortableList>
       </div>
 
       {/* Add item input at column bottom */}
@@ -534,42 +466,30 @@ function RootColumn({
   const { showDeferred, actions } = useFlowData();
   const ctx = useContext(ItemActionsContext);
 
-  const visibleItems = showDeferred
-    ? items
-    : items.filter(i => !i.deferred);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  const visibleItems = useMemo(
+    () => showDeferred ? items : items.filter(i => !i.deferred),
+    [items, showDeferred],
   );
 
-  const handleDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event;
-    if (over && active.id !== over.id && ctx) {
-      const oldIndex = visibleItems.findIndex(i => i.id === active.id);
-      const newIndex = visibleItems.findIndex(i => i.id === over.id);
-      if (oldIndex !== -1 && newIndex !== -1) {
-        actions.reorderItems(ctx.sectionId, null, oldIndex, newIndex);
-      }
+  const sortableIds = useMemo(() => visibleItems.map(i => i.id), [visibleItems]);
+  const itemMap = useMemo(() => new Map(visibleItems.map(i => [i.id, i])), [visibleItems]);
+
+  const handleReorder = useCallback((oldIndex: number, newIndex: number) => {
+    if (ctx) {
+      actions.reorderItems(ctx.sectionId, null, oldIndex, newIndex);
     }
-  }, [visibleItems, ctx, actions]);
+  }, [ctx, actions]);
 
   return (
     <div className="group/col flex flex-col min-w-[240px] max-w-[320px] w-[280px] shrink-0 border-r border-border/50">
       {/* Items */}
       <div className="flex-1 overflow-y-auto">
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={visibleItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
-            {visibleItems.map(item => (
-              <SortableMillerColumnItem
-                key={item.id}
-                item={item}
-                depth={0}
-                sectionItems={sectionItems}
-              />
-            ))}
-          </SortableContext>
-        </DndContext>
+        <DndSortableList itemIds={sortableIds} onReorder={handleReorder}>
+          {(id: string) => {
+            const item = itemMap.get(id);
+            return item ? <MillerColumnItem item={item} depth={0} sectionItems={sectionItems} /> : null;
+          }}
+        </DndSortableList>
       </div>
 
       {/* Add root item */}
