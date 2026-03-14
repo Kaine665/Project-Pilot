@@ -21,6 +21,7 @@ import { FolderExplorerPanel } from '@/components/folder-explorer-panel';
 import type { SessionNavLink } from '@/components/agent-session-utils';
 import { buildSessionUrl } from '@/components/agent-session-utils';
 import { PROVIDER_REGISTRY, getProviderPreset, getModelContextWindow } from '@/lib/provider-registry';
+import { imageAttachmentFromDataUrl } from '@/lib/image-assets';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
 import type { PendingUserQueueItem, PendingUserQueueState, SessionConfig } from '@/types/agent-chat';
 import type { ChatMessage, ChatToolCall, ChatSSEEvent, ContentBlock } from '@/types';
@@ -1107,11 +1108,7 @@ export function AgentChatPanel({
     initTokenRef.current += 1;
 
     const imagesToSend = images ?? [];
-    const imageAttachments = imagesToSend.map(url => {
-      const [header, data] = url.split(',');
-      const mediaType = header.match(/data:([^;]+)/)?.[1] ?? 'image/png';
-      return { mediaType, data };
-    });
+    const imageAttachments = imagesToSend.map(imageAttachmentFromDataUrl);
 
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
