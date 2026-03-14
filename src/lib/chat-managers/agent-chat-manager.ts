@@ -11,16 +11,12 @@
  * - StreamParser → SdkEventAdapter
  */
 
-import { writeFile, unlink } from 'fs/promises';
-import { tmpdir } from 'os';
-import { join } from 'path';
-import { randomBytes } from 'crypto';
 import { getAppWorkingDir } from '@/lib/app-paths';
 import { getPromptFilePath, getContextIndexPath, readJsonFile } from '@/lib/file-store';
 import type { ContextIndexData } from '@/types';
 import { resolveSystemPrompt, createRuntimePromptCopy } from '@/lib/agent-prompt-store';
 import { getSettings } from '@/lib/settings-manager';
-import { createAgentRunner, type IAgentRunner } from './agent-runner';
+import { createAgentRunner, type AgentRunnerInput, type IAgentRunner } from './agent-runner';
 import { detectDangerousCommand } from '@/lib/danger-detector';
 import type { ChatSSEEvent, ContentBlock, Agent, AgentCapabilities, ProviderId } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_DANGER_SETTINGS } from '@/types';
@@ -36,6 +32,15 @@ import '@/lib/satellite-tasks';  // side-effect: registers satellite tasks
 import { runSatelliteTasks } from '@/lib/satellite-tasks';
 import type { SatelliteContext } from '@/lib/satellite-tasks';
 import type { RunStatus, RunStatusInfo, SubAgentResult, SessionExecution } from './types';
+import {
+  imageAttachmentToDataUrl,
+} from '@/lib/image-assets';
+import {
+  cleanupTempImageFiles,
+  writeImageAttachmentsToTempFiles,
+} from '@/lib/image-assets.server';
+import { serializeProviderInput } from '@/lib/image-provider-serialization';
+import type { ImageAttachment, ImageMediaType } from '@/lib/image-assets';
 
 // Re-export store functions so existing callers don't break during migration
 export { generateSessionId } from './agent-chat-session-store';
@@ -54,12 +59,7 @@ import {
 
 // ── Types ──
 
-export type ImageMediaType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
-
-export interface ImageAttachment {
-  mediaType: ImageMediaType;
-  data: string; // base64
-}
+export type { ImageAttachment, ImageMediaType } from '@/lib/image-assets';
 
 export interface FlowContext {
   projectKey: string;
@@ -183,7 +183,7 @@ class AgentChatManager {
     }
 
     const messages = existing?.messages ? [...existing.messages] : [];
-    const dataUrls = images?.map(img => `data:${img.mediaType};base64,${img.data}`);
+    const dataUrls = images?.map(imageAttachmentToDataUrl);
     messages.push({ role: 'user', content: message, images: dataUrls?.length ? dataUrls : undefined });
 
     // History turns for prompt injection (all messages before the current user message)
@@ -245,19 +245,14 @@ class AgentChatManager {
       promptContent = await buildAgentChatPrompt(agent, message, persistedConfig, sessionId, sessionProjectKey, historyTurns);
     }
 
-    // Write images to temp files
-    const tempPaths: string[] = [];
-    const extMap: Record<string, string> = {
-      'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp',
-    };
-    if (images && images.length > 0) {
-      for (const img of images) {
-        const ext = extMap[img.mediaType] ?? 'png';
-        const tmpPath = join(tmpdir(), `agent-img-${randomBytes(8).toString('hex')}.${ext}`);
-        await writeFile(tmpPath, Buffer.from(img.data, 'base64'));
-        tempPaths.push(tmpPath);
-      }
-    }
+    const tempPaths = await writeImageAttachmentsToTempFiles(images);
+    const runnerInput = serializeProviderInput({
+      provider: resolvedProvider ?? 'anthropic',
+      prompt: promptContent,
+      sessionId,
+      images,
+      imagePaths: tempPaths,
+    });
 
     // Merge capabilities
     const effectiveCaps = mergeCapabilities(agent.capabilities, persistedConfig?.capabilities);
@@ -325,7 +320,7 @@ class AgentChatManager {
       });
       run.runner = runner;
 
-      this.consumeRunnerStream(run, runner, promptContent).catch(err => {
+      this.consumeRunnerStream(run, runner, runnerInput).catch(err => {
         console.error(`${LOG_PREFIX} Runner stream error for ${sessionId}:`, err);
       });
     } catch (err) {
@@ -558,10 +553,10 @@ class AgentChatManager {
   private async consumeRunnerStream(
     run: AgentChatRun,
     runner: IAgentRunner,
-    prompt: string,
+    input: AgentRunnerInput,
   ): Promise<void> {
     try {
-      for await (const event of runner.stream(prompt)) {
+      for await (const event of runner.stream(input)) {
         if (run.status === 'stopped') break;
         this.trackAndEmit(run, event);
       }
@@ -591,11 +586,7 @@ class AgentChatManager {
    */
   private async finalizeRun(run: AgentChatRun, aborted: boolean): Promise<void> {
     // Clean up temp image files
-    if (run._tempImagePaths) {
-      for (const tmpPath of run._tempImagePaths) {
-        unlink(tmpPath).catch(() => {});
-      }
-    }
+    await cleanupTempImageFiles(run._tempImagePaths);
 
     // Process all agent actions: parse tags, execute side-effects, strip tags
     if (run.assistantText) {

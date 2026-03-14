@@ -38,6 +38,7 @@ import { schedulerManager } from '@/lib/scheduler-manager';
 import type { ChatSSEEvent } from '@/types';
 import type { SessionConfig } from '@/types/agent-chat';
 import type { ProviderId } from '@/types';
+import type { ImageAttachment } from '@/lib/image-assets';
 
 // ── 配置 ─────────────────────────────────────────────────────────────────────
 
@@ -157,7 +158,7 @@ async function handleStart(
       body.agentId,
       body.message,
       body.flowContext,
-      body.images as import('@/lib/chat-managers/agent-chat-manager').ImageAttachment[] | undefined,
+      body.images as ImageAttachment[] | undefined,
       body.initialTitle,
       body.config,
       body.parentSessionId,
