@@ -118,7 +118,12 @@ async function startSession(opts: {
   });
 
   if (postResult.statusCode !== 200) {
-    throw new Error(`POST /api/agent-chat failed: HTTP ${postResult.statusCode} — ${postResult.body}`);
+    let errorMsg = postResult.body;
+    try {
+      const parsed = JSON.parse(postResult.body);
+      if (parsed.error) errorMsg = parsed.error;
+    } catch { /* use raw body */ }
+    throw new Error(`${errorMsg} (HTTP ${postResult.statusCode})`);
   }
 
   let sessionId: string;
