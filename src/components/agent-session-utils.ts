@@ -10,6 +10,8 @@ export interface AllSessionItem {
   unreadCount?: number;
   archived?: boolean;
   projectKey?: string;
+  isRunning?: boolean;
+  runningStartedAt?: string;
 }
 
 // Opened session instance: tracks a mounted AgentChatPanel

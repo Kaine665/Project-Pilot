@@ -15,6 +15,16 @@ import { useProject } from '@/components/project-context';
 import { getProviderPreset } from '@/lib/provider-registry';
 
 
+// ── Helpers ──
+
+function formatSessionElapsed(startedAt: string | undefined, nowTs: number): string {
+  if (!startedAt) return '0s';
+  const diffSeconds = Math.max(0, Math.floor((nowTs - new Date(startedAt).getTime()) / 1000));
+  if (diffSeconds < 60) return `${diffSeconds}s`;
+  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m`;
+  return `${Math.floor(diffSeconds / 3600)}h`;
+}
+
 // ── Main page ──
 
 export default function AgentsPage() {
@@ -214,6 +224,14 @@ export default function AgentsPage() {
   }, [effectiveProjectKey]);
 
   useEffect(() => { fetchAllSessions(); }, [fetchAllSessions]);
+
+  // ── Clock for running-session elapsed display ──
+  const [listClockNow, setListClockNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!allSessions.some(s => s.isRunning)) return;
+    const timer = setInterval(() => setListClockNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [allSessions]);
 
   // ── Grouped sessions for display ──
   const groupedSessions = useMemo(() => groupSessionsByDay(allSessions), [allSessions]);
@@ -637,7 +655,11 @@ export default function AgentsPage() {
                               {s.agentName}
                             </div>
                           </div>
-                          {!isActive && !!s.unreadCount && s.unreadCount > 0 && !s.archived && (
+                          {s.isRunning ? (
+                            <span className="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-blue-700 dark:bg-blue-950/70 dark:text-blue-300">
+                              {formatSessionElapsed(s.runningStartedAt, listClockNow)}
+                            </span>
+                          ) : !isActive && !!s.unreadCount && s.unreadCount > 0 && !s.archived && (
                             <span className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-zinc-900 px-1.5 text-[10px] font-bold text-white dark:bg-zinc-100 dark:text-zinc-900">
                               {s.unreadCount > 99 ? '99+' : s.unreadCount}
                             </span>
@@ -870,9 +892,16 @@ export default function AgentsPage() {
                         setAllSessions(prev => {
                           const existing = prev.find(s => s.id === newSession.id);
                           if (existing) {
-                            // 已存在 → 更新标题等字段（session_title_set 场景）
                             return prev.map(s => s.id === newSession.id
-                              ? { ...s, title: newSession.title, updatedAt: newSession.updatedAt }
+                              ? {
+                                  ...s,
+                                  title: newSession.title,
+                                  updatedAt: newSession.updatedAt,
+                                  ...(newSession.isRunning !== undefined && {
+                                    isRunning: newSession.isRunning,
+                                    runningStartedAt: newSession.runningStartedAt,
+                                  }),
+                                }
                               : s);
                           }
                           return [{
@@ -882,10 +911,15 @@ export default function AgentsPage() {
                             agentId: selectedAgent.id,
                             agentName: selectedAgent.name,
                             agentIcon: selectedAgent.icon,
+                            isRunning: newSession.isRunning,
+                            runningStartedAt: newSession.runningStartedAt,
                           }, ...prev];
                         });
                       }
-                      fetchAllSessions();
+                      // Don't fetch on every streaming tick – only fetch on real content changes
+                      if (!newSession || newSession.isRunning !== true) {
+                        fetchAllSessions();
+                      }
                     }}
                   />
                 </div>
@@ -982,7 +1016,15 @@ export default function AgentsPage() {
                             const existing = prev.find(s => s.id === newSession.id);
                             if (existing) {
                               return prev.map(s => s.id === newSession.id
-                                ? { ...s, title: newSession.title, updatedAt: newSession.updatedAt }
+                                ? {
+                                    ...s,
+                                    title: newSession.title,
+                                    updatedAt: newSession.updatedAt,
+                                    ...(newSession.isRunning !== undefined && {
+                                      isRunning: newSession.isRunning,
+                                      runningStartedAt: newSession.runningStartedAt,
+                                    }),
+                                  }
                                 : s);
                             }
                             return [{
@@ -992,6 +1034,8 @@ export default function AgentsPage() {
                               agentId: os.agentId,
                               agentName: agent.name,
                               agentIcon: agent.icon,
+                              isRunning: newSession.isRunning,
+                              runningStartedAt: newSession.runningStartedAt,
                             }, ...prev];
                           });
                         }
@@ -1004,7 +1048,10 @@ export default function AgentsPage() {
                             body: JSON.stringify({ action: 'markAsRead' }),
                           }).catch(() => {});
                         }
-                        fetchAllSessions();
+                        // Don't fetch on every streaming tick – only fetch on real content changes
+                        if (!newSession || newSession.isRunning !== true) {
+                          fetchAllSessions();
+                        }
                       }}
                     />
                   </div>
