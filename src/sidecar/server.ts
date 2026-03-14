@@ -41,6 +41,7 @@ import type { ChatSSEEvent } from '@/types';
 import type { SessionConfig, SessionMeta } from '@/types/agent-chat';
 import type { ProviderId } from '@/types';
 import type { ImageAttachment } from '@/lib/image-assets';
+import { HttpError } from '@/lib/http-error';
 
 // ── 配置 ─────────────────────────────────────────────────────────────────────
 
@@ -172,7 +173,8 @@ async function handleStart(
     );
     jsonResponse(res, { runId, sessionId });
   } catch (err) {
-    jsonResponse(res, { error: (err as Error).message }, 500);
+    const status = err instanceof HttpError ? err.statusCode : 500;
+    jsonResponse(res, { error: (err as Error).message }, status);
   }
 }
 
@@ -209,7 +211,8 @@ async function handleGuest(
     );
     jsonResponse(res, { runId, sessionId: guestSessionId, parentSessionId: body.parentSessionId });
   } catch (err) {
-    jsonResponse(res, { error: (err as Error).message }, 500);
+    const status = err instanceof HttpError ? err.statusCode : 500;
+    jsonResponse(res, { error: (err as Error).message }, status);
   }
 }
 

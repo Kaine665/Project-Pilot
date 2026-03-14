@@ -182,7 +182,8 @@ class AgentChatManager {
     }
 
     if (existing?.status === 'running' || existing?.status === 'finalizing') {
-      throw new Error('This session is already running');
+      const { HttpError } = await import('@/lib/http-error');
+      throw new HttpError('This session is already running', 409);
     }
 
     // Clear awaiting state when being woken up
@@ -233,8 +234,10 @@ class AgentChatManager {
       const settings = await getSettings();
       const cp = settings.claude.customProviders?.find((c) => c.id === resolvedProvider);
       if (cp?.apiProtocol === 'openai') {
-        throw new Error(
+        const { HttpError } = await import('@/lib/http-error');
+        throw new HttpError(
           'OpenAI 协议的自定义供应商暂不支持 Agent 对话。请使用 Anthropic 协议的自定义供应商或切换至内置 OpenAI。',
+          400,
         );
       }
     }
@@ -356,7 +359,8 @@ class AgentChatManager {
   ): Promise<string> {
     const hostSession = await loadSession(parentSessionId);
     if (!hostSession) {
-      throw new Error('Host session not found');
+      const { HttpError } = await import('@/lib/http-error');
+      throw new HttpError('Host session not found', 404);
     }
 
     let selectedTurns: Array<{ role: 'user' | 'assistant'; content: string }>;
@@ -376,7 +380,8 @@ class AgentChatManager {
 
     const existing = this.runs.get(guestSessionId);
     if (existing?.status === 'running') {
-      throw new Error('This guest session is already running');
+      const { HttpError } = await import('@/lib/http-error');
+      throw new HttpError('This guest session is already running', 409);
     }
 
     const isResume = !!existing?.claudeSessionId;
