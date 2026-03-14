@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -1208,5 +1208,51 @@ export function SettingsPrivacySection({
         </CardContent>
       </Card>
     </>
+  );
+}
+
+// ══════════════ Notifications ══════════════
+
+interface NotificationsSectionProps extends TranslationProps {}
+
+export function SettingsNotificationsSection({
+  t,
+}: NotificationsSectionProps) {
+  return (
+    <>
+      <Card>
+        <CardContent className="pt-4">
+          {/* 动态导入 NotificationPreferences 组件 */}
+          <div className="rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-300 mb-4">
+            💡 当 Agent 完成回复时，Windows 右下角会显示桌面通知并播放提示音。
+          </div>
+          <NotificationsEditor />
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
+// Lazy-loaded notifications component
+const NotificationPreferencesComponent = lazy(() =>
+  import('@/components/notification-preferences').then((mod) => ({
+    default: mod.NotificationPreferences,
+  }))
+);
+
+// 单独组件，延迟导入防止 SSR 问题
+function NotificationsEditor() {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) return null;
+
+  return (
+    <Suspense fallback={<div className="text-sm text-gray-500">加载中...</div>}>
+      <NotificationPreferencesComponent />
+    </Suspense>
   );
 }

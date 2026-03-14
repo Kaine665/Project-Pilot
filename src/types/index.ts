@@ -160,6 +160,25 @@ export const DEFAULT_TITLE_GENERATION: TitleGenerationSettings = {
   chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }],
 };
 
+/** 通知和音频设置 */
+export interface NotificationSettings {
+  /** 是否启用桌面通知（默认 true） */
+  enabled?: boolean;
+  /** 是否启用通知音频（默认 true） */
+  soundEnabled?: boolean;
+  /** 音频音量（0-1，默认 0.5） */
+  soundVolume?: number;
+  /** 仅在窗口失焦时通知（默认 false，始终通知） */
+  onlyWhenUnfocused?: boolean;
+}
+
+export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  enabled: true,
+  soundEnabled: true,
+  soundVolume: 0.5,
+  onlyWhenUnfocused: false,
+};
+
 /** 全局应用设置 */
 export interface AppSettings {
   claude: ClaudeSettings;
@@ -168,6 +187,8 @@ export interface AppSettings {
   dangerDetector?: DangerDetectorSettings;
   /** 会话标题自动生成配置 */
   titleGeneration?: TitleGenerationSettings;
+  /** 通知和音频设置 */
+  notifications?: NotificationSettings;
   version: number;
 }
 
@@ -177,6 +198,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     authMode: 'api_key',
     model: 'claude-sonnet-4-6',
   },
+  notifications: DEFAULT_NOTIFICATION_SETTINGS,
   version: 1,
 };
 

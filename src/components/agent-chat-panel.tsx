@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { ChatBubble } from '@/components/chat-bubble';
 import { ChatInput } from '@/components/chat-input';
 import { ChatNotificationBanners } from '@/components/chat-notification-banners';
+import { useNotificationManager } from '@/hooks/use-notification-manager';
 import { SaveKnowledgeDialog } from '@/components/save-knowledge-dialog';
 import { SessionDropdown } from '@/components/session-dropdown';
 import { GuestAgentOverlay } from '@/components/guest-agent-overlay';
@@ -153,6 +154,9 @@ export function AgentChatPanel({
   const router = useRouter();
   const hasProject = !!variant && !!projectKey;
   const isFull = variant === 'full';
+
+  // Initialize notification manager
+  const { notifyCompletion } = useNotificationManager();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -728,7 +732,21 @@ export function AgentChatPanel({
     if (currentSid) {
       flushQueuedUserMessage(currentSid);
     }
-  }, [agent.id, projectKey, fetchSessionList, onSessionChange, flushQueuedUserMessage]);
+
+    // Send completion notification
+    if (currentSid && !isStaleStream && (fullText || toolCalls.length > 0)) {
+      notifyCompletion({
+        agentName: agent.name || agent.id,
+        sessionId: currentSid,
+        sessionTitle: sessionTitle || 'Untitled Session',
+        navigateToSession: () => {
+          // Navigate to this session if needed
+          const sessionUrl = buildSessionUrl(agent.id, currentSid);
+          router.push(sessionUrl);
+        },
+      }).catch(err => console.error('通知发送失败:', err));
+    }
+  }, [agent.id, agent.name, projectKey, fetchSessionList, onSessionChange, flushQueuedUserMessage, router, sessionTitle, notifyCompletion]);
 
   // Connect to SSE stream
   const connectToStream = useCallback((targetSessionId: string, since: number) => {
