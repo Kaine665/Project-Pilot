@@ -7,7 +7,7 @@
 
 import { promises as fs } from 'fs';
 import path from 'path';
-import { getSkillsDir, getSkillFilePath, getSkillHistoryDir } from './file-store';
+import { getSkillsDir, getSkillFilePath, getSkillHistoryDir, getSkillDir, SKILL_SUBDIRS, type SkillSubdir } from './file-store';
 
 /** 最大 skill 文件大小：10MB */
 const MAX_SKILL_SIZE = 10 * 1024 * 1024;
@@ -213,4 +213,118 @@ export async function revertSkillToVersion(
   if (content === undefined) return false;
   await writeSkillFile(skillName, content);
   return true;
+}
+
+// ── 文件夹级操作（OpenClaw 兼容） ──
+
+export interface SkillFileItem {
+  name: string;
+  subdir: SkillSubdir;
+  size: number;
+  updatedAt: string; // ISO 8601
+}
+
+/**
+ * 列出 skill 文件夹中 scripts/ references/ assets/ 下的所有文件。
+ */
+export async function listSkillFiles(skillName: string): Promise<SkillFileItem[]> {
+  const skillDir = getSkillDir(skillName);
+  const results: SkillFileItem[] = [];
+
+  for (const subdir of SKILL_SUBDIRS) {
+    const dirPath = path.join(skillDir, subdir);
+    try {
+      const entries = await fs.readdir(dirPath);
+      for (const entry of entries) {
+        const filePath = path.join(dirPath, entry);
+        try {
+          const stats = await fs.stat(filePath);
+          if (!stats.isFile()) continue;
+          results.push({
+            name: entry,
+            subdir,
+            size: stats.size,
+            updatedAt: stats.mtime.toISOString(),
+          });
+        } catch {
+          // skip
+        }
+      }
+    } catch {
+      // subdir doesn't exist, skip
+    }
+  }
+
+  return results;
+}
+
+/**
+ * 安全校验子目录和文件名，防路径穿越。
+ */
+function validateSubPath(subdir: string, fileName: string): { safeSubdir: SkillSubdir; safeName: string } {
+  if (!SKILL_SUBDIRS.includes(subdir as SkillSubdir)) {
+    throw new Error(`Invalid subdir: ${subdir}. Must be one of: ${SKILL_SUBDIRS.join(', ')}`);
+  }
+  const safeName = path.basename(fileName);
+  if (!safeName || safeName !== fileName || safeName.includes('..')) {
+    throw new Error(`Invalid file name: ${fileName}`);
+  }
+  return { safeSubdir: subdir as SkillSubdir, safeName };
+}
+
+/**
+ * 读取 skill 子目录中的文件内容。
+ */
+export async function readSkillSubFile(
+  skillName: string,
+  subdir: string,
+  fileName: string,
+): Promise<{ content: string; size: number } | undefined> {
+  const { safeSubdir, safeName } = validateSubPath(subdir, fileName);
+  const filePath = path.join(getSkillDir(skillName), safeSubdir, safeName);
+  try {
+    const stats = await fs.stat(filePath);
+    if (stats.size > MAX_SKILL_SIZE) {
+      throw new Error(`File too large: ${stats.size} bytes (max ${MAX_SKILL_SIZE})`);
+    }
+    const content = await fs.readFile(filePath, 'utf-8');
+    return { content, size: stats.size };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+/**
+ * 写入 skill 子目录中的文件。
+ */
+export async function writeSkillSubFile(
+  skillName: string,
+  subdir: string,
+  fileName: string,
+  content: string,
+): Promise<void> {
+  const { safeSubdir, safeName } = validateSubPath(subdir, fileName);
+  const dirPath = path.join(getSkillDir(skillName), safeSubdir);
+  await fs.mkdir(dirPath, { recursive: true });
+  await fs.writeFile(path.join(dirPath, safeName), content, 'utf-8');
+}
+
+/**
+ * 删除 skill 子目录中的文件。
+ */
+export async function deleteSkillSubFile(
+  skillName: string,
+  subdir: string,
+  fileName: string,
+): Promise<void> {
+  const { safeSubdir, safeName } = validateSubPath(subdir, fileName);
+  const filePath = path.join(getSkillDir(skillName), safeSubdir, safeName);
+  try {
+    await fs.unlink(filePath);
+  } catch {
+    // 静默跳过
+  }
 }

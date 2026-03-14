@@ -32,6 +32,7 @@ import '@/lib/satellite-tasks';  // side-effect: registers satellite tasks
 import { runSatelliteTasks } from '@/lib/satellite-tasks';
 import type { SatelliteContext } from '@/lib/satellite-tasks';
 import type { RunStatus, RunStatusInfo, SubAgentResult, SessionExecution } from './types';
+import { subAgentWatcher } from './sub-agent-watcher';
 import {
   imageAttachmentToDataUrl,
 } from '@/lib/image-assets';
@@ -144,6 +145,8 @@ class AgentChatManager {
     if (this.sweepTimer && typeof this.sweepTimer === 'object' && 'unref' in this.sweepTimer) {
       this.sweepTimer.unref();
     }
+    // Bind watcher so it can query status and resume sessions
+    subAgentWatcher.bind(this);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -179,7 +182,13 @@ class AgentChatManager {
     }
 
     if (existing?.status === 'running' || existing?.status === 'finalizing') {
-      throw new Error('This session is already running');
+      const { HttpError } = await import('@/lib/http-error');
+      throw new HttpError('This session is already running', 409);
+    }
+
+    // Clear awaiting state when being woken up
+    if (existing?.status === 'awaiting') {
+      existing.status = 'completed'; // Reset to allow normal start flow
     }
 
     const messages = existing?.messages ? [...existing.messages] : [];
@@ -225,8 +234,10 @@ class AgentChatManager {
       const settings = await getSettings();
       const cp = settings.claude.customProviders?.find((c) => c.id === resolvedProvider);
       if (cp?.apiProtocol === 'openai') {
-        throw new Error(
+        const { HttpError } = await import('@/lib/http-error');
+        throw new HttpError(
           'OpenAI 协议的自定义供应商暂不支持 Agent 对话。请使用 Anthropic 协议的自定义供应商或切换至内置 OpenAI。',
+          400,
         );
       }
     }
@@ -348,7 +359,8 @@ class AgentChatManager {
   ): Promise<string> {
     const hostSession = await loadSession(parentSessionId);
     if (!hostSession) {
-      throw new Error('Host session not found');
+      const { HttpError } = await import('@/lib/http-error');
+      throw new HttpError('Host session not found', 404);
     }
 
     let selectedTurns: Array<{ role: 'user' | 'assistant'; content: string }>;
@@ -368,7 +380,8 @@ class AgentChatManager {
 
     const existing = this.runs.get(guestSessionId);
     if (existing?.status === 'running') {
-      throw new Error('This guest session is already running');
+      const { HttpError } = await import('@/lib/http-error');
+      throw new HttpError('This guest session is already running', 409);
     }
 
     const isResume = !!existing?.claudeSessionId;
@@ -455,7 +468,7 @@ class AgentChatManager {
       listener(run.events[i], i);
     }
 
-    if (run.status !== 'running' && run.status !== 'finalizing') {
+    if (run.status !== 'running' && run.status !== 'finalizing' && run.status !== 'awaiting') {
       return () => {};
     }
 
@@ -475,6 +488,7 @@ class AgentChatManager {
     ).pop();
     // `finalizing` is an internal state — external callers see it as `running`
     // because the result is not yet safe to read from disk.
+    // `awaiting` is exposed as-is — callers need to know the session is waiting.
     const externalStatus = run.status === 'finalizing' ? 'running' : run.status;
     return {
       status: externalStatus,
@@ -589,8 +603,9 @@ class AgentChatManager {
     await cleanupTempImageFiles(run._tempImagePaths);
 
     // Process all agent actions: parse tags, execute side-effects, strip tags
+    let isAwaiting = false;
     if (run.assistantText) {
-      const actionCtx = {
+      const actionCtx: import('@/lib/agent-actions/types').ActionContext & { _awaitingSubAgents?: boolean } = {
         sessionId: run.sessionId,
         agentId: run.agentId,
         projectKey: run.projectKey,
@@ -599,6 +614,9 @@ class AgentChatManager {
       };
 
       const cleaned = await actionRegistry.processResponse(run.assistantText, actionCtx);
+
+      // Check if await-sub-agents action was triggered
+      isAwaiting = !!actionCtx._awaitingSubAgents && !aborted;
 
       const cleanedBlocks = run.contentBlocks.map(block => {
         if (block.type === 'text') {
@@ -616,7 +634,7 @@ class AgentChatManager {
 
     // Transition to `finalizing` — stream ended but persistence not yet done.
     // This eliminates the "completed but not persisted" race window.
-    const terminalStatus: RunStatus = aborted ? 'stopped' : 'completed';
+    const terminalStatus: RunStatus = aborted ? 'stopped' : (isAwaiting ? 'awaiting' : 'completed');
     if (run.status === 'running') {
       run.status = 'finalizing';
     }
@@ -687,7 +705,12 @@ class AgentChatManager {
     // callers see `completed`. This eliminates the state/persistence split.
     run.status = terminalStatus;
 
-    this.trackAndEmit(run, { type: 'done' });
+    if (isAwaiting) {
+      // Emit awaiting event instead of done — UI shows "waiting" indicator
+      this.trackAndEmit(run, { type: 'awaiting_sub_agents' });
+    } else {
+      this.trackAndEmit(run, { type: 'done' });
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -789,10 +812,22 @@ class AgentChatManager {
 
     // Build execution record — the single source of truth for run outcome
     const execution: SessionExecution = {
-      status: terminalStatus as 'completed' | 'failed' | 'stopped',
+      status: terminalStatus as SessionExecution['status'],
       startedAt: new Date(run.startedAt).toISOString(),
       completedAt: now,
     };
+
+    // If awaiting, persist watcher info for sidecar restart recovery
+    if (terminalStatus === 'awaiting') {
+      const watchEntry = subAgentWatcher.getEntry(run.sessionId);
+      if (watchEntry) {
+        execution.awaitingSubAgents = {
+          sessionIds: watchEntry.targetSessionIds,
+          registeredAt: watchEntry.registeredAt,
+          timeoutMs: watchEntry.timeoutMs,
+        };
+      }
+    }
 
     // Build structured result for sub-agent callers (行动项 3)
     if (run.parentSessionId) {
@@ -866,6 +901,7 @@ class AgentChatManager {
       if (
         run.status !== 'running' &&
         run.status !== 'finalizing' &&
+        run.status !== 'awaiting' &&
         run.completedAt &&
         now - run.completedAt > COMPLETED_TTL_MS
       ) {

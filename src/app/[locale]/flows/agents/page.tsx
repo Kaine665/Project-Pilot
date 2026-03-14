@@ -6,9 +6,21 @@ import {
   Settings, MessageSquare, Archive, ArchiveRestore,
   Download, Upload, FileDown, FolderOpen,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
-import { AgentChatPanel } from '@/components/agent-chat-panel';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
+
+const AgentChatPanel = dynamic(
+  () => import('@/components/agent-chat-panel').then(m => ({ default: m.AgentChatPanel })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-muted-foreground/30 border-t-primary" />
+      </div>
+    ),
+  }
+);
 import { AgentIcon, SettingsForm, type FormData, emptyForm, agentToForm } from '@/components/agent-form';
 import { type AllSessionItem, type OpenedSession, groupSessionsByDay, syncUrlParams } from '@/components/agent-session-utils';
 import { useProject } from '@/components/project-context';
@@ -115,6 +127,9 @@ export default function AgentsPage() {
   const [form, setForm] = useState<FormData>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [expandedPrompt, setExpandedPrompt] = useState(false);
+
+  // ── Session archive filter ──
+  const [sessionFilter, setSessionFilter] = useState<'active' | 'archived' | 'all'>('active');
 
   // ── New session agent picker ──
   const [showAgentPicker, setShowAgentPicker] = useState(false);
@@ -293,15 +308,23 @@ export default function AgentsPage() {
   }, [effectiveProjectKey]);
 
   // ── Clock for running-session elapsed display ──
+  const hasRunningSession = useMemo(() => allSessions.some(s => s.isRunning), [allSessions]);
   const [listClockNow, setListClockNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!allSessions.some(s => s.isRunning)) return;
+    if (!hasRunningSession) return;
     const timer = setInterval(() => setListClockNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [allSessions]);
+  }, [hasRunningSession]);
+
+  // ── Filtered sessions by archive status ──
+  const filteredSessions = useMemo(() => {
+    if (sessionFilter === 'all') return allSessions;
+    if (sessionFilter === 'archived') return allSessions.filter(s => s.archived);
+    return allSessions.filter(s => !s.archived); // 'active'
+  }, [allSessions, sessionFilter]);
 
   // ── Grouped sessions for display ──
-  const groupedSessions = useMemo(() => groupSessionsByDay(allSessions), [allSessions]);
+  const groupedSessions = useMemo(() => groupSessionsByDay(filteredSessions), [filteredSessions]);
 
   // ── Project-filtered agents（项目专属排前面，全局排后面）──
   const filteredAgents = useMemo(() => {
@@ -588,23 +611,29 @@ export default function AgentsPage() {
   const selectedAgent = agents.find(a => a.id === selectedAgentId) ?? null;
   const agentViewMode = activePanel?.type === 'agent' ? activePanel.mode : 'chat';
 
-  const hasChanges = creating
-    ? form.name.trim().length > 0
-    : selectedAgent
-      ? form.name !== selectedAgent.name
-        || form.description !== (selectedAgent.description ?? '')
-        || form.systemPrompt !== (selectedAgent.systemPrompt ?? '')
-        || form.icon !== (selectedAgent.icon ?? '')
-        || JSON.stringify(form.capabilities) !== JSON.stringify(selectedAgent.capabilities ?? DEFAULT_AGENT_CAPABILITIES)
-        || form.requiredParamsText !== (selectedAgent.requiredParams ?? []).join('\n')
-        || JSON.stringify([...form.contextIds].sort()) !== JSON.stringify([...(selectedAgent.contextIds ?? [])].sort())
-        || JSON.stringify([...form.skillIds].sort()) !== JSON.stringify(
-            [...(selectedAgent.defaultResources ?? []).filter(r => r.type === 'skill').map(r => r.id)].sort()
-          )
-        || form.projectKey !== (selectedAgent.projectKey ?? '')
-        || form.defaultProvider !== (selectedAgent.defaultProvider ?? '')
-        || form.defaultModel !== (selectedAgent.defaultModel ?? '')
-      : false;
+  const hasChanges = useMemo(() => {
+    if (creating) return form.name.trim().length > 0;
+    if (!selectedAgent) return false;
+    return form.name !== selectedAgent.name
+      || form.description !== (selectedAgent.description ?? '')
+      || form.systemPrompt !== (selectedAgent.systemPrompt ?? '')
+      || form.icon !== (selectedAgent.icon ?? '')
+      || JSON.stringify(form.capabilities) !== JSON.stringify(selectedAgent.capabilities ?? DEFAULT_AGENT_CAPABILITIES)
+      || form.requiredParamsText !== (selectedAgent.requiredParams ?? []).join('\n')
+      || JSON.stringify([...form.contextIds].sort()) !== JSON.stringify([...(selectedAgent.contextIds ?? [])].sort())
+      || JSON.stringify([...form.skillIds].sort()) !== JSON.stringify(
+          [...(selectedAgent.defaultResources ?? []).filter(r => r.type === 'skill').map(r => r.id)].sort()
+        )
+      || form.projectKey !== (selectedAgent.projectKey ?? '')
+      || form.defaultProvider !== (selectedAgent.defaultProvider ?? '')
+      || form.defaultModel !== (selectedAgent.defaultModel ?? '');
+  }, [creating, form, selectedAgent]);
+
+  // ── Pre-computed active session ID for sidebar highlight ──
+  const activeSessionId = useMemo(() => {
+    if (activePanel?.type !== 'session') return null;
+    return openedSessions.find(o => o.key === activePanel.key)?.sessionId ?? null;
+  }, [activePanel, openedSessions]);
 
   // ── Active session info (for header display) ──
   const activeOpened = activePanel?.type === 'session'
@@ -650,10 +679,26 @@ export default function AgentsPage() {
         {/* ── Tab content ── */}
         {sidebarTab === 'conversations' ? (
           <div className="flex flex-1 flex-col overflow-hidden">
-            {/* New session button */}
+            {/* Session filter + new session button */}
             <div className="relative flex items-center justify-between px-5 py-4">
-              <div className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
-                {allSessions.length > 0 ? `活跃会话 (${allSessions.length})` : '活跃会话'}
+              <div className="flex items-center gap-1 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800">
+                {([
+                  ['active', '活跃'],
+                  ['archived', '归档'],
+                  ['all', '全部'],
+                ] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    onClick={() => setSessionFilter(key)}
+                    className={`rounded-md px-2 py-1 text-[11px] font-medium transition-all ${
+                      sessionFilter === key
+                        ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
+                        : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
               <button
                 onClick={() => setShowAgentPicker(v => !v)}
@@ -686,11 +731,11 @@ export default function AgentsPage() {
             </div>
             {/* Session list */}
             <div className="flex-1 overflow-y-auto px-2 pb-4">
-              {allSessions.length === 0 ? (
+              {filteredSessions.length === 0 ? (
                 <div className="px-4 py-12 text-center text-xs text-zinc-400 dark:text-zinc-500">
                   <MessageSquare className="mx-auto mb-2 h-8 w-8 text-zinc-300 dark:text-zinc-600" />
-                  <p>暂无对话</p>
-                  <p className="mt-1">点击右上角 + 开始新对话</p>
+                  <p>{sessionFilter === 'archived' ? '暂无归档对话' : sessionFilter === 'all' ? '暂无对话' : '暂无活跃对话'}</p>
+                  {sessionFilter === 'active' && <p className="mt-1">点击右上角 + 开始新对话</p>}
                 </div>
               ) : (
                 groupedSessions.map(group => (
@@ -699,8 +744,7 @@ export default function AgentsPage() {
                       {group.label}
                     </div>
                     {group.items.map(s => {
-                      const isActive = activePanel?.type === 'session'
-                        && openedSessions.find(o => o.key === activePanel.key)?.sessionId === s.id;
+                      const isActive = activeSessionId === s.id;
                       return (
                         <SessionCard
                           key={s.id}

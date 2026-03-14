@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useMemo, startTransition } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, useReducer, startTransition } from 'react';
 import { flushSync } from 'react-dom';
 import { Loader2, Maximize2, Minimize2, Bot, Sparkles, Plus, MessageSquare, Trash2, Settings, FileDown, ClipboardList, ArrowLeft, GitFork, ArrowUp, ChevronDown, ChevronUp, Layers, FolderOpen } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -10,6 +10,7 @@ import { ChatBubble } from '@/components/chat-bubble';
 import { ChatInput } from '@/components/chat-input';
 import { ChatNotificationBanners } from '@/components/chat-notification-banners';
 import { useNotificationManager } from '@/hooks/use-notification-manager';
+import { useModelConfig } from '@/hooks/use-model-config';
 import { SaveKnowledgeDialog } from '@/components/save-knowledge-dialog';
 import { SessionDropdown } from '@/components/session-dropdown';
 import { GuestAgentOverlay } from '@/components/guest-agent-overlay';
@@ -20,7 +21,7 @@ import { FilePreviewDialog } from '@/components/file-preview-dialog';
 import { FolderExplorerPanel } from '@/components/folder-explorer-panel';
 import type { SessionNavLink } from '@/components/agent-session-utils';
 import { buildSessionUrl } from '@/components/agent-session-utils';
-import { PROVIDER_REGISTRY, getProviderPreset, getModelContextWindow } from '@/lib/provider-registry';
+import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import { imageAttachmentFromDataUrl } from '@/lib/image-assets';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
 import type { PendingUserQueueItem, PendingUserQueueState, SessionConfig } from '@/types/agent-chat';
@@ -33,6 +34,7 @@ export interface SessionListItem {
   updatedAt: string;
   unreadCount?: number;
   isRunning?: boolean;
+  isAwaiting?: boolean;
   runningStartedAt?: string;
 }
 
@@ -100,10 +102,11 @@ function mergeSessionList(
   const localById = new Map(prev.map((s) => [s.id, s]));
   const mergedRemote = remote.map((item) => {
     const local = localById.get(item.id);
-    if (!local?.isRunning) return item;
+    if (!local?.isRunning && !local?.isAwaiting) return item;
     return {
       ...item,
-      isRunning: true,
+      isRunning: local.isRunning || undefined,
+      isAwaiting: local.isAwaiting || item.isAwaiting || undefined,
       runningStartedAt: local.runningStartedAt ?? item.runningStartedAt,
     };
   });
@@ -142,6 +145,147 @@ function formatSessionElapsed(startedAt: string | undefined, nowTs: number): str
 }
 
 
+// ── Chat Reducer (messages + streaming + token) ──
+
+type ChatState = {
+  messages: ChatMessage[];
+  isStreaming: boolean;
+  streamingBlocks: ContentBlock[];
+  errorMsg: string | null;
+  inPlanMode: boolean;
+  tokenInputs: number;
+  tokenOutputs: number;
+};
+
+type ChatAction =
+  | { type: 'SEND_START' }
+  | { type: 'STREAM_BLOCKS'; blocks: ContentBlock[] }
+  | { type: 'STREAM_TOKENS'; input: number; output: number }
+  | { type: 'STREAM_ERROR'; message: string }
+  | { type: 'CLEAR_ERROR' }
+  | { type: 'STREAM_END' }
+  | { type: 'PLAN_STARTED' }
+  | { type: 'PLAN_FINISHED' }
+  | { type: 'APPEND_MESSAGE'; message: ChatMessage }
+  | { type: 'SET_MESSAGES'; messages: ChatMessage[] }
+  | { type: 'UPDATE_MESSAGES'; updater: (prev: ChatMessage[]) => ChatMessage[] }
+  | { type: 'RESET' };
+
+const chatInitialState: ChatState = {
+  messages: [],
+  isStreaming: false,
+  streamingBlocks: [],
+  errorMsg: null,
+  inPlanMode: false,
+  tokenInputs: 0,
+  tokenOutputs: 0,
+};
+
+function chatReducer(state: ChatState, action: ChatAction): ChatState {
+  switch (action.type) {
+    case 'SEND_START':
+      return { ...state, isStreaming: true, streamingBlocks: [], errorMsg: null };
+    case 'STREAM_BLOCKS':
+      return { ...state, streamingBlocks: action.blocks };
+    case 'STREAM_TOKENS':
+      return {
+        ...state,
+        tokenInputs: action.input > 0 ? action.input : state.tokenInputs,
+        tokenOutputs: action.output > 0 ? action.output : state.tokenOutputs,
+      };
+    case 'STREAM_ERROR':
+      return { ...state, errorMsg: action.message };
+    case 'CLEAR_ERROR':
+      return { ...state, errorMsg: null };
+    case 'STREAM_END':
+      return { ...state, isStreaming: false, streamingBlocks: [], inPlanMode: false };
+    case 'PLAN_STARTED':
+      return { ...state, inPlanMode: true };
+    case 'PLAN_FINISHED':
+      return { ...state, inPlanMode: false };
+    case 'APPEND_MESSAGE':
+      return { ...state, messages: [...state.messages, action.message] };
+    case 'SET_MESSAGES':
+      return { ...state, messages: action.messages };
+    case 'UPDATE_MESSAGES':
+      return { ...state, messages: action.updater(state.messages) };
+    case 'RESET':
+      return { ...chatInitialState };
+    default:
+      return state;
+  }
+}
+
+// ── Session Reducer (session identity + list + config + nav) ──
+
+type SessionState = {
+  id: string | null;
+  title: string;
+  list: SessionListItem[];
+  config: SessionConfig;
+  parentSession: SessionNavLink | null;
+  childSessions: SessionNavLink[];
+  showChildList: boolean;
+};
+
+type SessionAction =
+  | { type: 'SET_ID'; id: string | null }
+  | { type: 'SET_TITLE'; title: string }
+  | { type: 'SET_CONFIG'; config: SessionConfig }
+  | { type: 'UPDATE_LIST'; updater: (prev: SessionListItem[]) => SessionListItem[] }
+  | { type: 'MERGE_LIST'; remote: SessionListItem[] }
+  | { type: 'SET_NAV'; parent: SessionNavLink | null; children: SessionNavLink[] }
+  | { type: 'TOGGLE_CHILD_LIST' }
+  | { type: 'CLOSE_CHILD_LIST' }
+  | { type: 'SELECT'; id: string; title: string }
+  | { type: 'NEW'; defaultTitle: string }
+  | { type: 'RESET'; defaultTitle: string };
+
+function sessionReducer(state: SessionState, action: SessionAction): SessionState {
+  switch (action.type) {
+    case 'SET_ID':
+      return { ...state, id: action.id };
+    case 'SET_TITLE':
+      return { ...state, title: action.title };
+    case 'SET_CONFIG':
+      return { ...state, config: action.config };
+    case 'UPDATE_LIST':
+      return { ...state, list: action.updater(state.list) };
+    case 'MERGE_LIST':
+      return { ...state, list: mergeSessionList(state.list, action.remote) };
+    case 'SET_NAV':
+      return { ...state, parentSession: action.parent, childSessions: action.children, showChildList: false };
+    case 'TOGGLE_CHILD_LIST':
+      return { ...state, showChildList: !state.showChildList };
+    case 'CLOSE_CHILD_LIST':
+      return { ...state, showChildList: false };
+    case 'SELECT':
+      return { ...state, id: action.id, title: action.title, config: {}, showChildList: false };
+    case 'NEW':
+      return {
+        ...state,
+        id: null,
+        title: action.defaultTitle,
+        config: {},
+        parentSession: null,
+        childSessions: [],
+        showChildList: false,
+      };
+    case 'RESET':
+      return {
+        id: null,
+        title: action.defaultTitle,
+        list: [],
+        config: {},
+        parentSession: null,
+        childSessions: [],
+        showChildList: false,
+      };
+    default:
+      return state;
+  }
+}
+
 export function AgentChatPanel({
   agent,
   initialSessionId,
@@ -159,25 +303,31 @@ export function AgentChatPanel({
   // Initialize notification manager
   const { notifyCompletion } = useNotificationManager();
 
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamingBlocks, setStreamingBlocks] = useState<ContentBlock[]>([]);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [chat, chatDispatch] = useReducer(chatReducer, chatInitialState);
+  const { messages, isStreaming, streamingBlocks, errorMsg, inPlanMode, tokenInputs, tokenOutputs } = chat;
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Session management
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [sessionList, setSessionList] = useState<SessionListItem[]>([]);
-  const [sessionTitle, setSessionTitle] = useState(hasProject ? t('chat.newSession') : 'New Session');
+  const defaultSessionTitle = hasProject ? t('chat.newSession') : 'New Session';
+  const [session, sessionDispatch] = useReducer(sessionReducer, {
+    id: null,
+    title: defaultSessionTitle,
+    list: [],
+    config: {},
+    parentSession: null,
+    childSessions: [],
+    showChildList: false,
+  } satisfies SessionState);
+  const { id: sessionId, title: sessionTitle, list: sessionList, config: sessionConfig, parentSession, childSessions, showChildList } = session;
   const [sessionClockNow, setSessionClockNow] = useState(() => Date.now());
 
-  // Provider / model routing
-  const [chatProvider, setChatProvider] = useState<ProviderId>('anthropic');
-  const [chatModel, setChatModel] = useState('claude-sonnet-4-5-20250929');
-  const [chatModelOptions, setChatModelOptions] = useState<ModelSelectOption[]>([
-    { value: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5' },
-  ]);
-  const [chatEffort, setChatEffort] = useState<OpenAIReasoningEffort>('xhigh');
+  // Provider / model routing (extracted to useModelConfig hook)
+  const modelConfig = useModelConfig(agent, projectKey, cachedSettings);
+  const { provider: chatProvider, model: chatModel, options: chatModelOptions, effort: chatEffort, contextWindow, promptEstimate } = modelConfig;
+  const setChatProvider = modelConfig.setProvider;
+  const setChatModel = modelConfig.setModel;
+  const setChatModelOptions = modelConfig.setOptions;
+  const setChatEffort = modelConfig.setEffort;
 
   // Guest Agent (observer)
   const [guestAgent, setGuestAgent] = useState<Agent | null>(null);
@@ -196,29 +346,22 @@ export function AgentChatPanel({
   const [compressDialogOpen, setCompressDialogOpen] = useState(false);
   const [compressDismissed, setCompressDismissed] = useState(false);
 
-  // Session config
-  const [sessionConfig, setSessionConfig] = useState<SessionConfig>({});
+  // Session config (sessionConfig is in sessionReducer)
   const [showConfig, setShowConfig] = useState(false);
   const [showFolderExplorer, setShowFolderExplorer] = useState(false);
 
   // Plan viewer
   const [planContent, setPlanContent] = useState<string | null>(null);
   const [isPlanOpen, setIsPlanOpen] = useState(false);
-  const [inPlanMode, setInPlanMode] = useState(false);
 
   // File preview
   const [previewFilePath, setPreviewFilePath] = useState<string | null>(null);
 
-  // Token usage tracking
-  const [tokenInputs, setTokenInputs] = useState(0);
-  const [tokenOutputs, setTokenOutputs] = useState(0);
-  const [promptEstimate, setPromptEstimate] = useState(0);
-  const [contextWindow, setContextWindow] = useState(200000);
+  // SSE-reported contextWindow override (takes precedence over model-based value from hook)
+  const [sseContextWindow, setSseContextWindow] = useState<number | null>(null);
+  const effectiveContextWindow = sseContextWindow ?? contextWindow;
 
-  // 父子会话导航
-  const [parentSession, setParentSession] = useState<SessionNavLink | null>(null);
-  const [childSessions, setChildSessions] = useState<SessionNavLink[]>([]);
-  const [showChildList, setShowChildList] = useState(false);
+  // 父子会话导航 (parentSession, childSessions, showChildList are in sessionReducer)
 
   const streamAbortRef = useRef<AbortController | null>(null);
   const blocksRef = useRef<ContentBlock[]>([]);
@@ -235,26 +378,24 @@ export function AgentChatPanel({
   const messagesRef = useRef<ChatMessage[]>([]);
   const pendingAnswerRef = useRef<{ answer: string; targetSessionId: string } | null>(null);
   const pendingUserMessagesRef = useRef<PendingUserQueueItem[]>([]);
-  // OpenAI 模型列表缓存（5 分钟 TTL，避免每次切换都发请求）
-  const openaiModelsCacheRef = useRef<{ options: { value: string; label: string }[]; cachedAt: number } | null>(null);
-  const OPENAI_MODELS_CACHE_TTL = 5 * 60 * 1000;
+  // OpenAI model cache is now inside useModelConfig hook
   const [pendingUserQueueCount, setPendingUserQueueCount] = useState(0);
   const [pendingUserMessages, setPendingUserMessages] = useState<PendingUserQueueItem[]>([]);
   const [queueExpanded, setQueueExpanded] = useState(true);
 
-  // Sync sessionId to both state and ref atomically (avoids stale ref between renders)
+  // Sync sessionId to both reducer state and ref atomically
   const setSessionIdSync = useCallback((id: string | null) => {
-    setSessionId(id);
+    sessionDispatch({ type: 'SET_ID', id });
     sessionIdRef.current = id;
   }, []);
 
   useEffect(() => {
-    isStreamingRef.current = isStreaming;
-  }, [isStreaming]);
+    isStreamingRef.current = chat.isStreaming;
+  }, [chat.isStreaming]);
 
   useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
+    messagesRef.current = chat.messages;
+  }, [chat.messages]);
 
   const persistPendingUserQueue = useCallback((
     targetSessionId: string,
@@ -372,162 +513,7 @@ export function AgentChatPanel({
     [],
   );
 
-  // Load provider/model from global settings (skip if parent provided cached values)
-  useEffect(() => {
-    if (cachedSettings) {
-      setChatProvider(cachedSettings.provider);
-      setChatModel(cachedSettings.model);
-      setChatModelOptions(cachedSettings.modelOptions);
-      setChatEffort(cachedSettings.effort);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch('/api/settings', { cache: 'no-store' });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (cancelled) return;
-        const claude = data?.claude ?? {};
-        const loadedProvider = (claude.provider as ProviderId) || 'anthropic';
-        const providerModelsMap = (claude.providerModels && typeof claude.providerModels === 'object')
-          ? claude.providerModels as Partial<Record<ProviderId, string>>
-          : {};
-        const providerModelLib = (claude.providerModelLibrary && typeof claude.providerModelLibrary === 'object')
-          ? claude.providerModelLibrary as Partial<Record<ProviderId, string[]>>
-          : {};
-        // Build model options for loaded provider
-        const preset = getProviderPreset(loadedProvider);
-        const optionMap = new Map<string, string>();
-        for (const m of preset.models) optionMap.set(m.id, m.label || m.id);
-        const libModels = Array.isArray(providerModelLib[loadedProvider]) ? providerModelLib[loadedProvider] : [];
-        for (const raw of libModels) {
-          const id = typeof raw === 'string' ? raw.trim() : '';
-          if (id && !optionMap.has(id)) optionMap.set(id, id);
-        }
-        const fallbackModel = (providerModelsMap[loadedProvider] || claude.model || '').trim();
-        if (fallbackModel && !optionMap.has(fallbackModel)) optionMap.set(fallbackModel, fallbackModel);
-        const options = Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
-        const selected = options.some((o) => o.value === fallbackModel) ? fallbackModel : (options[0]?.value || '');
-        // Apply agent default model (overrides global settings, can be overridden by session config)
-        const effectiveProvider = agent.defaultProvider ?? loadedProvider;
-        if (agent.defaultProvider) {
-          const agentPreset = getProviderPreset(agent.defaultProvider);
-          const agentOptionMap = new Map<string, string>();
-          for (const m of agentPreset.models) agentOptionMap.set(m.id, m.label || m.id);
-          const agentDefaultModel = agent.defaultModel ?? '';
-          if (agentDefaultModel && !agentOptionMap.has(agentDefaultModel)) agentOptionMap.set(agentDefaultModel, agentDefaultModel);
-          const agentOptions = Array.from(agentOptionMap.entries()).map(([value, label]) => ({ value, label }));
-          const agentSelected = agentOptions.some(o => o.value === agentDefaultModel)
-            ? agentDefaultModel
-            : agentOptions[0]?.value || '';
-          setChatProvider(effectiveProvider);
-          setChatModelOptions(agentOptions.length > 0 ? agentOptions : options);
-          setChatModel(agentSelected || selected);
-        } else {
-          setChatProvider(loadedProvider);
-          setChatModelOptions(options);
-          setChatModel(selected);
-        }
-        // Load OpenAI reasoning effort
-        const VALID_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
-        const savedEffort = claude.openaiReasoningEffort;
-        if (typeof savedEffort === 'string' && VALID_EFFORTS.includes(savedEffort as OpenAIReasoningEffort)) {
-          setChatEffort(savedEffort as OpenAIReasoningEffort);
-        }
-      } catch {
-        // ignore
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Update model options when provider changes (+ fetch OpenAI catalog)
-  useEffect(() => {
-    let cancelled = false;
-    const preset = getProviderPreset(chatProvider);
-    const staticOptions = preset.models.map((m) => ({ value: m.id, label: m.label || m.id }));
-
-    if (chatProvider === 'openai') {
-      // 立即显示静态选项，不等待网络请求
-      setChatModelOptions(staticOptions);
-      if (!staticOptions.some((o) => o.value === chatModel)) {
-        setChatModel(staticOptions[0]?.value || '');
-      }
-
-      // 检查缓存（5 分钟 TTL），命中则直接用，不发请求
-      const cache = openaiModelsCacheRef.current;
-      if (cache && Date.now() - cache.cachedAt < OPENAI_MODELS_CACHE_TTL) {
-        setChatModelOptions(cache.options);
-        return () => { cancelled = true; };
-      }
-
-      // 后台 fetch 动态模型目录，merge 到静态选项里
-      (async () => {
-        try {
-          const res = await fetch('/api/settings/openai-models', { cache: 'no-store' });
-          const data = await res.json();
-          if (cancelled) return;
-          if (res.ok && data?.ok && Array.isArray(data.models)) {
-            const merged = [...staticOptions];
-            const knownIds = new Set(merged.map((o) => o.value));
-            for (const r of data.models) {
-              if (r && typeof r === 'object' && typeof r.id === 'string') {
-                const id = r.id.trim();
-                if (id && !knownIds.has(id)) {
-                  merged.push({ value: id, label: typeof r.displayName === 'string' ? r.displayName : id });
-                  knownIds.add(id);
-                }
-              }
-            }
-            if (!cancelled) {
-              openaiModelsCacheRef.current = { options: merged, cachedAt: Date.now() };
-              setChatModelOptions(merged);
-            }
-          }
-        } catch {
-          // ignore - fallback to static models already shown
-        }
-      })();
-    } else {
-      if (staticOptions.length > 0) {
-        setChatModelOptions(staticOptions);
-        if (!staticOptions.some((o) => o.value === chatModel)) {
-          setChatModel(staticOptions[0].value);
-        }
-      }
-    }
-    return () => { cancelled = true; };
-  }, [chatProvider]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 模型切换时立即更新 contextWindow（纯本地计算，无需网络请求）
-  useEffect(() => {
-    setContextWindow(getModelContextWindow(chatModel || 'claude-sonnet-4-6'));
-  }, [chatModel]);
-
-  // Fetch prompt info (system prompt size)
-  // 注意：estimatedTokens 只依赖 agent/project，与 model 无关；contextWindow 已在上方本地计算。
-  // 因此切换 model 时无需重新 fetch，只在 agent 或 project 变化时才请求。
-  useEffect(() => {
-    let cancelled = false;
-    const params = new URLSearchParams({ agentId: agent.id });
-    if (projectKey) params.set('projectKey', projectKey);
-
-    (async () => {
-      try {
-        const res = await fetch(`/api/agent-chat/prompt-info?${params}`, { cache: 'no-store' });
-        if (cancelled || !res.ok) return;
-        const data = await res.json();
-        if (!cancelled) {
-          setPromptEstimate(data.estimatedTokens ?? 0);
-        }
-      } catch {
-        // ignore - fallback to local estimate
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [agent.id, projectKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Provider/model init and effects are now handled by useModelConfig hook
 
   // Fetch session list
   const fetchSessionList = useCallback(async (agentId: string, pk?: string | null) => {
@@ -536,8 +522,12 @@ export function AgentChatPanel({
       if (pk) url += `&projectKey=${pk}`;
       const res = await fetch(url, { cache: 'no-store' });
       const data = await res.json();
-      const remote: SessionListItem[] = data.sessions ?? [];
-      setSessionList((prev) => mergeSessionList(prev, remote));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const remote: SessionListItem[] = (data.sessions ?? []).map((s: any) => ({
+        ...s,
+        isAwaiting: s.execution?.status === 'awaiting' || undefined,
+      }));
+      sessionDispatch({ type: 'MERGE_LIST', remote });
       return remote;
     } catch {
       return [];
@@ -547,7 +537,7 @@ export function AgentChatPanel({
   const markSessionRunning = useCallback((targetSessionId: string, startedAt?: string, title?: string) => {
     const now = new Date().toISOString();
     const runStart = startedAt ?? now;
-    setSessionList((prev) => {
+    sessionDispatch({ type: 'UPDATE_LIST', updater: (prev) => {
       const existing = prev.find((s) => s.id === targetSessionId);
       return upsertSessionListItem(prev, {
         id: targetSessionId,
@@ -555,9 +545,10 @@ export function AgentChatPanel({
         updatedAt: now,
         unreadCount: existing?.unreadCount ?? 0,
         isRunning: true,
+        isAwaiting: undefined,
         runningStartedAt: runStart,
       });
-    });
+    } });
     // Notify parent (e.g. agents page sidebar) so it can show running indicator
     onSessionChange?.({
       id: targetSessionId,
@@ -579,12 +570,13 @@ export function AgentChatPanel({
     const extraPatch: Partial<SessionListItem> = {
       updatedAt: ts,
       isRunning: false,
+      isAwaiting: undefined,
       runningStartedAt: undefined,
     };
     if (opts?.unreadCount !== undefined) {
       extraPatch.unreadCount = opts.unreadCount;
     }
-    setSessionList((prev) => patchSessionListItem(prev, targetSessionId, extraPatch));
+    sessionDispatch({ type: 'UPDATE_LIST', updater: (prev) => patchSessionListItem(prev, targetSessionId, extraPatch) });
     // Notify parent so it can clear running indicator and fetch updated state
     onSessionChange?.({
       id: targetSessionId,
@@ -597,33 +589,35 @@ export function AgentChatPanel({
 
   // Load parent/child session navigation links
   const loadSessionNavLinks = useCallback(async (sid: string, parentSid?: string) => {
-    setParentSession(null);
-    setChildSessions([]);
-    setShowChildList(false);
+    sessionDispatch({ type: 'SET_NAV', parent: null, children: [] });
 
     // Parent session
+    let loadedParent: SessionNavLink | null = null;
     if (parentSid) {
       try {
         const res = await fetch(`/api/agent-chat/sessions/${parentSid}`, { cache: 'no-store' });
         if (res.ok) {
           const ps = await res.json();
-          setParentSession({ id: ps.id, title: ps.title, agentId: ps.agentId });
+          loadedParent = { id: ps.id, title: ps.title, agentId: ps.agentId };
         }
       } catch { /* ignore */ }
     }
 
     // Child sessions
+    let loadedChildren: SessionNavLink[] = [];
     try {
       const res = await fetch(`/api/agent-chat/sessions/${sid}/children`, { cache: 'no-store' });
       if (res.ok) {
         const { children } = await res.json();
         if (Array.isArray(children) && children.length > 0) {
-          setChildSessions(children.map((c: { id: string; title: string; agentId: string }) => ({
+          loadedChildren = children.map((c: { id: string; title: string; agentId: string }) => ({
             id: c.id, title: c.title, agentId: c.agentId,
-          })));
+          }));
         }
       }
     } catch { /* ignore */ }
+
+    sessionDispatch({ type: 'SET_NAV', parent: loadedParent, children: loadedChildren });
   }, []);
 
   // Load a session's full data (messages + config)
@@ -658,10 +652,10 @@ export function AgentChatPanel({
           timestamp: '',
         }),
       );
-      setMessages(restored);
-      setSessionTitle(data.title ?? 'New Session');
+      chatDispatch({ type: 'SET_MESSAGES', messages: restored });
+      sessionDispatch({ type: 'SET_TITLE', title: data.title ?? 'New Session' });
       const loadedConfig = data.config ?? {};
-      setSessionConfig(loadedConfig);
+      sessionDispatch({ type: 'SET_CONFIG', config: loadedConfig });
       const loadedQueueState = data.pendingUserQueue as PendingUserQueueState | undefined;
       const loadedQueue = Array.isArray(loadedQueueState?.items)
         ? clonePendingQueueItems(loadedQueueState.items)
@@ -669,18 +663,7 @@ export function AgentChatPanel({
       replacePendingUserQueue(loadedQueue);
       setQueueExpanded(loadedQueueState?.expanded !== false);
       // Session model config has highest priority (overrides agent default and global settings)
-      if (loadedConfig.provider) {
-        setChatProvider(loadedConfig.provider);
-        const sessionPreset = getProviderPreset(loadedConfig.provider);
-        const sessionOptionMap = new Map<string, string>();
-        for (const m of sessionPreset.models) sessionOptionMap.set(m.id, m.label || m.id);
-        if (loadedConfig.model && !sessionOptionMap.has(loadedConfig.model)) {
-          sessionOptionMap.set(loadedConfig.model, loadedConfig.model);
-        }
-        const sessionOptions = Array.from(sessionOptionMap.entries()).map(([value, label]) => ({ value, label }));
-        if (sessionOptions.length > 0) setChatModelOptions(sessionOptions);
-        if (loadedConfig.model) setChatModel(loadedConfig.model);
-      }
+      modelConfig.applySessionConfig(loadedConfig);
 
       // 加载父子会话导航信息（fire-and-forget，不阻塞主流程）
       loadSessionNavLinks(sid, data.parentSessionId);
@@ -707,12 +690,8 @@ export function AgentChatPanel({
     const toolCalls = toolCallsRef.current;
     const blocks = blocksRef.current;
 
-    // Use flushSync to ensure streaming bubble is cleared before committing final message.
-    flushSync(() => {
-      setIsStreaming(false);
-      setStreamingBlocks([]);
-      setInPlanMode(false);
-    });
+    // useReducer dispatch is synchronous — flushSync is no longer needed.
+    chatDispatch({ type: 'STREAM_END' });
 
     if (!isStaleStream && (fullText || toolCalls.length > 0)) {
       const cleanedText = stripSessionTitleTag(fullText);
@@ -724,7 +703,7 @@ export function AgentChatPanel({
         toolCalls: toolCalls.length > 0 ? [...toolCalls] : undefined,
         contentBlocks: blocks.length > 0 ? [...blocks] : undefined,
       };
-      setMessages((prev) => [...prev, assistantMsg]);
+      chatDispatch({ type: 'APPEND_MESSAGE', message: assistantMsg });
     }
     blocksRef.current = [];
     fullTextRef.current = '';
@@ -755,7 +734,7 @@ export function AgentChatPanel({
     fetchSessionList(agent.id, projectKey).then((sessions: SessionListItem[]) => {
       const current = sessions.find((s: SessionListItem) => s.id === currentSid);
       if (current) {
-        setSessionTitle(current.title);
+        sessionDispatch({ type: 'SET_TITLE', title: current.title });
       }
     });
 
@@ -894,7 +873,7 @@ export function AgentChatPanel({
               }
               // Track plan mode state
               if (event.toolName === 'EnterPlanMode') {
-                setInPlanMode(true);
+                chatDispatch({ type: 'PLAN_STARTED' });
               }
               break;
             }
@@ -908,7 +887,7 @@ export function AgentChatPanel({
 
                 // ExitPlanMode -> extract plan content from output as fallback
                 if (tc.toolName === 'ExitPlanMode') {
-                  setInPlanMode(false);
+                  chatDispatch({ type: 'PLAN_FINISHED' });
                   const out = (event.output ?? '').trim();
                   if (out.length > 50) {
                     setPlanContent(out);
@@ -920,11 +899,11 @@ export function AgentChatPanel({
             }
 
             case 'session_title_set':
-              setSessionTitle(event.title);
-              setSessionList((prev) => patchSessionListItem(prev, targetSessionId, {
+              sessionDispatch({ type: 'SET_TITLE', title: event.title });
+              sessionDispatch({ type: 'UPDATE_LIST', updater: (prev) => patchSessionListItem(prev, targetSessionId, {
                 title: event.title,
                 updatedAt: new Date().toISOString(),
-              }));
+              }) });
               // Notify parent immediately to update sidebar title.
               onSessionChange?.({
                 id: targetSessionId,
@@ -942,14 +921,24 @@ export function AgentChatPanel({
               break;
 
             case 'token_usage':
-              if (event.inputTokens > 0) setTokenInputs(event.inputTokens);
-              if (event.outputTokens > 0) setTokenOutputs(event.outputTokens);
-              if (event.contextWindow && event.contextWindow > 0) setContextWindow(event.contextWindow);
+              chatDispatch({ type: 'STREAM_TOKENS', input: event.inputTokens, output: event.outputTokens });
+              if (event.contextWindow && event.contextWindow > 0) setSseContextWindow(event.contextWindow);
               break;
 
             case 'error':
               console.error('Agent chat stream error:', event.message);
-              setErrorMsg(event.message ?? 'Stream error');
+              chatDispatch({ type: 'STREAM_ERROR', message: event.message ?? 'Stream error' });
+              break;
+
+            case 'awaiting_sub_agents':
+              // Session entered awaiting state — stop stream but mark as awaiting
+              sessionDispatch({ type: 'UPDATE_LIST', updater: (prev) =>
+                prev.map((s) =>
+                  s.id === streamTargetSessionRef.current
+                    ? { ...s, isRunning: false, isAwaiting: true, runningStartedAt: undefined }
+                    : s,
+                ),
+              });
               break;
 
             case 'done':
@@ -961,7 +950,7 @@ export function AgentChatPanel({
           rafIdRef.current = requestAnimationFrame(() => {
             rafIdRef.current = 0;
             startTransition(() => {
-              setStreamingBlocks([...blocksRef.current]);
+              chatDispatch({ type: 'STREAM_BLOCKS', blocks: [...blocksRef.current] });
             });
           });
         }
@@ -975,23 +964,16 @@ export function AgentChatPanel({
     }).catch((err) => {
       if ((err as Error).name === 'AbortError') return;
       console.error('Agent chat stream connection failed:', err);
-      setErrorMsg(`Stream connection failed: ${(err as Error).message}`);
+      chatDispatch({ type: 'STREAM_ERROR', message: `Stream connection failed: ${(err as Error).message}` });
       finalizeStream();
     });
   }, [finalizeStream]);
 
   // Reset state helper
   const resetState = useCallback(() => {
-    setMessages([]);
-    setIsStreaming(false);
-    setStreamingBlocks([]);
-    setErrorMsg(null);
-    setInPlanMode(false);
+    chatDispatch({ type: 'RESET' });
     setSessionIdSync(null);
-    setSessionTitle(hasProject ? t('chat.newSession') : 'New Session');
-    setSessionList([]);
-    setTokenInputs(0);
-    setTokenOutputs(0);
+    sessionDispatch({ type: 'RESET', defaultTitle: hasProject ? t('chat.newSession') : 'New Session' });
     setQueueExpanded(true);
     pendingUserMessagesRef.current = [];
     setPendingUserMessages([]);
@@ -1039,10 +1021,10 @@ export function AgentChatPanel({
             timestamp: '',
           }),
         );
-        setMessages(restored);
+        chatDispatch({ type: 'SET_MESSAGES', messages: restored });
       }
       markSessionRunning(sid, statusData.startedAt);
-      setIsStreaming(true);
+      chatDispatch({ type: 'SEND_START' });
       blocksRef.current = [];
       fullTextRef.current = '';
       toolCallsRef.current = [];
@@ -1076,7 +1058,7 @@ export function AgentChatPanel({
         // Auto-select latest
         const latest = sessions[0];
         setSessionIdSync(latest.id);
-        setSessionTitle(latest.title);
+        sessionDispatch({ type: 'SET_TITLE', title: latest.title });
         // Parallel: load session data + check status for latest
         const [, statusRes] = await Promise.all([
           loadSessionData(latest.id, token),
@@ -1099,7 +1081,7 @@ export function AgentChatPanel({
           const data = await res.json();
           if (!isStale() && data.status === 'running') {
             setSessionIdSync(sid);
-            setSessionTitle(sessions[i].title);
+            sessionDispatch({ type: 'SET_TITLE', title: sessions[i].title });
             await loadSessionData(sid, token);
             if (isStale()) return;
             reconnectRunning(sid, data);
@@ -1174,7 +1156,7 @@ export function AgentChatPanel({
       images: imagesToSend.length > 0 ? imagesToSend : undefined,
     };
 
-    setMessages((prev) => {
+    chatDispatch({ type: 'UPDATE_MESSAGES', updater: (prev) => {
       // Fold duplicate: if the last message is an unanswered user message with identical content,
       // replace it instead of appending (handles manual resend after network/auth errors)
       const last = prev[prev.length - 1];
@@ -1182,16 +1164,13 @@ export function AgentChatPanel({
         return [...prev.slice(0, -1), userMsg];
       }
       return [...prev, userMsg];
-    });
+    } });
     setAutoScroll(true);
-    setIsStreaming(true);
+    chatDispatch({ type: 'SEND_START' });
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
     lastEventIdxRef.current = -1;
-    setStreamingBlocks([]);
-
-    setErrorMsg(null);
 
     // For new sessions: generate sessionId + update UI immediately (before fetch)
     let targetSessionId = sessionId;
@@ -1199,14 +1178,14 @@ export function AgentChatPanel({
       targetSessionId = `agent-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const quickTitle = text.trim().slice(0, 10) || (hasProject ? t('chat.newSession') : 'New Session');
       setSessionIdSync(targetSessionId);
-      setSessionTitle(quickTitle);
+      sessionDispatch({ type: 'SET_TITLE', title: quickTitle });
       // Insert into session list immediately so it appears in history
       const newItem: SessionListItem = {
         id: targetSessionId!,
         title: quickTitle,
         updatedAt: new Date().toISOString(),
       };
-      setSessionList((prev) => upsertSessionListItem(prev, newItem));
+      sessionDispatch({ type: 'UPDATE_LIST', updater: (prev) => upsertSessionListItem(prev, newItem) });
       onSessionChange?.(newItem);
     }
 
@@ -1274,8 +1253,8 @@ export function AgentChatPanel({
     } catch (err) {
       const msg = (err as Error).message || 'Unknown error';
       console.error('Agent chat send failed:', msg);
-      setErrorMsg(msg);
-      setIsStreaming(false);
+      chatDispatch({ type: 'STREAM_ERROR', message: msg });
+      chatDispatch({ type: 'STREAM_END' });
       clearSessionRunning(targetSessionId);
     }
   }, [agent.id, sessionId, isStreaming, hasProject, projectKey, chatProvider, chatModel, chatEffort, connectToStream, onSessionChange, t, sessionConfig, setSessionIdSync, persistPendingUserQueue, sessionTitle, markSessionRunning, clearSessionRunning]);
@@ -1415,25 +1394,16 @@ export function AgentChatPanel({
     } catch {
       // ignore
     }
-    setSessionList(prev => prev.filter(s => s.id !== sessionId));
+    sessionDispatch({ type: 'UPDATE_LIST', updater: prev => prev.filter(s => s.id !== sessionId) });
     handleNewSession();
   };
 
   // Switch to a new (empty) session
   // Save session config
   const handleSaveConfig = useCallback(async (config: SessionConfig) => {
-    setSessionConfig(config);
+    sessionDispatch({ type: 'SET_CONFIG', config });
     // Sync model/provider to chat panel state if session config has them
-    if (config.provider) {
-      setChatProvider(config.provider);
-      const cfgPreset = getProviderPreset(config.provider);
-      const cfgOptionMap = new Map<string, string>();
-      for (const m of cfgPreset.models) cfgOptionMap.set(m.id, m.label || m.id);
-      if (config.model && !cfgOptionMap.has(config.model)) cfgOptionMap.set(config.model, config.model);
-      const cfgOptions = Array.from(cfgOptionMap.entries()).map(([value, label]) => ({ value, label }));
-      if (cfgOptions.length > 0) setChatModelOptions(cfgOptions);
-      if (config.model) setChatModel(config.model);
-    }
+    modelConfig.applySessionConfig(config);
     // Persist to backend if session exists on disk
     if (sessionId) {
       try {
@@ -1455,32 +1425,18 @@ export function AgentChatPanel({
       streamAbortRef.current.abort();
       streamAbortRef.current = null;
     }
-    setSessionIdSync(null);
-    setSessionTitle(hasProject ? t('chat.newSession') : 'New Session');
-    setMessages([]);
-    setSessionConfig({});
+    sessionDispatch({ type: 'NEW', defaultTitle: hasProject ? t('chat.newSession') : 'New Session' });
+    sessionIdRef.current = null;
+    chatDispatch({ type: 'SET_MESSAGES', messages: [] });
     setShowConfig(false);
     setCompressDismissed(false);
-    setParentSession(null);
-    setChildSessions([]);
-    setShowChildList(false);
     replacePendingUserQueue([]);
     setQueueExpanded(true);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
     // Reset model to agent default (session config cleared, fall back to agent/global defaults)
-    if (agent.defaultProvider) {
-      setChatProvider(agent.defaultProvider);
-      const agentPreset = getProviderPreset(agent.defaultProvider);
-      const agentOptions = agentPreset.models.map(m => ({ value: m.id, label: m.label || m.id }));
-      if (agentOptions.length > 0) setChatModelOptions(agentOptions);
-      if (agent.defaultModel) {
-        setChatModel(agent.defaultModel);
-      } else if (agentOptions.length > 0) {
-        setChatModel(agentOptions[0].value);
-      }
-    }
+    modelConfig.resetToAgentDefaults(agent);
   }, [isStreaming, hasProject, t, setSessionIdSync, agent, replacePendingUserQueue]);
 
   // Switch to an existing session
@@ -1492,14 +1448,11 @@ export function AgentChatPanel({
       streamAbortRef.current.abort();
       streamAbortRef.current = null;
     }
-    setSessionIdSync(target.id);
-    setSessionTitle(target.title);
-    setMessages([]);
-    setSessionConfig({});
+    sessionDispatch({ type: 'SELECT', id: target.id, title: target.title });
+    sessionIdRef.current = target.id;
+    chatDispatch({ type: 'RESET' });
     setShowConfig(false);
     setCompressDismissed(false);
-    setTokenInputs(0);
-    setTokenOutputs(0);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
@@ -1509,7 +1462,7 @@ export function AgentChatPanel({
     setQueueExpanded(true);
     // Mark as read
     if (target.unreadCount) {
-      setSessionList((prev) => patchSessionListItem(prev, target.id, { unreadCount: 0 }));
+      sessionDispatch({ type: 'UPDATE_LIST', updater: (prev) => patchSessionListItem(prev, target.id, { unreadCount: 0 }) });
       fetch(`/api/agent-chat/sessions/${target.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -1525,13 +1478,13 @@ export function AgentChatPanel({
 
   // Compress: confirm handler (dialog persists changes internally)
   const handleCompressConfirm = useCallback((compressedMessages: ChatMessage[]) => {
-    setMessages(compressedMessages);
+    chatDispatch({ type: 'SET_MESSAGES', messages: compressedMessages });
     setCompressDialogOpen(false);
   }, []);
 
   // Delete a single message from the conversation
   const handleDeleteMessage = useCallback((messageId: string) => {
-    setMessages(prev => prev.filter(m => m.id !== messageId));
+    chatDispatch({ type: 'UPDATE_MESSAGES', updater: prev => prev.filter(m => m.id !== messageId) });
   }, []);
 
   // Branch: create a new session from this message and switch to it.
@@ -1560,18 +1513,15 @@ export function AgentChatPanel({
         updatedAt: new Date().toISOString(),
         unreadCount: 0,
       };
-      setSessionList((prev) => upsertSessionListItem(prev, newItem));
+      sessionDispatch({ type: 'UPDATE_LIST', updater: (prev) => upsertSessionListItem(prev, newItem) });
 
       // Abort streaming if active so the session switch is not blocked
       if (streamAbortRef.current) {
         streamAbortRef.current.abort();
         streamAbortRef.current = null;
       }
-      flushSync(() => {
-        setIsStreaming(false);
-        setStreamingBlocks([]);
-        setInPlanMode(false);
-      });
+      // useReducer dispatch is synchronous — flushSync is no longer needed.
+      chatDispatch({ type: 'RESET' });
       blocksRef.current = [];
       fullTextRef.current = '';
       toolCallsRef.current = [];
@@ -1582,14 +1532,10 @@ export function AgentChatPanel({
       // isStreaming guard which could silently skip the switch).
       initTokenRef.current += 1;
       const token = initTokenRef.current;
-      setSessionIdSync(newItem.id);
-      setSessionTitle(newItem.title);
-      setMessages([]);
-      setSessionConfig({});
+      sessionDispatch({ type: 'SELECT', id: newItem.id, title: newItem.title });
+      sessionIdRef.current = newItem.id;
       setShowConfig(false);
       setCompressDismissed(false);
-      setTokenInputs(0);
-      setTokenOutputs(0);
       pendingAnswerRef.current = null;
       await loadSessionData(newItem.id, token);
 
@@ -1603,7 +1549,7 @@ export function AgentChatPanel({
   // Regenerate: remove the last assistant message and resend the last user message
   const handleRegenerate = useCallback(() => {
     if (isStreamingRef.current) return;
-    setMessages(prev => {
+    chatDispatch({ type: 'UPDATE_MESSAGES', updater: prev => {
       // Find the last user message
       const lastUserIdx = prev.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
       if (lastUserIdx === -1) return prev;
@@ -1614,7 +1560,7 @@ export function AgentChatPanel({
       setTimeout(() => doSendRef.current(lastUserMsg.content), 0);
       // Remove the user msg too since doSend will re-add it
       return trimmed.slice(0, -1);
-    });
+    } });
   }, []);
 
   // Retry: resend the last user message (for failed sends)
@@ -1624,8 +1570,8 @@ export function AgentChatPanel({
     const lastUserMsg = [...currentMessages].reverse().find(m => m.role === 'user');
     if (!lastUserMsg) return;
     // Remove the failed user message and the error, then re-send
-    setMessages(prev => prev.filter(m => m.id !== lastUserMsg.id));
-    setErrorMsg(null);
+    chatDispatch({ type: 'UPDATE_MESSAGES', updater: prev => prev.filter(m => m.id !== lastUserMsg.id) });
+    chatDispatch({ type: 'CLEAR_ERROR' });
     setTimeout(() => doSendRef.current(lastUserMsg.content), 0);
   }, []);
 
@@ -1867,7 +1813,7 @@ export function AgentChatPanel({
             onSelectGuest={handleSelectGuest}
             draftKey={sessionId ?? undefined}
             enableSlashCommands
-            tokenInfo={{ promptEstimate, inputTokens: tokenInputs, outputTokens: tokenOutputs, contextWindow }}
+            tokenInfo={{ promptEstimate, inputTokens: tokenInputs, outputTokens: tokenOutputs, contextWindow: effectiveContextWindow }}
           />
         </div>
 
@@ -1981,9 +1927,9 @@ export function AgentChatPanel({
           )}
           {/* 子会话指示器 */}
           {childSessions.length > 0 && (
-            <div className="relative shrink-0 ml-1" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setShowChildList(false); }}>
+            <div className="relative shrink-0 ml-1" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) sessionDispatch({ type: 'CLOSE_CHILD_LIST' }); }}>
               <button
-                onClick={() => setShowChildList(v => !v)}
+                onClick={() => sessionDispatch({ type: 'TOGGLE_CHILD_LIST' })}
                 className="flex items-center gap-0.5 text-xs text-violet-500 hover:text-violet-700 dark:hover:text-violet-300"
                 title={`${childSessions.length} 个子会话`}
               >
@@ -1997,7 +1943,7 @@ export function AgentChatPanel({
                     <button
                       key={cs.id}
                       onClick={() => {
-                        setShowChildList(false);
+                        sessionDispatch({ type: 'CLOSE_CHILD_LIST' });
                         router.push(buildSessionUrl(cs.agentId, cs.id));
                       }}
                       className="block w-full text-left px-2 py-1.5 text-xs text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-700 truncate"
@@ -2203,7 +2149,7 @@ export function AgentChatPanel({
           onSelectGuest={handleSelectGuest}
           draftKey={sessionId ?? undefined}
           enableSlashCommands
-          tokenInfo={{ promptEstimate, inputTokens: tokenInputs, outputTokens: tokenOutputs, contextWindow }}
+          tokenInfo={{ promptEstimate, inputTokens: tokenInputs, outputTokens: tokenOutputs, contextWindow: effectiveContextWindow }}
         />
       </div>
 
@@ -2304,6 +2250,10 @@ export function AgentChatPanel({
                 {s.isRunning ? (
                   <span className="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-blue-700 dark:bg-blue-950/70 dark:text-blue-300">
                     {formatSessionElapsed(s.runningStartedAt, sessionClockNow)}
+                  </span>
+                ) : s.isAwaiting ? (
+                  <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-amber-700 dark:bg-amber-950/70 dark:text-amber-300">
+                    ⏳
                   </span>
                 ) : !!s.unreadCount && s.unreadCount > 0 && (
                   <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-medium leading-none text-white">

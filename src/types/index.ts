@@ -272,6 +272,7 @@ export type ChatSSEEvent =
   /** 模型 token 用量（来自 SDK result.modelUsage 或 streaming message_start/message_delta） */
   | { type: 'token_usage'; inputTokens: number; outputTokens: number; contextWindow?: number }
   | { type: 'error'; message: string }
+  | { type: 'awaiting_sub_agents' }
   | { type: 'done' };
 
 // ==================== Agent ====================

@@ -762,7 +762,8 @@ export async function loadAgent(agentId: string): Promise<Agent> {
   const agentsData = _agentsCache;
   const agent = agentsData.agents.find(a => a.id === agentId && !a.archived);
   if (!agent) {
-    throw new Error('Agent not found or archived');
+    const { HttpError } = await import('@/lib/http-error');
+    throw new HttpError('Agent not found or archived', 404);
   }
   // Merge default agent fields (runtime migration)
   const defaultAgent = DEFAULT_AGENTS.find(a => a.id === agentId);

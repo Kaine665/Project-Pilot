@@ -8,7 +8,7 @@ const AgentChatPanel = dynamic(
   { ssr: false },
 );
 import { useProject } from '@/components/project-context';
-import { FolderKanban, Plus, Network, Bot, BookOpen, FileText, ListTodo, Table2, Timer, Satellite, MessageSquare, Blocks } from 'lucide-react';
+import { FolderKanban, Plus, Network, Bot, BookOpen, FileText, ListTodo, Table2, Timer, Satellite, MessageSquare, Blocks, Library } from 'lucide-react';
 import { SidebarIconButton } from '@/components/sidebar-icon-button';
 import { BUTLER_AGENT_ID } from '@/lib/default-agents';
 import type { Agent } from '@/types';
@@ -57,7 +57,8 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   const isSatelliteTasksPage = pathname.startsWith('/flows/satellite-tasks');
   const isChatPage = pathname.startsWith('/flows/chat');
   const isSkillsPage = pathname.startsWith('/flows/skills');
-  const isSubRoute = isAgentsPage || isContextPage || isDocsPage || isButlerPage || isTodosPage || isOrchestratorPage || isBitablePage || isSchedulesPage || isSatelliteTasksPage || isChatPage || isSkillsPage;
+  const isKnowledgePage = pathname.startsWith('/flows/knowledge');
+  const isSubRoute = isAgentsPage || isContextPage || isDocsPage || isButlerPage || isTodosPage || isOrchestratorPage || isBitablePage || isSchedulesPage || isSatelliteTasksPage || isChatPage || isSkillsPage || isKnowledgePage;
 
   // Auto-close expandable panel when on sub-route pages
   useEffect(() => {
@@ -184,6 +185,7 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
               <div className="w-6 border-t border-zinc-200 dark:border-zinc-700" />
 
               {/* Group: Knowledge */}
+              <SidebarIconButton icon={Library} tooltip="知识库" isActive={isKnowledgePage} onClick={() => router.push('/flows/knowledge')} />
               <SidebarIconButton icon={BookOpen} tooltip="上下文" isActive={isContextPage} onClick={handleNavigateContext} />
               <SidebarIconButton icon={FileText} tooltip="设计文档" isActive={isDocsPage} onClick={handleNavigateDocs} />
               <SidebarIconButton icon={Blocks} tooltip="Skills" isActive={isSkillsPage} onClick={() => router.push('/flows/skills')} />
@@ -201,8 +203,7 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
               <SidebarIconButton icon={Timer} tooltip="定时运行" isActive={isSchedulesPage} onClick={() => router.push('/flows/schedules')} />
               <SidebarIconButton icon={Satellite} tooltip="卫星任务" isActive={isSatelliteTasksPage} onClick={() => router.push('/flows/satellite-tasks')} />
 
-              {/* Spacer pushes chat to bottom */}
-              <div className="flex-1" />
+              <div className="w-6 border-t border-zinc-200 dark:border-zinc-700" />
 
               {/* Group: Communication */}
               <SidebarIconButton icon={MessageSquare} tooltip="P2P 聊天" isActive={isChatPage} onClick={() => router.push('/flows/chat')} />

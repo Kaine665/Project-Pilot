@@ -19,8 +19,180 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   MessageSquare, LogIn, UserPlus, Check, X, Search,
-  Send, Users, Bell, ChevronRight, Loader2, Sparkles,
+  Send, Users, Bell, ChevronRight, Loader2, Sparkles, Settings,
 } from 'lucide-react';
+
+// ── AI 配置 ──────────────────────────────────────────────────────────────────
+
+const AI_CONFIG_KEY = 'pp_chat_ai_config';
+
+interface AiConfig {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+}
+
+const DEFAULT_AI_CONFIG: AiConfig = {
+  apiKey: '',
+  baseUrl: 'https://api.openai.com/v1',
+  model: 'gpt-4o-mini',
+};
+
+function loadAiConfig(): AiConfig {
+  try {
+    const raw = localStorage.getItem(AI_CONFIG_KEY);
+    if (raw) return { ...DEFAULT_AI_CONFIG, ...JSON.parse(raw) };
+  } catch { /* ignore */ }
+  return { ...DEFAULT_AI_CONFIG };
+}
+
+function saveAiConfig(cfg: AiConfig) {
+  localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(cfg));
+}
+
+/** 检测是否 @ai 开头的消息 */
+function isAiWakeWord(content: string): boolean {
+  const trimmed = content.trim().toLowerCase();
+  return trimmed.startsWith('@ai ') || trimmed === '@ai';
+}
+
+/** 调用 OpenAI 兼容的 Chat Completions API */
+async function callAiApi(
+  config: AiConfig,
+  userMessage: string,
+  recentMessages: ChatMessage9090[],
+): Promise<string> {
+  const contextMessages = recentMessages.slice(-20).map(m => ({
+    role: m.type === 'AI_SUMMARY' ? 'assistant' as const : 'user' as const,
+    content: `[${m.sender.username}]: ${m.content}`,
+  }));
+
+  const question = userMessage.replace(/^@ai\s*/i, '').trim() || '总结一下最近的聊天';
+
+  const systemPrompt = `你是一个聊天助手，嵌入在 P2P 聊天应用中。用户通过 @ai 唤醒你。
+你可以看到最近的聊天记录上下文。请用中文回答，简洁实用。
+如果用户让你总结聊天，请提取：讨论主题、关键决定、待办事项、重要信息。`;
+
+  const res = await fetch(`${config.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${config.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: config.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        ...contextMessages,
+        { role: 'user', content: question },
+      ],
+      max_tokens: 1024,
+      temperature: 0.7,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`AI API 错误 (${res.status}): ${err}`);
+  }
+
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content ?? '(AI 无响应)';
+}
+
+// ── AI 设置弹窗 ──────────────────────────────────────────────────────────────
+
+function AiSettingsModal({ config, onSave, onClose }: {
+  config: AiConfig;
+  onSave: (cfg: AiConfig) => void;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState<AiConfig>({ ...config });
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  async function handleTest() {
+    if (!draft.apiKey) { setTestResult({ ok: false, msg: '请填写 API Key' }); return; }
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch(`${draft.baseUrl}/models`, {
+        headers: { 'Authorization': `Bearer ${draft.apiKey}` },
+      });
+      if (res.ok) {
+        setTestResult({ ok: true, msg: '连接成功 ✓' });
+      } else {
+        setTestResult({ ok: false, msg: `连接失败 (${res.status})` });
+      }
+    } catch (e) {
+      setTestResult({ ok: false, msg: `连接失败: ${(e as Error).message}` });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-6 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+        onClick={e => e.stopPropagation()}>
+        <div className="mb-5 flex items-center gap-2">
+          <Sparkles className="h-5 w-5 text-amber-500" />
+          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">AI 设置</h2>
+        </div>
+
+        <p className="mb-4 text-xs text-zinc-500 dark:text-zinc-400">
+          配置 OpenAI 兼容的 API，发送 <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono dark:bg-zinc-800">@ai</code> 消息时前端直接调用 AI。
+        </p>
+
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">API Key</label>
+            <input type="password" value={draft.apiKey}
+              onChange={e => setDraft(d => ({ ...d, apiKey: e.target.value }))}
+              placeholder="sk-..."
+              className="w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">Base URL</label>
+            <input value={draft.baseUrl}
+              onChange={e => setDraft(d => ({ ...d, baseUrl: e.target.value }))}
+              placeholder="https://api.openai.com/v1"
+              className="w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">模型</label>
+            <input value={draft.model}
+              onChange={e => setDraft(d => ({ ...d, model: e.target.value }))}
+              placeholder="gpt-4o-mini"
+              className="w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+          </div>
+        </div>
+
+        {testResult && (
+          <p className={`mt-3 text-xs ${testResult.ok ? 'text-emerald-600' : 'text-red-500'}`}>
+            {testResult.msg}
+          </p>
+        )}
+
+        <div className="mt-5 flex items-center gap-2">
+          <button onClick={handleTest} disabled={testing}
+            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
+            {testing ? '测试中...' : '测试连接'}
+          </button>
+          <div className="flex-1" />
+          <button onClick={onClose}
+            className="rounded-lg px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
+            取消
+          </button>
+          <button onClick={() => { saveAiConfig(draft); onSave(draft); onClose(); }}
+            className="rounded-lg bg-zinc-900 px-4 py-1.5 text-xs font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300">
+            保存
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 import {
   CHAT_TOKEN_KEY, CHAT_USER_KEY, CHAT_SOCKET_URL,
   chatLogin, chatRegister, chatGetMe, chatGetChats, chatGetMessages,
@@ -182,6 +354,12 @@ function ChatMain({ user, token, onLogout }: {
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
   const [aiThinking, setAiThinking] = useState(false);
 
+  // ── AI 配置 ──
+  const [aiConfig, setAiConfig] = useState<AiConfig>(DEFAULT_AI_CONFIG);
+  const [showAiSettings, setShowAiSettings] = useState(false);
+
+  useEffect(() => { setAiConfig(loadAiConfig()); }, []);
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -275,14 +453,63 @@ function ChatMain({ user, token, onLogout }: {
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   // ── 发送消息 ──
-  function sendMessage() {
+  async function sendMessage() {
     const content = input.trim();
     if (!content || !activeChat || !socketRef.current) return;
-    socketRef.current.emit('send_message', { chatId: activeChat.id, content });
+
+    // 先清空输入 & 停止 typing
     setInput('');
     if (typingTimer.current) clearTimeout(typingTimer.current);
     socketRef.current.emit('typing_stop', { chatId: activeChat.id });
     setTimeout(() => inputRef.current?.focus(), 0);
+
+    // 前端 AI 拦截：如果是 @ai 消息且已配置 API Key
+    if (isAiWakeWord(content) && aiConfig.apiKey) {
+      // 先把用户的 @ai 消息作为本地消息显示
+      const userMsg: ChatMessage9090 = {
+        id: `local-user-${Date.now()}`,
+        content,
+        type: 'TEXT',
+        senderId: user.id,
+        chatId: activeChat.id,
+        createdAt: new Date().toISOString(),
+        sender: { id: user.id, username: user.username, avatar: null },
+      };
+      setMessages(prev => [...prev, userMsg]);
+
+      // 显示 AI thinking 状态
+      setAiThinking(true);
+      try {
+        const reply = await callAiApi(aiConfig, content, messages);
+        const aiMsg: ChatMessage9090 = {
+          id: `local-ai-${Date.now()}`,
+          content: reply,
+          type: 'AI_SUMMARY',
+          senderId: 'ai-local',
+          chatId: activeChat.id,
+          createdAt: new Date().toISOString(),
+          sender: { id: 'ai-local', username: 'AI 助手', avatar: null },
+        };
+        setMessages(prev => [...prev, aiMsg]);
+      } catch (e) {
+        const errMsg: ChatMessage9090 = {
+          id: `local-ai-err-${Date.now()}`,
+          content: `❌ AI 调用失败: ${(e as Error).message}`,
+          type: 'AI_SUMMARY',
+          senderId: 'ai-local',
+          chatId: activeChat.id,
+          createdAt: new Date().toISOString(),
+          sender: { id: 'ai-local', username: 'AI 助手', avatar: null },
+        };
+        setMessages(prev => [...prev, errMsg]);
+      } finally {
+        setAiThinking(false);
+      }
+      return;
+    }
+
+    // 普通消息或未配置 AI：走后端 Socket.IO
+    socketRef.current.emit('send_message', { chatId: activeChat.id, content });
   }
 
   function handleInputChange(val: string) {
@@ -505,9 +732,17 @@ function ChatMain({ user, token, onLogout }: {
                 {typingUsers.size > 0 ? '正在输入...' : otherOnline ? '在线' : '离线'}
               </p>
             </div>
-            <div className="flex items-center gap-1.5 text-xs text-zinc-400">
+            <div className="flex items-center gap-2 text-xs text-zinc-400">
               <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-              <span>发送 <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono dark:bg-zinc-800">@ai 问题</code> 唤醒 AI</span>
+              <span>
+                <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono dark:bg-zinc-800">@ai</code>
+                {aiConfig.apiKey ? ' 前端直连' : ' 后端'}
+              </span>
+              <button onClick={() => setShowAiSettings(true)}
+                title="AI 设置"
+                className={`rounded-md p-1 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800 ${aiConfig.apiKey ? 'text-amber-500' : 'text-zinc-400'}`}>
+                <Settings className="h-3.5 w-3.5" />
+              </button>
             </div>
           </div>
 
@@ -582,6 +817,14 @@ function ChatMain({ user, token, onLogout }: {
             </div>
           </div>
         </div>
+      )}
+      {/* ══ AI 设置弹窗 ══ */}
+      {showAiSettings && (
+        <AiSettingsModal
+          config={aiConfig}
+          onSave={setAiConfig}
+          onClose={() => setShowAiSettings(false)}
+        />
       )}
     </div>
   );
