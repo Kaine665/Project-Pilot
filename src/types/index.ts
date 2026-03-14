@@ -483,18 +483,48 @@ export interface ProjectIndex {
 
 // ==================== Design Docs（项目设计文档） ====================
 
+/** 文档生命周期状态 */
+export type DocStatus = 'active' | 'draft' | 'deprecated';
+
 export interface DocEntry {
   id: string;           // doc-{timestamp}-{random}
   title: string;
   description?: string;
   fileName: string;     // design-docs/{docId}.md
   projectKey: string;   // 关联项目
+  /** 分类 ID（对应 categories 中的 id），可选 */
+  category?: string;
+  /** 自由标签列表 */
+  tags?: string[];
+  /** 文档状态，默认 'active' */
+  status?: DocStatus;
+  /** 本文档被哪个文档替代（新文档 ID） */
+  supersededBy?: string;
+  /** 本文档替代了哪个文档（旧文档 ID） */
+  supersedes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 文档分类定义 */
+export interface CategoryDef {
+  id: string;           // cat-{timestamp}-{random}
+  /** 分类名称 */
+  name: string;
+  /** 分类描述 */
+  description?: string;
+  /** 排序权重（越小越靠前） */
+  sortOrder?: number;
+  /** 所属项目（可选，undefined = 全局分类） */
+  projectKey?: string;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface DocsIndexData {
   projects: Record<string, DocEntry[]>;
+  /** 文档分类定义列表 */
+  categories?: CategoryDef[];
 }
 
 // ==================== Orchestrator ====================
