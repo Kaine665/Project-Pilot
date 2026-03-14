@@ -12,20 +12,15 @@ import type { ResourceLoader, LoaderContext } from '../resource-loader';
 import type { ResourceRef, ResolvedResource } from '@/types/resource';
 import { getAgentsPath, readJsonFile } from '@/lib/file-store';
 import type { AgentsData, Agent, AgentCapabilities } from '@/types';
-import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import { mergeAndRepairAgentsData } from '@/lib/agent-metadata-repair';
 
 export class AvailableAgentsLoader implements ResourceLoader {
   readonly type = 'available-agents' as const;
 
   async resolve(ref: ResourceRef, ctx: LoaderContext): Promise<ResolvedResource> {
-    const data = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
-
-    // Ensure built-in agents are included (same merge logic as agents API route)
-    for (const defaultAgent of DEFAULT_AGENTS) {
-      if (!data.agents.some(a => a.id === defaultAgent.id)) {
-        data.agents.unshift(defaultAgent);
-      }
-    }
+    const { data } = await mergeAndRepairAgentsData(
+      await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] }),
+    );
 
     // Filter: non-archived, exclude self
     const callable = data.agents.filter(a => !a.archived && a.id !== ctx.agentId);

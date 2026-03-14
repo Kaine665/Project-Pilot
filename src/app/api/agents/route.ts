@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAgentsPath, readJsonFile, writeJsonFile } from '@/lib/file-store';
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import { mergeAndRepairAgentsData } from '@/lib/agent-metadata-repair';
 import { readPromptFile, writePromptFile, deletePromptFile, resolveSystemPrompt } from '@/lib/agent-prompt-store';
 import { getSettings } from '@/lib/settings-manager';
 import type { Agent, AgentCapabilities, AgentsData } from '@/types';
@@ -38,30 +39,13 @@ async function readAgents(): Promise<AgentsData> {
     return _cachedData;
   }
 
-  const data = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
-  // ── 内置 Agent 字段迁移 ──
-  // 磁盘上的 agents.json 可能是旧版本写入的，缺少后来新增的字段（如 capabilities）。
-  // 必须在每次读取时将 DEFAULT_AGENTS 的新字段合并进来，否则下游（settings-manager
-  // 的 buildAgentPermissionArgs 等）会回退到 DEFAULT_AGENT_CAPABILITIES，导致
-  // skipReview=false → Claude 进程缺少 --dangerously-skip-permissions → 非交互模式卡死。
-  // 同样的合并逻辑在 agent-chat-manager.ts 的 start() 中也有一份（运行时双保险）。
-  let changed = false;
-  for (const defaultAgent of DEFAULT_AGENTS) {
-    const existing = data.agents.find(a => a.id === defaultAgent.id);
-    if (!existing) {
-      data.agents.unshift(defaultAgent);
-      changed = true;
-    } else {
-      // Merge missing fields from default (e.g. capabilities added later)
-      for (const key of Object.keys(defaultAgent) as Array<keyof Agent>) {
-        if (existing[key] === undefined && defaultAgent[key] !== undefined) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (existing as any)[key] = defaultAgent[key];
-          changed = true;
-        }
-      }
-    }
-  }
+  const { data, changed: mergedChanged } = await mergeAndRepairAgentsData(
+    await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] }),
+  );
+  // ── 内置 Agent 字段迁移 + 元数据修复 ──
+  // 磁盘上的 agents.json 可能缺少新字段，也可能残留历史乱码元数据。
+  // 读取时统一合并默认字段，并尽量从 prompt 文件恢复名称/描述。
+  let changed = mergedChanged;
 
   // ── systemPrompt 外置懒迁移 ──
   // 旧版 agents.json 中 systemPrompt 是内联字符串，现在迁移到 prompts/{agentId}.md 文件。
