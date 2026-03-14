@@ -171,6 +171,44 @@ export function collectFlowTaskContext(params: {
   };
 }
 
+const DEFAULT_FLOW_AGENT_ID = 'agent-builtin-butler';
+
+export function resolveFlowAgentId(item: TreeItem): string {
+  const id = item.agentId?.trim();
+  return id && id.length > 0 ? id : DEFAULT_FLOW_AGENT_ID;
+}
+
+export function buildFlowTaskPrompt(flowContext: FlowTaskContext): string {
+  const lines: string[] = [];
+  lines.push(`任务：${flowContext.taskContent}`);
+  if (flowContext.taskDescription?.trim()) {
+    lines.push(`任务描述：${flowContext.taskDescription.trim()}`);
+  }
+  if (flowContext.sectionName?.trim()) {
+    lines.push(`所在板块：${flowContext.sectionName.trim()}`);
+  }
+  if (flowContext.ancestors.length > 0) {
+    lines.push(`上级路径：${flowContext.ancestors.map(a => a.content).join(' > ')}`);
+  }
+  if (flowContext.siblings.length > 0) {
+    lines.push(`同级任务：${flowContext.siblings.map(s => `${s.content}(${s.status})`).join('；')}`);
+  }
+  lines.push('请先给出执行计划，再开始实施。');
+  return lines.join('\n');
+}
+
+export function buildFlowAgentUrl(params: {
+  projectKey?: string;
+  agentId: string;
+  sessionId: string;
+}): string {
+  const query = new URLSearchParams();
+  if (params.projectKey) query.set('project', params.projectKey);
+  query.set('agent', params.agentId);
+  query.set('session', params.sessionId);
+  return `/flows/agents?${query.toString()}`;
+}
+
 // --- Shared UI components ---
 
 export function StatusIcon({ status }: { status: Status }) {

@@ -340,22 +340,23 @@ export default function AgentsPage() {
       }).catch(() => {});
     }
 
-    // Check if already opened
+    let panelKey: number | null = null;
     setOpenedSessions(prev => {
       const existing = prev.find(
         o => o.sessionId === session.id && o.agentId === session.agentId,
       );
       if (existing) {
-        setActivePanel({ type: 'session', key: existing.key });
-        syncUrlParams({ agent: session.agentId, session: session.id });
+        panelKey = existing.key;
         return prev;
       }
-      // Open new instance
-      const key = nextKeyRef.current++;
-      setActivePanel({ type: 'session', key });
-      syncUrlParams({ agent: session.agentId, session: session.id });
-      return [...prev, { sessionId: session.id, agentId: session.agentId, key }];
+      panelKey = nextKeyRef.current++;
+      return [...prev, { sessionId: session.id, agentId: session.agentId, key: panelKey }];
     });
+
+    if (panelKey !== null) {
+      setActivePanel({ type: 'session', key: panelKey });
+      syncUrlParams({ agent: session.agentId, session: session.id });
+    }
   }, []);
 
   const handleNewSession = (agent: Agent) => {

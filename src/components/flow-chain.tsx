@@ -427,9 +427,6 @@ function TreeItemRow({
   const [isOpen, setIsOpen] = useState(!!(item.children && item.children.length > 0));
   const [isAdding, setIsAdding] = useState(false);
 
-  if (!ctx) return null;
-  if (!showDeferred && item.deferred) return null;
-
   const hasChildren = !!(item.children && item.children.length > 0);
   const isDeferred = !!item.deferred;
   const filterDeferred = !showDeferred;
@@ -457,6 +454,9 @@ function TreeItemRow({
       setIsOpen(true);
     }
   }, [highlightTarget, hasChildren, item.children]);
+
+  if (!ctx) return null;
+  if (!showDeferred && item.deferred) return null;
 
   const { done: doneCount, total: totalCount } = hasChildren
     ? countDone(item.children!, filterDeferred)
@@ -648,20 +648,6 @@ export function SectionBlock({ section }: { section: Section }) {
 
   // AI launch handler
   const handleLaunchAI = async (item: TreeItem, ancestors: TreeItem[]) => {
-    // Check if session already exists
-    try {
-      const lookupRes = await fetch(`/api/tasks?flowTaskId=${item.id}`);
-      if (lookupRes.ok) {
-        const { session: existing } = await lookupRes.json();
-        if (existing) {
-          router.push(`/tasks/${existing.id}`);
-          return;
-        }
-      }
-    } catch {
-      // fall through
-    }
-
     const flowContext = collectFlowTaskContext({
       projectKey,
       projectName,
@@ -675,19 +661,33 @@ export function SectionBlock({ section }: { section: Section }) {
       globalContextIds: item.context?.globalContextIds,
     });
 
-    const res = await fetch('/api/tasks', {
+    const agentId = item.agentId?.trim() || 'agent-builtin-butler';
+    const promptLines: string[] = [];
+    promptLines.push(`任务：${flowContext.taskContent}`);
+    if (flowContext.taskDescription?.trim()) promptLines.push(`任务描述：${flowContext.taskDescription.trim()}`);
+    if (flowContext.sectionName?.trim()) promptLines.push(`所在板块：${flowContext.sectionName.trim()}`);
+    if (flowContext.ancestors.length > 0) promptLines.push(`上级路径：${flowContext.ancestors.map(a => a.content).join(' > ')}`);
+    if (flowContext.siblings.length > 0) promptLines.push(`同级任务：${flowContext.siblings.map(s => `${s.content}(${s.status})`).join('；')}`);
+    promptLines.push('请先给出执行计划，再开始实施。');
+
+    const res = await fetch('/api/agent-chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        title: item.content,
+        agentId,
+        message: promptLines.join('\n'),
         projectKey,
-        flowContext,
+        initialTitle: item.content,
       }),
     });
 
     if (res.ok) {
-      const session = await res.json();
-      router.push(`/tasks/${session.id}`);
+      const session = await res.json() as { sessionId: string };
+      const query = new URLSearchParams();
+      query.set('project', projectKey);
+      query.set('agent', agentId);
+      query.set('session', session.sessionId);
+      router.push(`/flows/agents?${query.toString()}`);
     }
   };
 
