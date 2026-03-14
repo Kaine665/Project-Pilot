@@ -182,11 +182,14 @@ class AgentChatManager {
       throw new Error('This session is already running');
     }
 
-    const isResume = !!existing?.claudeSessionId;
-
     const messages = existing?.messages ? [...existing.messages] : [];
     const dataUrls = images?.map(img => `data:${img.mediaType};base64,${img.data}`);
     messages.push({ role: 'user', content: message, images: dataUrls?.length ? dataUrls : undefined });
+
+    // History turns for prompt injection (all messages before the current user message)
+    const historyTurns: Array<{ role: 'user' | 'assistant'; content: string }> = existing?.messages
+      ? existing.messages.map(m => ({ role: m.role, content: m.content }))
+      : [];
 
     const sessionConfig = initialConfig ?? existing?.config;
 
@@ -218,14 +221,23 @@ class AgentChatManager {
       }
     }
 
+    // ── Detect provider switch → invalidate SDK session ID ──
+    const previousProvider = existing?.config?.provider;
+    const providerSwitched = !!previousProvider && !!resolvedProvider && previousProvider !== resolvedProvider;
+    const isResume = !!existing?.claudeSessionId && !providerSwitched;
+
+    if (providerSwitched) {
+      console.log(`${LOG_PREFIX} Provider switched from ${previousProvider} to ${resolvedProvider} — will NOT resume SDK session, history injected via prompt`);
+    }
+
     // Build prompt
     const sessionProjectKey = flowContext?.projectKey ?? existing?.projectKey;
 
     let promptContent: string;
     if (flowContext) {
-      promptContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext, persistedConfig, sessionId);
+      promptContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext, persistedConfig, sessionId, historyTurns);
     } else {
-      promptContent = await buildAgentChatPrompt(agent, message, persistedConfig, sessionId, sessionProjectKey);
+      promptContent = await buildAgentChatPrompt(agent, message, persistedConfig, sessionId, sessionProjectKey, historyTurns);
     }
 
     // Write images to temp files
@@ -968,8 +980,28 @@ async function buildResourcePrompt(
 
 // ── Prompt Builders (powered by Resource Registry) ──
 
-async function buildAgentChatPrompt(agent: Agent, message: string, sessionConfig?: SessionConfig, sessionId?: string, projectKey?: string): Promise<string> {
-  const resourcePrompt = await buildResourcePrompt(agent, undefined, sessionConfig, sessionId, projectKey);
+async function buildAgentChatPrompt(
+  agent: Agent,
+  message: string,
+  sessionConfig?: SessionConfig,
+  sessionId?: string,
+  projectKey?: string,
+  historyTurns?: Array<{ role: 'user' | 'assistant'; content: string }>,
+): Promise<string> {
+  const extraRefs: ResourceRef[] = [];
+
+  if (historyTurns && historyTurns.length > 0) {
+    const turnsRef: ReferenceTurnsRef = {
+      type: 'reference-turns',
+      id: '_history',
+      priority: 60,
+      label: '对话历史',
+      turns: historyTurns,
+    };
+    extraRefs.push(turnsRef);
+  }
+
+  const resourcePrompt = await buildResourcePrompt(agent, extraRefs.length > 0 ? extraRefs : undefined, sessionConfig, sessionId, projectKey);
 
   return `${resourcePrompt}
 
@@ -984,8 +1016,11 @@ async function buildAgentChatPromptWithFlowContext(
   flowContext: FlowContext,
   sessionConfig?: SessionConfig,
   sessionId?: string,
+  historyTurns?: Array<{ role: 'user' | 'assistant'; content: string }>,
 ): Promise<string> {
   const { projectKey, projectName, flowDataPath } = flowContext;
+
+  const extraRefs: ResourceRef[] = [];
 
   const flowRef: FlowContextRef = {
     type: 'flow-context',
@@ -996,8 +1031,20 @@ async function buildAgentChatPromptWithFlowContext(
     projectName,
     flowDataPath,
   };
+  extraRefs.push(flowRef);
 
-  const resourcePrompt = await buildResourcePrompt(agent, [flowRef], sessionConfig, sessionId, projectKey);
+  if (historyTurns && historyTurns.length > 0) {
+    const turnsRef: ReferenceTurnsRef = {
+      type: 'reference-turns',
+      id: '_history',
+      priority: 60,
+      label: '对话历史',
+      turns: historyTurns,
+    };
+    extraRefs.push(turnsRef);
+  }
+
+  const resourcePrompt = await buildResourcePrompt(agent, extraRefs, sessionConfig, sessionId, projectKey);
 
   return `${resourcePrompt}
 
