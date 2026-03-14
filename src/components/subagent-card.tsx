@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { Blocks, ChevronDown, ChevronRight, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import type { ChatToolCall } from '@/types';
 
@@ -29,17 +29,19 @@ const statusIcons: Record<string, React.ReactNode> = {
 export const SubagentCard = memo(function SubagentCard({ toolCall }: SubagentCardProps) {
   const [expanded, setExpanded] = useState(false);
 
-  let agentType = '';
-  let description = '';
-  let prompt = '';
-  try {
-    const parsed = JSON.parse(toolCall.input);
-    agentType = parsed.subagent_type || '';
-    description = parsed.description || '';
-    prompt = parsed.prompt || '';
-  } catch {
-    return null;
-  }
+  const parsed = useMemo(() => {
+    try {
+      return JSON.parse(toolCall.input) as Record<string, string>;
+    } catch {
+      return null;
+    }
+  }, [toolCall.input]);
+
+  if (!parsed) return null;
+
+  const agentType = parsed.subagent_type || '';
+  const description = parsed.description || '';
+  const prompt = parsed.prompt || '';
 
   const typeInfo = agentTypeLabels[agentType] || { label: agentType, color: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400' };
   const isRunning = toolCall.status === 'running';
