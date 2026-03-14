@@ -89,6 +89,10 @@ export const SessionDropdown = memo(function SessionDropdown({
                   <span className="shrink-0 rounded-full bg-blue-100 px-1 py-0.5 text-[10px] font-medium leading-none text-blue-700 dark:bg-blue-950/70 dark:text-blue-300">
                     {formatSessionElapsed(s.runningStartedAt, clockNow)}
                   </span>
+                ) : s.isAwaiting ? (
+                  <span className="shrink-0 rounded-full bg-amber-100 px-1 py-0.5 text-[10px] font-medium leading-none text-amber-700 dark:bg-amber-950/70 dark:text-amber-300">
+                    ⏳
+                  </span>
                 ) : !!s.unreadCount && s.unreadCount > 0 && (
                   <span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-red-500 px-0.5 text-[10px] font-medium leading-none text-white">
                     {s.unreadCount > 99 ? '99+' : s.unreadCount}
