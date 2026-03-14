@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTodosPath, modifyJsonFile } from '@/lib/file-store';
-import type { TodosData } from '@/types';
+import type { TodoSubTask, TodosData } from '@/types';
 
 const DEFAULT: TodosData = { todos: [] };
 
 /**
  * PATCH /api/todos/:id
- * Update a todo item (title, description, status, priority, dueAt).
+ * Update a todo item.
  */
 export async function PATCH(
   request: NextRequest,
@@ -19,7 +19,7 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const { title, description, status, priority, agentId, sessionId, projectKey, dueAt } = body;
+  const { title, description, status, priority, agentId, sessionId, projectKey, dueAt, tags, subTasks } = body;
 
   const validStatuses = ['pending', 'in_progress', 'done'];
   const validPriorities = ['high', 'medium', 'low'];
@@ -42,6 +42,12 @@ export async function PATCH(
   if (dueAt !== undefined && dueAt !== null && typeof dueAt !== 'string') {
     return NextResponse.json({ error: 'Invalid dueAt' }, { status: 400 });
   }
+  if (tags !== undefined && !Array.isArray(tags)) {
+    return NextResponse.json({ error: 'tags must be an array' }, { status: 400 });
+  }
+  if (subTasks !== undefined && !Array.isArray(subTasks)) {
+    return NextResponse.json({ error: 'subTasks must be an array' }, { status: 400 });
+  }
 
   let updated: TodosData['todos'][number] | null = null;
 
@@ -59,6 +65,8 @@ export async function PATCH(
         ...(sessionId !== undefined && { sessionId: sessionId || undefined }),
         ...(projectKey !== undefined && { projectKey: projectKey || undefined }),
         ...(dueAt !== undefined && { dueAt: dueAt || undefined }),
+        ...(tags !== undefined && { tags: (tags as string[]).filter(Boolean) }),
+        ...(subTasks !== undefined && { subTasks: subTasks as TodoSubTask[] }),
         updatedAt: new Date().toISOString(),
       };
       updated = patched;
