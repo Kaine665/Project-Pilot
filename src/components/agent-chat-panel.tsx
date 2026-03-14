@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, startTransition } from 'react';
 import { flushSync } from 'react-dom';
 import { Loader2, Maximize2, Minimize2, Bot, Sparkles, Plus, MessageSquare, Trash2, Settings, FileDown, ClipboardList, ArrowLeft, GitFork, ArrowUp, ChevronDown, ChevronUp, Layers, FolderOpen } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -232,6 +232,7 @@ export function AgentChatPanel({
   const initTokenRef = useRef(0);
   const doSendRef = useRef<(text: string, images?: string[]) => void>(() => {});
   const isStreamingRef = useRef(false);
+  const messagesRef = useRef<ChatMessage[]>([]);
   const pendingAnswerRef = useRef<{ answer: string; targetSessionId: string } | null>(null);
   const pendingUserMessagesRef = useRef<PendingUserQueueItem[]>([]);
   // OpenAI 模型列表缓存（5 分钟 TTL，避免每次切换都发请求）
@@ -250,6 +251,10 @@ export function AgentChatPanel({
   useEffect(() => {
     isStreamingRef.current = isStreaming;
   }, [isStreaming]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   const persistPendingUserQueue = useCallback((
     targetSessionId: string,
@@ -952,8 +957,13 @@ export function AgentChatPanel({
           }
         }
 
-        if (chunkHasDisplayEvents) {
-          setStreamingBlocks([...blocksRef.current]);
+        if (chunkHasDisplayEvents && !rafIdRef.current) {
+          rafIdRef.current = requestAnimationFrame(() => {
+            rafIdRef.current = 0;
+            startTransition(() => {
+              setStreamingBlocks([...blocksRef.current]);
+            });
+          });
         }
       }
 
@@ -1527,17 +1537,19 @@ export function AgentChatPanel({
   // Branch: create a new session from this message and switch to it.
   // Works even during streaming — aborts the current stream before switching.
   const handleBranch = useCallback(async (messageId: string) => {
-    if (!sessionId) return;
-    const msgIndex = messages.findIndex(m => m.id === messageId);
+    const currentSessionId = sessionIdRef.current;
+    if (!currentSessionId) return;
+    const currentMessages = messagesRef.current;
+    const msgIndex = currentMessages.findIndex(m => m.id === messageId);
     if (msgIndex < 0) return;
     try {
       const res = await fetch('/api/agent-chat/sessions/branch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sourceSessionId: sessionId,
+          sourceSessionId: currentSessionId,
           branchAtIndex: msgIndex,
-          frontendMessageCount: messages.length,
+          frontendMessageCount: currentMessages.length,
         }),
       });
       if (!res.ok) return;
@@ -1586,11 +1598,11 @@ export function AgentChatPanel({
     } catch {
       // ignore
     }
-  }, [sessionId, messages, loadSessionData, setSessionIdSync, onSessionChange]);
+  }, [loadSessionData, setSessionIdSync, onSessionChange]);
 
   // Regenerate: remove the last assistant message and resend the last user message
   const handleRegenerate = useCallback(() => {
-    if (isStreaming) return;
+    if (isStreamingRef.current) return;
     setMessages(prev => {
       // Find the last user message
       const lastUserIdx = prev.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
@@ -1599,22 +1611,23 @@ export function AgentChatPanel({
       // Remove all messages after (and including) the last assistant message after this user msg
       const trimmed = prev.slice(0, lastUserIdx + 1);
       // Re-send the user's message
-      setTimeout(() => doSend(lastUserMsg.content), 0);
+      setTimeout(() => doSendRef.current(lastUserMsg.content), 0);
       // Remove the user msg too since doSend will re-add it
       return trimmed.slice(0, -1);
     });
-  }, [isStreaming, doSend]);
+  }, []);
 
   // Retry: resend the last user message (for failed sends)
   const handleRetry = useCallback(() => {
-    if (isStreaming) return;
-    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+    if (isStreamingRef.current) return;
+    const currentMessages = messagesRef.current;
+    const lastUserMsg = [...currentMessages].reverse().find(m => m.role === 'user');
     if (!lastUserMsg) return;
     // Remove the failed user message and the error, then re-send
     setMessages(prev => prev.filter(m => m.id !== lastUserMsg.id));
     setErrorMsg(null);
-    setTimeout(() => doSend(lastUserMsg.content), 0);
-  }, [isStreaming, messages, doSend]);
+    setTimeout(() => doSendRef.current(lastUserMsg.content), 0);
+  }, []);
 
   // Compute the last assistant message ID (for regenerate button positioning)
   const lastAssistantId = useMemo(() => {
