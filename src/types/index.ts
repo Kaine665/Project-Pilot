@@ -412,6 +412,12 @@ export interface ContextIndexData {
 export type TodoPriority = 'high' | 'medium' | 'low';
 export type TodoStatus = 'pending' | 'in_progress' | 'done';
 
+export interface TodoSubTask {
+  id: string;
+  title: string;
+  done: boolean;
+}
+
 export interface TodoItem {
   id: string;
   title: string;
@@ -422,6 +428,8 @@ export interface TodoItem {
   sessionId?: string;
   projectKey?: string;
   dueAt?: string;
+  tags?: string[];
+  subTasks?: TodoSubTask[];
   createdAt: string;
   updatedAt: string;
 }
