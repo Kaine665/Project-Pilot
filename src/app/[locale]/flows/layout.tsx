@@ -8,7 +8,7 @@ const AgentChatPanel = dynamic(
   { ssr: false },
 );
 import { useProject } from '@/components/project-context';
-import { FolderKanban, Plus, Network, Bot, BookOpen, FileText, ListTodo, Table2, Timer, Satellite, MessageSquare } from 'lucide-react';
+import { FolderKanban, Plus, Network, Bot, BookOpen, FileText, ListTodo, Table2, Timer, Satellite, MessageSquare, Blocks } from 'lucide-react';
 import { SidebarIconButton } from '@/components/sidebar-icon-button';
 import { BUTLER_AGENT_ID } from '@/lib/default-agents';
 import type { Agent } from '@/types';
@@ -55,7 +55,8 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   const isSchedulesPage = pathname.startsWith('/flows/schedules');
   const isSatelliteTasksPage = pathname.startsWith('/flows/satellite-tasks');
   const isChatPage = pathname.startsWith('/flows/chat');
-  const isSubRoute = isAgentsPage || isContextPage || isDocsPage || isButlerPage || isTodosPage || isOrchestratorPage || isBitablePage || isSchedulesPage || isSatelliteTasksPage || isChatPage;
+  const isSkillsPage = pathname.startsWith('/flows/skills');
+  const isSubRoute = isAgentsPage || isContextPage || isDocsPage || isButlerPage || isTodosPage || isOrchestratorPage || isBitablePage || isSchedulesPage || isSatelliteTasksPage || isChatPage || isSkillsPage;
 
   // Auto-close expandable panel when on sub-route pages
   useEffect(() => {
@@ -182,6 +183,7 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
               {/* Group: Knowledge */}
               <SidebarIconButton icon={BookOpen} tooltip="上下文" isActive={isContextPage} onClick={handleNavigateContext} />
               <SidebarIconButton icon={FileText} tooltip="设计文档" isActive={isDocsPage} onClick={handleNavigateDocs} />
+              <SidebarIconButton icon={Blocks} tooltip="Skills" isActive={isSkillsPage} onClick={() => router.push('/flows/skills')} />
 
               <div className="w-6 border-t border-zinc-200 dark:border-zinc-700" />
 
