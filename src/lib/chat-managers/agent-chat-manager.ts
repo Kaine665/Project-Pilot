@@ -16,7 +16,7 @@ import { getPromptFilePath, getContextIndexPath, readJsonFile } from '@/lib/file
 import type { ContextIndexData } from '@/types';
 import { resolveSystemPrompt, createRuntimePromptCopy } from '@/lib/agent-prompt-store';
 import { getSettings } from '@/lib/settings-manager';
-import { createAgentRunner, type IAgentRunner } from './agent-runner';
+import { createAgentRunner, type AgentRunnerInput, type IAgentRunner } from './agent-runner';
 import { detectDangerousCommand } from '@/lib/danger-detector';
 import type { ChatSSEEvent, ContentBlock, Agent, AgentCapabilities, ProviderId } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_DANGER_SETTINGS } from '@/types';
@@ -37,6 +37,7 @@ import {
   imageAttachmentToDataUrl,
   writeImageAttachmentsToTempFiles,
 } from '@/lib/image-assets';
+import { serializeProviderInput } from '@/lib/image-provider-serialization';
 import type { ImageAttachment, ImageMediaType } from '@/lib/image-assets';
 
 // Re-export store functions so existing callers don't break during migration
@@ -243,6 +244,13 @@ class AgentChatManager {
     }
 
     const tempPaths = await writeImageAttachmentsToTempFiles(images);
+    const runnerInput = serializeProviderInput({
+      provider: resolvedProvider ?? 'anthropic',
+      prompt: promptContent,
+      sessionId,
+      images,
+      imagePaths: tempPaths,
+    });
 
     // Merge capabilities
     const effectiveCaps = mergeCapabilities(agent.capabilities, persistedConfig?.capabilities);
@@ -310,7 +318,7 @@ class AgentChatManager {
       });
       run.runner = runner;
 
-      this.consumeRunnerStream(run, runner, promptContent).catch(err => {
+      this.consumeRunnerStream(run, runner, runnerInput).catch(err => {
         console.error(`${LOG_PREFIX} Runner stream error for ${sessionId}:`, err);
       });
     } catch (err) {
@@ -543,10 +551,10 @@ class AgentChatManager {
   private async consumeRunnerStream(
     run: AgentChatRun,
     runner: IAgentRunner,
-    prompt: string,
+    input: AgentRunnerInput,
   ): Promise<void> {
     try {
-      for await (const event of runner.stream(prompt)) {
+      for await (const event of runner.stream(input)) {
         if (run.status === 'stopped') break;
         this.trackAndEmit(run, event);
       }
