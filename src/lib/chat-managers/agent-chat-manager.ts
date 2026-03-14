@@ -33,10 +33,12 @@ import { runSatelliteTasks } from '@/lib/satellite-tasks';
 import type { SatelliteContext } from '@/lib/satellite-tasks';
 import type { RunStatus, RunStatusInfo, SubAgentResult, SessionExecution } from './types';
 import {
-  cleanupTempImageFiles,
   imageAttachmentToDataUrl,
-  writeImageAttachmentsToTempFiles,
 } from '@/lib/image-assets';
+import {
+  cleanupTempImageFiles,
+  writeImageAttachmentsToTempFiles,
+} from '@/lib/image-assets.server';
 import { serializeProviderInput } from '@/lib/image-provider-serialization';
 import type { ImageAttachment, ImageMediaType } from '@/lib/image-assets';
 
