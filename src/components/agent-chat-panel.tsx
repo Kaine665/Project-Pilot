@@ -21,7 +21,7 @@ import type { SessionNavLink } from '@/components/agent-session-utils';
 import { buildSessionUrl } from '@/components/agent-session-utils';
 import { PROVIDER_REGISTRY, getProviderPreset, getModelContextWindow } from '@/lib/provider-registry';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
-import type { SessionConfig } from '@/types/agent-chat';
+import type { PendingUserQueueItem, PendingUserQueueState, SessionConfig } from '@/types/agent-chat';
 import type { ChatMessage, ChatToolCall, ChatSSEEvent, ContentBlock } from '@/types';
 
 // Session list item (no messages)
@@ -73,6 +73,13 @@ const PROVIDER_LABELS: Record<ProviderId, string> = {
 // Keep this strip function for backward compatibility with older replies.
 function stripSessionTitleTag(text: string): string {
   return text.replace(/<session-title>[\s\S]*?<\/session-title>\s*/, '');
+}
+
+function clonePendingQueueItems(items: PendingUserQueueItem[]): PendingUserQueueItem[] {
+  return items.map((item) => ({
+    text: item.text,
+    images: item.images?.length ? [...item.images] : undefined,
+  }));
 }
 
 
@@ -163,9 +170,9 @@ export function AgentChatPanel({
   const doSendRef = useRef<(text: string, images?: string[]) => void>(() => {});
   const isStreamingRef = useRef(false);
   const pendingAnswerRef = useRef<{ answer: string; targetSessionId: string } | null>(null);
-  const pendingUserMessagesRef = useRef<Array<{ text: string; images: string[]; targetSessionId: string }>>([]);
+  const pendingUserMessagesRef = useRef<PendingUserQueueItem[]>([]);
   const [pendingUserQueueCount, setPendingUserQueueCount] = useState(0);
-  const [pendingUserMessages, setPendingUserMessages] = useState<Array<{ text: string; images: string[] }>>([]);
+  const [pendingUserMessages, setPendingUserMessages] = useState<PendingUserQueueItem[]>([]);
   const [queueExpanded, setQueueExpanded] = useState(true);
 
   // Sync sessionId to both state and ref atomically (avoids stale ref between renders)
@@ -178,14 +185,55 @@ export function AgentChatPanel({
     isStreamingRef.current = isStreaming;
   }, [isStreaming]);
 
+  const persistPendingUserQueue = useCallback((
+    targetSessionId: string,
+    items: PendingUserQueueItem[],
+    expanded: boolean = queueExpanded,
+  ) => {
+    fetch(`/api/agent-chat/sessions/${targetSessionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'updatePendingUserQueue',
+        queue: {
+          items: clonePendingQueueItems(items),
+          expanded: expanded ? undefined : false,
+        } satisfies PendingUserQueueState,
+      }),
+    }).catch(() => {});
+  }, [queueExpanded]);
+
+  const replacePendingUserQueue = useCallback((
+    items: PendingUserQueueItem[],
+    options?: { persist?: boolean; sessionId?: string | null; expanded?: boolean },
+  ) => {
+    const nextItems = clonePendingQueueItems(items);
+    pendingUserMessagesRef.current = nextItems;
+    setPendingUserMessages(nextItems);
+    setPendingUserQueueCount(nextItems.length);
+
+    if (options?.persist) {
+      const targetSessionId = options.sessionId ?? sessionIdRef.current;
+      if (targetSessionId) {
+        persistPendingUserQueue(targetSessionId, nextItems, options.expanded);
+      }
+    }
+  }, [persistPendingUserQueue]);
+
+  const updateQueueExpanded = useCallback((expanded: boolean) => {
+    setQueueExpanded(expanded);
+    const currentSid = sessionIdRef.current;
+    if (currentSid && pendingUserMessagesRef.current.length > 0) {
+      persistPendingUserQueue(currentSid, pendingUserMessagesRef.current, expanded);
+    }
+  }, [persistPendingUserQueue]);
+
   // Abort any in-flight stream when the component unmounts (e.g. agent view -> session view switch)
   useEffect(() => {
     return () => {
       streamAbortRef.current?.abort();
       pendingAnswerRef.current = null;
       pendingUserMessagesRef.current = [];
-      setPendingUserMessages([]);
-      setPendingUserQueueCount(0);
     };
   }, []);
 
@@ -195,17 +243,12 @@ export function AgentChatPanel({
       if (scrollRef.current?.offsetParent === null) return;
       if (isStreamingRef.current) return;
 
-      const nextIndex = pendingUserMessagesRef.current.findIndex(
-        (item) => item.targetSessionId === targetSessionId,
-      );
-      if (nextIndex < 0) return;
-      const [next] = pendingUserMessagesRef.current.splice(nextIndex, 1);
-      const list = pendingUserMessagesRef.current.filter((m) => m.targetSessionId === targetSessionId).map((m) => ({ text: m.text, images: m.images }));
-      setPendingUserMessages(list);
-      setPendingUserQueueCount(pendingUserMessagesRef.current.length);
+      const [next, ...rest] = pendingUserMessagesRef.current;
+      if (!next) return;
+      replacePendingUserQueue(rest, { persist: true, sessionId: targetSessionId });
       doSendRef.current(next.text, next.images);
     }, delayMs);
-  }, []);
+  }, [replacePendingUserQueue]);
 
   // Stable streaming message object
   const streamingMessage = useMemo<ChatMessage>(() => ({
@@ -480,6 +523,12 @@ export function AgentChatPanel({
       setSessionTitle(data.title ?? 'New Session');
       const loadedConfig = data.config ?? {};
       setSessionConfig(loadedConfig);
+      const loadedQueueState = data.pendingUserQueue as PendingUserQueueState | undefined;
+      const loadedQueue = Array.isArray(loadedQueueState?.items)
+        ? clonePendingQueueItems(loadedQueueState.items)
+        : [];
+      replacePendingUserQueue(loadedQueue);
+      setQueueExpanded(loadedQueueState?.expanded !== false);
       // Session model config has highest priority (overrides agent default and global settings)
       if (loadedConfig.provider) {
         setChatProvider(loadedConfig.provider);
@@ -499,7 +548,7 @@ export function AgentChatPanel({
     } catch {
       // ignore
     }
-  }, []);
+  }, [loadSessionNavLinks, replacePendingUserQueue]);
 
   // Finalize streaming -> commit assistant message
   const finalizeStream = useCallback(() => {
@@ -771,6 +820,10 @@ export function AgentChatPanel({
     setSessionList([]);
     setTokenInputs(0);
     setTokenOutputs(0);
+    setQueueExpanded(true);
+    pendingUserMessagesRef.current = [];
+    setPendingUserMessages([]);
+    setPendingUserQueueCount(0);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
@@ -892,6 +945,16 @@ export function AgentChatPanel({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent.id, projectKey]);
+
+  useEffect(() => {
+    if (!sessionId || isStreaming || pendingUserQueueCount === 0) return;
+    const timer = window.setTimeout(() => {
+      if (sessionIdRef.current !== sessionId) return;
+      if (isStreamingRef.current) return;
+      flushQueuedUserMessage(sessionId, 0);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [sessionId, isStreaming, pendingUserQueueCount, flushQueuedUserMessage]);
 
   // Smart auto-scroll: pause when user scrolls up, resume when near bottom
   const [autoScroll, setAutoScroll] = useState(true);
@@ -1026,6 +1089,9 @@ export function AgentChatPanel({
       }
 
       await res.json();
+      if (pendingUserMessagesRef.current.length > 0) {
+        persistPendingUserQueue(targetSessionId, pendingUserMessagesRef.current);
+      }
       connectToStream(targetSessionId, 0);
     } catch (err) {
       const msg = (err as Error).message || 'Unknown error';
@@ -1033,7 +1099,7 @@ export function AgentChatPanel({
       setErrorMsg(msg);
       setIsStreaming(false);
     }
-  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, chatProvider, chatModel, chatEffort, connectToStream, onSessionChange, t, sessionConfig, setSessionIdSync]);
+  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, chatProvider, chatModel, chatEffort, connectToStream, onSessionChange, t, sessionConfig, setSessionIdSync, persistPendingUserQueue]);
 
   // Keep doSendRef in sync (avoid stale closure in event listener)
   useEffect(() => {
@@ -1097,19 +1163,15 @@ export function AgentChatPanel({
     // Allow user to continue submitting while streaming: queue and auto-send later.
     if (isStreamingRef.current && sessionIdRef.current) {
       const sid = sessionIdRef.current;
-      pendingUserMessagesRef.current.push({
+      replacePendingUserQueue([...pendingUserMessagesRef.current, {
         text,
-        images,
-        targetSessionId: sid,
-      });
-      const list = pendingUserMessagesRef.current.filter((m) => m.targetSessionId === sid).map((m) => ({ text: m.text, images: m.images }));
-      setPendingUserMessages(list);
-      setPendingUserQueueCount(pendingUserMessagesRef.current.length);
+        images: images.length > 0 ? images : undefined,
+      }], { persist: true, sessionId: sid });
       return;
     }
 
     doSend(text, images);
-  }, [doSend]);
+  }, [doSend, replacePendingUserQueue]);
 
   const handleAbort = async () => {
     if (!sessionId) return;
@@ -1132,14 +1194,12 @@ export function AgentChatPanel({
   // Send a queued message immediately (interrupt current reply)
   const handleSendNow = useCallback(async (index: number) => {
     if (!sessionId) return;
-    const items = pendingUserMessagesRef.current.filter((m) => m.targetSessionId === sessionId);
-    const item = items[index];
+    const item = pendingUserMessagesRef.current[index];
     if (!item) return;
-    const refIndex = pendingUserMessagesRef.current.indexOf(item);
-    if (refIndex >= 0) pendingUserMessagesRef.current.splice(refIndex, 1);
-    const list = pendingUserMessagesRef.current.filter((m) => m.targetSessionId === sessionId).map((m) => ({ text: m.text, images: m.images }));
-    setPendingUserMessages(list);
-    setPendingUserQueueCount(pendingUserMessagesRef.current.length);
+    replacePendingUserQueue(
+      pendingUserMessagesRef.current.filter((_, itemIndex) => itemIndex !== index),
+      { persist: true, sessionId },
+    );
     try {
       await fetch('/api/agent-chat/stop', {
         method: 'POST',
@@ -1155,20 +1215,17 @@ export function AgentChatPanel({
     }
     finalizeStream();
     doSendRef.current(item.text, item.images);
-  }, [sessionId]);
+  }, [sessionId, finalizeStream, replacePendingUserQueue]);
 
   // Remove a queued message without sending
   const handleRemoveFromQueue = useCallback((index: number) => {
     if (!sessionId) return;
-    const items = pendingUserMessagesRef.current.filter((m) => m.targetSessionId === sessionId);
-    const item = items[index];
-    if (!item) return;
-    const refIndex = pendingUserMessagesRef.current.indexOf(item);
-    if (refIndex >= 0) pendingUserMessagesRef.current.splice(refIndex, 1);
-    const list = pendingUserMessagesRef.current.filter((m) => m.targetSessionId === sessionId).map((m) => ({ text: m.text, images: m.images }));
-    setPendingUserMessages(list);
-    setPendingUserQueueCount(pendingUserMessagesRef.current.length);
-  }, [sessionId]);
+    if (!pendingUserMessagesRef.current[index]) return;
+    replacePendingUserQueue(
+      pendingUserMessagesRef.current.filter((_, itemIndex) => itemIndex !== index),
+      { persist: true, sessionId },
+    );
+  }, [sessionId, replacePendingUserQueue]);
 
   // Delete current session
   const handleDelete = async () => {
@@ -1227,9 +1284,8 @@ export function AgentChatPanel({
     setParentSession(null);
     setChildSessions([]);
     setShowChildList(false);
-    pendingUserMessagesRef.current = [];
-    setPendingUserQueueCount(0);
-    setPendingUserMessages([]);
+    replacePendingUserQueue([]);
+    setQueueExpanded(true);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
@@ -1245,7 +1301,7 @@ export function AgentChatPanel({
         setChatModel(agentOptions[0].value);
       }
     }
-  }, [isStreaming, hasProject, t, setSessionIdSync, agent]);
+  }, [isStreaming, hasProject, t, setSessionIdSync, agent, replacePendingUserQueue]);
 
   // Switch to an existing session
   const handleSwitchSession = useCallback(async (target: SessionListItem) => {
@@ -1269,9 +1325,8 @@ export function AgentChatPanel({
     toolCallsRef.current = [];
     // Clear any queued answer from the previous session's AskUserQuestion
     pendingAnswerRef.current = null;
-    pendingUserMessagesRef.current = [];
-    setPendingUserQueueCount(0);
-    setPendingUserMessages([]);
+    replacePendingUserQueue([]);
+    setQueueExpanded(true);
     // Mark as read
     if (target.unreadCount) {
       setSessionList(prev => prev.map(s => s.id === target.id ? { ...s, unreadCount: 0 } : s));
@@ -1282,7 +1337,7 @@ export function AgentChatPanel({
       }).catch(() => {});
     }
     await loadSessionData(target.id, token);
-  }, [isStreaming, loadSessionData, setSessionIdSync]);
+  }, [isStreaming, loadSessionData, setSessionIdSync, replacePendingUserQueue]);
 
   const handleSaveAsKnowledge = useCallback((_messageId: string, content: string) => {
     setSaveDialogContent(content);
@@ -1532,7 +1587,7 @@ export function AgentChatPanel({
                 <>
                   <button
                     type="button"
-                    onClick={() => setQueueExpanded(false)}
+                    onClick={() => updateQueueExpanded(false)}
                     className="flex w-full items-center justify-between gap-2 rounded-t-xl border border-b-0 border-blue-200/80 bg-blue-50/60 px-3 py-2 text-left text-xs font-medium text-blue-700 backdrop-blur-md transition-colors hover:bg-blue-50/80 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/60"
                   >
                     <span className="flex items-center gap-1.5">
@@ -1578,7 +1633,7 @@ export function AgentChatPanel({
               ) : (
                 <button
                   type="button"
-                  onClick={() => setQueueExpanded(true)}
+                  onClick={() => updateQueueExpanded(true)}
                   className="flex w-full items-center justify-between gap-2 rounded-xl border border-blue-200/80 bg-blue-50/60 px-3 py-2 text-left text-xs font-medium text-blue-700 backdrop-blur-md transition-colors hover:bg-blue-50/80 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/60"
                 >
                   <span className="flex items-center gap-1.5">
@@ -1875,7 +1930,7 @@ export function AgentChatPanel({
               <>
                 <button
                   type="button"
-                  onClick={() => setQueueExpanded(false)}
+                  onClick={() => updateQueueExpanded(false)}
                   className="flex w-full items-center justify-between gap-2 rounded-t-xl border border-b-0 border-blue-200/80 bg-blue-50/60 px-3 py-2 text-left text-xs font-medium text-blue-700 backdrop-blur-md transition-colors hover:bg-blue-50/80 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/60"
                 >
                   <span className="flex items-center gap-1.5">
@@ -1921,7 +1976,7 @@ export function AgentChatPanel({
             ) : (
               <button
                 type="button"
-                onClick={() => setQueueExpanded(true)}
+                onClick={() => updateQueueExpanded(true)}
                 className="flex w-full items-center justify-between gap-2 rounded-xl border border-blue-200/80 bg-blue-50/60 px-3 py-2 text-left text-xs font-medium text-blue-700 backdrop-blur-md transition-colors hover:bg-blue-50/80 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/60"
               >
                 <span className="flex items-center gap-1.5">
