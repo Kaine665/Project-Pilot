@@ -44,6 +44,9 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       url.searchParams.delete('project');
     }
     window.history.replaceState({}, '', url.toString());
+    // Reset flag via microtask — replaceState doesn't trigger popstate,
+    // so the flag would stay true forever otherwise
+    queueMicrotask(() => { internalKeyChangeRef.current = false; });
   }, []);
 
   const fetchProjects = useCallback(async () => {
@@ -77,31 +80,33 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     });
   }, [fetchProjects, setActiveKey]);
 
-  // Listen for external URL changes (e.g. popstate)
+  // Listen for external URL changes (e.g. browser back/forward)
   useEffect(() => {
     const handlePopState = () => {
-      if (internalKeyChangeRef.current) {
-        internalKeyChangeRef.current = false;
-        return;
-      }
       const urlParams = new URLSearchParams(window.location.search);
       const projectParam = urlParams.get('project');
-      if (projectParam && projectParam !== activeKeyRaw && projects.some(p => p.key === projectParam)) {
+      if (projectParam && projects.some(p => p.key === projectParam)) {
+        // Always sync from URL on popstate — the URL is the source of truth here
         setActiveKeyRaw(projectParam);
       }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [activeKeyRaw, projects]);
+  }, [projects]);
 
-  // Re-sync ?project= to URL after client-side navigation (router.push strips query params)
+  // Re-sync ?project= to URL after client-side navigation (router.push strips query params).
+  // Use rAF to ensure Next.js has finished updating the URL before we patch it.
   useEffect(() => {
     if (!activeKeyRaw) return;
-    const url = new URL(window.location.href);
-    if (!url.searchParams.has('project')) {
-      url.searchParams.set('project', activeKeyRaw);
-      window.history.replaceState({}, '', url.toString());
-    }
+    const rafId = requestAnimationFrame(() => {
+      const url = new URL(window.location.href);
+      const current = url.searchParams.get('project');
+      if (current !== activeKeyRaw) {
+        url.searchParams.set('project', activeKeyRaw);
+        window.history.replaceState({}, '', url.toString());
+      }
+    });
+    return () => cancelAnimationFrame(rafId);
   }, [pathname, activeKeyRaw]);
 
   return (
