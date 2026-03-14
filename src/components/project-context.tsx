@@ -2,12 +2,9 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { usePathname } from '@/i18n/routing';
+import type { ProjectEntry } from '@/types';
 
-export interface ProjectEntry {
-  key: string;
-  name: string;
-  description?: string;
-}
+export type { ProjectEntry };
 
 interface ProjectContextValue {
   projects: ProjectEntry[];

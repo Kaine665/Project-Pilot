@@ -126,6 +126,91 @@ export async function ensureFlowsMigrated(): Promise<void> {
 }
 
 
+// ── projects.json → _index.json 迁移 ──
+// 将旧版 projects.json 的字段合并到 flows/_index.json 中
+
+let _projectsMigrated = false;
+
+/**
+ * 将 projects.json 中的 ProjectConfig 数据合并到 flows/_index.json 的 ProjectEntry 中。
+ * 仅执行一次：检查 _index.json 中是否已有 `_migrated_projects_v2` 标记。
+ */
+export async function ensureProjectsMigrated(): Promise<void> {
+  if (_projectsMigrated) return;
+  _projectsMigrated = true;
+
+  // 确保 flows 迁移先执行
+  await ensureFlowsMigrated();
+
+  const indexPath = getFlowIndexPath();
+  const projectsPath = getProjectsPath();
+
+  // 读取当前索引
+  const index = await readJsonFile<import('@/types').ProjectIndex>(indexPath, { projects: [] });
+
+  // 检查是否已迁移过（用 _migrated 标记字段）
+  if ((index as unknown as Record<string, unknown>)._migrated_projects_v2) return;
+
+  // 读取旧版 projects.json
+  let oldProjects: Record<string, import('@/types').ProjectConfig> = {};
+  try {
+    const data = await readJsonFile<import('@/types').ProjectsData>(projectsPath, { projects: {} });
+    oldProjects = data.projects;
+  } catch {
+    // 旧文件不存在或读取失败，跳过
+  }
+
+  if (Object.keys(oldProjects).length === 0) {
+    // 没有旧数据，仅标记已迁移
+    await writeJsonFile(indexPath, { ...index, _migrated_projects_v2: true });
+    return;
+  }
+
+  const existingKeys = new Set(index.projects.map(p => p.key));
+
+  for (const [key, config] of Object.entries(oldProjects)) {
+    const existing = index.projects.find(p => p.key === key);
+    if (existing) {
+      // 已存在的项目：补充缺失字段
+      if (!existing.path && config.path) existing.path = config.path;
+      if (!existing.techStack && config.type) existing.techStack = config.type as import('@/types').ProjectTechStack;
+      if (!existing.description && config.description) existing.description = config.description;
+      if (!existing.location) existing.location = 'local';
+      if (config.defaultBranch && !existing.repository?.defaultBranch) {
+        existing.repository = { ...existing.repository, defaultBranch: config.defaultBranch };
+      }
+      if ((config.webCommand || config.webUrl) && !existing.devServer) {
+        existing.devServer = {
+          ...(config.webCommand && { command: config.webCommand }),
+          ...(config.webUrl && { url: config.webUrl }),
+        };
+      }
+    } else {
+      // 新项目：从旧系统迁移过来
+      const entry: import('@/types').ProjectEntry = {
+        key,
+        name: config.name,
+        path: config.path,
+        location: 'local',
+        techStack: config.type as import('@/types').ProjectTechStack,
+        ...(config.description && { description: config.description }),
+        ...(config.defaultBranch && { repository: { defaultBranch: config.defaultBranch } }),
+        ...((config.webCommand || config.webUrl) && {
+          devServer: {
+            ...(config.webCommand && { command: config.webCommand }),
+            ...(config.webUrl && { url: config.webUrl }),
+          },
+        }),
+        createdAt: new Date().toISOString(),
+      };
+      index.projects.push(entry);
+    }
+  }
+
+  // 标记已迁移并写入
+  await writeJsonFile(indexPath, { ...index, _migrated_projects_v2: true });
+}
+
 export function getSettingsPath(): string {
   return path.join(DATA_DIR, 'settings.json');
 }

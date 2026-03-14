@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { orchestratorManager } from '@/lib/chat-managers/orchestrator-manager';
-import { readJsonFile, getProjectsPath } from '@/lib/file-store';
-import type { ProjectsData } from '@/types';
+import { readJsonFile, getFlowIndexPath, ensureProjectsMigrated } from '@/lib/file-store';
+import type { ProjectIndex } from '@/types';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -53,8 +53,9 @@ export async function POST(request: NextRequest, { params }: Params) {
           return NextResponse.json({ error: 'Orchestration not found' }, { status: 404 });
         }
 
-        const projectsData = await readJsonFile<ProjectsData>(getProjectsPath(), { projects: {} });
-        const project = projectsData.projects[session.projectKey];
+        await ensureProjectsMigrated();
+        const index = await readJsonFile<ProjectIndex>(getFlowIndexPath(), { projects: [] });
+        const project = index.projects.find(p => p.key === session.projectKey && !p.archived);
         if (!project?.path) {
           return NextResponse.json({ error: 'Project not found' }, { status: 404 });
         }

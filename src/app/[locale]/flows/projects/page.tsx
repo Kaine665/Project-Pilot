@@ -77,6 +77,7 @@ function ProjectsPageInner() {
         projectKey={activeProject.key}
         projectName={activeProject.name}
         projectDescription={activeProject.description}
+        projectEntry={activeProject}
         initialHighlight={highlight}
         onProjectUpdated={handleProjectUpdated}
         onProjectDeleted={handleProjectDeleted}

@@ -469,10 +469,63 @@ export interface SuspendedTasksData {
 
 // ==================== Flow Project ====================
 
+/** 项目所在位置类型 */
+export type ProjectLocation = 'local' | 'github' | 'gitee' | 'cloud-server' | 'hybrid';
+
+/** 项目主技术栈 */
+export type ProjectTechStack =
+  | 'react-native' | 'nextjs' | 'react' | 'vue' | 'angular'
+  | 'node' | 'python' | 'go' | 'rust' | 'java'
+  | 'electron' | 'flutter' | 'other';
+
 export interface ProjectEntry {
   key: string;
   name: string;
   description?: string;
+
+  // ── 位置与路径 ──
+  /** 项目所在位置类型 */
+  location?: ProjectLocation;
+  /** 本地文件系统路径（必填） */
+  path?: string;
+
+  // ── Git 与仓库 ──
+  repository?: {
+    url?: string;
+    defaultBranch?: string;
+    provider?: 'github' | 'gitlab' | 'gitee' | 'bitbucket' | 'other';
+  };
+
+  // ── 技术信息 ──
+  techStack?: ProjectTechStack;
+
+  // ── 开发环境 ──
+  devServer?: {
+    command?: string;
+    url?: string;
+    port?: number;
+  };
+
+  // ── 访问权限（根据 location 动态展示） ──
+  access?: {
+    /** SSH 密钥路径或名称（cloud-server 时显示） */
+    sshKey?: string;
+    /** Token 环境变量名（github/gitee 时显示） */
+    tokenEnvVar?: string;
+    /** 其他权限说明 */
+    notes?: string;
+  };
+
+  // ── 视觉标识 ──
+  icon?: string;
+  color?: string;
+  tags?: string[];
+
+  // ── 时间戳 ──
+  createdAt?: string;
+  updatedAt?: string;
+
+  // ── 归档 ──
   archived?: boolean;
   archivedAt?: string;
 }
