@@ -8,7 +8,7 @@ const AgentChatPanel = dynamic(
   { ssr: false },
 );
 import { useProject } from '@/components/project-context';
-import { FolderKanban, Plus, Trash2, Network, Bot, Layers, BookOpen, FileText, ListTodo, Table2, Timer, Satellite, MessageSquare } from 'lucide-react';
+import { FolderKanban, Plus, Network, Bot, BookOpen, FileText, ListTodo, Table2, Timer, Satellite, MessageSquare } from 'lucide-react';
 import { SidebarIconButton } from '@/components/sidebar-icon-button';
 import { BUTLER_AGENT_ID } from '@/lib/default-agents';
 import type { Agent } from '@/types';
@@ -46,9 +46,7 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   const sidebarRef = useRef<HTMLDivElement>(null);
 
   const isAgentsPage = pathname.startsWith('/flows/agents');
-  const isDimensionsPage = pathname.startsWith('/flows/dimensions');
   const isContextPage = pathname.startsWith('/flows/context');
-  const isRecycleBinPage = pathname.startsWith('/flows/recycle-bin');
   const isButlerPage = pathname.startsWith('/flows/butler');
   const isDocsPage = pathname.startsWith('/flows/docs');
   const isTodosPage = pathname.startsWith('/flows/todos');
@@ -57,7 +55,7 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   const isSchedulesPage = pathname.startsWith('/flows/schedules');
   const isSatelliteTasksPage = pathname.startsWith('/flows/satellite-tasks');
   const isChatPage = pathname.startsWith('/flows/chat');
-  const isSubRoute = isAgentsPage || isDimensionsPage || isContextPage || isDocsPage || isRecycleBinPage || isButlerPage || isTodosPage || isOrchestratorPage || isBitablePage || isSchedulesPage || isSatelliteTasksPage || isChatPage;
+  const isSubRoute = isAgentsPage || isContextPage || isDocsPage || isButlerPage || isTodosPage || isOrchestratorPage || isBitablePage || isSchedulesPage || isSatelliteTasksPage || isChatPage;
 
   // Auto-close expandable panel when on sub-route pages
   useEffect(() => {
@@ -145,14 +143,6 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
     router.push('/flows/agents');
   };
 
-  const handleNavigateRecycleBin = () => {
-    router.push('/flows/recycle-bin');
-  };
-
-  const handleNavigateDimensions = () => {
-    router.push('/flows/dimensions');
-  };
-
   const handleNavigateContext = () => {
     router.push('/flows/context');
   };
@@ -183,18 +173,34 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
             {/* Icon strip — always visible */}
             <TooltipProvider delayDuration={300}>
             <div className="flex w-13 flex-col items-center border-r border-zinc-200 bg-zinc-50/50 py-4 gap-2 dark:border-zinc-800 dark:bg-zinc-950">
+              {/* Group: Core */}
               <SidebarIconButton icon={FolderKanban} tooltip="项目管理" isActive={!isSubRoute && panelOpen} onClick={handleToggleProjects} />
               <SidebarIconButton icon={Bot} tooltip="Agents" isActive={isAgentsPage} onClick={handleNavigateAgents} />
-              <SidebarIconButton icon={Layers} tooltip="信息角度" isActive={isDimensionsPage} onClick={handleNavigateDimensions} />
+
+              <div className="w-6 border-t border-zinc-200 dark:border-zinc-700" />
+
+              {/* Group: Knowledge */}
               <SidebarIconButton icon={BookOpen} tooltip="上下文" isActive={isContextPage} onClick={handleNavigateContext} />
               <SidebarIconButton icon={FileText} tooltip="设计文档" isActive={isDocsPage} onClick={handleNavigateDocs} />
+
+              <div className="w-6 border-t border-zinc-200 dark:border-zinc-700" />
+
+              {/* Group: Tasks & Data */}
               <SidebarIconButton icon={ListTodo} tooltip="AI 待办" isActive={isTodosPage} onClick={handleNavigateTodos} />
               <SidebarIconButton icon={Table2} tooltip="多维表格" isActive={isBitablePage} onClick={() => router.push('/flows/bitable')} />
+
+              <div className="w-6 border-t border-zinc-200 dark:border-zinc-700" />
+
+              {/* Group: Automation */}
               <SidebarIconButton icon={Network} tooltip="Agent 编排" isActive={isOrchestratorPage} onClick={() => router.push('/flows/orchestrator')} />
               <SidebarIconButton icon={Timer} tooltip="定时运行" isActive={isSchedulesPage} onClick={() => router.push('/flows/schedules')} />
               <SidebarIconButton icon={Satellite} tooltip="卫星任务" isActive={isSatelliteTasksPage} onClick={() => router.push('/flows/satellite-tasks')} />
+
+              {/* Spacer pushes chat to bottom */}
+              <div className="flex-1" />
+
+              {/* Group: Communication */}
               <SidebarIconButton icon={MessageSquare} tooltip="P2P 聊天" isActive={isChatPage} onClick={() => router.push('/flows/chat')} />
-              <SidebarIconButton icon={Trash2} tooltip="回收站" isActive={isRecycleBinPage} onClick={handleNavigateRecycleBin} />
             </div>
             </TooltipProvider>
 
