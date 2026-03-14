@@ -193,13 +193,23 @@ class AgentChatManager {
 
     const sessionConfig = initialConfig ?? existing?.config;
 
-    // ── Resolve provider / model with priority chain ──
+    // ── Resolve provider with priority chain ──
     const resolvedProvider = providerOverride
       || sessionConfig?.provider
       || agent.defaultProvider
       || undefined;
+
+    // ── Detect provider switch → invalidate SDK session ID & model ──
+    const previousProvider = existing?.config?.provider;
+    const providerSwitched = !!previousProvider && !!resolvedProvider && previousProvider !== resolvedProvider;
+    const isResume = !!existing?.claudeSessionId && !providerSwitched;
+
+    // ── Resolve model — skip session config model when provider switched ──
+    // When switching providers (e.g. OpenAI → Anthropic), the old session's model
+    // (e.g. 'gpt-5.4') is incompatible with the new provider's SDK.
+    // In that case, fall through to agent default or let the SDK resolve via settings.
     const resolvedModel = modelOverride
-      || sessionConfig?.model
+      || (!providerSwitched ? sessionConfig?.model : undefined)
       || agent.defaultModel
       || undefined;
 
@@ -221,13 +231,8 @@ class AgentChatManager {
       }
     }
 
-    // ── Detect provider switch → invalidate SDK session ID ──
-    const previousProvider = existing?.config?.provider;
-    const providerSwitched = !!previousProvider && !!resolvedProvider && previousProvider !== resolvedProvider;
-    const isResume = !!existing?.claudeSessionId && !providerSwitched;
-
     if (providerSwitched) {
-      console.log(`${LOG_PREFIX} Provider switched from ${previousProvider} to ${resolvedProvider} — will NOT resume SDK session, history injected via prompt`);
+      console.log(`${LOG_PREFIX} Provider switched from ${previousProvider} to ${resolvedProvider} — will NOT resume SDK session, history injected via prompt, model=${resolvedModel ?? '(default)'}`);
     }
 
     // Build prompt
@@ -563,6 +568,9 @@ class AgentChatManager {
     } catch (err) {
       if (run.status !== 'stopped') {
         const errMsg = err instanceof Error ? err.message : String(err);
+        const errStack = err instanceof Error ? err.stack : undefined;
+        console.error(`${LOG_PREFIX} consumeRunnerStream error for session=${run.sessionId} agent=${run.agentId}:`, errMsg);
+        if (errStack) console.error(`${LOG_PREFIX} Stack:`, errStack);
         this.trackAndEmit(run, { type: 'error', message: errMsg });
       }
     }
