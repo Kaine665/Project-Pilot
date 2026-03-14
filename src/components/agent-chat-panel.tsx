@@ -215,6 +215,76 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
   }
 }
 
+// ── Session Reducer (session identity + list + config + nav) ──
+
+type SessionState = {
+  id: string | null;
+  title: string;
+  list: SessionListItem[];
+  config: SessionConfig;
+  parentSession: SessionNavLink | null;
+  childSessions: SessionNavLink[];
+  showChildList: boolean;
+};
+
+type SessionAction =
+  | { type: 'SET_ID'; id: string | null }
+  | { type: 'SET_TITLE'; title: string }
+  | { type: 'SET_CONFIG'; config: SessionConfig }
+  | { type: 'UPDATE_LIST'; updater: (prev: SessionListItem[]) => SessionListItem[] }
+  | { type: 'MERGE_LIST'; remote: SessionListItem[] }
+  | { type: 'SET_NAV'; parent: SessionNavLink | null; children: SessionNavLink[] }
+  | { type: 'TOGGLE_CHILD_LIST' }
+  | { type: 'CLOSE_CHILD_LIST' }
+  | { type: 'SELECT'; id: string; title: string }
+  | { type: 'NEW'; defaultTitle: string }
+  | { type: 'RESET'; defaultTitle: string };
+
+function sessionReducer(state: SessionState, action: SessionAction): SessionState {
+  switch (action.type) {
+    case 'SET_ID':
+      return { ...state, id: action.id };
+    case 'SET_TITLE':
+      return { ...state, title: action.title };
+    case 'SET_CONFIG':
+      return { ...state, config: action.config };
+    case 'UPDATE_LIST':
+      return { ...state, list: action.updater(state.list) };
+    case 'MERGE_LIST':
+      return { ...state, list: mergeSessionList(state.list, action.remote) };
+    case 'SET_NAV':
+      return { ...state, parentSession: action.parent, childSessions: action.children, showChildList: false };
+    case 'TOGGLE_CHILD_LIST':
+      return { ...state, showChildList: !state.showChildList };
+    case 'CLOSE_CHILD_LIST':
+      return { ...state, showChildList: false };
+    case 'SELECT':
+      return { ...state, id: action.id, title: action.title, config: {}, showChildList: false };
+    case 'NEW':
+      return {
+        ...state,
+        id: null,
+        title: action.defaultTitle,
+        config: {},
+        parentSession: null,
+        childSessions: [],
+        showChildList: false,
+      };
+    case 'RESET':
+      return {
+        id: null,
+        title: action.defaultTitle,
+        list: [],
+        config: {},
+        parentSession: null,
+        childSessions: [],
+        showChildList: false,
+      };
+    default:
+      return state;
+  }
+}
+
 export function AgentChatPanel({
   agent,
   initialSessionId,
@@ -237,9 +307,17 @@ export function AgentChatPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Session management
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [sessionList, setSessionList] = useState<SessionListItem[]>([]);
-  const [sessionTitle, setSessionTitle] = useState(hasProject ? t('chat.newSession') : 'New Session');
+  const defaultSessionTitle = hasProject ? t('chat.newSession') : 'New Session';
+  const [session, sessionDispatch] = useReducer(sessionReducer, {
+    id: null,
+    title: defaultSessionTitle,
+    list: [],
+    config: {},
+    parentSession: null,
+    childSessions: [],
+    showChildList: false,
+  } satisfies SessionState);
+  const { id: sessionId, title: sessionTitle, list: sessionList, config: sessionConfig, parentSession, childSessions, showChildList } = session;
   const [sessionClockNow, setSessionClockNow] = useState(() => Date.now());
 
   // Provider / model routing
@@ -267,8 +345,7 @@ export function AgentChatPanel({
   const [compressDialogOpen, setCompressDialogOpen] = useState(false);
   const [compressDismissed, setCompressDismissed] = useState(false);
 
-  // Session config
-  const [sessionConfig, setSessionConfig] = useState<SessionConfig>({});
+  // Session config (sessionConfig is in sessionReducer)
   const [showConfig, setShowConfig] = useState(false);
   const [showFolderExplorer, setShowFolderExplorer] = useState(false);
 
@@ -283,10 +360,7 @@ export function AgentChatPanel({
   const [promptEstimate, setPromptEstimate] = useState(0);
   const [contextWindow, setContextWindow] = useState(200000);
 
-  // 父子会话导航
-  const [parentSession, setParentSession] = useState<SessionNavLink | null>(null);
-  const [childSessions, setChildSessions] = useState<SessionNavLink[]>([]);
-  const [showChildList, setShowChildList] = useState(false);
+  // 父子会话导航 (parentSession, childSessions, showChildList are in sessionReducer)
 
   const streamAbortRef = useRef<AbortController | null>(null);
   const blocksRef = useRef<ContentBlock[]>([]);
@@ -310,9 +384,9 @@ export function AgentChatPanel({
   const [pendingUserMessages, setPendingUserMessages] = useState<PendingUserQueueItem[]>([]);
   const [queueExpanded, setQueueExpanded] = useState(true);
 
-  // Sync sessionId to both state and ref atomically (avoids stale ref between renders)
+  // Sync sessionId to both reducer state and ref atomically
   const setSessionIdSync = useCallback((id: string | null) => {
-    setSessionId(id);
+    sessionDispatch({ type: 'SET_ID', id });
     sessionIdRef.current = id;
   }, []);
 
@@ -609,7 +683,7 @@ export function AgentChatPanel({
         ...s,
         isAwaiting: s.execution?.status === 'awaiting' || undefined,
       }));
-      setSessionList((prev) => mergeSessionList(prev, remote));
+      sessionDispatch({ type: 'MERGE_LIST', remote });
       return remote;
     } catch {
       return [];
@@ -619,7 +693,7 @@ export function AgentChatPanel({
   const markSessionRunning = useCallback((targetSessionId: string, startedAt?: string, title?: string) => {
     const now = new Date().toISOString();
     const runStart = startedAt ?? now;
-    setSessionList((prev) => {
+    sessionDispatch({ type: 'UPDATE_LIST', updater: (prev) => {
       const existing = prev.find((s) => s.id === targetSessionId);
       return upsertSessionListItem(prev, {
         id: targetSessionId,
@@ -630,7 +704,7 @@ export function AgentChatPanel({
         isAwaiting: undefined,
         runningStartedAt: runStart,
       });
-    });
+    } });
     // Notify parent (e.g. agents page sidebar) so it can show running indicator
     onSessionChange?.({
       id: targetSessionId,
@@ -658,7 +732,7 @@ export function AgentChatPanel({
     if (opts?.unreadCount !== undefined) {
       extraPatch.unreadCount = opts.unreadCount;
     }
-    setSessionList((prev) => patchSessionListItem(prev, targetSessionId, extraPatch));
+    sessionDispatch({ type: 'UPDATE_LIST', updater: (prev) => patchSessionListItem(prev, targetSessionId, extraPatch) });
     // Notify parent so it can clear running indicator and fetch updated state
     onSessionChange?.({
       id: targetSessionId,
@@ -671,33 +745,35 @@ export function AgentChatPanel({
 
   // Load parent/child session navigation links
   const loadSessionNavLinks = useCallback(async (sid: string, parentSid?: string) => {
-    setParentSession(null);
-    setChildSessions([]);
-    setShowChildList(false);
+    sessionDispatch({ type: 'SET_NAV', parent: null, children: [] });
 
     // Parent session
+    let loadedParent: SessionNavLink | null = null;
     if (parentSid) {
       try {
         const res = await fetch(`/api/agent-chat/sessions/${parentSid}`, { cache: 'no-store' });
         if (res.ok) {
           const ps = await res.json();
-          setParentSession({ id: ps.id, title: ps.title, agentId: ps.agentId });
+          loadedParent = { id: ps.id, title: ps.title, agentId: ps.agentId };
         }
       } catch { /* ignore */ }
     }
 
     // Child sessions
+    let loadedChildren: SessionNavLink[] = [];
     try {
       const res = await fetch(`/api/agent-chat/sessions/${sid}/children`, { cache: 'no-store' });
       if (res.ok) {
         const { children } = await res.json();
         if (Array.isArray(children) && children.length > 0) {
-          setChildSessions(children.map((c: { id: string; title: string; agentId: string }) => ({
+          loadedChildren = children.map((c: { id: string; title: string; agentId: string }) => ({
             id: c.id, title: c.title, agentId: c.agentId,
-          })));
+          }));
         }
       }
     } catch { /* ignore */ }
+
+    sessionDispatch({ type: 'SET_NAV', parent: loadedParent, children: loadedChildren });
   }, []);
 
   // Load a session's full data (messages + config)
@@ -733,9 +809,9 @@ export function AgentChatPanel({
         }),
       );
       chatDispatch({ type: 'SET_MESSAGES', messages: restored });
-      setSessionTitle(data.title ?? 'New Session');
+      sessionDispatch({ type: 'SET_TITLE', title: data.title ?? 'New Session' });
       const loadedConfig = data.config ?? {};
-      setSessionConfig(loadedConfig);
+      sessionDispatch({ type: 'SET_CONFIG', config: loadedConfig });
       const loadedQueueState = data.pendingUserQueue as PendingUserQueueState | undefined;
       const loadedQueue = Array.isArray(loadedQueueState?.items)
         ? clonePendingQueueItems(loadedQueueState.items)
@@ -825,7 +901,7 @@ export function AgentChatPanel({
     fetchSessionList(agent.id, projectKey).then((sessions: SessionListItem[]) => {
       const current = sessions.find((s: SessionListItem) => s.id === currentSid);
       if (current) {
-        setSessionTitle(current.title);
+        sessionDispatch({ type: 'SET_TITLE', title: current.title });
       }
     });
 
@@ -990,11 +1066,11 @@ export function AgentChatPanel({
             }
 
             case 'session_title_set':
-              setSessionTitle(event.title);
-              setSessionList((prev) => patchSessionListItem(prev, targetSessionId, {
+              sessionDispatch({ type: 'SET_TITLE', title: event.title });
+              sessionDispatch({ type: 'UPDATE_LIST', updater: (prev) => patchSessionListItem(prev, targetSessionId, {
                 title: event.title,
                 updatedAt: new Date().toISOString(),
-              }));
+              }) });
               // Notify parent immediately to update sidebar title.
               onSessionChange?.({
                 id: targetSessionId,
@@ -1023,13 +1099,13 @@ export function AgentChatPanel({
 
             case 'awaiting_sub_agents':
               // Session entered awaiting state — stop stream but mark as awaiting
-              setSessionList((prev) =>
+              sessionDispatch({ type: 'UPDATE_LIST', updater: (prev) =>
                 prev.map((s) =>
                   s.id === streamTargetSessionRef.current
                     ? { ...s, isRunning: false, isAwaiting: true, runningStartedAt: undefined }
                     : s,
                 ),
-              );
+              });
               break;
 
             case 'done':
@@ -1064,8 +1140,7 @@ export function AgentChatPanel({
   const resetState = useCallback(() => {
     chatDispatch({ type: 'RESET' });
     setSessionIdSync(null);
-    setSessionTitle(hasProject ? t('chat.newSession') : 'New Session');
-    setSessionList([]);
+    sessionDispatch({ type: 'RESET', defaultTitle: hasProject ? t('chat.newSession') : 'New Session' });
     setQueueExpanded(true);
     pendingUserMessagesRef.current = [];
     setPendingUserMessages([]);
@@ -1150,7 +1225,7 @@ export function AgentChatPanel({
         // Auto-select latest
         const latest = sessions[0];
         setSessionIdSync(latest.id);
-        setSessionTitle(latest.title);
+        sessionDispatch({ type: 'SET_TITLE', title: latest.title });
         // Parallel: load session data + check status for latest
         const [, statusRes] = await Promise.all([
           loadSessionData(latest.id, token),
@@ -1173,7 +1248,7 @@ export function AgentChatPanel({
           const data = await res.json();
           if (!isStale() && data.status === 'running') {
             setSessionIdSync(sid);
-            setSessionTitle(sessions[i].title);
+            sessionDispatch({ type: 'SET_TITLE', title: sessions[i].title });
             await loadSessionData(sid, token);
             if (isStale()) return;
             reconnectRunning(sid, data);
@@ -1270,14 +1345,14 @@ export function AgentChatPanel({
       targetSessionId = `agent-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const quickTitle = text.trim().slice(0, 10) || (hasProject ? t('chat.newSession') : 'New Session');
       setSessionIdSync(targetSessionId);
-      setSessionTitle(quickTitle);
+      sessionDispatch({ type: 'SET_TITLE', title: quickTitle });
       // Insert into session list immediately so it appears in history
       const newItem: SessionListItem = {
         id: targetSessionId!,
         title: quickTitle,
         updatedAt: new Date().toISOString(),
       };
-      setSessionList((prev) => upsertSessionListItem(prev, newItem));
+      sessionDispatch({ type: 'UPDATE_LIST', updater: (prev) => upsertSessionListItem(prev, newItem) });
       onSessionChange?.(newItem);
     }
 
@@ -1486,14 +1561,14 @@ export function AgentChatPanel({
     } catch {
       // ignore
     }
-    setSessionList(prev => prev.filter(s => s.id !== sessionId));
+    sessionDispatch({ type: 'UPDATE_LIST', updater: prev => prev.filter(s => s.id !== sessionId) });
     handleNewSession();
   };
 
   // Switch to a new (empty) session
   // Save session config
   const handleSaveConfig = useCallback(async (config: SessionConfig) => {
-    setSessionConfig(config);
+    sessionDispatch({ type: 'SET_CONFIG', config });
     // Sync model/provider to chat panel state if session config has them
     if (config.provider) {
       setChatProvider(config.provider);
@@ -1526,15 +1601,11 @@ export function AgentChatPanel({
       streamAbortRef.current.abort();
       streamAbortRef.current = null;
     }
-    setSessionIdSync(null);
-    setSessionTitle(hasProject ? t('chat.newSession') : 'New Session');
+    sessionDispatch({ type: 'NEW', defaultTitle: hasProject ? t('chat.newSession') : 'New Session' });
+    sessionIdRef.current = null;
     chatDispatch({ type: 'SET_MESSAGES', messages: [] });
-    setSessionConfig({});
     setShowConfig(false);
     setCompressDismissed(false);
-    setParentSession(null);
-    setChildSessions([]);
-    setShowChildList(false);
     replacePendingUserQueue([]);
     setQueueExpanded(true);
     blocksRef.current = [];
@@ -1563,10 +1634,9 @@ export function AgentChatPanel({
       streamAbortRef.current.abort();
       streamAbortRef.current = null;
     }
-    setSessionIdSync(target.id);
-    setSessionTitle(target.title);
+    sessionDispatch({ type: 'SELECT', id: target.id, title: target.title });
+    sessionIdRef.current = target.id;
     chatDispatch({ type: 'RESET' });
-    setSessionConfig({});
     setShowConfig(false);
     setCompressDismissed(false);
     blocksRef.current = [];
@@ -1578,7 +1648,7 @@ export function AgentChatPanel({
     setQueueExpanded(true);
     // Mark as read
     if (target.unreadCount) {
-      setSessionList((prev) => patchSessionListItem(prev, target.id, { unreadCount: 0 }));
+      sessionDispatch({ type: 'UPDATE_LIST', updater: (prev) => patchSessionListItem(prev, target.id, { unreadCount: 0 }) });
       fetch(`/api/agent-chat/sessions/${target.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -1629,7 +1699,7 @@ export function AgentChatPanel({
         updatedAt: new Date().toISOString(),
         unreadCount: 0,
       };
-      setSessionList((prev) => upsertSessionListItem(prev, newItem));
+      sessionDispatch({ type: 'UPDATE_LIST', updater: (prev) => upsertSessionListItem(prev, newItem) });
 
       // Abort streaming if active so the session switch is not blocked
       if (streamAbortRef.current) {
@@ -1648,9 +1718,8 @@ export function AgentChatPanel({
       // isStreaming guard which could silently skip the switch).
       initTokenRef.current += 1;
       const token = initTokenRef.current;
-      setSessionIdSync(newItem.id);
-      setSessionTitle(newItem.title);
-      setSessionConfig({});
+      sessionDispatch({ type: 'SELECT', id: newItem.id, title: newItem.title });
+      sessionIdRef.current = newItem.id;
       setShowConfig(false);
       setCompressDismissed(false);
       pendingAnswerRef.current = null;
@@ -2044,9 +2113,9 @@ export function AgentChatPanel({
           )}
           {/* 子会话指示器 */}
           {childSessions.length > 0 && (
-            <div className="relative shrink-0 ml-1" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setShowChildList(false); }}>
+            <div className="relative shrink-0 ml-1" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) sessionDispatch({ type: 'CLOSE_CHILD_LIST' }); }}>
               <button
-                onClick={() => setShowChildList(v => !v)}
+                onClick={() => sessionDispatch({ type: 'TOGGLE_CHILD_LIST' })}
                 className="flex items-center gap-0.5 text-xs text-violet-500 hover:text-violet-700 dark:hover:text-violet-300"
                 title={`${childSessions.length} 个子会话`}
               >
@@ -2060,7 +2129,7 @@ export function AgentChatPanel({
                     <button
                       key={cs.id}
                       onClick={() => {
-                        setShowChildList(false);
+                        sessionDispatch({ type: 'CLOSE_CHILD_LIST' });
                         router.push(buildSessionUrl(cs.agentId, cs.id));
                       }}
                       className="block w-full text-left px-2 py-1.5 text-xs text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-700 truncate"
