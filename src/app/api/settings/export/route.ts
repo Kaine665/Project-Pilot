@@ -5,10 +5,10 @@ import {
   getDataDir,
   getProjectsPath,
   getAgentsPath,
-  getAgentChatSessionsPath,
   getFlowsDir,
   readJsonFile,
 } from '@/lib/file-store';
+import { readMessages, listAllSessions } from '@/lib/chat-managers/agent-chat-session-store';
 import { resolveSystemPrompt } from '@/lib/agent-prompt-store';
 import type { Agent, AgentsData } from '@/types';
 
@@ -20,11 +20,20 @@ import type { Agent, AgentsData } from '@/types';
 export async function GET() {
   try {
     // 收集核心数据文件
-    const [projects, agents, agentChatSessions] = await Promise.all([
+    const [projects, agents] = await Promise.all([
       readJsonFile(getProjectsPath(), {}),
       readJsonFile(getAgentsPath(), {}),
-      readJsonFile(getAgentChatSessionsPath(), {}),
     ]);
+
+    // Rebuild full sessions (index metadata + JSONL messages) for export
+    const sessionMetas = await listAllSessions();
+    const fullSessions = await Promise.all(
+      sessionMetas.map(async (meta) => {
+        const messages = await readMessages(meta.id);
+        return { ...meta, messages };
+      }),
+    );
+    const agentChatSessions = { sessions: fullSessions };
 
     // 导出时将外置的 systemPrompt 重新填入 agents 数据，保证导出文件自包含
     const agentsData = agents as AgentsData;

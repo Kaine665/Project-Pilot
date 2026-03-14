@@ -13,7 +13,7 @@ import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import type { AgentPackage, PackagedContext } from '@/types/agent-package';
 import type { ResourceRef } from '@/types/resource';
 import { promises as fs } from 'fs';
-import { invalidateAgentsCache } from '@/app/api/agents/route';
+import { invalidateAgentsCache } from '@/lib/agents-store';
 
 // ── 导出 ──
 

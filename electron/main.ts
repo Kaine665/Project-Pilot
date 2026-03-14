@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Menu, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, Menu, ipcMain, shell, Notification } from 'electron';
 import { ChildProcess } from 'child_process';
 import path from 'path';
 import { findAvailablePort } from './port-finder';
@@ -48,6 +48,61 @@ ipcMain.handle('open-file', async (_event, filePath: string) => {
     return { error: (e as Error).message };
   }
 });
+
+// ── IPC: 显示系统通知 ──
+ipcMain.handle(
+  'show-notification',
+  async (
+    event,
+    options: {
+      title: string;
+      body: string;
+      icon?: string;
+      tag?: string;
+      sessionId?: string;
+    }
+  ) => {
+    try {
+      const notificationOptions: any = {
+        title: options.title,
+        body: options.body,
+        icon: options.icon,
+        // Phase 3: 持久化 - 使通知在系统通知中心中保持可见
+        // 用户需要手动关闭，而不是自动消失
+        requireInteraction: true,
+      };
+
+      const notification = new Notification(notificationOptions);
+
+      // Phase 3: 点击处理 - 点击通知时聚焦应用并导航到会话
+      (notification as any).onclick = () => {
+        // 聚焦主窗口
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.focus();
+        }
+
+        // 发送事件到渲染进程，告知用户点击了通知
+        // 渲染进程可以据此导航到对应会话
+        event.sender.send('notification-clicked', {
+          sessionId: options.sessionId,
+          timestamp: Date.now(),
+        });
+      };
+
+      // Phase 3: 关闭处理 - 跟踪通知关闭状态（用于分析）
+      (notification as any).onclose = () => {
+        console.debug(`[Notification] 用户关闭通知: ${options.title}`);
+      };
+
+      notification.show();
+      return true;
+    } catch (error) {
+      console.error('[Notification] 显示失败:', error);
+      return false;
+    }
+  }
+);
 
 // ── 创建主窗�?────────────────────────────────────────
 function createMainWindow() {

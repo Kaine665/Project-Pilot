@@ -10,7 +10,14 @@ import type { ChatSSEEvent, ChatToolCall, ContentBlock, DangerDetectorSettings }
 
 // ── Run lifecycle ──
 
-export type RunStatus = 'running' | 'completed' | 'failed' | 'stopped';
+/**
+ * Run lifecycle:
+ *   running → finalizing → completed | failed | stopped
+ *
+ * `finalizing`: stream has ended, satellite tasks and persistence are in progress.
+ * `completed`: result has been persisted to disk — safe to read from any source.
+ */
+export type RunStatus = 'running' | 'finalizing' | 'completed' | 'failed' | 'stopped';
 
 export interface RunStatusInfo {
   status: RunStatus | 'none';
@@ -19,6 +26,42 @@ export interface RunStatusInfo {
   startedAt?: string;
   /** 最后一次 error 事件的 message，便于测试连接等场景展示具体失败原因 */
   errorMessage?: string;
+}
+
+// ── Sub Agent structured result ──
+
+/**
+ * 结构化结果对象 — Sub Agent 执行完成后的标准输出。
+ * 编排器和 CLI 调用方通过此对象消费结果，不再依赖解析自然语言。
+ */
+export interface SubAgentResult {
+  /** 最终运行状态 */
+  status: 'completed' | 'failed' | 'stopped' | 'timeout';
+  /** AI 生成的一句话摘要（便于编排器快速消费） */
+  summary: string;
+  /** 可选的结构化输出（JSON 可序列化） */
+  output?: unknown;
+  /** 可选的产物文件路径列表 */
+  artifacts?: string[];
+  /** 失败时的错误信息 */
+  error?: { code: string; message: string };
+}
+
+// ── Session execution record ──
+
+/**
+ * 会话运行执行记录 — 写入 SessionMeta，让磁盘读取方一次查询即可获取完整状态。
+ * 消除了内存态/持久态分裂：`completed` 状态只在此记录落盘后才设置。
+ */
+export interface SessionExecution {
+  /** 最终运行状态 */
+  status: 'completed' | 'failed' | 'stopped';
+  /** 运行开始时间 */
+  startedAt: string;
+  /** 运行完成时间 */
+  completedAt: string;
+  /** 结构化结果（仅 Sub Agent 调用时有） */
+  result?: SubAgentResult;
 }
 
 // ── Base run data (shared by all managers) ──

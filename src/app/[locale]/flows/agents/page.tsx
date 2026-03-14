@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
 import {
   Bot, Plus, Trash2, X, ChevronRight, Minimize2,
   Settings, MessageSquare, Archive, ArchiveRestore,
@@ -15,6 +15,75 @@ import { useProject } from '@/components/project-context';
 import { getProviderPreset } from '@/lib/provider-registry';
 
 
+// ── Helpers ──
+
+function formatSessionElapsed(startedAt: string | undefined, nowTs: number): string {
+  if (!startedAt) return '0s';
+  const diffSeconds = Math.max(0, Math.floor((nowTs - new Date(startedAt).getTime()) / 1000));
+  if (diffSeconds < 60) return `${diffSeconds}s`;
+  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m`;
+  return `${Math.floor(diffSeconds / 3600)}h`;
+}
+
+// ── Session card (memo-ized to avoid re-render on listClockNow ticks) ──
+
+interface SessionCardProps {
+  session: AllSessionItem;
+  isActive: boolean;
+  listClockNow: number | undefined; // only passed when session.isRunning
+  onClick: (session: AllSessionItem) => void;
+  onArchiveToggle: (session: AllSessionItem, e: React.MouseEvent) => void;
+}
+
+const SessionCard = memo(function SessionCard({
+  session: s,
+  isActive,
+  listClockNow,
+  onClick,
+  onArchiveToggle,
+}: SessionCardProps) {
+  return (
+    <div
+      onClick={() => onClick(s)}
+      className={`group/session flex cursor-pointer items-center gap-3.5 rounded-xl border px-3 py-3.5 transition-all ${
+        isActive
+          ? 'bg-zinc-50 border-zinc-100 shadow-sm dark:bg-zinc-800 dark:border-zinc-700'
+          : 'border-transparent hover:bg-zinc-50 hover:border-zinc-100 dark:hover:bg-zinc-800/50 dark:hover:border-zinc-700/50'
+      } ${s.archived ? 'opacity-45' : ''}`}
+    >
+      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ${
+        isActive ? 'bg-white shadow-sm ring-zinc-200 dark:bg-zinc-700 dark:ring-zinc-600' : 'bg-zinc-50 ring-zinc-100 dark:bg-zinc-800 dark:ring-zinc-700'
+      }`}>
+        <AgentIcon iconKey={s.agentIcon} className={`h-5 w-5 ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400'}`} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className={`truncate text-[13px] ${s.archived ? 'font-medium text-zinc-400 dark:text-zinc-500' : 'font-semibold text-zinc-900 dark:text-zinc-100'}`}>
+          {s.title}
+        </div>
+        <div className={`truncate text-[11px] ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400'}`}>
+          {s.agentName}
+        </div>
+      </div>
+      {s.isRunning && listClockNow !== undefined ? (
+        <span className="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-blue-700 dark:bg-blue-950/70 dark:text-blue-300">
+          {formatSessionElapsed(s.runningStartedAt, listClockNow)}
+        </span>
+      ) : !isActive && !!s.unreadCount && s.unreadCount > 0 && !s.archived && (
+        <span className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-zinc-900 px-1.5 text-[10px] font-bold text-white dark:bg-zinc-100 dark:text-zinc-900">
+          {s.unreadCount > 99 ? '99+' : s.unreadCount}
+        </span>
+      )}
+      <button
+        onClick={(e) => onArchiveToggle(s, e)}
+        className="shrink-0 rounded-lg p-1.5 text-zinc-400 opacity-0 transition-all hover:bg-zinc-100 hover:text-zinc-600 group-hover/session:opacity-100 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-400"
+        title={s.archived ? '取消归档' : '归档'}
+      >
+        {s.archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+      </button>
+    </div>
+  );
+});
+
 // ── Main page ──
 
 export default function AgentsPage() {
@@ -22,6 +91,8 @@ export default function AgentsPage() {
 
   // ── Core data ──
   const [agents, setAgents] = useState<Agent[]>([]);
+  const agentsRef = useRef<Agent[]>(agents);
+  agentsRef.current = agents;
   const [allSessions, setAllSessions] = useState<AllSessionItem[]>([]);
 
   // ── Sidebar tab ──
@@ -156,23 +227,26 @@ export default function AgentsPage() {
     const cacheKey = key ?? CACHE_KEY_ALL;
 
     // 切换项目时立即展示缓存数据（如有）
+    // 使用函数式更新，避免覆盖乐观插入的新会话
     const cached = sessionCacheRef.current.get(cacheKey);
     if (cached) {
-      setAllSessions(cached);
+      setAllSessions(prev => {
+        // 保留 prev 中已有但 cached 中没有的条目（乐观插入的新会话）
+        const cachedIds = new Set(cached.map(s => s.id));
+        const optimistic = prev.filter(s => !cachedIds.has(s.id));
+        return optimistic.length > 0 ? [...optimistic, ...cached] : cached;
+      });
     }
 
     try {
       const sessUrl = key
         ? `/api/agent-chat/sessions?projectKey=${encodeURIComponent(key)}`
         : '/api/agent-chat/sessions';
-      const [sessRes, agentsRes] = await Promise.all([
-        fetch(sessUrl, { cache: 'no-store' }),
-        fetch('/api/agents'),
-      ]);
+      const sessRes = await fetch(sessUrl, { cache: 'no-store' });
       const sessData = await sessRes.json();
-      const agentsData = await agentsRes.json();
+      // Reuse already-loaded agents from agentsRef instead of fetching /api/agents again
       const agentMap = new Map<string, Agent>();
-      for (const a of (agentsData.agents ?? []) as Agent[]) {
+      for (const a of agentsRef.current) {
         agentMap.set(a.id, a);
       }
       const sessions: AllSessionItem[] = (sessData.sessions ?? []).map((s: { id: string; title: string; updatedAt: string; agentId: string; unreadCount?: number; archived?: boolean; projectKey?: string }) => {
@@ -202,12 +276,29 @@ export default function AgentsPage() {
         sessionCacheRef.current.set(cacheKey, merged);
         return merged;
       });
-      // Also update agents cache
-      setAgents(agentsData.agents ?? []);
+      // Agents are already kept up-to-date via fetchAgents(); no duplicate fetch needed.
     } catch { /* ignore */ }
   }, [effectiveProjectKey]);
 
   useEffect(() => { fetchAllSessions(); }, [fetchAllSessions]);
+
+  // ── Clear opened session panels when project changes ──
+  const prevProjectKeyRef = useRef(effectiveProjectKey);
+  useEffect(() => {
+    if (prevProjectKeyRef.current !== effectiveProjectKey) {
+      prevProjectKeyRef.current = effectiveProjectKey;
+      setOpenedSessions([]);
+      setActivePanel(null);
+    }
+  }, [effectiveProjectKey]);
+
+  // ── Clock for running-session elapsed display ──
+  const [listClockNow, setListClockNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!allSessions.some(s => s.isRunning)) return;
+    const timer = setInterval(() => setListClockNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [allSessions]);
 
   // ── Grouped sessions for display ──
   const groupedSessions = useMemo(() => groupSessionsByDay(allSessions), [allSessions]);
@@ -238,7 +329,7 @@ export default function AgentsPage() {
 
   // ── Handlers: Conversations tab ──
 
-  const handleSessionClick = (session: AllSessionItem) => {
+  const handleSessionClick = useCallback((session: AllSessionItem) => {
     // Mark as read (fire-and-forget + clear local state immediately)
     if (session.unreadCount) {
       setAllSessions(prev => prev.map(s => s.id === session.id ? { ...s, unreadCount: 0 } : s));
@@ -250,20 +341,22 @@ export default function AgentsPage() {
     }
 
     // Check if already opened
-    const existing = openedSessions.find(
-      o => o.sessionId === session.id && o.agentId === session.agentId,
-    );
-    if (existing) {
-      setActivePanel({ type: 'session', key: existing.key });
+    setOpenedSessions(prev => {
+      const existing = prev.find(
+        o => o.sessionId === session.id && o.agentId === session.agentId,
+      );
+      if (existing) {
+        setActivePanel({ type: 'session', key: existing.key });
+        syncUrlParams({ agent: session.agentId, session: session.id });
+        return prev;
+      }
+      // Open new instance
+      const key = nextKeyRef.current++;
+      setActivePanel({ type: 'session', key });
       syncUrlParams({ agent: session.agentId, session: session.id });
-      return;
-    }
-    // Open new instance
-    const key = nextKeyRef.current++;
-    setOpenedSessions(prev => [...prev, { sessionId: session.id, agentId: session.agentId, key }]);
-    setActivePanel({ type: 'session', key });
-    syncUrlParams({ agent: session.agentId, session: session.id });
-  };
+      return [...prev, { sessionId: session.id, agentId: session.agentId, key }];
+    });
+  }, []);
 
   const handleNewSession = (agent: Agent) => {
     const key = nextKeyRef.current++;
@@ -273,7 +366,7 @@ export default function AgentsPage() {
     syncUrlParams({ agent: agent.id, session: null });
   };
 
-  const handleArchiveToggle = (session: AllSessionItem, e: React.MouseEvent) => {
+  const handleArchiveToggle = useCallback((session: AllSessionItem, e: React.MouseEvent) => {
     e.stopPropagation();
     const newArchived = !session.archived;
     // Optimistic update
@@ -292,7 +385,7 @@ export default function AgentsPage() {
       // Rollback on network error
       setAllSessions(prev => prev.map(s => s.id === session.id ? { ...s, archived: !newArchived } : s));
     });
-  };
+  }, []);
 
   // ── Handlers: Agents tab ──
 
@@ -609,41 +702,14 @@ export default function AgentsPage() {
                       const isActive = activePanel?.type === 'session'
                         && openedSessions.find(o => o.key === activePanel.key)?.sessionId === s.id;
                       return (
-                        <div
+                        <SessionCard
                           key={s.id}
-                          onClick={() => handleSessionClick(s)}
-                          className={`group/session flex cursor-pointer items-center gap-3.5 rounded-xl border px-3 py-3.5 transition-all ${
-                            isActive
-                              ? 'bg-zinc-50 border-zinc-100 shadow-sm dark:bg-zinc-800 dark:border-zinc-700'
-                              : 'border-transparent hover:bg-zinc-50 hover:border-zinc-100 dark:hover:bg-zinc-800/50 dark:hover:border-zinc-700/50'
-                          } ${s.archived ? 'opacity-45' : ''}`}
-                        >
-                          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ${
-                            isActive ? 'bg-white shadow-sm ring-zinc-200 dark:bg-zinc-700 dark:ring-zinc-600' : 'bg-zinc-50 ring-zinc-100 dark:bg-zinc-800 dark:ring-zinc-700'
-                          }`}>
-                            <AgentIcon iconKey={s.agentIcon} className={`h-5 w-5 ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400'}`} />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className={`truncate text-[13px] ${s.archived ? 'font-medium text-zinc-400 dark:text-zinc-500' : 'font-semibold text-zinc-900 dark:text-zinc-100'}`}>
-                              {s.title}
-                            </div>
-                            <div className={`truncate text-[11px] ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400'}`}>
-                              {s.agentName}
-                            </div>
-                          </div>
-                          {!isActive && !!s.unreadCount && s.unreadCount > 0 && !s.archived && (
-                            <span className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-zinc-900 px-1.5 text-[10px] font-bold text-white dark:bg-zinc-100 dark:text-zinc-900">
-                              {s.unreadCount > 99 ? '99+' : s.unreadCount}
-                            </span>
-                          )}
-                          <button
-                            onClick={(e) => handleArchiveToggle(s, e)}
-                            className="shrink-0 rounded-lg p-1.5 text-zinc-400 opacity-0 transition-all hover:bg-zinc-100 hover:text-zinc-600 group-hover/session:opacity-100 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-400"
-                            title={s.archived ? '取消归档' : '归档'}
-                          >
-                            {s.archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
-                          </button>
-                        </div>
+                          session={s}
+                          isActive={isActive}
+                          listClockNow={s.isRunning ? listClockNow : undefined}
+                          onClick={handleSessionClick}
+                          onArchiveToggle={handleArchiveToggle}
+                        />
                       );
                     })}
                   </div>
@@ -864,9 +930,19 @@ export default function AgentsPage() {
                         setAllSessions(prev => {
                           const existing = prev.find(s => s.id === newSession.id);
                           if (existing) {
-                            // 已存在 → 更新标题等字段（session_title_set 场景）
                             return prev.map(s => s.id === newSession.id
-                              ? { ...s, title: newSession.title, updatedAt: newSession.updatedAt }
+                              ? {
+                                  ...s,
+                                  title: newSession.title,
+                                  updatedAt: newSession.updatedAt,
+                                  ...(newSession.isRunning !== undefined && {
+                                    isRunning: newSession.isRunning,
+                                    runningStartedAt: newSession.runningStartedAt,
+                                  }),
+                                  ...(newSession.unreadCount !== undefined && {
+                                    unreadCount: newSession.unreadCount,
+                                  }),
+                                }
                               : s);
                           }
                           return [{
@@ -876,10 +952,16 @@ export default function AgentsPage() {
                             agentId: selectedAgent.id,
                             agentName: selectedAgent.name,
                             agentIcon: selectedAgent.icon,
+                            isRunning: newSession.isRunning,
+                            runningStartedAt: newSession.runningStartedAt,
+                            unreadCount: newSession.unreadCount,
                           }, ...prev];
                         });
                       }
-                      fetchAllSessions();
+                      // Don't fetch on every streaming tick – only fetch on real content changes
+                      if (!newSession || newSession.isRunning !== true) {
+                        fetchAllSessions();
+                      }
                     }}
                   />
                 </div>
@@ -976,7 +1058,15 @@ export default function AgentsPage() {
                             const existing = prev.find(s => s.id === newSession.id);
                             if (existing) {
                               return prev.map(s => s.id === newSession.id
-                                ? { ...s, title: newSession.title, updatedAt: newSession.updatedAt }
+                                ? {
+                                    ...s,
+                                    title: newSession.title,
+                                    updatedAt: newSession.updatedAt,
+                                    ...(newSession.isRunning !== undefined && {
+                                      isRunning: newSession.isRunning,
+                                      runningStartedAt: newSession.runningStartedAt,
+                                    }),
+                                  }
                                 : s);
                             }
                             return [{
@@ -986,6 +1076,8 @@ export default function AgentsPage() {
                               agentId: os.agentId,
                               agentName: agent.name,
                               agentIcon: agent.icon,
+                              isRunning: newSession.isRunning,
+                              runningStartedAt: newSession.runningStartedAt,
                             }, ...prev];
                           });
                         }
@@ -998,7 +1090,10 @@ export default function AgentsPage() {
                             body: JSON.stringify({ action: 'markAsRead' }),
                           }).catch(() => {});
                         }
-                        fetchAllSessions();
+                        // Don't fetch on every streaming tick – only fetch on real content changes
+                        if (!newSession || newSession.isRunning !== true) {
+                          fetchAllSessions();
+                        }
                       }}
                     />
                   </div>

@@ -18,24 +18,32 @@ export class DesignDocsIndexLoader implements ResourceLoader {
   async resolve(ref: ResourceRef, _ctx: LoaderContext): Promise<ResolvedResource> {
     const data = await readJsonFile<DocsIndexData>(getDesignDocsIndexPath(), { projects: {} });
 
-    const allEntries = Object.values(data.projects).flat();
+    // 过滤掉 deprecated 状态的文档——已废弃文档不注入 AI prompt
+    const activeProjects: Record<string, DocEntry[]> = {};
+    for (const [key, entries] of Object.entries(data.projects)) {
+      const active = entries.filter(e => (e.status ?? 'active') !== 'deprecated');
+      if (active.length > 0) activeProjects[key] = active;
+    }
+
+    const allEntries = Object.values(activeProjects).flat();
     if (allEntries.length === 0) {
       return { ref, content: '', ok: true };
     }
 
-    const tableHeader = '| 标题 | 描述 | 文件路径 |\n|------|------|---------|';
+    const tableHeader = '| 标题 | 描述 | 状态 | 文件路径 |\n|------|------|------|---------|';
     const toRow = (e: DocEntry) => {
       const filePath = getDesignDocFilePath(e.fileName);
       const desc = e.description || '-';
-      return `| ${e.title} | ${desc} | \`${filePath}\` |`;
+      const status = e.status === 'draft' ? '📝 draft' : '';
+      return `| ${e.title} | ${desc} | ${status} | \`${filePath}\` |`;
     };
 
-    const projectKeys = Object.keys(data.projects).sort();
+    const projectKeys = Object.keys(activeProjects).sort();
 
     let md = '以下是项目设计文档索引。需要时可通过 bash 的 cat 命令读取具体文件内容。\n';
 
     for (const key of projectKeys) {
-      const entries = data.projects[key];
+      const entries = activeProjects[key];
       if (entries.length === 0) continue;
       md += `\n### ${key}\n${tableHeader}\n${entries.map(toRow).join('\n')}\n`;
     }

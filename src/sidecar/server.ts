@@ -33,10 +33,12 @@ import { URL } from 'url';
 // 使用 @/ 别名 — tsx（dev）和 esbuild --tsconfig（prod）均可解析
 import { agentChatManager, generateSessionId } from '@/lib/chat-managers/agent-chat-manager';
 import type { FlowContext } from '@/lib/chat-managers/agent-chat-manager';
+import { loadSession } from '@/lib/chat-managers/agent-chat-session-store';
 import { schedulerManager } from '@/lib/scheduler-manager';
 import type { ChatSSEEvent } from '@/types';
 import type { SessionConfig } from '@/types/agent-chat';
 import type { ProviderId } from '@/types';
+import type { ImageAttachment } from '@/lib/image-assets';
 
 // ── 配置 ─────────────────────────────────────────────────────────────────────
 
@@ -85,6 +87,27 @@ function notFound(res: http.ServerResponse): void {
   jsonResponse(res, { error: 'Not found' }, 404);
 }
 
+// ── Depth computation (recursive protection) ────────────────────────────────
+
+/**
+ * Walk the parentSessionId chain to compute the actual call depth.
+ * Each hop from child → parent increments depth by 1.
+ * Caps traversal at 10 to prevent infinite loops from circular refs.
+ */
+async function computeDepthFromParentChain(parentSessionId: string): Promise<number> {
+  let depth = 1; // the current session will be one level deeper than parent
+  let currentId: string | undefined = parentSessionId;
+  const MAX_CHAIN = 10;
+
+  while (currentId && depth < MAX_CHAIN) {
+    const session = await loadSession(currentId);
+    if (!session?.parentSessionId) break;
+    currentId = session.parentSessionId;
+    depth++;
+  }
+  return depth;
+}
+
 // ── Route handlers ───────────────────────────────────────────────────────────
 
 function handleHealth(res: http.ServerResponse): void {
@@ -107,9 +130,27 @@ async function handleStart(
     providerOverride?: ProviderId;
     modelOverride?: string;
     effortOverride?: string;
+    depth?: number;
   };
 
   const sessionId = body.sessionId ?? generateSessionId();
+
+  // ── Recursive depth enforcement (行动项 4) ──
+  // Server-side depth calculation from parentSessionId chain takes priority
+  // over client-supplied depth, preventing bypass by forgetting --depth.
+  let effectiveDepth: number = body.depth ?? 0;
+  if (body.parentSessionId) {
+    const serverDepth = await computeDepthFromParentChain(body.parentSessionId);
+    effectiveDepth = Math.max(effectiveDepth, serverDepth);
+  }
+  const MAX_SUB_AGENT_DEPTH = 3;
+  if (effectiveDepth > MAX_SUB_AGENT_DEPTH) {
+    jsonResponse(res, {
+      error: `Sub-agent call depth ${effectiveDepth} exceeds maximum ${MAX_SUB_AGENT_DEPTH}. ` +
+        `This prevents infinite recursion. Consider restructuring the task.`,
+    }, 400);
+    return;
+  }
 
   try {
     const runId = await agentChatManager.start(
@@ -117,13 +158,15 @@ async function handleStart(
       body.agentId,
       body.message,
       body.flowContext,
-      body.images as import('@/lib/chat-managers/agent-chat-manager').ImageAttachment[] | undefined,
+      body.images as ImageAttachment[] | undefined,
       body.initialTitle,
       body.config,
       body.parentSessionId,
       body.providerOverride,
       body.modelOverride,
       body.effortOverride,
+      undefined, // ephemeral
+      effectiveDepth,
     );
     jsonResponse(res, { runId, sessionId });
   } catch (err) {

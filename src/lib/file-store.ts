@@ -73,6 +73,7 @@ async function ensureDataDirInitialized(): Promise<void> {
     getSkillsDir(),
     getProjectPromptsDir(),
     getAgentDataDir(),
+    getAgentChatMessagesDir(),
     path.join(DATA_DIR, 'orchestrations'),
     path.join(DATA_DIR, '_snapshots'),
   ];
@@ -125,6 +126,91 @@ export async function ensureFlowsMigrated(): Promise<void> {
 }
 
 
+// ── projects.json → _index.json 迁移 ──
+// 将旧版 projects.json 的字段合并到 flows/_index.json 中
+
+let _projectsMigrated = false;
+
+/**
+ * 将 projects.json 中的 ProjectConfig 数据合并到 flows/_index.json 的 ProjectEntry 中。
+ * 仅执行一次：检查 _index.json 中是否已有 `_migrated_projects_v2` 标记。
+ */
+export async function ensureProjectsMigrated(): Promise<void> {
+  if (_projectsMigrated) return;
+  _projectsMigrated = true;
+
+  // 确保 flows 迁移先执行
+  await ensureFlowsMigrated();
+
+  const indexPath = getFlowIndexPath();
+  const projectsPath = getProjectsPath();
+
+  // 读取当前索引
+  const index = await readJsonFile<import('@/types').ProjectIndex>(indexPath, { projects: [] });
+
+  // 检查是否已迁移过（用 _migrated 标记字段）
+  if ((index as unknown as Record<string, unknown>)._migrated_projects_v2) return;
+
+  // 读取旧版 projects.json
+  let oldProjects: Record<string, import('@/types').ProjectConfig> = {};
+  try {
+    const data = await readJsonFile<import('@/types').ProjectsData>(projectsPath, { projects: {} });
+    oldProjects = data.projects;
+  } catch {
+    // 旧文件不存在或读取失败，跳过
+  }
+
+  if (Object.keys(oldProjects).length === 0) {
+    // 没有旧数据，仅标记已迁移
+    await writeJsonFile(indexPath, { ...index, _migrated_projects_v2: true });
+    return;
+  }
+
+  const existingKeys = new Set(index.projects.map(p => p.key));
+
+  for (const [key, config] of Object.entries(oldProjects)) {
+    const existing = index.projects.find(p => p.key === key);
+    if (existing) {
+      // 已存在的项目：补充缺失字段
+      if (!existing.path && config.path) existing.path = config.path;
+      if (!existing.techStack && config.type) existing.techStack = config.type as import('@/types').ProjectTechStack;
+      if (!existing.description && config.description) existing.description = config.description;
+      if (!existing.location) existing.location = 'local';
+      if (config.defaultBranch && !existing.repository?.defaultBranch) {
+        existing.repository = { ...existing.repository, defaultBranch: config.defaultBranch };
+      }
+      if ((config.webCommand || config.webUrl) && !existing.devServer) {
+        existing.devServer = {
+          ...(config.webCommand && { command: config.webCommand }),
+          ...(config.webUrl && { url: config.webUrl }),
+        };
+      }
+    } else {
+      // 新项目：从旧系统迁移过来
+      const entry: import('@/types').ProjectEntry = {
+        key,
+        name: config.name,
+        path: config.path,
+        location: 'local',
+        techStack: config.type as import('@/types').ProjectTechStack,
+        ...(config.description && { description: config.description }),
+        ...(config.defaultBranch && { repository: { defaultBranch: config.defaultBranch } }),
+        ...((config.webCommand || config.webUrl) && {
+          devServer: {
+            ...(config.webCommand && { command: config.webCommand }),
+            ...(config.webUrl && { url: config.webUrl }),
+          },
+        }),
+        createdAt: new Date().toISOString(),
+      };
+      index.projects.push(entry);
+    }
+  }
+
+  // 标记已迁移并写入
+  await writeJsonFile(indexPath, { ...index, _migrated_projects_v2: true });
+}
+
 export function getSettingsPath(): string {
   return path.join(DATA_DIR, 'settings.json');
 }
@@ -139,6 +225,20 @@ export function getDimensionsPath(): string {
 
 export function getAgentChatSessionsPath(): string {
   return path.join(DATA_DIR, 'agent-chat-sessions.json');
+}
+
+/** 每个会话的消息 JSONL 文件目录 */
+export function getAgentChatMessagesDir(): string {
+  return path.join(DATA_DIR, 'agent-chat-messages');
+}
+
+/** 单个会话的消息 JSONL 文件路径 */
+export function getAgentChatMessagePath(sessionId: string): string {
+  const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 200) {
+    throw new Error(`Invalid session id: ${sessionId}`);
+  }
+  return path.join(DATA_DIR, 'agent-chat-messages', `${safe}.jsonl`);
 }
 
 export function getWorktreePortsPath(): string {
@@ -351,7 +451,7 @@ function snapshotBeforeWrite(filePath: string): void {
  * Unix 上 rename 是原子操作不受影响；Windows 上目标文件被占用（读取/杀毒扫描）时
  * rename 会失败，短暂等待后重试即可成功。
  */
-async function renameWithRetry(src: string, dest: string, retries = 5): Promise<void> {
+async function renameWithRetry(src: string, dest: string, retries = 8): Promise<void> {
   for (let i = 0; i < retries; i++) {
     try {
       await fs.rename(src, dest);
@@ -359,8 +459,20 @@ async function renameWithRetry(src: string, dest: string, retries = 5): Promise<
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if ((code === 'EPERM' || code === 'EACCES') && i < retries - 1) {
-        await new Promise(r => setTimeout(r, 20 * (i + 1)));
+        // Exponential backoff: 50, 100, 200, 400, 800, 1600, 3200ms
+        await new Promise(r => setTimeout(r, 50 * Math.pow(2, i)));
         continue;
+      }
+      // All rename retries exhausted — fallback to copyFile + unlink.
+      // Non-atomic but preserves data (better than losing writes entirely).
+      if (code === 'EPERM' || code === 'EACCES') {
+        try {
+          await fs.copyFile(src, dest);
+          await fs.unlink(src).catch(() => {}); // best-effort cleanup
+          return;
+        } catch {
+          // copyFile also failed — re-throw original rename error
+        }
       }
       throw err;
     }
@@ -420,24 +532,35 @@ async function _modifyJsonFileImpl<T>(
   await fs.mkdir(dirPath, { recursive: true });
 
   let data: T;
-  try {
-    // 🔒 Security: check file size before reading
-    const stats = await fs.stat(filePath);
-    if (stats.size > MAX_JSON_SIZE) {
-      throw new Error(`File too large: ${stats.size} bytes (max ${MAX_JSON_SIZE})`);
-    }
+  // Read with retry — transient EPERM/EACCES on Windows (antivirus, other process writing)
+  const READ_RETRIES = 4;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      // 🔒 Security: check file size before reading
+      const stats = await fs.stat(filePath);
+      if (stats.size > MAX_JSON_SIZE) {
+        throw new Error(`File too large: ${stats.size} bytes (max ${MAX_JSON_SIZE})`);
+      }
 
-    const content = await fs.readFile(filePath, 'utf-8');
-    data = parseJsonSafe<T>(content);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    // File not found → use default, but re-throw size errors
-    if (code === 'ENOENT') {
-      data = defaultValue;
-    } else if (error instanceof Error && error.message.includes('too large')) {
+      const content = await fs.readFile(filePath, 'utf-8');
+      data = parseJsonSafe<T>(content);
+      break;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      // File not found → use default
+      if (code === 'ENOENT') {
+        data = defaultValue;
+        break;
+      }
+      // Transient file lock errors → retry with backoff
+      if ((code === 'EPERM' || code === 'EACCES') && attempt < READ_RETRIES - 1) {
+        await new Promise(r => setTimeout(r, 50 * Math.pow(2, attempt)));
+        continue;
+      }
+      // All other errors or retries exhausted → throw to prevent data loss.
+      // Previously, these errors silently used defaultValue and then wrote it
+      // back, wiping all existing data.
       throw error;
-    } else {
-      data = defaultValue;
     }
   }
 

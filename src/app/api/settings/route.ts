@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSettings, saveSettings } from '@/lib/settings-manager';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import type { ClaudeAuthMode, ProviderId, EffortLevel, OpenAIReasoningEffort, AppSettings, DangerCategory, DangerActionLevel, CustomProviderConfig } from '@/types';
-import { DEFAULT_DANGER_SETTINGS, BUILT_IN_PROVIDER_IDS } from '@/types';
+import { DEFAULT_DANGER_SETTINGS, DEFAULT_NOTIFICATION_SETTINGS, BUILT_IN_PROVIDER_IDS } from '@/types';
 
 const VALID_AUTH_MODES: ClaudeAuthMode[] = ['api_key', 'oauth'];
 const VALID_EFFORT_LEVELS: EffortLevel[] = ['low', 'medium', 'high'];
@@ -236,6 +236,29 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // notifications 字段验证
+  if (body.notifications !== undefined) {
+    if (typeof body.notifications !== 'object' || body.notifications === null) {
+      return NextResponse.json({ error: 'notifications must be an object' }, { status: 400 });
+    }
+    const n = body.notifications;
+    if (n.enabled !== undefined && typeof n.enabled !== 'boolean') {
+      return NextResponse.json({ error: 'notifications.enabled must be a boolean' }, { status: 400 });
+    }
+    if (n.soundEnabled !== undefined && typeof n.soundEnabled !== 'boolean') {
+      return NextResponse.json({ error: 'notifications.soundEnabled must be a boolean' }, { status: 400 });
+    }
+    if (n.soundVolume !== undefined) {
+      const v = Number(n.soundVolume);
+      if (!Number.isFinite(v) || v < 0 || v > 1) {
+        return NextResponse.json({ error: 'notifications.soundVolume must be 0-1' }, { status: 400 });
+      }
+    }
+    if (n.onlyWhenUnfocused !== undefined && typeof n.onlyWhenUnfocused !== 'boolean') {
+      return NextResponse.json({ error: 'notifications.onlyWhenUnfocused must be a boolean' }, { status: 400 });
+    }
+  }
+
   const updated: AppSettings = {
     ...current,
     claude: {
@@ -264,6 +287,12 @@ export async function POST(request: NextRequest) {
       titleGeneration: {
         ...current.titleGeneration,
         ...body.titleGeneration,
+      },
+    }),
+    ...(body.notifications !== undefined && {
+      notifications: {
+        ...(current.notifications ?? DEFAULT_NOTIFICATION_SETTINGS),
+        ...body.notifications,
       },
     }),
     version: current.version,

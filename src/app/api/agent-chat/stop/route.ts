@@ -20,7 +20,8 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({ sessionId }),
     });
     return NextResponse.json(await res.json());
-  } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+  } catch {
+    // Sidecar 不可用 → 没有活跃 run，等同于已停止
+    return NextResponse.json({ stopped: false });
   }
 }

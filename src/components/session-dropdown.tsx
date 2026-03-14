@@ -8,15 +8,28 @@ import type { SessionListItem } from '@/components/agent-chat-panel';
 interface SessionDropdownProps {
   sessionTitle: string;
   sessions: SessionListItem[];
+  clockNow: number;
   currentSessionId: string | null;
   isStreaming: boolean;
   onSwitch: (session: SessionListItem) => void;
   onNew: () => void;
 }
 
+function formatSessionElapsed(startedAt: string | undefined, nowTs: number): string {
+  if (!startedAt) return '0s';
+  const diffSeconds = Math.max(
+    0,
+    Math.floor((nowTs - new Date(startedAt).getTime()) / 1000),
+  );
+  if (diffSeconds < 60) return `${diffSeconds}s`;
+  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m`;
+  return `${Math.floor(diffSeconds / 3600)}h`;
+}
+
 export const SessionDropdown = memo(function SessionDropdown({
   sessionTitle,
   sessions,
+  clockNow,
   currentSessionId,
   isStreaming,
   onSwitch,
@@ -72,7 +85,11 @@ export const SessionDropdown = memo(function SessionDropdown({
               >
                 <MessageSquare className={`h-3 w-3 shrink-0 ${s.id === currentSessionId ? 'text-blue-500 dark:text-blue-400' : ''}`} />
                 <span className="truncate flex-1 text-left">{s.title}</span>
-                {s.id !== currentSessionId && !!s.unreadCount && s.unreadCount > 0 && (
+                {s.isRunning ? (
+                  <span className="shrink-0 rounded-full bg-blue-100 px-1 py-0.5 text-[10px] font-medium leading-none text-blue-700 dark:bg-blue-950/70 dark:text-blue-300">
+                    {formatSessionElapsed(s.runningStartedAt, clockNow)}
+                  </span>
+                ) : !!s.unreadCount && s.unreadCount > 0 && (
                   <span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-red-500 px-0.5 text-[10px] font-medium leading-none text-white">
                     {s.unreadCount > 99 ? '99+' : s.unreadCount}
                   </span>

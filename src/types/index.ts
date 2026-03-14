@@ -160,6 +160,25 @@ export const DEFAULT_TITLE_GENERATION: TitleGenerationSettings = {
   chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }],
 };
 
+/** 通知和音频设置 */
+export interface NotificationSettings {
+  /** 是否启用桌面通知（默认 true） */
+  enabled?: boolean;
+  /** 是否启用通知音频（默认 true） */
+  soundEnabled?: boolean;
+  /** 音频音量（0-1，默认 0.5） */
+  soundVolume?: number;
+  /** 仅在窗口失焦时通知（默认 false，始终通知） */
+  onlyWhenUnfocused?: boolean;
+}
+
+export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  enabled: true,
+  soundEnabled: true,
+  soundVolume: 0.5,
+  onlyWhenUnfocused: false,
+};
+
 /** 全局应用设置 */
 export interface AppSettings {
   claude: ClaudeSettings;
@@ -168,6 +187,8 @@ export interface AppSettings {
   dangerDetector?: DangerDetectorSettings;
   /** 会话标题自动生成配置 */
   titleGeneration?: TitleGenerationSettings;
+  /** 通知和音频设置 */
+  notifications?: NotificationSettings;
   version: number;
 }
 
@@ -177,6 +198,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     authMode: 'api_key',
     model: 'claude-sonnet-4-6',
   },
+  notifications: DEFAULT_NOTIFICATION_SETTINGS,
   version: 1,
 };
 
@@ -390,6 +412,12 @@ export interface ContextIndexData {
 export type TodoPriority = 'high' | 'medium' | 'low';
 export type TodoStatus = 'pending' | 'in_progress' | 'done';
 
+export interface TodoSubTask {
+  id: string;
+  title: string;
+  done: boolean;
+}
+
 export interface TodoItem {
   id: string;
   title: string;
@@ -399,6 +427,9 @@ export interface TodoItem {
   agentId?: string;
   sessionId?: string;
   projectKey?: string;
+  dueAt?: string;
+  tags?: string[];
+  subTasks?: TodoSubTask[];
   createdAt: string;
   updatedAt: string;
 }
@@ -438,10 +469,63 @@ export interface SuspendedTasksData {
 
 // ==================== Flow Project ====================
 
+/** 项目所在位置类型 */
+export type ProjectLocation = 'local' | 'github' | 'gitee' | 'cloud-server' | 'hybrid';
+
+/** 项目主技术栈 */
+export type ProjectTechStack =
+  | 'react-native' | 'nextjs' | 'react' | 'vue' | 'angular'
+  | 'node' | 'python' | 'go' | 'rust' | 'java'
+  | 'electron' | 'flutter' | 'other';
+
 export interface ProjectEntry {
   key: string;
   name: string;
   description?: string;
+
+  // ── 位置与路径 ──
+  /** 项目所在位置类型 */
+  location?: ProjectLocation;
+  /** 本地文件系统路径（必填） */
+  path?: string;
+
+  // ── Git 与仓库 ──
+  repository?: {
+    url?: string;
+    defaultBranch?: string;
+    provider?: 'github' | 'gitlab' | 'gitee' | 'bitbucket' | 'other';
+  };
+
+  // ── 技术信息 ──
+  techStack?: ProjectTechStack;
+
+  // ── 开发环境 ──
+  devServer?: {
+    command?: string;
+    url?: string;
+    port?: number;
+  };
+
+  // ── 访问权限（根据 location 动态展示） ──
+  access?: {
+    /** SSH 密钥路径或名称（cloud-server 时显示） */
+    sshKey?: string;
+    /** Token 环境变量名（github/gitee 时显示） */
+    tokenEnvVar?: string;
+    /** 其他权限说明 */
+    notes?: string;
+  };
+
+  // ── 视觉标识 ──
+  icon?: string;
+  color?: string;
+  tags?: string[];
+
+  // ── 时间戳 ──
+  createdAt?: string;
+  updatedAt?: string;
+
+  // ── 归档 ──
   archived?: boolean;
   archivedAt?: string;
 }
@@ -452,18 +536,48 @@ export interface ProjectIndex {
 
 // ==================== Design Docs（项目设计文档） ====================
 
+/** 文档生命周期状态 */
+export type DocStatus = 'active' | 'draft' | 'deprecated';
+
 export interface DocEntry {
   id: string;           // doc-{timestamp}-{random}
   title: string;
   description?: string;
   fileName: string;     // design-docs/{docId}.md
   projectKey: string;   // 关联项目
+  /** 分类 ID（对应 categories 中的 id），可选 */
+  category?: string;
+  /** 自由标签列表 */
+  tags?: string[];
+  /** 文档状态，默认 'active' */
+  status?: DocStatus;
+  /** 本文档被哪个文档替代（新文档 ID） */
+  supersededBy?: string;
+  /** 本文档替代了哪个文档（旧文档 ID） */
+  supersedes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 文档分类定义 */
+export interface CategoryDef {
+  id: string;           // cat-{timestamp}-{random}
+  /** 分类名称 */
+  name: string;
+  /** 分类描述 */
+  description?: string;
+  /** 排序权重（越小越靠前） */
+  sortOrder?: number;
+  /** 所属项目（可选，undefined = 全局分类） */
+  projectKey?: string;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface DocsIndexData {
   projects: Record<string, DocEntry[]>;
+  /** 文档分类定义列表 */
+  categories?: CategoryDef[];
 }
 
 // ==================== Orchestrator ====================

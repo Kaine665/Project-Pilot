@@ -28,11 +28,11 @@ export async function GET(request: NextRequest) {
 /**
  * POST /api/todos
  * Create a new todo item.
- * Body: { title, description?, priority? }
+ * Body: { title, description?, priority?, status?, agentId?, projectKey?, dueAt? }
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { title, description, priority, projectKey } = body;
+  const { title, description, priority, status, agentId, projectKey, dueAt } = body;
 
   if (!title || typeof title !== 'string') {
     return NextResponse.json({ error: 'title is required' }, { status: 400 });
@@ -46,18 +46,29 @@ export async function POST(request: NextRequest) {
   if (description && description.length > 5000) {
     return NextResponse.json({ error: 'description too long' }, { status: 400 });
   }
+  if (agentId !== undefined && agentId !== null && typeof agentId !== 'string') {
+    return NextResponse.json({ error: 'agentId must be a string' }, { status: 400 });
+  }
+  if (dueAt !== undefined && dueAt !== null && typeof dueAt !== 'string') {
+    return NextResponse.json({ error: 'dueAt must be a string' }, { status: 400 });
+  }
 
   const validPriorities = ['high', 'medium', 'low'];
+  const validStatuses = ['pending', 'in_progress', 'done'];
   const todoPriority = validPriorities.includes(priority) ? priority : 'medium';
+  const todoStatus = validStatuses.includes(status) ? status : 'pending';
+  const todoDueAt = typeof dueAt === 'string' && dueAt.trim() ? dueAt.trim() : undefined;
 
   const now = new Date().toISOString();
   const newTodo: TodoItem = {
     id: `todo-${Date.now()}`,
     title: title.trim(),
     description: description?.trim() || undefined,
-    status: 'pending',
+    status: todoStatus,
     priority: todoPriority,
+    agentId: (typeof agentId === 'string' && agentId) ? agentId : undefined,
     projectKey: (typeof projectKey === 'string' && projectKey) ? projectKey : undefined,
+    dueAt: todoDueAt,
     createdAt: now,
     updatedAt: now,
   };

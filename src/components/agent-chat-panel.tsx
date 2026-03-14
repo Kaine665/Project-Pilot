@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, startTransition } from 'react';
 import { flushSync } from 'react-dom';
 import { Loader2, Maximize2, Minimize2, Bot, Sparkles, Plus, MessageSquare, Trash2, Settings, FileDown, ClipboardList, ArrowLeft, GitFork, ArrowUp, ChevronDown, ChevronUp, Layers, FolderOpen } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { ChatBubble } from '@/components/chat-bubble';
 import { ChatInput } from '@/components/chat-input';
 import { ChatNotificationBanners } from '@/components/chat-notification-banners';
+import { useNotificationManager } from '@/hooks/use-notification-manager';
 import { SaveKnowledgeDialog } from '@/components/save-knowledge-dialog';
 import { SessionDropdown } from '@/components/session-dropdown';
 import { GuestAgentOverlay } from '@/components/guest-agent-overlay';
@@ -20,8 +21,9 @@ import { FolderExplorerPanel } from '@/components/folder-explorer-panel';
 import type { SessionNavLink } from '@/components/agent-session-utils';
 import { buildSessionUrl } from '@/components/agent-session-utils';
 import { PROVIDER_REGISTRY, getProviderPreset, getModelContextWindow } from '@/lib/provider-registry';
+import { imageAttachmentFromDataUrl } from '@/lib/image-assets';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
-import type { SessionConfig } from '@/types/agent-chat';
+import type { PendingUserQueueItem, PendingUserQueueState, SessionConfig } from '@/types/agent-chat';
 import type { ChatMessage, ChatToolCall, ChatSSEEvent, ContentBlock } from '@/types';
 
 // Session list item (no messages)
@@ -30,6 +32,8 @@ export interface SessionListItem {
   title: string;
   updatedAt: string;
   unreadCount?: number;
+  isRunning?: boolean;
+  runningStartedAt?: string;
 }
 
 interface AgentChatPanelProps {
@@ -75,6 +79,68 @@ function stripSessionTitleTag(text: string): string {
   return text.replace(/<session-title>[\s\S]*?<\/session-title>\s*/, '');
 }
 
+function clonePendingQueueItems(items: PendingUserQueueItem[]): PendingUserQueueItem[] {
+  return items.map((item) => ({
+    text: item.text,
+    images: item.images?.length ? [...item.images] : undefined,
+  }));
+}
+
+function sortSessionList(items: SessionListItem[]): SessionListItem[] {
+  return [...items].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  );
+}
+
+function mergeSessionList(
+  prev: SessionListItem[],
+  remote: SessionListItem[],
+): SessionListItem[] {
+  const remoteIds = new Set(remote.map((s) => s.id));
+  const localById = new Map(prev.map((s) => [s.id, s]));
+  const mergedRemote = remote.map((item) => {
+    const local = localById.get(item.id);
+    if (!local?.isRunning) return item;
+    return {
+      ...item,
+      isRunning: true,
+      runningStartedAt: local.runningStartedAt ?? item.runningStartedAt,
+    };
+  });
+  const localOnly = prev.filter((s) => !remoteIds.has(s.id));
+  return sortSessionList([...localOnly, ...mergedRemote]);
+}
+
+function upsertSessionListItem(
+  prev: SessionListItem[],
+  item: SessionListItem,
+): SessionListItem[] {
+  const next = prev.filter((s) => s.id !== item.id);
+  next.push(item);
+  return sortSessionList(next);
+}
+
+function patchSessionListItem(
+  prev: SessionListItem[],
+  sessionId: string,
+  patch: Partial<SessionListItem>,
+): SessionListItem[] {
+  return sortSessionList(
+    prev.map((s) => (s.id === sessionId ? { ...s, ...patch } : s)),
+  );
+}
+
+function formatSessionElapsed(startedAt: string | undefined, nowTs: number): string {
+  if (!startedAt) return '0s';
+  const diffSeconds = Math.max(
+    0,
+    Math.floor((nowTs - new Date(startedAt).getTime()) / 1000),
+  );
+  if (diffSeconds < 60) return `${diffSeconds}s`;
+  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m`;
+  return `${Math.floor(diffSeconds / 3600)}h`;
+}
+
 
 export function AgentChatPanel({
   agent,
@@ -90,6 +156,9 @@ export function AgentChatPanel({
   const hasProject = !!variant && !!projectKey;
   const isFull = variant === 'full';
 
+  // Initialize notification manager
+  const { notifyCompletion } = useNotificationManager();
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingBlocks, setStreamingBlocks] = useState<ContentBlock[]>([]);
@@ -100,6 +169,7 @@ export function AgentChatPanel({
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionList, setSessionList] = useState<SessionListItem[]>([]);
   const [sessionTitle, setSessionTitle] = useState(hasProject ? t('chat.newSession') : 'New Session');
+  const [sessionClockNow, setSessionClockNow] = useState(() => Date.now());
 
   // Provider / model routing
   const [chatProvider, setChatProvider] = useState<ProviderId>('anthropic');
@@ -162,10 +232,14 @@ export function AgentChatPanel({
   const initTokenRef = useRef(0);
   const doSendRef = useRef<(text: string, images?: string[]) => void>(() => {});
   const isStreamingRef = useRef(false);
+  const messagesRef = useRef<ChatMessage[]>([]);
   const pendingAnswerRef = useRef<{ answer: string; targetSessionId: string } | null>(null);
-  const pendingUserMessagesRef = useRef<Array<{ text: string; images: string[]; targetSessionId: string }>>([]);
+  const pendingUserMessagesRef = useRef<PendingUserQueueItem[]>([]);
+  // OpenAI 模型列表缓存（5 分钟 TTL，避免每次切换都发请求）
+  const openaiModelsCacheRef = useRef<{ options: { value: string; label: string }[]; cachedAt: number } | null>(null);
+  const OPENAI_MODELS_CACHE_TTL = 5 * 60 * 1000;
   const [pendingUserQueueCount, setPendingUserQueueCount] = useState(0);
-  const [pendingUserMessages, setPendingUserMessages] = useState<Array<{ text: string; images: string[] }>>([]);
+  const [pendingUserMessages, setPendingUserMessages] = useState<PendingUserQueueItem[]>([]);
   const [queueExpanded, setQueueExpanded] = useState(true);
 
   // Sync sessionId to both state and ref atomically (avoids stale ref between renders)
@@ -178,14 +252,67 @@ export function AgentChatPanel({
     isStreamingRef.current = isStreaming;
   }, [isStreaming]);
 
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  const persistPendingUserQueue = useCallback((
+    targetSessionId: string,
+    items: PendingUserQueueItem[],
+    expanded: boolean = queueExpanded,
+  ) => {
+    fetch(`/api/agent-chat/sessions/${targetSessionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'updatePendingUserQueue',
+        queue: {
+          items: clonePendingQueueItems(items),
+          expanded: expanded ? undefined : false,
+        } satisfies PendingUserQueueState,
+      }),
+    }).catch(() => {});
+  }, [queueExpanded]);
+
+  const replacePendingUserQueue = useCallback((
+    items: PendingUserQueueItem[],
+    options?: { persist?: boolean; sessionId?: string | null; expanded?: boolean },
+  ) => {
+    const nextItems = clonePendingQueueItems(items);
+    pendingUserMessagesRef.current = nextItems;
+    setPendingUserMessages(nextItems);
+    setPendingUserQueueCount(nextItems.length);
+
+    if (options?.persist) {
+      const targetSessionId = options.sessionId ?? sessionIdRef.current;
+      if (targetSessionId) {
+        persistPendingUserQueue(targetSessionId, nextItems, options.expanded);
+      }
+    }
+  }, [persistPendingUserQueue]);
+
+  const updateQueueExpanded = useCallback((expanded: boolean) => {
+    setQueueExpanded(expanded);
+    const currentSid = sessionIdRef.current;
+    if (currentSid && pendingUserMessagesRef.current.length > 0) {
+      persistPendingUserQueue(currentSid, pendingUserMessagesRef.current, expanded);
+    }
+  }, [persistPendingUserQueue]);
+
+  useEffect(() => {
+    if (!sessionList.some((session) => session.isRunning)) return;
+    const timer = window.setInterval(() => {
+      setSessionClockNow(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [sessionList]);
+
   // Abort any in-flight stream when the component unmounts (e.g. agent view -> session view switch)
   useEffect(() => {
     return () => {
       streamAbortRef.current?.abort();
       pendingAnswerRef.current = null;
       pendingUserMessagesRef.current = [];
-      setPendingUserMessages([]);
-      setPendingUserQueueCount(0);
     };
   }, []);
 
@@ -195,17 +322,12 @@ export function AgentChatPanel({
       if (scrollRef.current?.offsetParent === null) return;
       if (isStreamingRef.current) return;
 
-      const nextIndex = pendingUserMessagesRef.current.findIndex(
-        (item) => item.targetSessionId === targetSessionId,
-      );
-      if (nextIndex < 0) return;
-      const [next] = pendingUserMessagesRef.current.splice(nextIndex, 1);
-      const list = pendingUserMessagesRef.current.filter((m) => m.targetSessionId === targetSessionId).map((m) => ({ text: m.text, images: m.images }));
-      setPendingUserMessages(list);
-      setPendingUserQueueCount(pendingUserMessagesRef.current.length);
+      const [next, ...rest] = pendingUserMessagesRef.current;
+      if (!next) return;
+      replacePendingUserQueue(rest, { persist: true, sessionId: targetSessionId });
       doSendRef.current(next.text, next.images);
     }, delayMs);
-  }, []);
+  }, [replacePendingUserQueue]);
 
   // Stable streaming message object
   const streamingMessage = useMemo<ChatMessage>(() => ({
@@ -324,57 +446,72 @@ export function AgentChatPanel({
   useEffect(() => {
     let cancelled = false;
     const preset = getProviderPreset(chatProvider);
-    const options = preset.models.map((m) => ({ value: m.id, label: m.label || m.id }));
+    const staticOptions = preset.models.map((m) => ({ value: m.id, label: m.label || m.id }));
 
     if (chatProvider === 'openai') {
-      // Fetch dynamic OpenAI model catalog
+      // 立即显示静态选项，不等待网络请求
+      setChatModelOptions(staticOptions);
+      if (!staticOptions.some((o) => o.value === chatModel)) {
+        setChatModel(staticOptions[0]?.value || '');
+      }
+
+      // 检查缓存（5 分钟 TTL），命中则直接用，不发请求
+      const cache = openaiModelsCacheRef.current;
+      if (cache && Date.now() - cache.cachedAt < OPENAI_MODELS_CACHE_TTL) {
+        setChatModelOptions(cache.options);
+        return () => { cancelled = true; };
+      }
+
+      // 后台 fetch 动态模型目录，merge 到静态选项里
       (async () => {
         try {
           const res = await fetch('/api/settings/openai-models', { cache: 'no-store' });
           const data = await res.json();
           if (cancelled) return;
           if (res.ok && data?.ok && Array.isArray(data.models)) {
-            const knownIds = new Set(options.map((o) => o.value));
+            const merged = [...staticOptions];
+            const knownIds = new Set(merged.map((o) => o.value));
             for (const r of data.models) {
               if (r && typeof r === 'object' && typeof r.id === 'string') {
                 const id = r.id.trim();
                 if (id && !knownIds.has(id)) {
-                  options.push({ value: id, label: typeof r.displayName === 'string' ? r.displayName : id });
+                  merged.push({ value: id, label: typeof r.displayName === 'string' ? r.displayName : id });
                   knownIds.add(id);
                 }
               }
             }
+            if (!cancelled) {
+              openaiModelsCacheRef.current = { options: merged, cachedAt: Date.now() };
+              setChatModelOptions(merged);
+            }
           }
         } catch {
-          // ignore - fallback to static models
-        }
-        if (!cancelled) {
-          setChatModelOptions(options);
-          if (!options.some((o) => o.value === chatModel)) {
-            setChatModel(options[0]?.value || '');
-          }
+          // ignore - fallback to static models already shown
         }
       })();
     } else {
-      if (options.length > 0) {
-        setChatModelOptions(options);
-        if (!options.some((o) => o.value === chatModel)) {
-          setChatModel(options[0].value);
+      if (staticOptions.length > 0) {
+        setChatModelOptions(staticOptions);
+        if (!staticOptions.some((o) => o.value === chatModel)) {
+          setChatModel(staticOptions[0].value);
         }
       }
     }
     return () => { cancelled = true; };
   }, [chatProvider]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch prompt info (system prompt size + context window for current model)
+  // 模型切换时立即更新 contextWindow（纯本地计算，无需网络请求）
   useEffect(() => {
-    // 立即根据当前 model 更新 contextWindow（不需要网络请求）
     setContextWindow(getModelContextWindow(chatModel || 'claude-sonnet-4-6'));
+  }, [chatModel]);
 
+  // Fetch prompt info (system prompt size)
+  // 注意：estimatedTokens 只依赖 agent/project，与 model 无关；contextWindow 已在上方本地计算。
+  // 因此切换 model 时无需重新 fetch，只在 agent 或 project 变化时才请求。
+  useEffect(() => {
     let cancelled = false;
     const params = new URLSearchParams({ agentId: agent.id });
     if (projectKey) params.set('projectKey', projectKey);
-    if (chatModel) params.set('model', chatModel);
 
     (async () => {
       try {
@@ -383,7 +520,6 @@ export function AgentChatPanel({
         const data = await res.json();
         if (!cancelled) {
           setPromptEstimate(data.estimatedTokens ?? 0);
-          setContextWindow(data.contextWindow ?? getModelContextWindow(chatModel));
         }
       } catch {
         // ignore - fallback to local estimate
@@ -391,7 +527,7 @@ export function AgentChatPanel({
     })();
 
     return () => { cancelled = true; };
-  }, [agent.id, chatModel, projectKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [agent.id, projectKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch session list
   const fetchSessionList = useCallback(async (agentId: string, pk?: string | null) => {
@@ -401,17 +537,63 @@ export function AgentChatPanel({
       const res = await fetch(url, { cache: 'no-store' });
       const data = await res.json();
       const remote: SessionListItem[] = data.sessions ?? [];
-      // Merge: keep optimistically-inserted local sessions that backend doesn't know about yet
-      setSessionList(prev => {
-        const remoteIds = new Set(remote.map(s => s.id));
-        const localOnly = prev.filter(s => !remoteIds.has(s.id));
-        return [...localOnly, ...remote];
-      });
+      setSessionList((prev) => mergeSessionList(prev, remote));
       return remote;
     } catch {
       return [];
     }
   }, []);
+
+  const markSessionRunning = useCallback((targetSessionId: string, startedAt?: string, title?: string) => {
+    const now = new Date().toISOString();
+    const runStart = startedAt ?? now;
+    setSessionList((prev) => {
+      const existing = prev.find((s) => s.id === targetSessionId);
+      return upsertSessionListItem(prev, {
+        id: targetSessionId,
+        title: title ?? existing?.title ?? (hasProject ? t('chat.newSession') : 'New Session'),
+        updatedAt: now,
+        unreadCount: existing?.unreadCount ?? 0,
+        isRunning: true,
+        runningStartedAt: runStart,
+      });
+    });
+    // Notify parent (e.g. agents page sidebar) so it can show running indicator
+    onSessionChange?.({
+      id: targetSessionId,
+      title: title ?? sessionTitle,
+      updatedAt: now,
+      isRunning: true,
+      runningStartedAt: runStart,
+    });
+  }, [hasProject, t, onSessionChange, sessionTitle]);
+
+  const clearSessionRunning = useCallback((targetSessionId: string, opts?: {
+    updatedAt?: string;
+    /** Proactively set unreadCount (for sessions the user is NOT currently viewing) */
+    unreadCount?: number;
+    /** Title override (for stale streams where sessionTitle may have changed) */
+    title?: string;
+  }) => {
+    const ts = opts?.updatedAt ?? new Date().toISOString();
+    const extraPatch: Partial<SessionListItem> = {
+      updatedAt: ts,
+      isRunning: false,
+      runningStartedAt: undefined,
+    };
+    if (opts?.unreadCount !== undefined) {
+      extraPatch.unreadCount = opts.unreadCount;
+    }
+    setSessionList((prev) => patchSessionListItem(prev, targetSessionId, extraPatch));
+    // Notify parent so it can clear running indicator and fetch updated state
+    onSessionChange?.({
+      id: targetSessionId,
+      title: opts?.title ?? sessionTitle,
+      updatedAt: ts,
+      isRunning: false,
+      unreadCount: opts?.unreadCount,
+    });
+  }, [onSessionChange, sessionTitle]);
 
   // Load parent/child session navigation links
   const loadSessionNavLinks = useCallback(async (sid: string, parentSid?: string) => {
@@ -480,6 +662,12 @@ export function AgentChatPanel({
       setSessionTitle(data.title ?? 'New Session');
       const loadedConfig = data.config ?? {};
       setSessionConfig(loadedConfig);
+      const loadedQueueState = data.pendingUserQueue as PendingUserQueueState | undefined;
+      const loadedQueue = Array.isArray(loadedQueueState?.items)
+        ? clonePendingQueueItems(loadedQueueState.items)
+        : [];
+      replacePendingUserQueue(loadedQueue);
+      setQueueExpanded(loadedQueueState?.expanded !== false);
       // Session model config has highest priority (overrides agent default and global settings)
       if (loadedConfig.provider) {
         setChatProvider(loadedConfig.provider);
@@ -499,7 +687,7 @@ export function AgentChatPanel({
     } catch {
       // ignore
     }
-  }, []);
+  }, [loadSessionNavLinks, replacePendingUserQueue]);
 
   // Finalize streaming -> commit assistant message
   const finalizeStream = useCallback(() => {
@@ -546,9 +734,16 @@ export function AgentChatPanel({
     streamTargetSessionRef.current = null;
     finalizingRef.current = false;
 
-    // Mark current session as read (user was watching the stream)
     const currentSid = sessionIdRef.current;
-    if (currentSid) {
+
+    if (isStaleStream && streamTarget) {
+      // Stream completed for a session the user is NOT currently viewing
+      // → proactively set unreadCount so the badge appears immediately
+      clearSessionRunning(streamTarget, { unreadCount: 1 });
+    } else if (currentSid) {
+      // Stream completed for the session the user IS viewing
+      // → no unread badge needed; also call markAsRead to reset any backend count
+      clearSessionRunning(currentSid);
       fetch(`/api/agent-chat/sessions/${currentSid}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -567,6 +762,11 @@ export function AgentChatPanel({
     // Notify parent to refresh sidebar sessions
     onSessionChange?.();
 
+    // Delayed re-fetch to sync with backend persistence (unreadCount, title, etc.)
+    setTimeout(() => {
+      onSessionChange?.();
+    }, 2000);
+
     // Auto-send queued AskUserQuestion answer from the previous turn
     const pending = pendingAnswerRef.current;
     pendingAnswerRef.current = null;
@@ -583,7 +783,22 @@ export function AgentChatPanel({
     if (currentSid) {
       flushQueuedUserMessage(currentSid);
     }
-  }, [agent.id, projectKey, fetchSessionList, onSessionChange, flushQueuedUserMessage]);
+
+    // Send completion notification (for both active and background sessions)
+    const completedSid = isStaleStream ? streamTarget : currentSid;
+    if (completedSid && (fullText || toolCalls.length > 0)) {
+      notifyCompletion({
+        agentName: agent.name || agent.id,
+        sessionId: completedSid,
+        sessionTitle: sessionTitle || 'Untitled Session',
+        navigateToSession: () => {
+          // Navigate to this session if needed
+          const sessionUrl = buildSessionUrl(agent.id, completedSid);
+          router.push(sessionUrl);
+        },
+      }).catch(err => console.error('通知发送失败:', err));
+    }
+  }, [agent.id, agent.name, projectKey, fetchSessionList, onSessionChange, flushQueuedUserMessage, router, sessionTitle, notifyCompletion]);
 
   // Connect to SSE stream
   const connectToStream = useCallback((targetSessionId: string, since: number) => {
@@ -706,9 +921,10 @@ export function AgentChatPanel({
 
             case 'session_title_set':
               setSessionTitle(event.title);
-              setSessionList(prev => prev.map(s =>
-                s.id === targetSessionId ? { ...s, title: event.title } : s,
-              ));
+              setSessionList((prev) => patchSessionListItem(prev, targetSessionId, {
+                title: event.title,
+                updatedAt: new Date().toISOString(),
+              }));
               // Notify parent immediately to update sidebar title.
               onSessionChange?.({
                 id: targetSessionId,
@@ -741,8 +957,13 @@ export function AgentChatPanel({
           }
         }
 
-        if (chunkHasDisplayEvents) {
-          setStreamingBlocks([...blocksRef.current]);
+        if (chunkHasDisplayEvents && !rafIdRef.current) {
+          rafIdRef.current = requestAnimationFrame(() => {
+            rafIdRef.current = 0;
+            startTransition(() => {
+              setStreamingBlocks([...blocksRef.current]);
+            });
+          });
         }
       }
 
@@ -771,6 +992,10 @@ export function AgentChatPanel({
     setSessionList([]);
     setTokenInputs(0);
     setTokenOutputs(0);
+    setQueueExpanded(true);
+    pendingUserMessagesRef.current = [];
+    setPendingUserMessages([]);
+    setPendingUserQueueCount(0);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
@@ -800,7 +1025,10 @@ export function AgentChatPanel({
     if (!hasProject && initialSessionId === null) return;
 
     // Helper: reconnect to a running stream
-    const reconnectRunning = (sid: string, statusData: { messages?: Array<{ role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }> }) => {
+    const reconnectRunning = (sid: string, statusData: {
+      messages?: Array<{ role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }>;
+      startedAt?: string;
+    }) => {
       if (Array.isArray(statusData.messages) && statusData.messages.length > 0) {
         const restored: ChatMessage[] = statusData.messages.map(
           (m: { role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }, i: number) => ({
@@ -813,6 +1041,7 @@ export function AgentChatPanel({
         );
         setMessages(restored);
       }
+      markSessionRunning(sid, statusData.startedAt);
       setIsStreaming(true);
       blocksRef.current = [];
       fullTextRef.current = '';
@@ -893,6 +1122,16 @@ export function AgentChatPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent.id, projectKey]);
 
+  useEffect(() => {
+    if (!sessionId || isStreaming || pendingUserQueueCount === 0) return;
+    const timer = window.setTimeout(() => {
+      if (sessionIdRef.current !== sessionId) return;
+      if (isStreamingRef.current) return;
+      flushQueuedUserMessage(sessionId, 0);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [sessionId, isStreaming, pendingUserQueueCount, flushQueuedUserMessage]);
+
   // Smart auto-scroll: pause when user scrolls up, resume when near bottom
   const [autoScroll, setAutoScroll] = useState(true);
   const scrollRafRef = useRef<number>(0);
@@ -925,11 +1164,7 @@ export function AgentChatPanel({
     initTokenRef.current += 1;
 
     const imagesToSend = images ?? [];
-    const imageAttachments = imagesToSend.map(url => {
-      const [header, data] = url.split(',');
-      const mediaType = header.match(/data:([^;]+)/)?.[1] ?? 'image/png';
-      return { mediaType, data };
-    });
+    const imageAttachments = imagesToSend.map(imageAttachmentFromDataUrl);
 
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -971,9 +1206,15 @@ export function AgentChatPanel({
         title: quickTitle,
         updatedAt: new Date().toISOString(),
       };
-      setSessionList(prev => [newItem, ...prev]);
+      setSessionList((prev) => upsertSessionListItem(prev, newItem));
       onSessionChange?.(newItem);
     }
+
+    markSessionRunning(
+      targetSessionId,
+      new Date().toISOString(),
+      text.trim().slice(0, 10) || sessionTitle,
+    );
 
     try {
       // Expand /skill-name command into skill body before sending to backend.
@@ -1026,14 +1267,18 @@ export function AgentChatPanel({
       }
 
       await res.json();
+      if (pendingUserMessagesRef.current.length > 0) {
+        persistPendingUserQueue(targetSessionId, pendingUserMessagesRef.current);
+      }
       connectToStream(targetSessionId, 0);
     } catch (err) {
       const msg = (err as Error).message || 'Unknown error';
       console.error('Agent chat send failed:', msg);
       setErrorMsg(msg);
       setIsStreaming(false);
+      clearSessionRunning(targetSessionId);
     }
-  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, chatProvider, chatModel, chatEffort, connectToStream, onSessionChange, t, sessionConfig, setSessionIdSync]);
+  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, chatProvider, chatModel, chatEffort, connectToStream, onSessionChange, t, sessionConfig, setSessionIdSync, persistPendingUserQueue, sessionTitle, markSessionRunning, clearSessionRunning]);
 
   // Keep doSendRef in sync (avoid stale closure in event listener)
   useEffect(() => {
@@ -1097,19 +1342,15 @@ export function AgentChatPanel({
     // Allow user to continue submitting while streaming: queue and auto-send later.
     if (isStreamingRef.current && sessionIdRef.current) {
       const sid = sessionIdRef.current;
-      pendingUserMessagesRef.current.push({
+      replacePendingUserQueue([...pendingUserMessagesRef.current, {
         text,
-        images,
-        targetSessionId: sid,
-      });
-      const list = pendingUserMessagesRef.current.filter((m) => m.targetSessionId === sid).map((m) => ({ text: m.text, images: m.images }));
-      setPendingUserMessages(list);
-      setPendingUserQueueCount(pendingUserMessagesRef.current.length);
+        images: images.length > 0 ? images : undefined,
+      }], { persist: true, sessionId: sid });
       return;
     }
 
     doSend(text, images);
-  }, [doSend]);
+  }, [doSend, replacePendingUserQueue]);
 
   const handleAbort = async () => {
     if (!sessionId) return;
@@ -1126,20 +1367,19 @@ export function AgentChatPanel({
       streamAbortRef.current.abort();
       streamAbortRef.current = null;
     }
+    clearSessionRunning(sessionId);
     finalizeStream();
   };
 
   // Send a queued message immediately (interrupt current reply)
   const handleSendNow = useCallback(async (index: number) => {
     if (!sessionId) return;
-    const items = pendingUserMessagesRef.current.filter((m) => m.targetSessionId === sessionId);
-    const item = items[index];
+    const item = pendingUserMessagesRef.current[index];
     if (!item) return;
-    const refIndex = pendingUserMessagesRef.current.indexOf(item);
-    if (refIndex >= 0) pendingUserMessagesRef.current.splice(refIndex, 1);
-    const list = pendingUserMessagesRef.current.filter((m) => m.targetSessionId === sessionId).map((m) => ({ text: m.text, images: m.images }));
-    setPendingUserMessages(list);
-    setPendingUserQueueCount(pendingUserMessagesRef.current.length);
+    replacePendingUserQueue(
+      pendingUserMessagesRef.current.filter((_, itemIndex) => itemIndex !== index),
+      { persist: true, sessionId },
+    );
     try {
       await fetch('/api/agent-chat/stop', {
         method: 'POST',
@@ -1155,20 +1395,17 @@ export function AgentChatPanel({
     }
     finalizeStream();
     doSendRef.current(item.text, item.images);
-  }, [sessionId]);
+  }, [sessionId, finalizeStream, replacePendingUserQueue]);
 
   // Remove a queued message without sending
   const handleRemoveFromQueue = useCallback((index: number) => {
     if (!sessionId) return;
-    const items = pendingUserMessagesRef.current.filter((m) => m.targetSessionId === sessionId);
-    const item = items[index];
-    if (!item) return;
-    const refIndex = pendingUserMessagesRef.current.indexOf(item);
-    if (refIndex >= 0) pendingUserMessagesRef.current.splice(refIndex, 1);
-    const list = pendingUserMessagesRef.current.filter((m) => m.targetSessionId === sessionId).map((m) => ({ text: m.text, images: m.images }));
-    setPendingUserMessages(list);
-    setPendingUserQueueCount(pendingUserMessagesRef.current.length);
-  }, [sessionId]);
+    if (!pendingUserMessagesRef.current[index]) return;
+    replacePendingUserQueue(
+      pendingUserMessagesRef.current.filter((_, itemIndex) => itemIndex !== index),
+      { persist: true, sessionId },
+    );
+  }, [sessionId, replacePendingUserQueue]);
 
   // Delete current session
   const handleDelete = async () => {
@@ -1227,9 +1464,8 @@ export function AgentChatPanel({
     setParentSession(null);
     setChildSessions([]);
     setShowChildList(false);
-    pendingUserMessagesRef.current = [];
-    setPendingUserQueueCount(0);
-    setPendingUserMessages([]);
+    replacePendingUserQueue([]);
+    setQueueExpanded(true);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
@@ -1245,7 +1481,7 @@ export function AgentChatPanel({
         setChatModel(agentOptions[0].value);
       }
     }
-  }, [isStreaming, hasProject, t, setSessionIdSync, agent]);
+  }, [isStreaming, hasProject, t, setSessionIdSync, agent, replacePendingUserQueue]);
 
   // Switch to an existing session
   const handleSwitchSession = useCallback(async (target: SessionListItem) => {
@@ -1269,12 +1505,11 @@ export function AgentChatPanel({
     toolCallsRef.current = [];
     // Clear any queued answer from the previous session's AskUserQuestion
     pendingAnswerRef.current = null;
-    pendingUserMessagesRef.current = [];
-    setPendingUserQueueCount(0);
-    setPendingUserMessages([]);
+    replacePendingUserQueue([]);
+    setQueueExpanded(true);
     // Mark as read
     if (target.unreadCount) {
-      setSessionList(prev => prev.map(s => s.id === target.id ? { ...s, unreadCount: 0 } : s));
+      setSessionList((prev) => patchSessionListItem(prev, target.id, { unreadCount: 0 }));
       fetch(`/api/agent-chat/sessions/${target.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -1282,7 +1517,7 @@ export function AgentChatPanel({
       }).catch(() => {});
     }
     await loadSessionData(target.id, token);
-  }, [isStreaming, loadSessionData, setSessionIdSync]);
+  }, [isStreaming, loadSessionData, setSessionIdSync, replacePendingUserQueue]);
 
   const handleSaveAsKnowledge = useCallback((_messageId: string, content: string) => {
     setSaveDialogContent(content);
@@ -1302,17 +1537,19 @@ export function AgentChatPanel({
   // Branch: create a new session from this message and switch to it.
   // Works even during streaming — aborts the current stream before switching.
   const handleBranch = useCallback(async (messageId: string) => {
-    if (!sessionId) return;
-    const msgIndex = messages.findIndex(m => m.id === messageId);
+    const currentSessionId = sessionIdRef.current;
+    if (!currentSessionId) return;
+    const currentMessages = messagesRef.current;
+    const msgIndex = currentMessages.findIndex(m => m.id === messageId);
     if (msgIndex < 0) return;
     try {
       const res = await fetch('/api/agent-chat/sessions/branch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sourceSessionId: sessionId,
+          sourceSessionId: currentSessionId,
           branchAtIndex: msgIndex,
-          frontendMessageCount: messages.length,
+          frontendMessageCount: currentMessages.length,
         }),
       });
       if (!res.ok) return;
@@ -1323,7 +1560,7 @@ export function AgentChatPanel({
         updatedAt: new Date().toISOString(),
         unreadCount: 0,
       };
-      setSessionList(prev => [newItem, ...prev]);
+      setSessionList((prev) => upsertSessionListItem(prev, newItem));
 
       // Abort streaming if active so the session switch is not blocked
       if (streamAbortRef.current) {
@@ -1361,11 +1598,11 @@ export function AgentChatPanel({
     } catch {
       // ignore
     }
-  }, [sessionId, messages, loadSessionData, setSessionIdSync, onSessionChange]);
+  }, [loadSessionData, setSessionIdSync, onSessionChange]);
 
   // Regenerate: remove the last assistant message and resend the last user message
   const handleRegenerate = useCallback(() => {
-    if (isStreaming) return;
+    if (isStreamingRef.current) return;
     setMessages(prev => {
       // Find the last user message
       const lastUserIdx = prev.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
@@ -1374,22 +1611,23 @@ export function AgentChatPanel({
       // Remove all messages after (and including) the last assistant message after this user msg
       const trimmed = prev.slice(0, lastUserIdx + 1);
       // Re-send the user's message
-      setTimeout(() => doSend(lastUserMsg.content), 0);
+      setTimeout(() => doSendRef.current(lastUserMsg.content), 0);
       // Remove the user msg too since doSend will re-add it
       return trimmed.slice(0, -1);
     });
-  }, [isStreaming, doSend]);
+  }, []);
 
   // Retry: resend the last user message (for failed sends)
   const handleRetry = useCallback(() => {
-    if (isStreaming) return;
-    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+    if (isStreamingRef.current) return;
+    const currentMessages = messagesRef.current;
+    const lastUserMsg = [...currentMessages].reverse().find(m => m.role === 'user');
     if (!lastUserMsg) return;
     // Remove the failed user message and the error, then re-send
     setMessages(prev => prev.filter(m => m.id !== lastUserMsg.id));
     setErrorMsg(null);
-    setTimeout(() => doSend(lastUserMsg.content), 0);
-  }, [isStreaming, messages, doSend]);
+    setTimeout(() => doSendRef.current(lastUserMsg.content), 0);
+  }, []);
 
   // Compute the last assistant message ID (for regenerate button positioning)
   const lastAssistantId = useMemo(() => {
@@ -1532,7 +1770,7 @@ export function AgentChatPanel({
                 <>
                   <button
                     type="button"
-                    onClick={() => setQueueExpanded(false)}
+                    onClick={() => updateQueueExpanded(false)}
                     className="flex w-full items-center justify-between gap-2 rounded-t-xl border border-b-0 border-blue-200/80 bg-blue-50/60 px-3 py-2 text-left text-xs font-medium text-blue-700 backdrop-blur-md transition-colors hover:bg-blue-50/80 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/60"
                   >
                     <span className="flex items-center gap-1.5">
@@ -1578,7 +1816,7 @@ export function AgentChatPanel({
               ) : (
                 <button
                   type="button"
-                  onClick={() => setQueueExpanded(true)}
+                  onClick={() => updateQueueExpanded(true)}
                   className="flex w-full items-center justify-between gap-2 rounded-xl border border-blue-200/80 bg-blue-50/60 px-3 py-2 text-left text-xs font-medium text-blue-700 backdrop-blur-md transition-colors hover:bg-blue-50/80 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/60"
                 >
                   <span className="flex items-center gap-1.5">
@@ -1734,6 +1972,7 @@ export function AgentChatPanel({
             <SessionDropdown
               sessionTitle={sessionTitle}
               sessions={sessionList}
+              clockNow={sessionClockNow}
               currentSessionId={sessionId}
               isStreaming={isStreaming}
               onSwitch={handleSwitchSession}
@@ -1875,7 +2114,7 @@ export function AgentChatPanel({
               <>
                 <button
                   type="button"
-                  onClick={() => setQueueExpanded(false)}
+                  onClick={() => updateQueueExpanded(false)}
                   className="flex w-full items-center justify-between gap-2 rounded-t-xl border border-b-0 border-blue-200/80 bg-blue-50/60 px-3 py-2 text-left text-xs font-medium text-blue-700 backdrop-blur-md transition-colors hover:bg-blue-50/80 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/60"
                 >
                   <span className="flex items-center gap-1.5">
@@ -1921,7 +2160,7 @@ export function AgentChatPanel({
             ) : (
               <button
                 type="button"
-                onClick={() => setQueueExpanded(true)}
+                onClick={() => updateQueueExpanded(true)}
                 className="flex w-full items-center justify-between gap-2 rounded-xl border border-blue-200/80 bg-blue-50/60 px-3 py-2 text-left text-xs font-medium text-blue-700 backdrop-blur-md transition-colors hover:bg-blue-50/80 dark:border-blue-800/80 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/60"
               >
                 <span className="flex items-center gap-1.5">
@@ -2062,7 +2301,11 @@ export function AgentChatPanel({
               >
                 <MessageSquare className={`h-3.5 w-3.5 shrink-0 ${s.id === sessionId ? 'text-blue-500 dark:text-blue-400' : ''}`} />
                 <span className="truncate flex-1 text-left">{s.title}</span>
-                {s.id !== sessionId && !!s.unreadCount && s.unreadCount > 0 && (
+                {s.isRunning ? (
+                  <span className="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-blue-700 dark:bg-blue-950/70 dark:text-blue-300">
+                    {formatSessionElapsed(s.runningStartedAt, sessionClockNow)}
+                  </span>
+                ) : !!s.unreadCount && s.unreadCount > 0 && (
                   <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-medium leading-none text-white">
                     {s.unreadCount > 99 ? '99+' : s.unreadCount}
                   </span>

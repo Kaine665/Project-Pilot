@@ -37,6 +37,8 @@ interface SidecarLock {
 
 let _cachedPort: number | null = null;
 let _spawning: Promise<number> | null = null;
+let _lastSpawnFailure = 0;
+const SPAWN_COOLDOWN_MS = 30_000; // spawn 失败后 30 秒内不重试
 
 // ── 内部辅助 ─────────────────────────────────────────────────────────────────
 
@@ -71,8 +73,9 @@ function resolveSidecarScript(): string {
     return path.join(path.dirname(process.execPath), 'resources', 'sidecar.js');
   }
 
-  // 开发/standalone 环境：相对于本文件（src/lib/sidecar-bridge.ts → src/sidecar/server.ts）
-  return path.join(__dirname, '..', 'sidecar', 'server.ts');
+  // 开发环境：Next.js 编译后 __dirname 指向 .next/server/...，不能用。
+  // 使用 process.cwd()（项目根目录）确保路径正确。
+  return path.join(process.cwd(), 'src', 'sidecar', 'server.ts');
 }
 
 function resolveNodeExecutable(): string {
@@ -85,20 +88,59 @@ function spawnSidecar(port: number): Promise<number> {
     const script = resolveSidecarScript();
     const isProd = !script.endsWith('.ts');
 
-    // 开发模式：用 tsx 运行 .ts 文件（tsx 在 PATH 中或 node_modules/.bin）
-    // 生产模式：用 node 运行编译后的 .js 文件
-    const executable = isProd
-      ? resolveNodeExecutable()
-      : (() => {
-          const tsxBin = path.join(process.cwd(), 'node_modules', '.bin', 'tsx');
-          return tsxBin;
-        })();
+    // Windows 下 node_modules/.bin/ 里是 .cmd 文件，需要用 shell:true 或直接调用 node + tsx 包入口。
+    // 最可靠的方式：始终用当前 node 可执行文件，开发时加载 tsx/dist/esm/bin.mjs 作为 loader。
+    let executable: string;
+    let args: string[];
 
-    const args = isProd ? [script] : [script];
+    if (isProd) {
+      executable = resolveNodeExecutable();
+      args = [script];
+    } else {
+      // 用 node 直接执行 tsx 的入口脚本（跨平台，避免 .cmd 问题）
+      const tsxEntry = (() => {
+        // tsx bin 入口（优先 cli.mjs，兼容不同版本）
+        const candidates = [
+          path.join(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs'),
+          path.join(process.cwd(), 'node_modules', 'tsx', 'dist', 'esm', 'index.cjs'),
+          path.join(process.cwd(), 'node_modules', 'tsx', 'dist', 'esm', 'bin.mjs'),
+        ];
+        for (const c of candidates) {
+          if (fs.existsSync(c)) return c;
+        }
+        // fallback: 直接用 .cmd 但开 shell（只在 Windows 生效）
+        return null;
+      })();
+
+      if (tsxEntry) {
+        executable = resolveNodeExecutable();
+        args = [tsxEntry, script];
+      } else {
+        // shell:true fallback — 对 .cmd 文件有效
+        const tsxCmd = path.join(process.cwd(), 'node_modules', '.bin',
+          process.platform === 'win32' ? 'tsx.cmd' : 'tsx');
+        executable = tsxCmd;
+        args = [script];
+      }
+    }
+
+    const useShell = !isProd && executable.endsWith('.cmd');
+
+    // 将 sidecar 的 stdout/stderr 写入日志文件，方便排查启动失败
+    const logDir = path.join(os.homedir(), '.project-pilot');
+    fs.mkdirSync(logDir, { recursive: true });
+    const logFd = fs.openSync(path.join(logDir, 'sidecar.log'), 'a');
+
+    // Windows 上 detached:true 会弹出控制台窗口，但 Windows 子进程本身就独立于父进程，
+    // 父进程退出后子进程不会被杀掉，所以不需要 detached。
+    // Unix 上需要 detached:true 创建新 session，确保子进程不随父进程组被 kill。
+    const isWin = process.platform === 'win32';
 
     const child = spawn(executable, args, {
-      detached: true,
-      stdio: 'ignore',
+      detached: !isWin,
+      stdio: ['ignore', logFd, logFd],
+      shell: useShell,
+      windowsHide: true,
       env: {
         ...process.env,
         SIDECAR_PORT: String(port),
@@ -107,15 +149,35 @@ function spawnSidecar(port: number): Promise<number> {
       cwd: process.cwd(),
     });
 
+    // spawn 后关闭父进程持有的 fd，不影响子进程继续写入
+    fs.closeSync(logFd);
+
     child.unref(); // 父进程不等待 sidecar 退出
+
+    // 追踪子进程是否已退出（端口冲突/启动崩溃时快速失败，无需等足 10 秒）
+    let childExited = false;
+    let childExitCode: number | null = null;
 
     child.on('error', (err) => {
       reject(new Error(`Failed to spawn sidecar: ${err.message}`));
     });
 
+    child.on('close', (code) => {
+      childExited = true;
+      childExitCode = code;
+    });
+
     // 轮询 /health 直到 sidecar 就绪
     const deadline = Date.now() + HEALTH_TIMEOUT_MS;
     const poll = async (): Promise<void> => {
+      // 子进程已退出（如 EADDRINUSE 导致启动崩溃），立即失败，无需等到超时
+      if (childExited) {
+        reject(new Error(
+          `Sidecar process exited unexpectedly (code=${childExitCode ?? 'null'}). ` +
+          `Port ${port} may already be in use. Check ~/.project-pilot/sidecar.log for details.`
+        ));
+        return;
+      }
       if (await pingHealth(port)) {
         resolve(port);
         return;
@@ -160,13 +222,20 @@ export async function ensureSidecar(): Promise<number> {
   // 需要启动新 sidecar
   if (_spawning) return _spawning;
 
+  // 冷却期内不重试 spawn，直接抛出
+  if (_lastSpawnFailure && Date.now() - _lastSpawnFailure < SPAWN_COOLDOWN_MS) {
+    throw new Error('Sidecar recently failed to start, waiting before retry');
+  }
+
   const port = lock?.port ?? DEFAULT_PORT;
 
   _spawning = spawnSidecar(port).then((p) => {
     _cachedPort = p;
+    _lastSpawnFailure = 0;
     _spawning = null;
     return p;
   }).catch((err) => {
+    _lastSpawnFailure = Date.now();
     _spawning = null;
     throw err;
   });
@@ -178,6 +247,8 @@ export async function ensureSidecar(): Promise<number> {
  * 向 sidecar 发送 HTTP 请求，返回原始 Response。
  * 调用方可以 `.json()` 或 `.text()` 处理响应。
  */
+const SIDECAR_FETCH_TIMEOUT_MS = 30_000; // sidecar 无响应时的最大等待时间
+
 export async function sidecarFetch(
   pathname: string,
   init?: RequestInit,
@@ -186,6 +257,7 @@ export async function sidecarFetch(
   const url = `http://127.0.0.1:${port}${pathname}`;
   return fetch(url, {
     ...init,
+    signal: AbortSignal.timeout(SIDECAR_FETCH_TIMEOUT_MS),
     headers: {
       'Content-Type': 'application/json',
       ...(init?.headers ?? {}),

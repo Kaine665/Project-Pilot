@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { loadSession, markAsRead, setArchived } from '@/lib/agent-chat-manager';
+import { loadSession, markAsRead, setArchived, updatePendingUserQueueOnDisk } from '@/lib/agent-chat-manager';
 import { sidecarFetch } from '@/lib/sidecar-bridge';
 
 /**
@@ -29,6 +29,7 @@ export async function GET(
  *   { action: 'archive' }
  *   { action: 'unarchive' }
  *   { action: 'updateConfig', config: SessionConfig }
+ *   { action: 'updatePendingUserQueue', queue: PendingUserQueueState }
  */
 export async function PATCH(
   request: NextRequest,
@@ -71,6 +72,37 @@ export async function PATCH(
       }
     } catch {
       // Sidecar unreachable — config update is best-effort when no run is active
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  if (body.action === 'updatePendingUserQueue') {
+    const queue = body.queue;
+    const items = Array.isArray(queue?.items) ? queue.items : null;
+    if (!items) {
+      return NextResponse.json({ error: 'queue.items must be an array' }, { status: 400 });
+    }
+
+    const normalizedItems = items
+      .map((item: unknown) => {
+        if (!item || typeof item !== 'object') return null;
+        const text = typeof (item as { text?: unknown }).text === 'string'
+          ? (item as { text: string }).text.trim()
+          : '';
+        const images = Array.isArray((item as { images?: unknown }).images)
+          ? (item as { images: unknown[] }).images.filter((img): img is string => typeof img === 'string' && img.length > 0)
+          : [];
+        if (!text && images.length === 0) return null;
+        return { text, images: images.length > 0 ? images : undefined };
+      })
+      .filter((item: { text: string; images?: string[] } | null): item is { text: string; images?: string[] } => item !== null);
+
+    const found = await updatePendingUserQueueOnDisk(id, {
+      items: normalizedItems,
+      expanded: queue?.expanded === false ? false : undefined,
+    });
+    if (!found) {
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
     return NextResponse.json({ ok: true });
   }

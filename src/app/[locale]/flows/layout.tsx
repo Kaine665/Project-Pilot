@@ -8,7 +8,7 @@ const AgentChatPanel = dynamic(
   { ssr: false },
 );
 import { useProject } from '@/components/project-context';
-import { FolderKanban, Plus, Trash2, Network, Bot, Layers, BookOpen, FileText, ListTodo, Table2, Timer } from 'lucide-react';
+import { FolderKanban, Plus, Network, Bot, BookOpen, FileText, ListTodo, Table2, Timer, Satellite, MessageSquare, Blocks } from 'lucide-react';
 import { SidebarIconButton } from '@/components/sidebar-icon-button';
 import { BUTLER_AGENT_ID } from '@/lib/default-agents';
 import type { Agent } from '@/types';
@@ -39,6 +39,7 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   const [panelOpen, setPanelOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  const [newPath, setNewPath] = useState('');
   const [sections, setSections] = useState<{ id: string; name: string }[]>([]);
   const [highlightSectionId, setHighlightSectionId] = useState<string | null>(null);
   const [plannerOpen, setPlannerOpen] = useState(false);
@@ -46,16 +47,17 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   const sidebarRef = useRef<HTMLDivElement>(null);
 
   const isAgentsPage = pathname.startsWith('/flows/agents');
-  const isDimensionsPage = pathname.startsWith('/flows/dimensions');
   const isContextPage = pathname.startsWith('/flows/context');
-  const isRecycleBinPage = pathname.startsWith('/flows/recycle-bin');
   const isButlerPage = pathname.startsWith('/flows/butler');
   const isDocsPage = pathname.startsWith('/flows/docs');
   const isTodosPage = pathname.startsWith('/flows/todos');
   const isOrchestratorPage = pathname.startsWith('/flows/orchestrator');
   const isBitablePage = pathname.startsWith('/flows/bitable');
   const isSchedulesPage = pathname.startsWith('/flows/schedules');
-  const isSubRoute = isAgentsPage || isDimensionsPage || isContextPage || isDocsPage || isRecycleBinPage || isButlerPage || isTodosPage || isOrchestratorPage || isBitablePage || isSchedulesPage;
+  const isSatelliteTasksPage = pathname.startsWith('/flows/satellite-tasks');
+  const isChatPage = pathname.startsWith('/flows/chat');
+  const isSkillsPage = pathname.startsWith('/flows/skills');
+  const isSubRoute = isAgentsPage || isContextPage || isDocsPage || isButlerPage || isTodosPage || isOrchestratorPage || isBitablePage || isSchedulesPage || isSatelliteTasksPage || isChatPage || isSkillsPage;
 
   // Auto-close expandable panel when on sub-route pages
   useEffect(() => {
@@ -106,7 +108,8 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
 
   const handleCreate = async () => {
     const name = newName.trim();
-    if (!name) return;
+    const projectPath = newPath.trim();
+    if (!name || !projectPath) return;
     const asciiKey = name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
@@ -117,12 +120,13 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
       const res = await fetch('/api/data/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: asciiKey, name }),
+        body: JSON.stringify({ key: asciiKey, name, path: projectPath }),
       });
       if (res.ok) {
         await fetchProjects();
         setActiveKey(asciiKey);
         setNewName('');
+        setNewPath('');
         setCreating(false);
       }
     } catch {
@@ -141,14 +145,6 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
 
   const handleNavigateAgents = () => {
     router.push('/flows/agents');
-  };
-
-  const handleNavigateRecycleBin = () => {
-    router.push('/flows/recycle-bin');
-  };
-
-  const handleNavigateDimensions = () => {
-    router.push('/flows/dimensions');
   };
 
   const handleNavigateContext = () => {
@@ -181,16 +177,35 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
             {/* Icon strip — always visible */}
             <TooltipProvider delayDuration={300}>
             <div className="flex w-13 flex-col items-center border-r border-zinc-200 bg-zinc-50/50 py-4 gap-2 dark:border-zinc-800 dark:bg-zinc-950">
+              {/* Group: Core */}
               <SidebarIconButton icon={FolderKanban} tooltip="项目管理" isActive={!isSubRoute && panelOpen} onClick={handleToggleProjects} />
               <SidebarIconButton icon={Bot} tooltip="Agents" isActive={isAgentsPage} onClick={handleNavigateAgents} />
-              <SidebarIconButton icon={Layers} tooltip="信息角度" isActive={isDimensionsPage} onClick={handleNavigateDimensions} />
+
+              <div className="w-6 border-t border-zinc-200 dark:border-zinc-700" />
+
+              {/* Group: Knowledge */}
               <SidebarIconButton icon={BookOpen} tooltip="上下文" isActive={isContextPage} onClick={handleNavigateContext} />
               <SidebarIconButton icon={FileText} tooltip="设计文档" isActive={isDocsPage} onClick={handleNavigateDocs} />
+              <SidebarIconButton icon={Blocks} tooltip="Skills" isActive={isSkillsPage} onClick={() => router.push('/flows/skills')} />
+
+              <div className="w-6 border-t border-zinc-200 dark:border-zinc-700" />
+
+              {/* Group: Tasks & Data */}
               <SidebarIconButton icon={ListTodo} tooltip="AI 待办" isActive={isTodosPage} onClick={handleNavigateTodos} />
               <SidebarIconButton icon={Table2} tooltip="多维表格" isActive={isBitablePage} onClick={() => router.push('/flows/bitable')} />
+
+              <div className="w-6 border-t border-zinc-200 dark:border-zinc-700" />
+
+              {/* Group: Automation */}
               <SidebarIconButton icon={Network} tooltip="Agent 编排" isActive={isOrchestratorPage} onClick={() => router.push('/flows/orchestrator')} />
               <SidebarIconButton icon={Timer} tooltip="定时运行" isActive={isSchedulesPage} onClick={() => router.push('/flows/schedules')} />
-              <SidebarIconButton icon={Trash2} tooltip="回收站" isActive={isRecycleBinPage} onClick={handleNavigateRecycleBin} />
+              <SidebarIconButton icon={Satellite} tooltip="卫星任务" isActive={isSatelliteTasksPage} onClick={() => router.push('/flows/satellite-tasks')} />
+
+              {/* Spacer pushes chat to bottom */}
+              <div className="flex-1" />
+
+              {/* Group: Communication */}
+              <SidebarIconButton icon={MessageSquare} tooltip="P2P 聊天" isActive={isChatPage} onClick={() => router.push('/flows/chat')} />
             </div>
             </TooltipProvider>
 
@@ -211,21 +226,31 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
                             value={newName}
                             onChange={e => setNewName(e.target.value)}
                             onKeyDown={e => {
-                              if (e.key === 'Enter') handleCreate();
-                              if (e.key === 'Escape') { setCreating(false); setNewName(''); }
+                              if (e.key === 'Escape') { setCreating(false); setNewName(''); setNewPath(''); }
                             }}
                             placeholder="项目名称"
+                            className="w-full rounded border border-zinc-300 px-2 py-1 text-xs outline-none focus:border-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:focus:border-zinc-400"
+                          />
+                          <input
+                            value={newPath}
+                            onChange={e => setNewPath(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') handleCreate();
+                              if (e.key === 'Escape') { setCreating(false); setNewName(''); setNewPath(''); }
+                            }}
+                            placeholder="项目路径 (必填)"
                             className="w-full rounded border border-zinc-300 px-2 py-1 text-xs outline-none focus:border-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:focus:border-zinc-400"
                           />
                           <div className="flex gap-1">
                             <button
                               onClick={handleCreate}
-                              className="flex-1 rounded bg-zinc-900 px-2 py-1 text-xs text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                              disabled={!newName.trim() || !newPath.trim()}
+                              className="flex-1 rounded bg-zinc-900 px-2 py-1 text-xs text-white hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
                             >
                               创建
                             </button>
                             <button
-                              onClick={() => { setCreating(false); setNewName(''); }}
+                              onClick={() => { setCreating(false); setNewName(''); setNewPath(''); }}
                               className="px-2 py-1 text-xs text-zinc-400 hover:text-zinc-600"
                             >
                               取消

@@ -7,7 +7,7 @@ import {
   writeJsonFile,
   ensureFlowsMigrated,
 } from '@/lib/file-store';
-import { invalidateAgentsCache } from '@/app/api/agents/route';
+import { invalidateAgentsCache } from '@/lib/agents-store';
 import type { AgentsData, DimensionsData, ProjectIndex } from '@/types';
 
 type RecycleBinCategory = 'project' | 'agent' | 'dimension';
