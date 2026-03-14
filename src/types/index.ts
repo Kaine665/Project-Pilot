@@ -399,6 +399,7 @@ export interface TodoItem {
   agentId?: string;
   sessionId?: string;
   projectKey?: string;
+  dueAt?: string;
   createdAt: string;
   updatedAt: string;
 }
