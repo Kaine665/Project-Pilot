@@ -116,6 +116,9 @@ export default function AgentsPage() {
   const [saving, setSaving] = useState(false);
   const [expandedPrompt, setExpandedPrompt] = useState(false);
 
+  // ── Session archive filter ──
+  const [sessionFilter, setSessionFilter] = useState<'active' | 'archived' | 'all'>('active');
+
   // ── New session agent picker ──
   const [showAgentPicker, setShowAgentPicker] = useState(false);
   const agentPickerRef = useRef<HTMLDivElement>(null);
@@ -301,8 +304,15 @@ export default function AgentsPage() {
     return () => clearInterval(timer);
   }, [hasRunningSession]);
 
+  // ── Filtered sessions by archive status ──
+  const filteredSessions = useMemo(() => {
+    if (sessionFilter === 'all') return allSessions;
+    if (sessionFilter === 'archived') return allSessions.filter(s => s.archived);
+    return allSessions.filter(s => !s.archived); // 'active'
+  }, [allSessions, sessionFilter]);
+
   // ── Grouped sessions for display ──
-  const groupedSessions = useMemo(() => groupSessionsByDay(allSessions), [allSessions]);
+  const groupedSessions = useMemo(() => groupSessionsByDay(filteredSessions), [filteredSessions]);
 
   // ── Project-filtered agents（项目专属排前面，全局排后面）──
   const filteredAgents = useMemo(() => {
@@ -657,10 +667,26 @@ export default function AgentsPage() {
         {/* ── Tab content ── */}
         {sidebarTab === 'conversations' ? (
           <div className="flex flex-1 flex-col overflow-hidden">
-            {/* New session button */}
+            {/* Session filter + new session button */}
             <div className="relative flex items-center justify-between px-5 py-4">
-              <div className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
-                {allSessions.length > 0 ? `活跃会话 (${allSessions.length})` : '活跃会话'}
+              <div className="flex items-center gap-1 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800">
+                {([
+                  ['active', '活跃'],
+                  ['archived', '归档'],
+                  ['all', '全部'],
+                ] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    onClick={() => setSessionFilter(key)}
+                    className={`rounded-md px-2 py-1 text-[11px] font-medium transition-all ${
+                      sessionFilter === key
+                        ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
+                        : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
               <button
                 onClick={() => setShowAgentPicker(v => !v)}
@@ -693,11 +719,11 @@ export default function AgentsPage() {
             </div>
             {/* Session list */}
             <div className="flex-1 overflow-y-auto px-2 pb-4">
-              {allSessions.length === 0 ? (
+              {filteredSessions.length === 0 ? (
                 <div className="px-4 py-12 text-center text-xs text-zinc-400 dark:text-zinc-500">
                   <MessageSquare className="mx-auto mb-2 h-8 w-8 text-zinc-300 dark:text-zinc-600" />
-                  <p>暂无对话</p>
-                  <p className="mt-1">点击右上角 + 开始新对话</p>
+                  <p>{sessionFilter === 'archived' ? '暂无归档对话' : sessionFilter === 'all' ? '暂无对话' : '暂无活跃对话'}</p>
+                  {sessionFilter === 'active' && <p className="mt-1">点击右上角 + 开始新对话</p>}
                 </div>
               ) : (
                 groupedSessions.map(group => (
