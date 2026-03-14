@@ -4,9 +4,9 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { orchestratorManager } from '@/lib/chat-managers/orchestrator-manager';
-import { readJsonFile, getProjectsPath, modifyJsonFile } from '@/lib/file-store';
+import { readJsonFile, getFlowIndexPath, writeJsonFile, ensureProjectsMigrated } from '@/lib/file-store';
 import { isValidProjectKey } from '@/lib/security';
-import type { ProjectsData } from '@/types';
+import type { ProjectIndex, ProjectEntry } from '@/types';
 
 function toKebabCase(str: string): string {
   return str.trim().toLowerCase().replace(/[\s_]+/g, '-').replace(/[^a-z0-9-]/g, '');
@@ -46,15 +46,21 @@ export async function POST(request: NextRequest) {
       fs.mkdirSync(resolvedPath, { recursive: true });
       execSync('git init', { cwd: resolvedPath, stdio: 'ignore' });
 
-      // 注册到 projects.json
-      await modifyJsonFile<ProjectsData>(getProjectsPath(), { projects: {} }, (data) => {
-        data.projects[resolvedKey] = {
-          name: newProject.name.trim(),
-          path: resolvedPath,
-          type: 'other',
-        };
-        return data;
-      });
+      // 注册到 flows/_index.json
+      await ensureProjectsMigrated();
+      const index = await readJsonFile<ProjectIndex>(getFlowIndexPath(), { projects: [] });
+      const now = new Date().toISOString();
+      const entry: ProjectEntry = {
+        key: resolvedKey,
+        name: newProject.name.trim(),
+        path: resolvedPath,
+        location: 'local',
+        techStack: 'other',
+        createdAt: now,
+        updatedAt: now,
+      };
+      index.projects.push(entry);
+      await writeJsonFile(getFlowIndexPath(), index);
     } else {
       // 已有项目模式
       const projectKey = body.projectKey as string | undefined;
@@ -65,8 +71,9 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid projectKey' }, { status: 400 });
       }
 
-      const projectsData = await readJsonFile<ProjectsData>(getProjectsPath(), { projects: {} });
-      const project = projectsData.projects[projectKey];
+      await ensureProjectsMigrated();
+      const index = await readJsonFile<ProjectIndex>(getFlowIndexPath(), { projects: [] });
+      const project = index.projects.find(p => p.key === projectKey && !p.archived);
       if (!project?.path) {
         return NextResponse.json({ error: 'Project not found or has no path' }, { status: 404 });
       }

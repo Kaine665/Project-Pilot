@@ -39,6 +39,7 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   const [panelOpen, setPanelOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  const [newPath, setNewPath] = useState('');
   const [sections, setSections] = useState<{ id: string; name: string }[]>([]);
   const [highlightSectionId, setHighlightSectionId] = useState<string | null>(null);
   const [plannerOpen, setPlannerOpen] = useState(false);
@@ -107,7 +108,8 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
 
   const handleCreate = async () => {
     const name = newName.trim();
-    if (!name) return;
+    const projectPath = newPath.trim();
+    if (!name || !projectPath) return;
     const asciiKey = name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
@@ -118,12 +120,13 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
       const res = await fetch('/api/data/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: asciiKey, name }),
+        body: JSON.stringify({ key: asciiKey, name, path: projectPath }),
       });
       if (res.ok) {
         await fetchProjects();
         setActiveKey(asciiKey);
         setNewName('');
+        setNewPath('');
         setCreating(false);
       }
     } catch {
@@ -223,21 +226,31 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
                             value={newName}
                             onChange={e => setNewName(e.target.value)}
                             onKeyDown={e => {
-                              if (e.key === 'Enter') handleCreate();
-                              if (e.key === 'Escape') { setCreating(false); setNewName(''); }
+                              if (e.key === 'Escape') { setCreating(false); setNewName(''); setNewPath(''); }
                             }}
                             placeholder="项目名称"
+                            className="w-full rounded border border-zinc-300 px-2 py-1 text-xs outline-none focus:border-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:focus:border-zinc-400"
+                          />
+                          <input
+                            value={newPath}
+                            onChange={e => setNewPath(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') handleCreate();
+                              if (e.key === 'Escape') { setCreating(false); setNewName(''); setNewPath(''); }
+                            }}
+                            placeholder="项目路径 (必填)"
                             className="w-full rounded border border-zinc-300 px-2 py-1 text-xs outline-none focus:border-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:focus:border-zinc-400"
                           />
                           <div className="flex gap-1">
                             <button
                               onClick={handleCreate}
-                              className="flex-1 rounded bg-zinc-900 px-2 py-1 text-xs text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                              disabled={!newName.trim() || !newPath.trim()}
+                              className="flex-1 rounded bg-zinc-900 px-2 py-1 text-xs text-white hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
                             >
                               创建
                             </button>
                             <button
-                              onClick={() => { setCreating(false); setNewName(''); }}
+                              onClick={() => { setCreating(false); setNewName(''); setNewPath(''); }}
                               className="px-2 py-1 text-xs text-zinc-400 hover:text-zinc-600"
                             >
                               取消
