@@ -22,6 +22,7 @@ export {
   markAsRead,
   setArchived,
   updateConfigOnDisk,
+  updatePendingUserQueueOnDisk,
   deleteSessionFromDisk,
   branchSession,
   loadAgent,

@@ -36,6 +36,7 @@ import type {
   AgentChatSession,
   AgentChatSessionsData,
   ChatMessage,
+  PendingUserQueueState,
   SessionConfig,
   SessionMeta,
 } from '@/types/agent-chat';
@@ -400,6 +401,36 @@ export async function updateConfigOnDisk(sessionId: string, config: SessionConfi
   return found;
 }
 
+export async function updatePendingUserQueueOnDisk(
+  sessionId: string,
+  queue: PendingUserQueueState,
+): Promise<boolean> {
+  let found = false;
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (data) => {
+      const session = data.sessions.find(s => s.id === sessionId);
+      if (session) {
+        session.pendingUserQueue = queue.items.length > 0
+          ? {
+              items: queue.items.map(item => ({
+                text: item.text,
+                images: item.images?.length ? [...item.images] : undefined,
+              })),
+              expanded: queue.expanded,
+            }
+          : undefined;
+        session.updatedAt = new Date().toISOString();
+        found = true;
+      }
+      return data;
+    },
+  );
+  invalidateIndexCache();
+  return found;
+}
+
 export async function deleteSessionFromDisk(sessionId: string): Promise<boolean> {
   let found = false;
   let deletedAgentId: string | undefined;
@@ -542,6 +573,7 @@ export async function eagerlySaveUserTurn(opts: {
           importedTurnIndices: opts.importedTurnIndices,
           unreadCount: 0,
           messageCount: incomingLen,
+          pendingUserQueue: undefined,
         });
       }
       return data;
@@ -587,6 +619,7 @@ export async function persistSessionToDisk(
         meta.archived = data.sessions[idx].archived;
         meta.config = meta.config ?? data.sessions[idx].config;
         meta.guardRetryCount = meta.guardRetryCount ?? data.sessions[idx].guardRetryCount;
+        meta.pendingUserQueue = meta.pendingUserQueue ?? data.sessions[idx].pendingUserQueue;
         meta.unreadCount = (data.sessions[idx].unreadCount || 0) + 1;
         data.sessions[idx] = meta;
       } else {

@@ -38,6 +38,16 @@ export interface ChatMessage {
   contentBlocks?: import('./index').ContentBlock[];
 }
 
+export interface PendingUserQueueItem {
+  text: string;
+  images?: string[];
+}
+
+export interface PendingUserQueueState {
+  items: PendingUserQueueItem[];
+  expanded?: boolean;
+}
+
 export interface AgentChatSession {
   id: string;                    // "agent-chat-{timestamp}-{random}"
   agentId: string;
@@ -69,6 +79,9 @@ export interface AgentChatSession {
 
   /** Sub Agent 调用深度（0=顶层，服务端自动追踪，用于递归保护） */
   depth?: number;
+
+  /** 助手回复期间用户继续提交的待发送消息队列 */
+  pendingUserQueue?: PendingUserQueueState;
 }
 
 /**
