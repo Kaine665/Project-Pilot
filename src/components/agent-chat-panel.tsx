@@ -541,6 +541,7 @@ export function AgentChatPanel({
 
   const markSessionRunning = useCallback((targetSessionId: string, startedAt?: string, title?: string) => {
     const now = new Date().toISOString();
+    const runStart = startedAt ?? now;
     setSessionList((prev) => {
       const existing = prev.find((s) => s.id === targetSessionId);
       return upsertSessionListItem(prev, {
@@ -549,18 +550,34 @@ export function AgentChatPanel({
         updatedAt: now,
         unreadCount: existing?.unreadCount ?? 0,
         isRunning: true,
-        runningStartedAt: startedAt ?? existing?.runningStartedAt ?? now,
+        runningStartedAt: runStart,
       });
     });
-  }, [hasProject, t]);
+    // Notify parent (e.g. agents page sidebar) so it can show running indicator
+    onSessionChange?.({
+      id: targetSessionId,
+      title: title ?? sessionTitle,
+      updatedAt: now,
+      isRunning: true,
+      runningStartedAt: runStart,
+    });
+  }, [hasProject, t, onSessionChange, sessionTitle]);
 
   const clearSessionRunning = useCallback((targetSessionId: string, updatedAt?: string) => {
+    const ts = updatedAt ?? new Date().toISOString();
     setSessionList((prev) => patchSessionListItem(prev, targetSessionId, {
-      updatedAt: updatedAt ?? new Date().toISOString(),
+      updatedAt: ts,
       isRunning: false,
       runningStartedAt: undefined,
     }));
-  }, []);
+    // Notify parent so it can clear running indicator and fetch updated state
+    onSessionChange?.({
+      id: targetSessionId,
+      title: sessionTitle,
+      updatedAt: ts,
+      isRunning: false,
+    });
+  }, [onSessionChange, sessionTitle]);
 
   // Load parent/child session navigation links
   const loadSessionNavLinks = useCallback(async (sid: string, parentSid?: string) => {
