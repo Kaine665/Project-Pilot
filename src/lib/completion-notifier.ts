@@ -75,6 +75,8 @@ export class CompletionNotifier {
           body: notificationBody,
           icon: NOTIFICATION_CONFIG.DEFAULT_ICON,
           tag: notificationTag,
+          sessionId: params.sessionId, // Phase 3: 传递 sessionId 用于点击导航
+          onClick: params.navigateToSession,
         });
       } else {
         console.debug('[CompletionNotifier] 使用 Web Notifications API');

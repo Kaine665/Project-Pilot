@@ -14,5 +14,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     body: string;
     icon?: string;
     tag?: string;
+    sessionId?: string;
   }) => ipcRenderer.invoke('show-notification', options),
+
+  // Phase 3: 通知点击事件监听
+  onNotificationClicked: (
+    callback: (data: { sessionId?: string; timestamp: number }) => void
+  ) => {
+    ipcRenderer.on('notification-clicked', (_event, data) => {
+      callback(data);
+    });
+  },
 });

@@ -9,6 +9,7 @@ export interface NotificationOptions {
   body: string;
   icon?: string;
   tag?: string;
+  sessionId?: string;
   onClick?: () => void;
 }
 
@@ -20,7 +21,14 @@ declare global {
         body: string;
         icon?: string;
         tag?: string;
+        sessionId?: string;
       }) => Promise<boolean>;
+      /**
+       * Phase 3: 监听通知点击事件
+       */
+      onNotificationClicked?: (
+        callback: (data: { sessionId?: string; timestamp: number }) => void
+      ) => void;
     };
   }
 }
@@ -38,6 +46,7 @@ export class ElectronNotifier {
 
   /**
    * 发送 Electron 原生通知
+   * Phase 3: 支持会话 ID，允许点击后导航到对应会话
    */
   async sendNotification(options: NotificationOptions): Promise<boolean> {
     if (!ElectronNotifier.isAvailable()) {
@@ -51,7 +60,16 @@ export class ElectronNotifier {
         body: options.body,
         icon: options.icon,
         tag: options.tag,
+        sessionId: options.sessionId,
       });
+
+      // Phase 3: 设置通知点击监听
+      if (result && options.onClick && window.electronAPI?.onNotificationClicked) {
+        window.electronAPI.onNotificationClicked((data) => {
+          console.debug('[ElectronNotifier] 用户点击了通知:', data);
+          options.onClick?.();
+        });
+      }
 
       return result;
     } catch (error) {

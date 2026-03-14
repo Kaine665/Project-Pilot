@@ -1,8 +1,7 @@
 /**
  * 音频播放管理器
- * - 处理 HTML Audio Element
- * - 重试机制、音量控制
- * - 预加载支持
+ * - 使用 Web Audio API 生成系统提示音（Windows 自带）
+ * - 支持音量控制、重试机制
  */
 
 export interface PlayOptions {
@@ -11,14 +10,31 @@ export interface PlayOptions {
 }
 
 export class AudioPlayer {
-  private audioElement: HTMLAudioElement | null = null;
-  private preloadedUrl: string | null = null;
+  private audioContext: AudioContext | null = null;
 
   /**
-   * 播放音频文件
+   * 初始化 AudioContext（延迟初始化）
+   */
+  private getAudioContext(): AudioContext {
+    if (this.audioContext) {
+      return this.audioContext;
+    }
+
+    if (typeof window === 'undefined' || typeof AudioContext === 'undefined') {
+      throw new Error('Web Audio API 不可用');
+    }
+
+    // 使用全局 AudioContext（如果存在）或创建新的
+    this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    return this.audioContext;
+  }
+
+  /**
+   * 使用 Web Audio API 生成简单提示音（类似 Windows 通知音）
+   * 生成两个频率的音调序列，形成典型的通知声音效果
    */
   async playSound(
-    soundPath: string,
+    _soundPath: string,
     options: PlayOptions = {}
   ): Promise<void> {
     const { volume = 0.5, maxRetries = 2 } = options;
@@ -31,71 +47,72 @@ export class AudioPlayer {
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        // 创建或重用 audio 元素
-        const audio = this.audioElement || new Audio();
+        const ctx = this.getAudioContext();
 
-        // 使用预加载 URL，或直接使用文件路径
-        audio.src = this.preloadedUrl || soundPath;
-
-        // 设置音量
-        audio.volume = Math.max(0, Math.min(1, volume));
-
-        // 尝试播放
-        const playPromise = audio.play();
-        if (playPromise) {
-          await playPromise;
+        // 确保 AudioContext 处于运行状态
+        if (ctx.state === 'suspended') {
+          await ctx.resume();
         }
 
-        // 保存引用供后续重用
-        this.audioElement = audio;
+        // 创建音量控制
+        const gainNode = ctx.createGain();
+        gainNode.gain.value = Math.max(0, Math.min(1, volume));
+        gainNode.connect(ctx.destination);
+
+        // 生成两段提示音：
+        // 1. 短的高频音（800Hz，200ms）
+        // 2. 短的低频音（1200Hz，150ms）
+        const now = ctx.currentTime;
+        const duration1 = 0.2;
+        const duration2 = 0.15;
+        const silence = 0.05;
+
+        // 第一段音频
+        const osc1 = ctx.createOscillator();
+        osc1.frequency.value = 800;
+        osc1.type = 'sine';
+        osc1.connect(gainNode);
+        osc1.start(now);
+        osc1.stop(now + duration1);
+
+        // 第二段音频（有间隔）
+        const osc2 = ctx.createOscillator();
+        osc2.frequency.value = 1200;
+        osc2.type = 'sine';
+        osc2.connect(gainNode);
+        osc2.start(now + duration1 + silence);
+        osc2.stop(now + duration1 + silence + duration2);
+
+        // 等待播放完成
+        const totalDuration = duration1 + silence + duration2;
+        await new Promise((resolve) => {
+          setTimeout(resolve, totalDuration * 1000);
+        });
+
         return;
       } catch (error) {
         if (attempt === maxRetries - 1) {
           console.error('[AudioPlayer] 音频播放失败:', error);
         } else {
           // 重试
-          await new Promise((r) =>
-            setTimeout(r, 50)
-          );
+          await new Promise((r) => setTimeout(r, 50));
         }
       }
     }
   }
 
   /**
-   * 预加载音频文件到内存
+   * 预加载（Web Audio API 不需要预加载）
    */
-  async preload(soundPath: string): Promise<void> {
-    if (typeof window === 'undefined') {
-      console.debug('[AudioPlayer] 服务端环境，跳过预加载');
-      return;
-    }
-
-    try {
-      const response = await fetch(soundPath);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const blob = await response.blob();
-      this.preloadedUrl = URL.createObjectURL(blob);
-      console.debug('[AudioPlayer] 音频预加载成功');
-    } catch (error) {
-      console.warn('[AudioPlayer] 音频预加载失败:', error);
-    }
+  async preload(_soundPath: string): Promise<void> {
+    // Web Audio API 生成音频，无需预加载
+    console.debug('[AudioPlayer] Web Audio API 无需预加载');
   }
 
   /**
    * 清理资源
    */
   cleanup(): void {
-    if (this.preloadedUrl) {
-      URL.revokeObjectURL(this.preloadedUrl);
-      this.preloadedUrl = null;
-    }
-    if (this.audioElement) {
-      this.audioElement.src = '';
-      this.audioElement = null;
-    }
+    // AudioContext 无需手动清理（全局共享）
   }
 }
