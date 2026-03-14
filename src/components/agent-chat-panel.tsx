@@ -229,6 +229,9 @@ export function AgentChatPanel({
   const isStreamingRef = useRef(false);
   const pendingAnswerRef = useRef<{ answer: string; targetSessionId: string } | null>(null);
   const pendingUserMessagesRef = useRef<PendingUserQueueItem[]>([]);
+  // OpenAI 模型列表缓存（5 分钟 TTL，避免每次切换都发请求）
+  const openaiModelsCacheRef = useRef<{ options: { value: string; label: string }[]; cachedAt: number } | null>(null);
+  const OPENAI_MODELS_CACHE_TTL = 5 * 60 * 1000;
   const [pendingUserQueueCount, setPendingUserQueueCount] = useState(0);
   const [pendingUserMessages, setPendingUserMessages] = useState<PendingUserQueueItem[]>([]);
   const [queueExpanded, setQueueExpanded] = useState(true);
@@ -433,57 +436,72 @@ export function AgentChatPanel({
   useEffect(() => {
     let cancelled = false;
     const preset = getProviderPreset(chatProvider);
-    const options = preset.models.map((m) => ({ value: m.id, label: m.label || m.id }));
+    const staticOptions = preset.models.map((m) => ({ value: m.id, label: m.label || m.id }));
 
     if (chatProvider === 'openai') {
-      // Fetch dynamic OpenAI model catalog
+      // 立即显示静态选项，不等待网络请求
+      setChatModelOptions(staticOptions);
+      if (!staticOptions.some((o) => o.value === chatModel)) {
+        setChatModel(staticOptions[0]?.value || '');
+      }
+
+      // 检查缓存（5 分钟 TTL），命中则直接用，不发请求
+      const cache = openaiModelsCacheRef.current;
+      if (cache && Date.now() - cache.cachedAt < OPENAI_MODELS_CACHE_TTL) {
+        setChatModelOptions(cache.options);
+        return () => { cancelled = true; };
+      }
+
+      // 后台 fetch 动态模型目录，merge 到静态选项里
       (async () => {
         try {
           const res = await fetch('/api/settings/openai-models', { cache: 'no-store' });
           const data = await res.json();
           if (cancelled) return;
           if (res.ok && data?.ok && Array.isArray(data.models)) {
-            const knownIds = new Set(options.map((o) => o.value));
+            const merged = [...staticOptions];
+            const knownIds = new Set(merged.map((o) => o.value));
             for (const r of data.models) {
               if (r && typeof r === 'object' && typeof r.id === 'string') {
                 const id = r.id.trim();
                 if (id && !knownIds.has(id)) {
-                  options.push({ value: id, label: typeof r.displayName === 'string' ? r.displayName : id });
+                  merged.push({ value: id, label: typeof r.displayName === 'string' ? r.displayName : id });
                   knownIds.add(id);
                 }
               }
             }
+            if (!cancelled) {
+              openaiModelsCacheRef.current = { options: merged, cachedAt: Date.now() };
+              setChatModelOptions(merged);
+            }
           }
         } catch {
-          // ignore - fallback to static models
-        }
-        if (!cancelled) {
-          setChatModelOptions(options);
-          if (!options.some((o) => o.value === chatModel)) {
-            setChatModel(options[0]?.value || '');
-          }
+          // ignore - fallback to static models already shown
         }
       })();
     } else {
-      if (options.length > 0) {
-        setChatModelOptions(options);
-        if (!options.some((o) => o.value === chatModel)) {
-          setChatModel(options[0].value);
+      if (staticOptions.length > 0) {
+        setChatModelOptions(staticOptions);
+        if (!staticOptions.some((o) => o.value === chatModel)) {
+          setChatModel(staticOptions[0].value);
         }
       }
     }
     return () => { cancelled = true; };
   }, [chatProvider]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch prompt info (system prompt size + context window for current model)
+  // 模型切换时立即更新 contextWindow（纯本地计算，无需网络请求）
   useEffect(() => {
-    // 立即根据当前 model 更新 contextWindow（不需要网络请求）
     setContextWindow(getModelContextWindow(chatModel || 'claude-sonnet-4-6'));
+  }, [chatModel]);
 
+  // Fetch prompt info (system prompt size)
+  // 注意：estimatedTokens 只依赖 agent/project，与 model 无关；contextWindow 已在上方本地计算。
+  // 因此切换 model 时无需重新 fetch，只在 agent 或 project 变化时才请求。
+  useEffect(() => {
     let cancelled = false;
     const params = new URLSearchParams({ agentId: agent.id });
     if (projectKey) params.set('projectKey', projectKey);
-    if (chatModel) params.set('model', chatModel);
 
     (async () => {
       try {
@@ -492,7 +510,6 @@ export function AgentChatPanel({
         const data = await res.json();
         if (!cancelled) {
           setPromptEstimate(data.estimatedTokens ?? 0);
-          setContextWindow(data.contextWindow ?? getModelContextWindow(chatModel));
         }
       } catch {
         // ignore - fallback to local estimate
@@ -500,7 +517,7 @@ export function AgentChatPanel({
     })();
 
     return () => { cancelled = true; };
-  }, [agent.id, chatModel, projectKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [agent.id, projectKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch session list
   const fetchSessionList = useCallback(async (agentId: string, pk?: string | null) => {
