@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useMemo, startTransition } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, useReducer, startTransition } from 'react';
 import { flushSync } from 'react-dom';
 import { Loader2, Maximize2, Minimize2, Bot, Sparkles, Plus, MessageSquare, Trash2, Settings, FileDown, ClipboardList, ArrowLeft, GitFork, ArrowUp, ChevronDown, ChevronUp, Layers, FolderOpen } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -144,6 +144,77 @@ function formatSessionElapsed(startedAt: string | undefined, nowTs: number): str
 }
 
 
+// ── Chat Reducer (messages + streaming + token) ──
+
+type ChatState = {
+  messages: ChatMessage[];
+  isStreaming: boolean;
+  streamingBlocks: ContentBlock[];
+  errorMsg: string | null;
+  inPlanMode: boolean;
+  tokenInputs: number;
+  tokenOutputs: number;
+};
+
+type ChatAction =
+  | { type: 'SEND_START' }
+  | { type: 'STREAM_BLOCKS'; blocks: ContentBlock[] }
+  | { type: 'STREAM_TOKENS'; input: number; output: number }
+  | { type: 'STREAM_ERROR'; message: string }
+  | { type: 'CLEAR_ERROR' }
+  | { type: 'STREAM_END' }
+  | { type: 'PLAN_STARTED' }
+  | { type: 'PLAN_FINISHED' }
+  | { type: 'APPEND_MESSAGE'; message: ChatMessage }
+  | { type: 'SET_MESSAGES'; messages: ChatMessage[] }
+  | { type: 'UPDATE_MESSAGES'; updater: (prev: ChatMessage[]) => ChatMessage[] }
+  | { type: 'RESET' };
+
+const chatInitialState: ChatState = {
+  messages: [],
+  isStreaming: false,
+  streamingBlocks: [],
+  errorMsg: null,
+  inPlanMode: false,
+  tokenInputs: 0,
+  tokenOutputs: 0,
+};
+
+function chatReducer(state: ChatState, action: ChatAction): ChatState {
+  switch (action.type) {
+    case 'SEND_START':
+      return { ...state, isStreaming: true, streamingBlocks: [], errorMsg: null };
+    case 'STREAM_BLOCKS':
+      return { ...state, streamingBlocks: action.blocks };
+    case 'STREAM_TOKENS':
+      return {
+        ...state,
+        tokenInputs: action.input > 0 ? action.input : state.tokenInputs,
+        tokenOutputs: action.output > 0 ? action.output : state.tokenOutputs,
+      };
+    case 'STREAM_ERROR':
+      return { ...state, errorMsg: action.message };
+    case 'CLEAR_ERROR':
+      return { ...state, errorMsg: null };
+    case 'STREAM_END':
+      return { ...state, isStreaming: false, streamingBlocks: [], inPlanMode: false };
+    case 'PLAN_STARTED':
+      return { ...state, inPlanMode: true };
+    case 'PLAN_FINISHED':
+      return { ...state, inPlanMode: false };
+    case 'APPEND_MESSAGE':
+      return { ...state, messages: [...state.messages, action.message] };
+    case 'SET_MESSAGES':
+      return { ...state, messages: action.messages };
+    case 'UPDATE_MESSAGES':
+      return { ...state, messages: action.updater(state.messages) };
+    case 'RESET':
+      return { ...chatInitialState };
+    default:
+      return state;
+  }
+}
+
 export function AgentChatPanel({
   agent,
   initialSessionId,
@@ -161,10 +232,8 @@ export function AgentChatPanel({
   // Initialize notification manager
   const { notifyCompletion } = useNotificationManager();
 
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamingBlocks, setStreamingBlocks] = useState<ContentBlock[]>([]);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [chat, chatDispatch] = useReducer(chatReducer, chatInitialState);
+  const { messages, isStreaming, streamingBlocks, errorMsg, inPlanMode, tokenInputs, tokenOutputs } = chat;
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Session management
@@ -206,14 +275,11 @@ export function AgentChatPanel({
   // Plan viewer
   const [planContent, setPlanContent] = useState<string | null>(null);
   const [isPlanOpen, setIsPlanOpen] = useState(false);
-  const [inPlanMode, setInPlanMode] = useState(false);
 
   // File preview
   const [previewFilePath, setPreviewFilePath] = useState<string | null>(null);
 
-  // Token usage tracking
-  const [tokenInputs, setTokenInputs] = useState(0);
-  const [tokenOutputs, setTokenOutputs] = useState(0);
+  // Token usage tracking (tokenInputs + tokenOutputs are in chatReducer)
   const [promptEstimate, setPromptEstimate] = useState(0);
   const [contextWindow, setContextWindow] = useState(200000);
 
@@ -251,12 +317,12 @@ export function AgentChatPanel({
   }, []);
 
   useEffect(() => {
-    isStreamingRef.current = isStreaming;
-  }, [isStreaming]);
+    isStreamingRef.current = chat.isStreaming;
+  }, [chat.isStreaming]);
 
   useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
+    messagesRef.current = chat.messages;
+  }, [chat.messages]);
 
   const persistPendingUserQueue = useCallback((
     targetSessionId: string,
@@ -666,7 +732,7 @@ export function AgentChatPanel({
           timestamp: '',
         }),
       );
-      setMessages(restored);
+      chatDispatch({ type: 'SET_MESSAGES', messages: restored });
       setSessionTitle(data.title ?? 'New Session');
       const loadedConfig = data.config ?? {};
       setSessionConfig(loadedConfig);
@@ -715,12 +781,8 @@ export function AgentChatPanel({
     const toolCalls = toolCallsRef.current;
     const blocks = blocksRef.current;
 
-    // Use flushSync to ensure streaming bubble is cleared before committing final message.
-    flushSync(() => {
-      setIsStreaming(false);
-      setStreamingBlocks([]);
-      setInPlanMode(false);
-    });
+    // useReducer dispatch is synchronous — flushSync is no longer needed.
+    chatDispatch({ type: 'STREAM_END' });
 
     if (!isStaleStream && (fullText || toolCalls.length > 0)) {
       const cleanedText = stripSessionTitleTag(fullText);
@@ -732,7 +794,7 @@ export function AgentChatPanel({
         toolCalls: toolCalls.length > 0 ? [...toolCalls] : undefined,
         contentBlocks: blocks.length > 0 ? [...blocks] : undefined,
       };
-      setMessages((prev) => [...prev, assistantMsg]);
+      chatDispatch({ type: 'APPEND_MESSAGE', message: assistantMsg });
     }
     blocksRef.current = [];
     fullTextRef.current = '';
@@ -902,7 +964,7 @@ export function AgentChatPanel({
               }
               // Track plan mode state
               if (event.toolName === 'EnterPlanMode') {
-                setInPlanMode(true);
+                chatDispatch({ type: 'PLAN_STARTED' });
               }
               break;
             }
@@ -916,7 +978,7 @@ export function AgentChatPanel({
 
                 // ExitPlanMode -> extract plan content from output as fallback
                 if (tc.toolName === 'ExitPlanMode') {
-                  setInPlanMode(false);
+                  chatDispatch({ type: 'PLAN_FINISHED' });
                   const out = (event.output ?? '').trim();
                   if (out.length > 50) {
                     setPlanContent(out);
@@ -950,14 +1012,13 @@ export function AgentChatPanel({
               break;
 
             case 'token_usage':
-              if (event.inputTokens > 0) setTokenInputs(event.inputTokens);
-              if (event.outputTokens > 0) setTokenOutputs(event.outputTokens);
+              chatDispatch({ type: 'STREAM_TOKENS', input: event.inputTokens, output: event.outputTokens });
               if (event.contextWindow && event.contextWindow > 0) setContextWindow(event.contextWindow);
               break;
 
             case 'error':
               console.error('Agent chat stream error:', event.message);
-              setErrorMsg(event.message ?? 'Stream error');
+              chatDispatch({ type: 'STREAM_ERROR', message: event.message ?? 'Stream error' });
               break;
 
             case 'awaiting_sub_agents':
@@ -980,7 +1041,7 @@ export function AgentChatPanel({
           rafIdRef.current = requestAnimationFrame(() => {
             rafIdRef.current = 0;
             startTransition(() => {
-              setStreamingBlocks([...blocksRef.current]);
+              chatDispatch({ type: 'STREAM_BLOCKS', blocks: [...blocksRef.current] });
             });
           });
         }
@@ -994,23 +1055,17 @@ export function AgentChatPanel({
     }).catch((err) => {
       if ((err as Error).name === 'AbortError') return;
       console.error('Agent chat stream connection failed:', err);
-      setErrorMsg(`Stream connection failed: ${(err as Error).message}`);
+      chatDispatch({ type: 'STREAM_ERROR', message: `Stream connection failed: ${(err as Error).message}` });
       finalizeStream();
     });
   }, [finalizeStream]);
 
   // Reset state helper
   const resetState = useCallback(() => {
-    setMessages([]);
-    setIsStreaming(false);
-    setStreamingBlocks([]);
-    setErrorMsg(null);
-    setInPlanMode(false);
+    chatDispatch({ type: 'RESET' });
     setSessionIdSync(null);
     setSessionTitle(hasProject ? t('chat.newSession') : 'New Session');
     setSessionList([]);
-    setTokenInputs(0);
-    setTokenOutputs(0);
     setQueueExpanded(true);
     pendingUserMessagesRef.current = [];
     setPendingUserMessages([]);
@@ -1058,10 +1113,10 @@ export function AgentChatPanel({
             timestamp: '',
           }),
         );
-        setMessages(restored);
+        chatDispatch({ type: 'SET_MESSAGES', messages: restored });
       }
       markSessionRunning(sid, statusData.startedAt);
-      setIsStreaming(true);
+      chatDispatch({ type: 'SEND_START' });
       blocksRef.current = [];
       fullTextRef.current = '';
       toolCallsRef.current = [];
@@ -1193,7 +1248,7 @@ export function AgentChatPanel({
       images: imagesToSend.length > 0 ? imagesToSend : undefined,
     };
 
-    setMessages((prev) => {
+    chatDispatch({ type: 'UPDATE_MESSAGES', updater: (prev) => {
       // Fold duplicate: if the last message is an unanswered user message with identical content,
       // replace it instead of appending (handles manual resend after network/auth errors)
       const last = prev[prev.length - 1];
@@ -1201,16 +1256,13 @@ export function AgentChatPanel({
         return [...prev.slice(0, -1), userMsg];
       }
       return [...prev, userMsg];
-    });
+    } });
     setAutoScroll(true);
-    setIsStreaming(true);
+    chatDispatch({ type: 'SEND_START' });
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
     lastEventIdxRef.current = -1;
-    setStreamingBlocks([]);
-
-    setErrorMsg(null);
 
     // For new sessions: generate sessionId + update UI immediately (before fetch)
     let targetSessionId = sessionId;
@@ -1293,8 +1345,8 @@ export function AgentChatPanel({
     } catch (err) {
       const msg = (err as Error).message || 'Unknown error';
       console.error('Agent chat send failed:', msg);
-      setErrorMsg(msg);
-      setIsStreaming(false);
+      chatDispatch({ type: 'STREAM_ERROR', message: msg });
+      chatDispatch({ type: 'STREAM_END' });
       clearSessionRunning(targetSessionId);
     }
   }, [agent.id, sessionId, isStreaming, hasProject, projectKey, chatProvider, chatModel, chatEffort, connectToStream, onSessionChange, t, sessionConfig, setSessionIdSync, persistPendingUserQueue, sessionTitle, markSessionRunning, clearSessionRunning]);
@@ -1476,7 +1528,7 @@ export function AgentChatPanel({
     }
     setSessionIdSync(null);
     setSessionTitle(hasProject ? t('chat.newSession') : 'New Session');
-    setMessages([]);
+    chatDispatch({ type: 'SET_MESSAGES', messages: [] });
     setSessionConfig({});
     setShowConfig(false);
     setCompressDismissed(false);
@@ -1513,12 +1565,10 @@ export function AgentChatPanel({
     }
     setSessionIdSync(target.id);
     setSessionTitle(target.title);
-    setMessages([]);
+    chatDispatch({ type: 'RESET' });
     setSessionConfig({});
     setShowConfig(false);
     setCompressDismissed(false);
-    setTokenInputs(0);
-    setTokenOutputs(0);
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
@@ -1544,13 +1594,13 @@ export function AgentChatPanel({
 
   // Compress: confirm handler (dialog persists changes internally)
   const handleCompressConfirm = useCallback((compressedMessages: ChatMessage[]) => {
-    setMessages(compressedMessages);
+    chatDispatch({ type: 'SET_MESSAGES', messages: compressedMessages });
     setCompressDialogOpen(false);
   }, []);
 
   // Delete a single message from the conversation
   const handleDeleteMessage = useCallback((messageId: string) => {
-    setMessages(prev => prev.filter(m => m.id !== messageId));
+    chatDispatch({ type: 'UPDATE_MESSAGES', updater: prev => prev.filter(m => m.id !== messageId) });
   }, []);
 
   // Branch: create a new session from this message and switch to it.
@@ -1586,11 +1636,8 @@ export function AgentChatPanel({
         streamAbortRef.current.abort();
         streamAbortRef.current = null;
       }
-      flushSync(() => {
-        setIsStreaming(false);
-        setStreamingBlocks([]);
-        setInPlanMode(false);
-      });
+      // useReducer dispatch is synchronous — flushSync is no longer needed.
+      chatDispatch({ type: 'RESET' });
       blocksRef.current = [];
       fullTextRef.current = '';
       toolCallsRef.current = [];
@@ -1603,12 +1650,9 @@ export function AgentChatPanel({
       const token = initTokenRef.current;
       setSessionIdSync(newItem.id);
       setSessionTitle(newItem.title);
-      setMessages([]);
       setSessionConfig({});
       setShowConfig(false);
       setCompressDismissed(false);
-      setTokenInputs(0);
-      setTokenOutputs(0);
       pendingAnswerRef.current = null;
       await loadSessionData(newItem.id, token);
 
@@ -1622,7 +1666,7 @@ export function AgentChatPanel({
   // Regenerate: remove the last assistant message and resend the last user message
   const handleRegenerate = useCallback(() => {
     if (isStreamingRef.current) return;
-    setMessages(prev => {
+    chatDispatch({ type: 'UPDATE_MESSAGES', updater: prev => {
       // Find the last user message
       const lastUserIdx = prev.reduce((acc, m, i) => (m.role === 'user' ? i : acc), -1);
       if (lastUserIdx === -1) return prev;
@@ -1633,7 +1677,7 @@ export function AgentChatPanel({
       setTimeout(() => doSendRef.current(lastUserMsg.content), 0);
       // Remove the user msg too since doSend will re-add it
       return trimmed.slice(0, -1);
-    });
+    } });
   }, []);
 
   // Retry: resend the last user message (for failed sends)
@@ -1643,8 +1687,8 @@ export function AgentChatPanel({
     const lastUserMsg = [...currentMessages].reverse().find(m => m.role === 'user');
     if (!lastUserMsg) return;
     // Remove the failed user message and the error, then re-send
-    setMessages(prev => prev.filter(m => m.id !== lastUserMsg.id));
-    setErrorMsg(null);
+    chatDispatch({ type: 'UPDATE_MESSAGES', updater: prev => prev.filter(m => m.id !== lastUserMsg.id) });
+    chatDispatch({ type: 'CLEAR_ERROR' });
     setTimeout(() => doSendRef.current(lastUserMsg.content), 0);
   }, []);
 
