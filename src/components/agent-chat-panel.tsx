@@ -33,6 +33,7 @@ export interface SessionListItem {
   updatedAt: string;
   unreadCount?: number;
   isRunning?: boolean;
+  isAwaiting?: boolean;
   runningStartedAt?: string;
 }
 
@@ -100,10 +101,11 @@ function mergeSessionList(
   const localById = new Map(prev.map((s) => [s.id, s]));
   const mergedRemote = remote.map((item) => {
     const local = localById.get(item.id);
-    if (!local?.isRunning) return item;
+    if (!local?.isRunning && !local?.isAwaiting) return item;
     return {
       ...item,
-      isRunning: true,
+      isRunning: local.isRunning || undefined,
+      isAwaiting: local.isAwaiting || item.isAwaiting || undefined,
       runningStartedAt: local.runningStartedAt ?? item.runningStartedAt,
     };
   });
@@ -536,7 +538,11 @@ export function AgentChatPanel({
       if (pk) url += `&projectKey=${pk}`;
       const res = await fetch(url, { cache: 'no-store' });
       const data = await res.json();
-      const remote: SessionListItem[] = data.sessions ?? [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const remote: SessionListItem[] = (data.sessions ?? []).map((s: any) => ({
+        ...s,
+        isAwaiting: s.execution?.status === 'awaiting' || undefined,
+      }));
       setSessionList((prev) => mergeSessionList(prev, remote));
       return remote;
     } catch {
@@ -555,6 +561,7 @@ export function AgentChatPanel({
         updatedAt: now,
         unreadCount: existing?.unreadCount ?? 0,
         isRunning: true,
+        isAwaiting: undefined,
         runningStartedAt: runStart,
       });
     });
@@ -579,6 +586,7 @@ export function AgentChatPanel({
     const extraPatch: Partial<SessionListItem> = {
       updatedAt: ts,
       isRunning: false,
+      isAwaiting: undefined,
       runningStartedAt: undefined,
     };
     if (opts?.unreadCount !== undefined) {
@@ -950,6 +958,17 @@ export function AgentChatPanel({
             case 'error':
               console.error('Agent chat stream error:', event.message);
               setErrorMsg(event.message ?? 'Stream error');
+              break;
+
+            case 'awaiting_sub_agents':
+              // Session entered awaiting state — stop stream but mark as awaiting
+              setSessionList((prev) =>
+                prev.map((s) =>
+                  s.id === streamTargetSessionRef.current
+                    ? { ...s, isRunning: false, isAwaiting: true, runningStartedAt: undefined }
+                    : s,
+                ),
+              );
               break;
 
             case 'done':
@@ -2304,6 +2323,10 @@ export function AgentChatPanel({
                 {s.isRunning ? (
                   <span className="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-blue-700 dark:bg-blue-950/70 dark:text-blue-300">
                     {formatSessionElapsed(s.runningStartedAt, sessionClockNow)}
+                  </span>
+                ) : s.isAwaiting ? (
+                  <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-amber-700 dark:bg-amber-950/70 dark:text-amber-300">
+                    ⏳
                   </span>
                 ) : !!s.unreadCount && s.unreadCount > 0 && (
                   <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-medium leading-none text-white">

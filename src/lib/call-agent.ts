@@ -232,7 +232,7 @@ async function pollSession(sessionId: string, port: number): Promise<void> {
   const status: string = statusData.status;
   const statusMessages: Array<{ role: string; content: string }> = statusData.messages || [];
 
-  if (status === 'running') {
+  if (status === 'running' || status === 'awaiting') {
     writeResult({ status: 'running', sessionId });
     process.exit(POLL_EXIT_RUNNING);
   }

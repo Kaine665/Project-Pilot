@@ -33,10 +33,12 @@ import { URL } from 'url';
 // 使用 @/ 别名 — tsx（dev）和 esbuild --tsconfig（prod）均可解析
 import { agentChatManager, generateSessionId } from '@/lib/chat-managers/agent-chat-manager';
 import type { FlowContext } from '@/lib/chat-managers/agent-chat-manager';
-import { loadSession } from '@/lib/chat-managers/agent-chat-session-store';
+import { loadSession, listAllSessions } from '@/lib/chat-managers/agent-chat-session-store';
+import { subAgentWatcher } from '@/lib/chat-managers/sub-agent-watcher';
+import type { WatchEntry } from '@/lib/chat-managers/sub-agent-watcher';
 import { schedulerManager } from '@/lib/scheduler-manager';
 import type { ChatSSEEvent } from '@/types';
-import type { SessionConfig } from '@/types/agent-chat';
+import type { SessionConfig, SessionMeta } from '@/types/agent-chat';
 import type { ProviderId } from '@/types';
 import type { ImageAttachment } from '@/lib/image-assets';
 
@@ -235,7 +237,7 @@ function handleStream(
       res.write(`data: ${payload}\n\n`);
     } catch { /* 连接已关闭 */ }
 
-    if (event.type === 'done') {
+    if (event.type === 'done' || event.type === 'awaiting_sub_agents') {
       try { res.end(); } catch { /* already ended */ }
     }
   };
@@ -464,6 +466,35 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// ── Awaiting Watcher Recovery ─────────────────────────────────────────────────
+
+/**
+ * Scan all sessions for awaiting state and restore watcher entries.
+ * Called once during sidecar startup.
+ */
+async function restoreAwaitingWatchers(): Promise<void> {
+  const sessions = await listAllSessions() as SessionMeta[];
+  const entries: WatchEntry[] = [];
+
+  for (const session of sessions) {
+    if (session.execution?.status === 'awaiting' && session.execution.awaitingSubAgents) {
+      const aw = session.execution.awaitingSubAgents;
+      entries.push({
+        parentSessionId: session.id,
+        parentAgentId: session.agentId,
+        parentProjectKey: session.projectKey,
+        targetSessionIds: aw.sessionIds,
+        registeredAt: aw.registeredAt,
+        timeoutMs: aw.timeoutMs,
+      });
+    }
+  }
+
+  if (entries.length > 0) {
+    subAgentWatcher.restoreEntries(entries);
+  }
+}
+
 // ── Startup ──────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -480,6 +511,13 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
   process.on('exit', removeLock);
+
+  // Restore SubAgentWatcher entries from disk (sessions in awaiting state)
+  try {
+    await restoreAwaitingWatchers();
+  } catch (err) {
+    console.error('[Sidecar] Failed to restore awaiting watchers:', err);
+  }
 
   // Initialize scheduler (reads schedules from disk, registers cron jobs)
   try {

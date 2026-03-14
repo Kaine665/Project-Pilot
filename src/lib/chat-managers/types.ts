@@ -17,7 +17,7 @@ import type { ChatSSEEvent, ChatToolCall, ContentBlock, DangerDetectorSettings }
  * `finalizing`: stream has ended, satellite tasks and persistence are in progress.
  * `completed`: result has been persisted to disk — safe to read from any source.
  */
-export type RunStatus = 'running' | 'finalizing' | 'completed' | 'failed' | 'stopped';
+export type RunStatus = 'running' | 'finalizing' | 'awaiting' | 'completed' | 'failed' | 'stopped';
 
 export interface RunStatusInfo {
   status: RunStatus | 'none';
@@ -55,13 +55,19 @@ export interface SubAgentResult {
  */
 export interface SessionExecution {
   /** 最终运行状态 */
-  status: 'completed' | 'failed' | 'stopped';
+  status: 'completed' | 'failed' | 'stopped' | 'awaiting';
   /** 运行开始时间 */
   startedAt: string;
   /** 运行完成时间 */
   completedAt: string;
   /** 结构化结果（仅 Sub Agent 调用时有） */
   result?: SubAgentResult;
+  /** 等待中的 Sub Agent 会话信息（awaiting 状态时存在） */
+  awaitingSubAgents?: {
+    sessionIds: string[];
+    registeredAt: number;
+    timeoutMs: number;
+  };
 }
 
 // ── Base run data (shared by all managers) ──
