@@ -911,6 +911,9 @@ export default function AgentsPage() {
                                     isRunning: newSession.isRunning,
                                     runningStartedAt: newSession.runningStartedAt,
                                   }),
+                                  ...(newSession.unreadCount !== undefined && {
+                                    unreadCount: newSession.unreadCount,
+                                  }),
                                 }
                               : s);
                           }
@@ -923,6 +926,7 @@ export default function AgentsPage() {
                             agentIcon: selectedAgent.icon,
                             isRunning: newSession.isRunning,
                             runningStartedAt: newSession.runningStartedAt,
+                            unreadCount: newSession.unreadCount,
                           }, ...prev];
                         });
                       }

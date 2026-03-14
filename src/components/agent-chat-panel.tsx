@@ -563,19 +563,30 @@ export function AgentChatPanel({
     });
   }, [hasProject, t, onSessionChange, sessionTitle]);
 
-  const clearSessionRunning = useCallback((targetSessionId: string, updatedAt?: string) => {
-    const ts = updatedAt ?? new Date().toISOString();
-    setSessionList((prev) => patchSessionListItem(prev, targetSessionId, {
+  const clearSessionRunning = useCallback((targetSessionId: string, opts?: {
+    updatedAt?: string;
+    /** Proactively set unreadCount (for sessions the user is NOT currently viewing) */
+    unreadCount?: number;
+    /** Title override (for stale streams where sessionTitle may have changed) */
+    title?: string;
+  }) => {
+    const ts = opts?.updatedAt ?? new Date().toISOString();
+    const extraPatch: Partial<SessionListItem> = {
       updatedAt: ts,
       isRunning: false,
       runningStartedAt: undefined,
-    }));
+    };
+    if (opts?.unreadCount !== undefined) {
+      extraPatch.unreadCount = opts.unreadCount;
+    }
+    setSessionList((prev) => patchSessionListItem(prev, targetSessionId, extraPatch));
     // Notify parent so it can clear running indicator and fetch updated state
     onSessionChange?.({
       id: targetSessionId,
-      title: sessionTitle,
+      title: opts?.title ?? sessionTitle,
       updatedAt: ts,
       isRunning: false,
+      unreadCount: opts?.unreadCount,
     });
   }, [onSessionChange, sessionTitle]);
 
@@ -719,8 +730,20 @@ export function AgentChatPanel({
     finalizingRef.current = false;
 
     const currentSid = sessionIdRef.current;
-    if (currentSid) {
+
+    if (isStaleStream && streamTarget) {
+      // Stream completed for a session the user is NOT currently viewing
+      // → proactively set unreadCount so the badge appears immediately
+      clearSessionRunning(streamTarget, { unreadCount: 1 });
+    } else if (currentSid) {
+      // Stream completed for the session the user IS viewing
+      // → no unread badge needed; also call markAsRead to reset any backend count
       clearSessionRunning(currentSid);
+      fetch(`/api/agent-chat/sessions/${currentSid}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'markAsRead' }),
+      }).catch(() => {});
     }
 
     // Refresh session list to get AI-generated title
@@ -733,6 +756,11 @@ export function AgentChatPanel({
 
     // Notify parent to refresh sidebar sessions
     onSessionChange?.();
+
+    // Delayed re-fetch to sync with backend persistence (unreadCount, title, etc.)
+    setTimeout(() => {
+      onSessionChange?.();
+    }, 2000);
 
     // Auto-send queued AskUserQuestion answer from the previous turn
     const pending = pendingAnswerRef.current;
@@ -751,15 +779,16 @@ export function AgentChatPanel({
       flushQueuedUserMessage(currentSid);
     }
 
-    // Send completion notification
-    if (currentSid && !isStaleStream && (fullText || toolCalls.length > 0)) {
+    // Send completion notification (for both active and background sessions)
+    const completedSid = isStaleStream ? streamTarget : currentSid;
+    if (completedSid && (fullText || toolCalls.length > 0)) {
       notifyCompletion({
         agentName: agent.name || agent.id,
-        sessionId: currentSid,
+        sessionId: completedSid,
         sessionTitle: sessionTitle || 'Untitled Session',
         navigateToSession: () => {
           // Navigate to this session if needed
-          const sessionUrl = buildSessionUrl(agent.id, currentSid);
+          const sessionUrl = buildSessionUrl(agent.id, completedSid);
           router.push(sessionUrl);
         },
       }).catch(err => console.error('通知发送失败:', err));
