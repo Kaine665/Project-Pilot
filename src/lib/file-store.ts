@@ -602,6 +602,19 @@ export function getSkillHistoryDir(skillName: string): string {
   return path.join(DATA_DIR, 'skills', safe, '.history');
 }
 
+/** Skill 目录根路径 */
+export function getSkillDir(skillName: string): string {
+  const safe = skillName.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 100) {
+    throw new Error(`Invalid skill name: ${skillName}`);
+  }
+  return path.join(DATA_DIR, 'skills', safe);
+}
+
+/** Skill 子目录中允许的文件夹名 */
+export const SKILL_SUBDIRS = ['scripts', 'references', 'assets'] as const;
+export type SkillSubdir = (typeof SKILL_SUBDIRS)[number];
+
 // ── Agent Data Store 路径函数 ──
 // 每个 Agent 的私有数据目录：agent-data/{agentId}/
 // Agent 通过 bash 自由读写，danger-detector 对此目录白名单放行
