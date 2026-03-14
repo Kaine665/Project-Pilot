@@ -738,10 +738,10 @@ export function AgentChatPanel({
       notifyCompletion({
         agentName: agent.name || agent.id,
         sessionId: currentSid,
-        sessionTitle: sessionTitle,
+        sessionTitle: sessionTitle || 'Untitled Session',
         navigateToSession: () => {
           // Navigate to this session if needed
-          const sessionUrl = buildSessionUrl(agent.id, currentSid, projectKey);
+          const sessionUrl = buildSessionUrl(agent.id, currentSid);
           router.push(sessionUrl);
         },
       }).catch(err => console.error('通知发送失败:', err));
