@@ -30,6 +30,8 @@ export interface SessionListItem {
   title: string;
   updatedAt: string;
   unreadCount?: number;
+  isRunning?: boolean;
+  runningStartedAt?: string;
 }
 
 interface AgentChatPanelProps {
@@ -82,6 +84,61 @@ function clonePendingQueueItems(items: PendingUserQueueItem[]): PendingUserQueue
   }));
 }
 
+function sortSessionList(items: SessionListItem[]): SessionListItem[] {
+  return [...items].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  );
+}
+
+function mergeSessionList(
+  prev: SessionListItem[],
+  remote: SessionListItem[],
+): SessionListItem[] {
+  const remoteIds = new Set(remote.map((s) => s.id));
+  const localById = new Map(prev.map((s) => [s.id, s]));
+  const mergedRemote = remote.map((item) => {
+    const local = localById.get(item.id);
+    if (!local?.isRunning) return item;
+    return {
+      ...item,
+      isRunning: true,
+      runningStartedAt: local.runningStartedAt ?? item.runningStartedAt,
+    };
+  });
+  const localOnly = prev.filter((s) => !remoteIds.has(s.id));
+  return sortSessionList([...localOnly, ...mergedRemote]);
+}
+
+function upsertSessionListItem(
+  prev: SessionListItem[],
+  item: SessionListItem,
+): SessionListItem[] {
+  const next = prev.filter((s) => s.id !== item.id);
+  next.push(item);
+  return sortSessionList(next);
+}
+
+function patchSessionListItem(
+  prev: SessionListItem[],
+  sessionId: string,
+  patch: Partial<SessionListItem>,
+): SessionListItem[] {
+  return sortSessionList(
+    prev.map((s) => (s.id === sessionId ? { ...s, ...patch } : s)),
+  );
+}
+
+function formatSessionElapsed(startedAt: string | undefined, nowTs: number): string {
+  if (!startedAt) return '0s';
+  const diffSeconds = Math.max(
+    0,
+    Math.floor((nowTs - new Date(startedAt).getTime()) / 1000),
+  );
+  if (diffSeconds < 60) return `${diffSeconds}s`;
+  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m`;
+  return `${Math.floor(diffSeconds / 3600)}h`;
+}
+
 
 export function AgentChatPanel({
   agent,
@@ -107,6 +164,7 @@ export function AgentChatPanel({
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionList, setSessionList] = useState<SessionListItem[]>([]);
   const [sessionTitle, setSessionTitle] = useState(hasProject ? t('chat.newSession') : 'New Session');
+  const [sessionClockNow, setSessionClockNow] = useState(() => Date.now());
 
   // Provider / model routing
   const [chatProvider, setChatProvider] = useState<ProviderId>('anthropic');
@@ -227,6 +285,14 @@ export function AgentChatPanel({
       persistPendingUserQueue(currentSid, pendingUserMessagesRef.current, expanded);
     }
   }, [persistPendingUserQueue]);
+
+  useEffect(() => {
+    if (!sessionList.some((session) => session.isRunning)) return;
+    const timer = window.setInterval(() => {
+      setSessionClockNow(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [sessionList]);
 
   // Abort any in-flight stream when the component unmounts (e.g. agent view -> session view switch)
   useEffect(() => {
@@ -444,16 +510,34 @@ export function AgentChatPanel({
       const res = await fetch(url, { cache: 'no-store' });
       const data = await res.json();
       const remote: SessionListItem[] = data.sessions ?? [];
-      // Merge: keep optimistically-inserted local sessions that backend doesn't know about yet
-      setSessionList(prev => {
-        const remoteIds = new Set(remote.map(s => s.id));
-        const localOnly = prev.filter(s => !remoteIds.has(s.id));
-        return [...localOnly, ...remote];
-      });
+      setSessionList((prev) => mergeSessionList(prev, remote));
       return remote;
     } catch {
       return [];
     }
+  }, []);
+
+  const markSessionRunning = useCallback((targetSessionId: string, startedAt?: string, title?: string) => {
+    const now = new Date().toISOString();
+    setSessionList((prev) => {
+      const existing = prev.find((s) => s.id === targetSessionId);
+      return upsertSessionListItem(prev, {
+        id: targetSessionId,
+        title: title ?? existing?.title ?? (hasProject ? t('chat.newSession') : 'New Session'),
+        updatedAt: now,
+        unreadCount: existing?.unreadCount ?? 0,
+        isRunning: true,
+        runningStartedAt: startedAt ?? existing?.runningStartedAt ?? now,
+      });
+    });
+  }, [hasProject, t]);
+
+  const clearSessionRunning = useCallback((targetSessionId: string, updatedAt?: string) => {
+    setSessionList((prev) => patchSessionListItem(prev, targetSessionId, {
+      updatedAt: updatedAt ?? new Date().toISOString(),
+      isRunning: false,
+      runningStartedAt: undefined,
+    }));
   }, []);
 
   // Load parent/child session navigation links
@@ -595,14 +679,9 @@ export function AgentChatPanel({
     streamTargetSessionRef.current = null;
     finalizingRef.current = false;
 
-    // Mark current session as read (user was watching the stream)
     const currentSid = sessionIdRef.current;
     if (currentSid) {
-      fetch(`/api/agent-chat/sessions/${currentSid}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'markAsRead' }),
-      }).catch(() => {});
+      clearSessionRunning(currentSid);
     }
 
     // Refresh session list to get AI-generated title
@@ -755,9 +834,10 @@ export function AgentChatPanel({
 
             case 'session_title_set':
               setSessionTitle(event.title);
-              setSessionList(prev => prev.map(s =>
-                s.id === targetSessionId ? { ...s, title: event.title } : s,
-              ));
+              setSessionList((prev) => patchSessionListItem(prev, targetSessionId, {
+                title: event.title,
+                updatedAt: new Date().toISOString(),
+              }));
               // Notify parent immediately to update sidebar title.
               onSessionChange?.({
                 id: targetSessionId,
@@ -853,7 +933,10 @@ export function AgentChatPanel({
     if (!hasProject && initialSessionId === null) return;
 
     // Helper: reconnect to a running stream
-    const reconnectRunning = (sid: string, statusData: { messages?: Array<{ role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }> }) => {
+    const reconnectRunning = (sid: string, statusData: {
+      messages?: Array<{ role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }>;
+      startedAt?: string;
+    }) => {
       if (Array.isArray(statusData.messages) && statusData.messages.length > 0) {
         const restored: ChatMessage[] = statusData.messages.map(
           (m: { role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }, i: number) => ({
@@ -866,6 +949,7 @@ export function AgentChatPanel({
         );
         setMessages(restored);
       }
+      markSessionRunning(sid, statusData.startedAt);
       setIsStreaming(true);
       blocksRef.current = [];
       fullTextRef.current = '';
@@ -1034,9 +1118,15 @@ export function AgentChatPanel({
         title: quickTitle,
         updatedAt: new Date().toISOString(),
       };
-      setSessionList(prev => [newItem, ...prev]);
+      setSessionList((prev) => upsertSessionListItem(prev, newItem));
       onSessionChange?.(newItem);
     }
+
+    markSessionRunning(
+      targetSessionId,
+      new Date().toISOString(),
+      text.trim().slice(0, 10) || sessionTitle,
+    );
 
     try {
       // Expand /skill-name command into skill body before sending to backend.
@@ -1098,8 +1188,9 @@ export function AgentChatPanel({
       console.error('Agent chat send failed:', msg);
       setErrorMsg(msg);
       setIsStreaming(false);
+      clearSessionRunning(targetSessionId);
     }
-  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, chatProvider, chatModel, chatEffort, connectToStream, onSessionChange, t, sessionConfig, setSessionIdSync, persistPendingUserQueue]);
+  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, chatProvider, chatModel, chatEffort, connectToStream, onSessionChange, t, sessionConfig, setSessionIdSync, persistPendingUserQueue, sessionTitle, markSessionRunning, clearSessionRunning]);
 
   // Keep doSendRef in sync (avoid stale closure in event listener)
   useEffect(() => {
@@ -1188,6 +1279,7 @@ export function AgentChatPanel({
       streamAbortRef.current.abort();
       streamAbortRef.current = null;
     }
+    clearSessionRunning(sessionId);
     finalizeStream();
   };
 
@@ -1329,7 +1421,7 @@ export function AgentChatPanel({
     setQueueExpanded(true);
     // Mark as read
     if (target.unreadCount) {
-      setSessionList(prev => prev.map(s => s.id === target.id ? { ...s, unreadCount: 0 } : s));
+      setSessionList((prev) => patchSessionListItem(prev, target.id, { unreadCount: 0 }));
       fetch(`/api/agent-chat/sessions/${target.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -1378,7 +1470,7 @@ export function AgentChatPanel({
         updatedAt: new Date().toISOString(),
         unreadCount: 0,
       };
-      setSessionList(prev => [newItem, ...prev]);
+      setSessionList((prev) => upsertSessionListItem(prev, newItem));
 
       // Abort streaming if active so the session switch is not blocked
       if (streamAbortRef.current) {
@@ -1789,6 +1881,7 @@ export function AgentChatPanel({
             <SessionDropdown
               sessionTitle={sessionTitle}
               sessions={sessionList}
+              clockNow={sessionClockNow}
               currentSessionId={sessionId}
               isStreaming={isStreaming}
               onSwitch={handleSwitchSession}
@@ -2117,7 +2210,11 @@ export function AgentChatPanel({
               >
                 <MessageSquare className={`h-3.5 w-3.5 shrink-0 ${s.id === sessionId ? 'text-blue-500 dark:text-blue-400' : ''}`} />
                 <span className="truncate flex-1 text-left">{s.title}</span>
-                {s.id !== sessionId && !!s.unreadCount && s.unreadCount > 0 && (
+                {s.isRunning ? (
+                  <span className="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-blue-700 dark:bg-blue-950/70 dark:text-blue-300">
+                    {formatSessionElapsed(s.runningStartedAt, sessionClockNow)}
+                  </span>
+                ) : !!s.unreadCount && s.unreadCount > 0 && (
                   <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-medium leading-none text-white">
                     {s.unreadCount > 99 ? '99+' : s.unreadCount}
                   </span>
