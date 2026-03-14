@@ -23,6 +23,7 @@
  *   --parent-session   Optional. Parent session ID for traceability
  *   --port             Optional. Server port (default: 4000 or PROJECT_PILOT_PORT)
  *   --timeout          Optional. Timeout in seconds (default: 300, sync mode only)
+ *   --task-file        Optional. Path to a file containing full task details (appended to --message)
  *   --depth            Optional. Current call depth for recursion guard (default: 0, max: 3)
  *
  * Stdout (structured JSON — ALWAYS machine-parseable):
@@ -39,6 +40,7 @@
  *   2 — Still running (--poll mode only)
  */
 
+import fs from 'fs';
 import http from 'http';
 
 // ── Constants ──
@@ -464,14 +466,21 @@ async function main() {
 
   // ── Mode: --async / sync (default) ──
   const agentId = opts['agent-id'];
-  const message = opts['message'];
   const isAsync = opts['async'] === 'true';
+
+  // --task-file: read file content and append/use as message
+  const taskFile = opts['task-file'];
+  let message = opts['message'] || '';
+  if (taskFile && taskFile !== 'true') {
+    const fileContent = fs.readFileSync(taskFile, 'utf-8').trim();
+    message = message ? `${message}\n\n---\n\n${fileContent}` : fileContent;
+  }
 
   if (!agentId || !message) {
     process.stderr.write(
       'Usage:\n' +
-      '  npx tsx src/lib/call-agent.ts --agent-id <ID> --message "指令" [options]\n' +
-      '  npx tsx src/lib/call-agent.ts --agent-id <ID> --message "指令" --async [options]\n' +
+      '  npx tsx src/lib/call-agent.ts --agent-id <ID> --message "指令" [--task-file path] [options]\n' +
+      '  npx tsx src/lib/call-agent.ts --agent-id <ID> --message "指令" --async [--task-file path] [options]\n' +
       '  npx tsx src/lib/call-agent.ts --poll <sessionId> [--port 4000]\n',
     );
     process.exit(1);

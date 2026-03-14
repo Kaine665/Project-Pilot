@@ -6,9 +6,21 @@ import {
   Settings, MessageSquare, Archive, ArchiveRestore,
   Download, Upload, FileDown, FolderOpen,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
-import { AgentChatPanel } from '@/components/agent-chat-panel';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
+
+const AgentChatPanel = dynamic(
+  () => import('@/components/agent-chat-panel').then(m => ({ default: m.AgentChatPanel })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-muted-foreground/30 border-t-primary" />
+      </div>
+    ),
+  }
+);
 import { AgentIcon, SettingsForm, type FormData, emptyForm, agentToForm } from '@/components/agent-form';
 import { type AllSessionItem, type OpenedSession, groupSessionsByDay, syncUrlParams } from '@/components/agent-session-utils';
 import { useProject } from '@/components/project-context';
