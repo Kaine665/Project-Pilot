@@ -6,7 +6,7 @@ const DEFAULT: TodosData = { todos: [] };
 
 /**
  * PATCH /api/todos/:id
- * Update a todo item (title, description, status, priority).
+ * Update a todo item (title, description, status, priority, dueAt).
  */
 export async function PATCH(
   request: NextRequest,
@@ -19,7 +19,7 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const { title, description, status, priority, agentId, sessionId, projectKey } = body;
+  const { title, description, status, priority, agentId, sessionId, projectKey, dueAt } = body;
 
   const validStatuses = ['pending', 'in_progress', 'done'];
   const validPriorities = ['high', 'medium', 'low'];
@@ -39,6 +39,9 @@ export async function PATCH(
   if (agentId !== undefined && agentId !== null && typeof agentId !== 'string') {
     return NextResponse.json({ error: 'Invalid agentId' }, { status: 400 });
   }
+  if (dueAt !== undefined && dueAt !== null && typeof dueAt !== 'string') {
+    return NextResponse.json({ error: 'Invalid dueAt' }, { status: 400 });
+  }
 
   let updated: TodosData['todos'][number] | null = null;
 
@@ -55,6 +58,7 @@ export async function PATCH(
         ...(agentId !== undefined && { agentId: agentId || undefined }),
         ...(sessionId !== undefined && { sessionId: sessionId || undefined }),
         ...(projectKey !== undefined && { projectKey: projectKey || undefined }),
+        ...(dueAt !== undefined && { dueAt: dueAt || undefined }),
         updatedAt: new Date().toISOString(),
       };
       updated = patched;
