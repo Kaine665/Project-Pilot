@@ -14,8 +14,32 @@ export function useNotificationManager() {
   const notifier = useMemo(() => completionNotifier, []);
 
   useEffect(() => {
+    // 初始化：请求通知权限（如果需要）
+    if (BrowserNotifier.isSupported()) {
+      const permission = BrowserNotifier.getPermission();
+      console.debug('[useNotificationManager] 当前通知权限:', permission);
+
+      if (permission === 'default') {
+        // 尝试请求权限（用户交互上下文中）
+        Notification.requestPermission()
+          .then((perm) => {
+            console.debug('[useNotificationManager] 权限请求结果:', perm);
+          })
+          .catch((err) => {
+            console.warn('[useNotificationManager] 权限请求错误:', err);
+          });
+      }
+    }
+
     // 初始化音频预加载
-    notifier.preloadSound();
+    notifier
+      .preloadSound()
+      .then(() => {
+        console.debug('[useNotificationManager] 音频预加载成功');
+      })
+      .catch((err) => {
+        console.warn('[useNotificationManager] 音频预加载错误:', err);
+      });
 
     // 清理函数
     return () => {

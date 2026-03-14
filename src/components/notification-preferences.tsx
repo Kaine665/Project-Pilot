@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import {
   getNotificationSettings,
   updateNotificationSettings,
-} from '@/lib/settings-manager';
+} from '@/lib/notification-settings-client';
 import { completionNotifier } from '@/lib/completion-notifier';
 import type { NotificationSettings } from '@/types';
 

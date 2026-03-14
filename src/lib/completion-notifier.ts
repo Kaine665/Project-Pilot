@@ -12,7 +12,7 @@ import {
   NOTIFICATION_CONFIG,
   AUDIO_CONFIG,
 } from './notification/notification-config';
-import { getNotificationSettings } from './settings-manager';
+import { getNotificationSettings } from './notification-settings-client';
 
 export interface CompletionNotifyParams {
   agentName: string;
@@ -34,10 +34,16 @@ export class CompletionNotifier {
     try {
       // 1. 读取用户设置
       const settings = await getNotificationSettings();
+      console.debug('[CompletionNotifier] 设置已加载:', {
+        enabled: settings.enabled,
+        soundEnabled: settings.soundEnabled,
+        soundVolume: settings.soundVolume,
+        onlyWhenUnfocused: settings.onlyWhenUnfocused,
+      });
 
       // 如果通知被禁用，直接返回
       if (!settings.enabled) {
-        console.debug('[CompletionNotifier] 通知已禁用');
+        console.info('[CompletionNotifier] 通知已禁用，跳过');
         return;
       }
 
@@ -54,6 +60,7 @@ export class CompletionNotifier {
         return;
       }
       this.lastNotificationTime = now;
+      console.debug('[CompletionNotifier] 准备发送通知:', params);
 
       // 4. 构建通知内容
       const notificationTitle = NOTIFICATION_CONFIG.MESSAGES.TITLE;
@@ -78,6 +85,7 @@ export class CompletionNotifier {
           sessionId: params.sessionId, // Phase 3: 传递 sessionId 用于点击导航
           onClick: params.navigateToSession,
         });
+        console.debug('[CompletionNotifier] Electron 通知发送结果:', notified);
       } else {
         console.debug('[CompletionNotifier] 使用 Web Notifications API');
         notified = await this.browserNotifier.sendNotification({
@@ -87,18 +95,28 @@ export class CompletionNotifier {
           tag: notificationTag,
           onClick: params.navigateToSession,
         });
+        console.debug('[CompletionNotifier] Web 通知发送结果:', notified);
       }
 
       // 6. 播放音频
       if (settings.soundEnabled && notified) {
-        console.debug('[CompletionNotifier] 播放通知音频');
-        await this.audioPlayer.playSound(AUDIO_CONFIG.DEFAULT_SOUND_PATH, {
-          volume: settings.soundVolume || AUDIO_CONFIG.DEFAULT_VOLUME,
-          maxRetries: AUDIO_CONFIG.MAX_RETRIES,
-        });
+        console.debug('[CompletionNotifier] 播放通知音频，音量:', settings.soundVolume);
+        try {
+          await this.audioPlayer.playSound(AUDIO_CONFIG.DEFAULT_SOUND_PATH, {
+            volume: settings.soundVolume || AUDIO_CONFIG.DEFAULT_VOLUME,
+            maxRetries: AUDIO_CONFIG.MAX_RETRIES,
+          });
+          console.debug('[CompletionNotifier] 音频播放完成');
+        } catch (audioErr) {
+          console.warn('[CompletionNotifier] 音频播放失败:', audioErr);
+        }
+      } else if (!settings.soundEnabled) {
+        console.debug('[CompletionNotifier] 音频已禁用');
+      } else {
+        console.debug('[CompletionNotifier] 通知发送失败，跳过音频');
       }
     } catch (error) {
-      console.error('[CompletionNotifier] 通知失败:', error);
+      console.error('[CompletionNotifier] 通知流程错误:', error);
     }
   }
 
