@@ -370,57 +370,32 @@ export default function SkillsPage() {
     try {
       const res = await fetch(`/api/skills/${encodeURIComponent(selected)}/export?format=${format}`);
       if (!res.ok) return;
-      const data = await res.json() as { dirName: string; fileName: string; content: string };
-      // 触发下载
-      const blob = new Blob([data.content], { type: 'text/plain;charset=utf-8' });
+      const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = data.fileName;
+      a.download = `${selected}-${format}.zip`;
       a.click();
       URL.revokeObjectURL(url);
     } catch { /* ignore */ }
   };
 
-  const handleCopyExport = async (format: string) => {
-    if (!selected) return;
+  const handleCopyExport = async (_format: string) => {
+    // ZIP 格式无法复制到剪贴板，此功能已停用
     setShowExportMenu(false);
-    try {
-      const res = await fetch(`/api/skills/${encodeURIComponent(selected)}/export?format=${format}`);
-      if (!res.ok) return;
-      const data = await res.json() as { content: string };
-      await navigator.clipboard.writeText(data.content);
-      setExportCopied(true);
-      setTimeout(() => setExportCopied(false), 2000);
-    } catch { /* ignore */ }
   };
 
   const handleBatchExport = async (format: string) => {
     setShowBatchExportMenu(false);
     try {
-      const res = await fetch(`/api/skills/export-all?format=${format}`);
+      const res = await fetch(`/api/skills/export-all?format=${format}&output=zip`);
       if (!res.ok) return;
-      const data = await res.json() as { skills: { dirName: string; fileName: string; content: string }[] };
-      if (!data.skills?.length) return;
-      // 单个 skill 直接下载文件
-      if (data.skills.length === 1) {
-        const s = data.skills[0];
-        const blob = new Blob([s.content], { type: 'text/plain;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = s.fileName;
-        a.click();
-        URL.revokeObjectURL(url);
-        return;
-      }
-      // 多个 skill：合并为单个 JSON 文件下载（ZIP 预留）
-      const combined = JSON.stringify(data.skills, null, 2);
-      const blob = new Blob([combined], { type: 'application/json;charset=utf-8' });
+      const blob = await res.blob();
+      const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `skills-export-${format}.json`;
+      a.download = `skills-export-${format}-${timestamp}.zip`;
       a.click();
       URL.revokeObjectURL(url);
     } catch { /* ignore */ }
