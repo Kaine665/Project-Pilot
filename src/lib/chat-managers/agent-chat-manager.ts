@@ -31,6 +31,7 @@ import { resourceRegistry } from '@/lib/resource-registry';
 import '@/lib/resource-loaders'; // side-effect: registers non-action loaders
 import '@/lib/agent-actions';    // side-effect: registers actions + their loaders
 import { actionRegistry } from '@/lib/agent-actions';
+import { estimateTokens } from '@/lib/token-estimate';
 import { migrateAgentToResources } from '@/lib/resource-migration';
 import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
 import { checkSessionHealth, buildGuardMessage } from './session-health-guard';
@@ -1027,8 +1028,7 @@ export async function buildPromptPreview(
   const promptText = await buildResourcePrompt(agent, undefined, config, sessionId, projectKey);
   return {
     charCount: promptText.length,
-    // 粗略估算：英文 ~4 chars/token，中文 ~1.5 chars/token，取 3.5 折中
-    estimatedTokens: Math.ceil(promptText.length / 3.5),
+    estimatedTokens: estimateTokens(promptText),
   };
 }
 

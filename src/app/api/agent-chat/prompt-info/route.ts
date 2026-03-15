@@ -8,7 +8,7 @@ import { isValidProjectKey, isValidSessionId } from '@/lib/security';
  *
  * 构建 Agent 完整系统提示词（不含用户消息），返回：
  * - charCount: 字符数
- * - estimatedTokens: 估算 token 数（chars / 3.5）
+ * - estimatedTokens: 估算 token 数（CJK-aware：中文 ~1.5 chars/token，英文 ~4 chars/token）
  * - contextWindow: 当前模型的上下文窗口大小（token）
  *
  * 用于在 UI 中展示"提示词占用量"和"上下文窗口圆环"。

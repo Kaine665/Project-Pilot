@@ -98,6 +98,7 @@ export class SdkEventAdapter {
             inputTokens,
             outputTokens,
             ...(contextWindow > 0 ? { contextWindow } : {}),
+            final: true, // result 事件的累计总量，直接替换而非累加
           });
         }
       }

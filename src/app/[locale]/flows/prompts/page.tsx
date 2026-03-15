@@ -84,8 +84,8 @@ export default function PromptsPage() {
   const [expandedBlock, setExpandedBlock] = useState<string | null>(null);
   const [enabledMap, setEnabledMap] = useState<Record<string, boolean>>({});
 
-  // Context window (default 128k)
-  const contextWindow = 128000;
+  // Context window — 从 prompt-info API 获取实际值，默认 200k（Claude 系列）
+  const [contextWindow, setContextWindow] = useState(200000);
 
   // ── Fetch agents ──
   useEffect(() => {
@@ -124,6 +124,20 @@ export default function PromptsPage() {
   useEffect(() => {
     fetchBlocks();
   }, [fetchBlocks]);
+
+  // Fetch context window from prompt-info API when agent changes
+  useEffect(() => {
+    (async () => {
+      try {
+        const params = new URLSearchParams();
+        if (selectedAgent) params.set('agentId', selectedAgent.id);
+        if (activeKey) params.set('projectKey', activeKey);
+        const res = await fetch(`/api/agent-chat/prompt-info?${params}`);
+        const data = await res.json();
+        if (data.contextWindow > 0) setContextWindow(data.contextWindow);
+      } catch { /* ignore */ }
+    })();
+  }, [selectedAgent, activeKey]);
 
   // ── Build tree items ──
   const treeItems = useMemo((): TreeItem[] => {
