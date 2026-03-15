@@ -249,7 +249,15 @@ export default function AgentsPage() {
         // 保留 prev 中已有但 cached 中没有的条目（乐观插入的新会话）
         const cachedIds = new Set(cached.map(s => s.id));
         const optimistic = prev.filter(s => !cachedIds.has(s.id));
-        return optimistic.length > 0 ? [...optimistic, ...cached] : cached;
+        // 保留 prev 中的运行时状态（isRunning 不会被持久化到缓存或 API）
+        const runtimeMap = new Map<string, Pick<AllSessionItem, 'isRunning' | 'runningStartedAt'>>();
+        for (const s of prev) {
+          if (s.isRunning) runtimeMap.set(s.id, { isRunning: s.isRunning, runningStartedAt: s.runningStartedAt });
+        }
+        const restored = runtimeMap.size > 0
+          ? cached.map(s => { const rt = runtimeMap.get(s.id); return rt ? { ...s, ...rt } : s; })
+          : cached;
+        return optimistic.length > 0 ? [...optimistic, ...restored] : restored;
       });
     }
 
@@ -286,7 +294,15 @@ export default function AgentsPage() {
           !remoteIds.has(s.id)
           && (!key || !s.projectKey || s.projectKey === key),
         );
-        const merged = [...localOnly, ...sessions];
+        // 保留 prev 中的运行时状态（isRunning 不会被 API 返回）
+        const runtimeMap = new Map<string, Pick<AllSessionItem, 'isRunning' | 'runningStartedAt'>>();
+        for (const s of prev) {
+          if (s.isRunning) runtimeMap.set(s.id, { isRunning: s.isRunning, runningStartedAt: s.runningStartedAt });
+        }
+        const restoredSessions = runtimeMap.size > 0
+          ? sessions.map(s => { const rt = runtimeMap.get(s.id); return rt ? { ...s, ...rt } : s; })
+          : sessions;
+        const merged = [...localOnly, ...restoredSessions];
         // 写入缓存
         sessionCacheRef.current.set(cacheKey, merged);
         return merged;
