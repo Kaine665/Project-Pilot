@@ -5,7 +5,7 @@ import {
   Plus, Trash2, History, RotateCcw, Save, X, Blocks,
   FileText, FileCode, BookOpen, Image, FolderOpen,
   ArrowLeft, ChevronRight, ChevronDown, Clock, Search,
-  Folder,
+  Folder, Download, Copy, Check,
 } from 'lucide-react';
 
 // ── Types ──
@@ -112,6 +112,13 @@ export default function SkillsPage() {
   const [addingFile, setAddingFile] = useState<string | null>(null);
   const [newFileName, setNewFileName] = useState('');
   const [newFileContent, setNewFileContent] = useState('');
+
+  // Export
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showBatchExportMenu, setShowBatchExportMenu] = useState(false);
+  const [exportCopied, setExportCopied] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+  const batchExportMenuRef = useRef<HTMLDivElement>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -356,6 +363,83 @@ export default function SkillsPage() {
     });
   };
 
+  // ── Export ──
+  const handleExport = async (format: string) => {
+    if (!selected) return;
+    setShowExportMenu(false);
+    try {
+      const res = await fetch(`/api/skills/${encodeURIComponent(selected)}/export?format=${format}`);
+      if (!res.ok) return;
+      const data = await res.json() as { dirName: string; fileName: string; content: string };
+      // 触发下载
+      const blob = new Blob([data.content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = data.fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { /* ignore */ }
+  };
+
+  const handleCopyExport = async (format: string) => {
+    if (!selected) return;
+    setShowExportMenu(false);
+    try {
+      const res = await fetch(`/api/skills/${encodeURIComponent(selected)}/export?format=${format}`);
+      if (!res.ok) return;
+      const data = await res.json() as { content: string };
+      await navigator.clipboard.writeText(data.content);
+      setExportCopied(true);
+      setTimeout(() => setExportCopied(false), 2000);
+    } catch { /* ignore */ }
+  };
+
+  const handleBatchExport = async (format: string) => {
+    setShowBatchExportMenu(false);
+    try {
+      const res = await fetch(`/api/skills/export-all?format=${format}`);
+      if (!res.ok) return;
+      const data = await res.json() as { skills: { dirName: string; fileName: string; content: string }[] };
+      if (!data.skills?.length) return;
+      // 单个 skill 直接下载文件
+      if (data.skills.length === 1) {
+        const s = data.skills[0];
+        const blob = new Blob([s.content], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = s.fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+        return;
+      }
+      // 多个 skill：合并为单个 JSON 文件下载（ZIP 预留）
+      const combined = JSON.stringify(data.skills, null, 2);
+      const blob = new Blob([combined], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `skills-export-${format}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { /* ignore */ }
+  };
+
+  // Close export menus on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (showExportMenu && exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+      if (showBatchExportMenu && batchExportMenuRef.current && !batchExportMenuRef.current.contains(e.target as Node)) {
+        setShowBatchExportMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showExportMenu, showBatchExportMenu]);
+
   // ── Ctrl+S ──
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -467,6 +551,62 @@ export default function SkillsPage() {
                   编辑
                 </button>
               )}
+              {/* Export dropdown */}
+              <div className="relative" ref={exportMenuRef}>
+                <button
+                  onClick={() => setShowExportMenu(!showExportMenu)}
+                  className={`rounded-md p-1.5 transition-colors ${
+                    showExportMenu
+                      ? 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+                      : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300'
+                  }`}
+                  title="导出"
+                >
+                  {exportCopied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Download className="h-3.5 w-3.5" />}
+                </button>
+                {showExportMenu && (
+                  <div className="absolute right-0 top-full mt-1 w-52 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg z-50 py-1 overflow-hidden">
+                    <div className="px-3 py-1.5 text-[10px] font-medium text-zinc-400 uppercase tracking-wider">下载</div>
+                    <button
+                      onClick={() => handleExport('openclaw')}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                    >
+                      <Download className="h-3 w-3 text-zinc-400" />
+                      OpenClaw 格式
+                    </button>
+                    <button
+                      onClick={() => handleExport('raw')}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                    >
+                      <Download className="h-3 w-3 text-zinc-400" />
+                      原始 Markdown
+                    </button>
+                    <button
+                      onClick={() => handleExport('json')}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                    >
+                      <Download className="h-3 w-3 text-zinc-400" />
+                      JSON（通用）
+                    </button>
+                    <div className="border-t border-zinc-100 dark:border-zinc-800 my-1" />
+                    <div className="px-3 py-1.5 text-[10px] font-medium text-zinc-400 uppercase tracking-wider">复制到剪贴板</div>
+                    <button
+                      onClick={() => handleCopyExport('openclaw')}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                    >
+                      <Copy className="h-3 w-3 text-zinc-400" />
+                      OpenClaw 格式
+                    </button>
+                    <button
+                      onClick={() => handleCopyExport('raw')}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                    >
+                      <Copy className="h-3 w-3 text-zinc-400" />
+                      原始 Markdown
+                    </button>
+                  </div>
+                )}
+              </div>
               <button
                 onClick={handleToggleHistory}
                 className={`rounded-md p-1.5 transition-colors ${
@@ -851,6 +991,42 @@ export default function SkillsPage() {
                 placeholder="搜索..."
                 className="w-48 rounded-md border border-zinc-200 dark:border-zinc-700 pl-8 pr-3 py-1.5 text-xs outline-none focus:border-zinc-400 dark:bg-zinc-900 dark:focus:border-zinc-500 transition-colors"
               />
+            </div>
+            {/* Batch export */}
+            <div className="relative" ref={batchExportMenuRef}>
+              <button
+                onClick={() => setShowBatchExportMenu(!showBatchExportMenu)}
+                disabled={skills.length === 0}
+                className="rounded-md border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-40 flex items-center gap-1.5 transition-colors"
+              >
+                <Download className="h-3.5 w-3.5" />
+                批量导出
+              </button>
+              {showBatchExportMenu && (
+                <div className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg z-50 py-1 overflow-hidden">
+                  <button
+                    onClick={() => handleBatchExport('openclaw')}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                  >
+                    <Download className="h-3 w-3 text-zinc-400" />
+                    OpenClaw 格式
+                  </button>
+                  <button
+                    onClick={() => handleBatchExport('raw')}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                  >
+                    <Download className="h-3 w-3 text-zinc-400" />
+                    原始 Markdown
+                  </button>
+                  <button
+                    onClick={() => handleBatchExport('json')}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                  >
+                    <Download className="h-3 w-3 text-zinc-400" />
+                    JSON（通用）
+                  </button>
+                </div>
+              )}
             </div>
             <button
               onClick={() => { setCreating(true); setSelected(null); }}
