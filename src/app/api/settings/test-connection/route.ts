@@ -8,7 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getProviderPreset } from '@/lib/provider-registry';
+import { getKimiCandidateBaseUrls, getProviderPreset } from '@/lib/provider-registry';
 import { getSettings, saveSettings, getProviderScopedApiKey, getProviderScopedModel } from '@/lib/settings-manager';
 import { agentChatManager, deleteSessionFromDisk } from '@/lib/agent-chat-manager';
 import { BUTLER_AGENT_ID } from '@/lib/default-agents';
@@ -196,27 +196,48 @@ async function testConversationConnection(
   const customBaseUrl = provider.startsWith('custom-')
     ? current.claude.customProviders?.find((c) => c.id === provider)?.baseUrl
     : undefined;
+  const modelId = typeof model === 'string' ? model.trim() : '';
 
-  // 用户手动填了 baseUrl，或已有探测成功的 URL，或自定义供应商配置中的 URL
+  if (provider === 'kimi') {
+    const candidates = getKimiCandidateBaseUrls(
+      modelId,
+      userProvidedUrl || savedProviderUrl || customBaseUrl,
+    );
+    if (!candidates.length) {
+      return NextResponse.json({ ok: false, error: '缺少 API 地址' }, { status: 400 });
+    }
+
+    for (const url of candidates) {
+      const result = await runSingleTest(provider, key, modelId, url, current);
+      if (result.ok) {
+        return NextResponse.json({ ok: true, baseUrl: url });
+      }
+    }
+
+    return NextResponse.json({
+      ok: false,
+      error: 'Kimi 渠道均不可用，请确认所选模型对应的 API Key 与 Base URL',
+    });
+  }
+
+  // 其他供应商：用户手动填了 baseUrl，或已有探测成功的 URL，或自定义供应商配置中的 URL
   const effectiveBaseUrl = userProvidedUrl || savedProviderUrl || customBaseUrl;
   if (effectiveBaseUrl) {
-    const result = await runSingleTest(provider, key, model, effectiveBaseUrl, current);
+    const result = await runSingleTest(provider, key, modelId, effectiveBaseUrl, current);
     if (result.ok) {
       return NextResponse.json({ ok: true });
     }
     return NextResponse.json({ ok: false, error: result.error });
   }
 
-  // Kimi 等：无保存 URL 时依次尝试候选
   const candidates = preset.candidateBaseUrls;
   if (!candidates?.length) {
     return NextResponse.json({ ok: false, error: '缺少 API 地址' }, { status: 400 });
   }
 
   for (const url of candidates) {
-    const result = await runSingleTest(provider, key, model, url, current);
+    const result = await runSingleTest(provider, key, modelId, url, current);
     if (result.ok) {
-      // 成功：providerBaseUrls 已在 runSingleTest 的 merged 中写入并保存
       return NextResponse.json({ ok: true, baseUrl: url });
     }
   }
@@ -230,7 +251,8 @@ async function testConversationConnection(
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    let { provider, authMode, apiKey, model, baseUrl } = body;
+    const { provider, authMode } = body;
+    let { apiKey, model, baseUrl } = body;
 
     if (!provider || typeof provider !== 'string') {
       return NextResponse.json({ ok: false, error: 'Missing provider' }, { status: 400 });
