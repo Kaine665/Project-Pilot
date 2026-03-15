@@ -22,6 +22,8 @@
  *   GET  /schedules/:id
  *   PATCH /schedules/:id
  *   DELETE /schedules/:id
+ *   POST /schedules/:id/trigger
+ *   GET  /schedules/:id/runs
  */
 
 import http from 'http';
@@ -382,6 +384,34 @@ async function handleDeleteSchedule(
   jsonResponse(res, { success: true });
 }
 
+async function handleTriggerSchedule(
+  res: http.ServerResponse,
+  scheduleId: string,
+): Promise<void> {
+  try {
+    const run = await schedulerManager.triggerNow(scheduleId);
+    jsonResponse(res, { run });
+  } catch (err) {
+    const msg = (err as Error).message;
+    const status = msg.includes('不存在') ? 404 : 400;
+    jsonResponse(res, { error: msg }, status);
+  }
+}
+
+async function handleListRuns(
+  res: http.ServerResponse,
+  scheduleId: string,
+  url: URL,
+): Promise<void> {
+  const limit = parseInt(url.searchParams.get('limit') ?? '20', 10);
+  try {
+    const runs = await schedulerManager.listRuns(scheduleId, limit);
+    jsonResponse(res, { runs });
+  } catch (err) {
+    jsonResponse(res, { error: (err as Error).message }, 500);
+  }
+}
+
 // ── HTTP server ──────────────────────────────────────────────────────────────
 
 const server = http.createServer(async (req, res) => {
@@ -437,6 +467,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── Schedules ──
+    const scheduleTriggerMatch = pathname.match(/^\/schedules\/([^/]+)\/trigger$/);
+    const scheduleRunsMatch = pathname.match(/^\/schedules\/([^/]+)\/runs$/);
     const scheduleMatch = pathname.match(/^\/schedules\/([^/]+)$/);
 
     if (pathname === '/schedules' && method === 'GET') {
@@ -445,6 +477,14 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === '/schedules' && method === 'POST') {
       await handleCreateSchedule(req, res);
+      return;
+    }
+    if (scheduleTriggerMatch && method === 'POST') {
+      await handleTriggerSchedule(res, scheduleTriggerMatch[1]);
+      return;
+    }
+    if (scheduleRunsMatch && method === 'GET') {
+      await handleListRuns(res, scheduleRunsMatch[1], url);
       return;
     }
     if (scheduleMatch && method === 'GET') {

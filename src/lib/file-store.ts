@@ -673,6 +673,10 @@ export function getSchedulesPath(): string {
   return path.join(DATA_DIR, 'agent-schedules.json');
 }
 
+export function getScheduleRunsPath(): string {
+  return path.join(DATA_DIR, 'agent-schedule-runs.json');
+}
+
 /**
  * 通知数据已变更（供 MCP Server 写入后触发 UI 刷新）
  */

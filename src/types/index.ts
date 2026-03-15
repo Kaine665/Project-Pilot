@@ -635,3 +635,20 @@ export interface AgentSchedule {
 export interface AgentSchedulesData {
   schedules: AgentSchedule[];
 }
+
+/**
+ * 单次调度执行记录。
+ */
+export interface ScheduleRunRecord {
+  id: string;           // run-{timestamp}-{random4}
+  scheduleId: string;   // 关联的 AgentSchedule ID
+  sessionId: string;    // 创建的 Agent 会话 ID
+  trigger: 'cron' | 'manual';  // 触发方式
+  startedAt: string;    // ISO timestamp
+  status: 'started' | 'completed' | 'failed';
+  error?: string;       // 失败时的错误信息
+}
+
+export interface ScheduleRunsData {
+  runs: ScheduleRunRecord[];
+}
