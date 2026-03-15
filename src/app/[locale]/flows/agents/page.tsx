@@ -119,6 +119,8 @@ export default function AgentsPage() {
 
   // ── Multi-instance session panels (切换不销毁) ──
   const [openedSessions, setOpenedSessions] = useState<OpenedSession[]>([]);
+  const openedSessionsRef = useRef<OpenedSession[]>(openedSessions);
+  openedSessionsRef.current = openedSessions;
   const nextKeyRef = useRef(1);
 
   // ── Agent create/edit ──
@@ -379,22 +381,19 @@ export default function AgentsPage() {
       }).catch(() => {});
     }
 
-    // Check if already opened
-    setOpenedSessions(prev => {
-      const existing = prev.find(
-        o => o.sessionId === session.id && o.agentId === session.agentId,
-      );
-      if (existing) {
-        setActivePanel({ type: 'session', key: existing.key });
-        syncUrlParams({ agent: session.agentId, session: session.id });
-        return prev;
-      }
-      // Open new instance
+    // Read latest via ref to avoid calling setState/syncUrlParams inside an updater
+    const existing = openedSessionsRef.current.find(
+      o => o.sessionId === session.id && o.agentId === session.agentId,
+    );
+
+    if (existing) {
+      setActivePanel({ type: 'session', key: existing.key });
+    } else {
       const key = nextKeyRef.current++;
+      setOpenedSessions(prev => [...prev, { sessionId: session.id, agentId: session.agentId, key }]);
       setActivePanel({ type: 'session', key });
-      syncUrlParams({ agent: session.agentId, session: session.id });
-      return [...prev, { sessionId: session.id, agentId: session.agentId, key }];
-    });
+    }
+    syncUrlParams({ agent: session.agentId, session: session.id });
   }, []);
 
   const handleNewSession = (agent: Agent) => {
