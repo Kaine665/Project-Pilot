@@ -394,17 +394,19 @@ interface TaskDrawerProps {
   agents: Agent[];
   agentMap: Map<string, Agent>;
   saving: boolean;
+  dispatching: boolean;
   onDraftChange: (d: Partial<TodoDraft>) => void;
   onSave: () => void;
   onDelete?: () => void;
   onClose: () => void;
   onNavigateSession: () => void;
+  onDispatchAgent: () => void;
   locale: string;
 }
 
 function TaskDrawer({
-  mode, draft, task, agents, agentMap, saving,
-  onDraftChange, onSave, onDelete, onClose, onNavigateSession, locale,
+  mode, draft, task, agents, agentMap, saving, dispatching,
+  onDraftChange, onSave, onDelete, onClose, onNavigateSession, onDispatchAgent, locale,
 }: TaskDrawerProps) {
   const [tagInput, setTagInput] = useState('');
   const [newSubTask, setNewSubTask] = useState('');
@@ -698,11 +700,12 @@ function TaskDrawer({
                   </div>
                   <button
                     type="button"
-                    onClick={onNavigateSession}
-                    className="flex shrink-0 items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white transition hover:bg-blue-700"
+                    disabled={dispatching}
+                    onClick={onDispatchAgent}
+                    className="flex shrink-0 items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
                   >
-                    <Zap className="h-3.5 w-3.5" />
-                    启动
+                    <Zap className={`h-3.5 w-3.5 ${dispatching ? 'animate-pulse' : ''}`} />
+                    {dispatching ? '启动中...' : '启动'}
                   </button>
                 </div>
               ) : (
@@ -795,6 +798,9 @@ export default function TodosPage() {
   const [batchMode, setBatchMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchLoading, setBatchLoading] = useState(false);
+
+  // Dispatch agent state
+  const [dispatching, setDispatching] = useState(false);
 
   const agentMap = useMemo(() => new Map(agents.map(a => [a.id, a])), [agents]);
   const activeTask = useMemo(() => todos.find(t => t.id === activeTaskId) ?? null, [todos, activeTaskId]);
@@ -1075,6 +1081,53 @@ export default function TodosPage() {
       router.push(`/${locale}/agents?agent=${activeTask.agentId}`);
     }
     closeDrawer();
+  }
+
+  async function handleDispatchAgent() {
+    if (!activeTask || !activeTask.agentId || dispatching) return;
+    setDispatching(true);
+    try {
+      // Build message from todo title + description
+      const parts = [activeTask.title];
+      if (activeTask.description) parts.push(activeTask.description);
+      const message = parts.join('\n\n');
+
+      // 1. Create agent session
+      const chatRes = await fetch('/api/agent-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agentId: activeTask.agentId,
+          message,
+          projectKey: activeTask.projectKey || undefined,
+          initialTitle: activeTask.title.slice(0, 10) || undefined,
+        }),
+      });
+      if (!chatRes.ok) throw new Error(`Failed to start session: ${chatRes.status}`);
+      const { sessionId: newSessionId } = await chatRes.json() as { sessionId: string };
+
+      // 2. Write sessionId back to todo + set status to in_progress
+      const patchRes = await fetch(`/api/todos/${activeTask.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: newSessionId, status: 'in_progress' }),
+      });
+      if (!patchRes.ok) throw new Error(`Failed to update todo: ${patchRes.status}`);
+
+      // 3. Update local state
+      const now = new Date().toISOString();
+      setTodos(cur => cur.map(t =>
+        t.id === activeTask.id
+          ? { ...t, sessionId: newSessionId, status: 'in_progress' as TodoStatus, updatedAt: now }
+          : t,
+      ));
+      // Also update draft so drawer reflects the change immediately
+      patchDraft({ status: 'in_progress' });
+    } catch (err) {
+      console.error('Dispatch agent failed:', err);
+    } finally {
+      setDispatching(false);
+    }
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -1407,11 +1460,13 @@ export default function TodosPage() {
           agents={agents}
           agentMap={agentMap}
           saving={saving}
+          dispatching={dispatching}
           onDraftChange={patchDraft}
           onSave={handleSave}
           onDelete={drawerMode === 'edit' ? handleDelete : undefined}
           onClose={closeDrawer}
           onNavigateSession={handleNavigateSession}
+          onDispatchAgent={handleDispatchAgent}
           locale={locale}
         />
       )}
