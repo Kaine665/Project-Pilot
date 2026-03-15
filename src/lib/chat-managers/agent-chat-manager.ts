@@ -19,6 +19,7 @@ import { getAppWorkingDir } from '@/lib/app-paths';
 import { getPromptFilePath, getContextIndexPath, readJsonFile } from '@/lib/file-store';
 import type { ContextIndexData } from '@/types';
 import { resolveSystemPrompt, createRuntimePromptCopy } from '@/lib/agent-prompt-store';
+import { resolveSkillsForSession } from '@/lib/skill-store';
 import { getSettings } from '@/lib/settings-manager';
 import { createAgentRunner, type IAgentRunner } from './agent-runner';
 import { detectDangerousCommand } from '@/lib/danger-detector';
@@ -873,6 +874,20 @@ async function buildResourcePrompt(
   }
 
   if (extraRefs) merged.push(...extraRefs);
+
+  // ── Auto-inject scoped skills (global → project → agent cascade) ──
+  {
+    const sessionSkillNames = new Set(sessionConfig?.skillNames ?? []);
+    const resolved = await resolveSkillsForSession({
+      agentId: agent.id,
+      projectKey,
+    });
+    for (const rs of resolved) {
+      // Session-level explicit skills override; skip duplicates
+      if (sessionSkillNames.has(rs.name) || sessionSkillNames.has(rs.qualifiedId)) continue;
+      merged.push({ type: 'skill', id: rs.qualifiedId, priority: 50 });
+    }
+  }
 
   if (sessionConfig) {
     if (sessionConfig.contextIds?.length) {
