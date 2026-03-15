@@ -31,9 +31,8 @@ interface PromptBlock {
   location?: string;
 }
 
-function estimateTokens(text: string): number {
-  return Math.round(text.length / 3.5);
-}
+// Re-export from shared utility for CJK-aware token estimation
+import { estimateTokens } from '@/lib/token-estimate';
 
 function truncate(text: string, maxLen = 200): string {
   if (text.length <= maxLen) return text;
