@@ -582,33 +582,63 @@ async function _modifyJsonFileImpl<T>(
 
 // ── Skills 路径函数 ──
 
+/** Skill 作用域级别 */
+export type SkillScopeLevel = 'global' | 'project' | 'agent';
+
+/** Skill 作用域定义 */
+export type SkillScope =
+  | { level: 'global' }
+  | { level: 'project'; projectKey: string }
+  | { level: 'agent'; agentId: string };
+
+/** 默认作用域（向后兼容） */
+export const DEFAULT_SKILL_SCOPE: SkillScope = { level: 'global' };
+
+function sanitizeSkillName(name: string): string {
+  const safe = name.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 100) {
+    throw new Error(`Invalid skill name: ${name}`);
+  }
+  return safe;
+}
+
+function sanitizeId(id: string): string {
+  const safe = id.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 200) {
+    throw new Error(`Invalid id: ${id}`);
+  }
+  return safe;
+}
+
+/** skills 根目录 */
 export function getSkillsDir(): string {
   return path.join(DATA_DIR, 'skills');
 }
 
-export function getSkillFilePath(skillName: string): string {
-  const safe = skillName.replace(/[^a-zA-Z0-9_-]/g, '');
-  if (!safe || safe.length < 1 || safe.length > 100) {
-    throw new Error(`Invalid skill name: ${skillName}`);
+/** 根据 scope 获取 skills 所在目录 */
+export function getScopedSkillsDir(scope: SkillScope): string {
+  const base = getSkillsDir();
+  switch (scope.level) {
+    case 'global':
+      return path.join(base, '_global');
+    case 'project':
+      return path.join(base, '_projects', sanitizeId(scope.projectKey));
+    case 'agent':
+      return path.join(base, '_agents', sanitizeId(scope.agentId));
   }
-  return path.join(DATA_DIR, 'skills', safe, 'SKILL.md');
 }
 
-export function getSkillHistoryDir(skillName: string): string {
-  const safe = skillName.replace(/[^a-zA-Z0-9_-]/g, '');
-  if (!safe || safe.length < 1 || safe.length > 100) {
-    throw new Error(`Invalid skill name: ${skillName}`);
-  }
-  return path.join(DATA_DIR, 'skills', safe, '.history');
+export function getSkillFilePath(skillName: string, scope: SkillScope = DEFAULT_SKILL_SCOPE): string {
+  return path.join(getScopedSkillsDir(scope), sanitizeSkillName(skillName), 'SKILL.md');
+}
+
+export function getSkillHistoryDir(skillName: string, scope: SkillScope = DEFAULT_SKILL_SCOPE): string {
+  return path.join(getScopedSkillsDir(scope), sanitizeSkillName(skillName), '.history');
 }
 
 /** Skill 目录根路径 */
-export function getSkillDir(skillName: string): string {
-  const safe = skillName.replace(/[^a-zA-Z0-9_-]/g, '');
-  if (!safe || safe.length < 1 || safe.length > 100) {
-    throw new Error(`Invalid skill name: ${skillName}`);
-  }
-  return path.join(DATA_DIR, 'skills', safe);
+export function getSkillDir(skillName: string, scope: SkillScope = DEFAULT_SKILL_SCOPE): string {
+  return path.join(getScopedSkillsDir(scope), sanitizeSkillName(skillName));
 }
 
 /** Skill 子目录中允许的文件夹名 */

@@ -1,13 +1,16 @@
 import { NextResponse } from 'next/server';
 import { readSkillSubFile, writeSkillSubFile, deleteSkillSubFile } from '@/lib/skill-store';
+import { parseScopeFromParams } from '../../../../scope-utils';
 
 type Params = { params: Promise<{ name: string; subdir: string; fileName: string }> };
 
-// GET /api/skills/[name]/files/[subdir]/[fileName] — 读取子文件
-export async function GET(_req: Request, { params }: Params) {
+// GET /api/skills/[name]/files/[subdir]/[fileName]?scope=...
+export async function GET(req: Request, { params }: Params) {
   const { name, subdir, fileName } = await params;
   try {
-    const result = await readSkillSubFile(name, subdir, fileName);
+    const url = new URL(req.url);
+    const scope = parseScopeFromParams(url.searchParams);
+    const result = await readSkillSubFile(name, subdir, fileName, scope);
     if (!result) {
       return NextResponse.json({ error: 'File not found' }, { status: 404 });
     }
@@ -17,27 +20,30 @@ export async function GET(_req: Request, { params }: Params) {
   }
 }
 
-// PUT /api/skills/[name]/files/[subdir]/[fileName] — 写入/更新子文件
-// Body: { content: string }
+// PUT /api/skills/[name]/files/[subdir]/[fileName]?scope=...
 export async function PUT(request: Request, { params }: Params) {
   const { name, subdir, fileName } = await params;
   try {
+    const url = new URL(request.url);
+    const scope = parseScopeFromParams(url.searchParams);
     const body = await request.json() as { content?: string };
     if (body.content === undefined) {
       return NextResponse.json({ error: 'content is required' }, { status: 400 });
     }
-    await writeSkillSubFile(name, subdir, fileName, body.content);
+    await writeSkillSubFile(name, subdir, fileName, body.content, scope);
     return NextResponse.json({ name: fileName, subdir });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
 
-// DELETE /api/skills/[name]/files/[subdir]/[fileName] — 删除子文件
-export async function DELETE(_req: Request, { params }: Params) {
+// DELETE /api/skills/[name]/files/[subdir]/[fileName]?scope=...
+export async function DELETE(req: Request, { params }: Params) {
   const { name, subdir, fileName } = await params;
   try {
-    await deleteSkillSubFile(name, subdir, fileName);
+    const url = new URL(req.url);
+    const scope = parseScopeFromParams(url.searchParams);
+    await deleteSkillSubFile(name, subdir, fileName, scope);
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
