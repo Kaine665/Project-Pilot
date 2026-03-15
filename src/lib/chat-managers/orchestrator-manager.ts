@@ -46,7 +46,7 @@ import {
 import { resourceRegistry } from '@/lib/resource-registry';
 import { resolveSystemPrompt } from '@/lib/agent-prompt-store';
 import { migrateAgentToResources } from '@/lib/resource-migration';
-import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import { getDefaultAgents } from '@/lib/default-agents';
 import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
 import type { ResourceRef, InlineTextRef } from '@/types/resource';
 import type { AgentTeam, AgentTeamsData } from '@/types/agent-team';
@@ -160,7 +160,8 @@ async function loadAgentForWorker(agentId: string): Promise<Agent | undefined> {
   if (!agent) return undefined;
 
   // 合并内置 Agent 的默认字段
-  const defaultAgent = DEFAULT_AGENTS.find(a => a.id === agentId);
+  const builtinAgents = await getDefaultAgents();
+  const defaultAgent = builtinAgents.find(a => a.id === agentId);
   if (defaultAgent) {
     for (const key of Object.keys(defaultAgent) as Array<keyof Agent>) {
       if (agent[key] === undefined && defaultAgent[key] !== undefined) {

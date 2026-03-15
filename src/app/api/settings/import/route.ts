@@ -12,7 +12,7 @@ import {
   readJsonFile,
 } from '@/lib/file-store';
 import { importSessionsWithMessages } from '@/lib/chat-managers/agent-chat-session-store';
-import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import { getDefaultAgents } from '@/lib/default-agents';
 import { writePromptFile } from '@/lib/agent-prompt-store';
 import { invalidateAgentsCache } from '@/lib/agents-store';
 import type { Agent, AgentsData } from '@/types';
@@ -106,7 +106,8 @@ export async function POST(request: NextRequest) {
       }
 
       // Ensure built-in agents are present
-      for (const defaultAgent of DEFAULT_AGENTS) {
+      const builtinAgents = await getDefaultAgents();
+      for (const defaultAgent of builtinAgents) {
         if (!mergedAgents.some((a: Agent) => a.id === defaultAgent.id)) {
           mergedAgents.unshift(defaultAgent);
         }
