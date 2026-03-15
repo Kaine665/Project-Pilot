@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useState, useCallback } from 'react';
+import { memo, useState, useCallback, useMemo } from 'react';
 import { CheckCircle2, Loader2, MessageCircleQuestion, Send } from 'lucide-react';
 import type { ChatToolCall } from '@/types';
 
@@ -37,16 +37,23 @@ export const AskUserQuestionCard = memo(function AskUserQuestionCard({ toolCall 
   const [selections, setSelections] = useState<Record<number, string[]>>({});
   const [submitted, setSubmitted] = useState(false);
 
-  // Parse the input JSON
-  let questions: QuestionItem[] = [];
-  try {
-    const input = JSON.parse(toolCall.input);
-    questions = Array.isArray(input.questions) ? input.questions : [];
-  } catch {
-    return null;
-  }
-
-  if (questions.length === 0) return null;
+  const { questions, parseFailed } = useMemo(() => {
+    try {
+      const input = JSON.parse(toolCall.input);
+      const parsedQuestions = Array.isArray(input.questions)
+        ? input.questions as QuestionItem[]
+        : [];
+      return {
+        questions: parsedQuestions,
+        parseFailed: false,
+      };
+    } catch {
+      return {
+        questions: [] as QuestionItem[],
+        parseFailed: true,
+      };
+    }
+  }, [toolCall.input]);
 
   const isRunning = toolCall.status === 'running';
   const isCompleted = toolCall.status === 'completed';
@@ -123,6 +130,8 @@ export const AskUserQuestionCard = memo(function AskUserQuestionCard({ toolCall 
       dispatchAnswer(parts.join('\n'));
     }
   }, [allAnswered, submitted, isSingleQuestion, questions, selections, dispatchAnswer]);
+
+  if (parseFailed || questions.length === 0) return null;
 
   return (
     <div className="my-1.5 rounded-lg border border-indigo-200 bg-indigo-50/50 dark:border-indigo-800 dark:bg-indigo-950/30">
