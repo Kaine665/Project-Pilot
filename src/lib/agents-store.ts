@@ -1,5 +1,5 @@
 import { getAgentsPath, readJsonFile, writeJsonFile } from '@/lib/file-store';
-import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import { DEFAULT_AGENTS, getDefaultAgents } from '@/lib/default-agents';
 import { mergeAndRepairAgentsData } from '@/lib/agent-metadata-repair';
 import {
   deletePromptFile,
@@ -76,6 +76,9 @@ export async function readAgentsData(): Promise<AgentsData> {
   if (cachedData && now - cacheTimestamp < AGENTS_CACHE_TTL_MS) {
     return cachedData;
   }
+
+  // Ensure builtin defaults are loaded before merge
+  await getDefaultAgents();
 
   const { data, changed: mergedChanged } = await mergeAndRepairAgentsData(
     await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] }),

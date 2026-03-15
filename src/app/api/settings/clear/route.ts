@@ -13,7 +13,7 @@ import {
   readJsonFile,
 } from '@/lib/file-store';
 import { deleteAllMessageFiles } from '@/lib/chat-managers/agent-chat-session-store';
-import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import { getDefaultAgents } from '@/lib/default-agents';
 import { invalidateAgentsCache } from '@/lib/agents-store';
 import type { AgentsData } from '@/types';
 import type { AgentChatSessionsData } from '@/types/agent-chat';
@@ -117,7 +117,8 @@ export async function POST(request: NextRequest) {
       await backupFile(getAgentsPath());
       const agentsData = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
       // Ensure all default built-in agents are present
-      for (const defaultAgent of DEFAULT_AGENTS) {
+      const builtinAgents = await getDefaultAgents();
+      for (const defaultAgent of builtinAgents) {
         if (!agentsData.agents.some(a => a.id === defaultAgent.id)) {
           agentsData.agents.unshift(defaultAgent);
         }

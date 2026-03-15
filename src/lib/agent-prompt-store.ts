@@ -17,6 +17,7 @@ import {
   getPromptRuntimeDir,
   getPromptRuntimePath,
 } from './file-store';
+import { readBuiltinPrompt } from './builtin-defaults';
 
 /** 最大 prompt 文件大小：10MB */
 const MAX_PROMPT_SIZE = 10 * 1024 * 1024;
@@ -81,14 +82,22 @@ export async function deletePromptFile(agentId: string): Promise<void> {
 
 /**
  * 解析 agent 的最终 systemPrompt。
- * 优先级：prompts/{agentId}.md 文件 > 内联 systemPrompt。
+ * 优先级：用户数据目录 prompts/{agentId}.md > 仓库 defaults > 内联 systemPrompt。
  */
 export async function resolveSystemPrompt(
   agentId: string,
   inlinePrompt?: string,
 ): Promise<string | undefined> {
-  const fromFile = await readPromptFile(agentId);
-  return fromFile ?? inlinePrompt;
+  // 1. 用户数据目录（最高优先级）
+  const fromUserFile = await readPromptFile(agentId);
+  if (fromUserFile) return fromUserFile;
+
+  // 2. 仓库内置默认（中优先级）
+  const fromDefaults = await readBuiltinPrompt(agentId);
+  if (fromDefaults) return fromDefaults;
+
+  // 3. 内联 systemPrompt（最低优先级，向后兼容）
+  return inlinePrompt;
 }
 
 // ── 版本管理 ──
@@ -183,13 +192,15 @@ export async function revertToVersion(
 /**
  * 创建会话级运行时工作副本。
  * 将正式版复制到 .runtime/{sessionId}.md，返回副本路径。
- * 正式版不存在时返回 undefined。
+ * 用户数据目录不存在时 fallback 到仓库 defaults。
+ * 都不存在时返回 undefined。
  */
 export async function createRuntimePromptCopy(
   agentId: string,
   sessionId: string,
 ): Promise<string | undefined> {
-  const content = await readPromptFile(agentId);
+  // 优先用户数据目录，fallback 到 defaults
+  const content = await readPromptFile(agentId) ?? await readBuiltinPrompt(agentId);
   if (content === undefined) return undefined;
 
   const runtimeDir = getPromptRuntimeDir(agentId);
