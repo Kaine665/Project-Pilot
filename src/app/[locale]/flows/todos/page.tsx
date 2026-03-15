@@ -19,6 +19,7 @@ import {
   Calendar,
   Check,
   CheckCircle2,
+  CheckSquare,
   ChevronDown,
   Circle,
   Clock,
@@ -26,8 +27,11 @@ import {
   Inbox,
   LayoutDashboard,
   List,
+  Minus,
+  MousePointerClick,
   Plus,
   Search,
+  Square,
   Tag,
   Trash2,
   X,
@@ -149,9 +153,12 @@ interface DraggableCardProps {
   agentMap: Map<string, Agent>;
   onClick: () => void;
   overlay?: boolean;
+  batchMode?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }
 
-function DraggableCard({ task, agentMap, onClick, overlay }: DraggableCardProps) {
+function DraggableCard({ task, agentMap, onClick, overlay, batchMode, selected, onToggleSelect }: DraggableCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task.id });
   const style = transform ? { transform: CSS.Translate.toString(transform) } : undefined;
   const overdue = isOverdue(task.dueAt) && task.status !== 'done';
@@ -161,22 +168,35 @@ function DraggableCard({ task, agentMap, onClick, overlay }: DraggableCardProps)
     <div
       ref={setNodeRef}
       style={style}
-      {...listeners}
-      {...attributes}
+      {...(batchMode ? {} : { ...listeners, ...attributes })}
       onClick={(e) => {
         e.stopPropagation();
-        onClick();
+        if (batchMode && onToggleSelect) {
+          onToggleSelect(task.id);
+        } else {
+          onClick();
+        }
       }}
       className={[
         'group relative cursor-pointer rounded-2xl border bg-white px-4 py-3.5 shadow-sm transition select-none',
         'dark:bg-zinc-900',
-        isDragging || overlay
+        selected
+          ? 'border-blue-400 bg-blue-50/50 ring-1 ring-blue-200 dark:border-blue-600 dark:bg-blue-950/20 dark:ring-blue-800'
+          : isDragging || overlay
           ? 'opacity-50 border-blue-300 dark:border-blue-700 shadow-lg'
           : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:shadow-md',
       ].join(' ')}
     >
       {/* Priority + status dots */}
       <div className="mb-2.5 flex items-center gap-1.5">
+        {batchMode && (
+          <span className="mr-0.5 shrink-0">
+            {selected
+              ? <CheckSquare className="h-4 w-4 text-blue-500" />
+              : <Square className="h-4 w-4 text-zinc-300 group-hover:text-zinc-400" />
+            }
+          </span>
+        )}
         <span className={`inline-block h-2 w-2 rounded-full ${priorityMeta[task.priority].dot}`} />
         <span className={`inline-block h-2 w-2 rounded-full ${statusMeta[task.status].dot}`} />
         {overdue && <AlertCircle className="h-3 w-3 text-red-500" />}
@@ -230,9 +250,12 @@ interface DroppableColumnProps {
   agentMap: Map<string, Agent>;
   onCardClick: (task: TodoItem) => void;
   onAddClick: () => void;
+  batchMode?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
 }
 
-function DroppableColumn({ status, tasks, agentMap, onCardClick, onAddClick }: DroppableColumnProps) {
+function DroppableColumn({ status, tasks, agentMap, onCardClick, onAddClick, batchMode, selectedIds, onToggleSelect }: DroppableColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   const meta = statusMeta[status];
 
@@ -254,7 +277,7 @@ function DroppableColumn({ status, tasks, agentMap, onCardClick, onAddClick }: D
         ].join(' ')}
       >
         {tasks.map(task => (
-          <DraggableCard key={task.id} task={task} agentMap={agentMap} onClick={() => onCardClick(task)} />
+          <DraggableCard key={task.id} task={task} agentMap={agentMap} onClick={() => onCardClick(task)} batchMode={batchMode} selected={selectedIds?.has(task.id)} onToggleSelect={onToggleSelect} />
         ))}
         {tasks.length === 0 && (
           <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-zinc-200 py-8 text-xs text-zinc-300 dark:border-zinc-800 dark:text-zinc-600">
@@ -282,21 +305,39 @@ interface FlatTaskCardProps {
   task: TodoItem;
   agentMap: Map<string, Agent>;
   onClick: () => void;
+  batchMode?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }
 
-function FlatTaskCard({ task, agentMap, onClick }: FlatTaskCardProps) {
+function FlatTaskCard({ task, agentMap, onClick, batchMode, selected, onToggleSelect }: FlatTaskCardProps) {
   const overdue = isOverdue(task.dueAt) && task.status !== 'done';
   const agent = task.agentId ? agentMap.get(task.agentId) : undefined;
 
   return (
     <button
       type="button"
-      onClick={onClick}
-      className="group flex w-full items-start gap-3 rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-left transition hover:border-zinc-300 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
+      onClick={() => {
+        if (batchMode && onToggleSelect) {
+          onToggleSelect(task.id);
+        } else {
+          onClick();
+        }
+      }}
+      className={[
+        'group flex w-full items-start gap-3 rounded-2xl border bg-white px-4 py-3 text-left transition dark:bg-zinc-900',
+        selected
+          ? 'border-blue-400 bg-blue-50/50 ring-1 ring-blue-200 dark:border-blue-600 dark:bg-blue-950/20 dark:ring-blue-800'
+          : 'border-zinc-200 hover:border-zinc-300 hover:shadow-sm dark:border-zinc-800 dark:hover:border-zinc-700',
+      ].join(' ')}
     >
-      {/* Status circle */}
+      {/* Checkbox or Status circle */}
       <div className="mt-0.5 shrink-0">
-        {task.status === 'done'
+        {batchMode ? (
+          selected
+            ? <CheckSquare className="h-4 w-4 text-blue-500" />
+            : <Square className="h-4 w-4 text-zinc-300 group-hover:text-zinc-400" />
+        ) : task.status === 'done'
           ? <CheckCircle2 className="h-4 w-4 text-green-500" />
           : task.status === 'in_progress'
           ? <Circle className="h-4 w-4 text-blue-500" />
@@ -750,6 +791,11 @@ export default function TodosPage() {
   const [dragId, setDragId] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
+  // Batch selection state
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchLoading, setBatchLoading] = useState(false);
+
   const agentMap = useMemo(() => new Map(agents.map(a => [a.id, a])), [agents]);
   const activeTask = useMemo(() => todos.find(t => t.id === activeTaskId) ?? null, [todos, activeTaskId]);
   const dragTask = useMemo(() => todos.find(t => t.id === dragId) ?? null, [todos, dragId]);
@@ -937,6 +983,88 @@ export default function TodosPage() {
     });
   }
 
+  // ── Batch operations ───────────────────────────────────────────────────────
+
+  function toggleSelect(id: string) {
+    setSelectedIds(cur => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === filteredTodos.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredTodos.map(t => t.id)));
+    }
+  }
+
+  function exitBatchMode() {
+    setBatchMode(false);
+    setSelectedIds(new Set());
+  }
+
+  async function batchUpdateStatus(status: TodoStatus) {
+    if (selectedIds.size === 0 || batchLoading) return;
+    setBatchLoading(true);
+    try {
+      const ids = [...selectedIds];
+      const r = await fetch('/api/todos/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, action: 'update', updates: { status } }),
+      });
+      if (r.ok) {
+        const now = new Date().toISOString();
+        setTodos(cur => cur.map(t => ids.includes(t.id) ? { ...t, status, updatedAt: now } : t));
+        setSelectedIds(new Set());
+      }
+    } finally {
+      setBatchLoading(false);
+    }
+  }
+
+  async function batchUpdatePriority(priority: TodoPriority) {
+    if (selectedIds.size === 0 || batchLoading) return;
+    setBatchLoading(true);
+    try {
+      const ids = [...selectedIds];
+      const r = await fetch('/api/todos/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, action: 'update', updates: { priority } }),
+      });
+      if (r.ok) {
+        const now = new Date().toISOString();
+        setTodos(cur => cur.map(t => ids.includes(t.id) ? { ...t, priority, updatedAt: now } : t));
+        setSelectedIds(new Set());
+      }
+    } finally {
+      setBatchLoading(false);
+    }
+  }
+
+  async function batchDelete() {
+    if (selectedIds.size === 0 || batchLoading) return;
+    setBatchLoading(true);
+    try {
+      const ids = [...selectedIds];
+      const r = await fetch('/api/todos/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, action: 'delete' }),
+      });
+      if (r.ok) {
+        setTodos(cur => cur.filter(t => !ids.includes(t.id)));
+        setSelectedIds(new Set());
+      }
+    } finally {
+      setBatchLoading(false);
+    }
+  }
+
   // ── Session navigation ───────────────────────────────────────────────────────
 
   function handleNavigateSession() {
@@ -985,14 +1113,50 @@ export default function TodosPage() {
               ))}
             </div>
 
-            <button
-              type="button"
-              onClick={() => openCreate()}
-              className="flex items-center gap-1.5 rounded-xl bg-zinc-900 px-3.5 py-2 text-xs font-medium text-white transition hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              新建任务
-            </button>
+            <div className="flex items-center gap-2">
+              {batchMode ? (
+                <>
+                  {/* Select all / deselect all */}
+                  <button
+                    type="button"
+                    onClick={toggleSelectAll}
+                    className="flex items-center gap-1.5 rounded-xl border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-600 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                  >
+                    {selectedIds.size === filteredTodos.length && filteredTodos.length > 0
+                      ? <><CheckSquare className="h-3.5 w-3.5" /> 取消全选</>
+                      : <><Square className="h-3.5 w-3.5" /> 全选</>
+                    }
+                  </button>
+                  <button
+                    type="button"
+                    onClick={exitBatchMode}
+                    className="flex items-center gap-1.5 rounded-xl border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-500 transition hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    退出批量
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setBatchMode(true)}
+                    className="flex items-center gap-1.5 rounded-xl border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-600 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                  >
+                    <MousePointerClick className="h-3.5 w-3.5" />
+                    批量
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openCreate()}
+                    className="flex items-center gap-1.5 rounded-xl bg-zinc-900 px-3.5 py-2 text-xs font-medium text-white transition hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    新建任务
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Row 2: Filter bar */}
@@ -1085,6 +1249,9 @@ export default function TodosPage() {
                     agentMap={agentMap}
                     onCardClick={openEdit}
                     onAddClick={() => openCreate(status)}
+                    batchMode={batchMode}
+                    selectedIds={selectedIds}
+                    onToggleSelect={toggleSelect}
                   />
                 ))}
               </div>
@@ -1135,7 +1302,7 @@ export default function TodosPage() {
                                 </div>
                                 <div className="space-y-2">
                                   {group.map(task => (
-                                    <FlatTaskCard key={task.id} task={task} agentMap={agentMap} onClick={() => openEdit(task)} />
+                                    <FlatTaskCard key={task.id} task={task} agentMap={agentMap} onClick={() => openEdit(task)} batchMode={batchMode} selected={selectedIds.has(task.id)} onToggleSelect={toggleSelect} />
                                   ))}
                                 </div>
                               </div>
@@ -1144,7 +1311,7 @@ export default function TodosPage() {
                         </>
                       )}
                       {view !== 'all' && filteredTodos.filter(t => t.status !== 'done').map(task => (
-                        <FlatTaskCard key={task.id} task={task} agentMap={agentMap} onClick={() => openEdit(task)} />
+                        <FlatTaskCard key={task.id} task={task} agentMap={agentMap} onClick={() => openEdit(task)} batchMode={batchMode} selected={selectedIds.has(task.id)} onToggleSelect={toggleSelect} />
                       ))}
                     </>
                   )}
@@ -1159,7 +1326,7 @@ export default function TodosPage() {
                       )}
                       <div className="space-y-2">
                         {filteredTodos.filter(t => t.status === 'done').map(task => (
-                          <FlatTaskCard key={task.id} task={task} agentMap={agentMap} onClick={() => openEdit(task)} />
+                          <FlatTaskCard key={task.id} task={task} agentMap={agentMap} onClick={() => openEdit(task)} batchMode={batchMode} selected={selectedIds.has(task.id)} onToggleSelect={toggleSelect} />
                         ))}
                       </div>
                     </div>
@@ -1170,6 +1337,66 @@ export default function TodosPage() {
           )}
         </div>
       </div>
+
+      {/* Batch action toolbar (floating) */}
+      {batchMode && selectedIds.size > 0 && (
+        <div className="absolute bottom-6 left-1/2 z-30 -translate-x-1/2">
+          <div className="flex items-center gap-1.5 rounded-2xl border border-zinc-200 bg-white px-3 py-2 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+            {/* Count badge */}
+            <span className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-600 dark:bg-blue-950/40 dark:text-blue-400">
+              <CheckSquare className="h-3.5 w-3.5" />
+              {selectedIds.size}
+            </span>
+
+            <span className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
+
+            {/* Status actions */}
+            <span className="text-[10px] font-medium text-zinc-400 mr-0.5">状态</span>
+            {statusOrder.map(s => (
+              <button
+                key={s}
+                type="button"
+                disabled={batchLoading}
+                onClick={() => batchUpdateStatus(s)}
+                className={`flex items-center gap-1 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition disabled:opacity-40 ${statusMeta[s].chip} hover:opacity-80`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${statusMeta[s].dot}`} />
+                {statusMeta[s].label}
+              </button>
+            ))}
+
+            <span className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
+
+            {/* Priority actions */}
+            <span className="text-[10px] font-medium text-zinc-400 mr-0.5">优先级</span>
+            {priorityOrder.map(p => (
+              <button
+                key={p}
+                type="button"
+                disabled={batchLoading}
+                onClick={() => batchUpdatePriority(p)}
+                className={`flex items-center gap-1 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition disabled:opacity-40 ${priorityMeta[p].chip} ${priorityMeta[p].text} hover:opacity-80`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${priorityMeta[p].dot}`} />
+                {priorityMeta[p].label}
+              </button>
+            ))}
+
+            <span className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
+
+            {/* Delete */}
+            <button
+              type="button"
+              disabled={batchLoading}
+              onClick={batchDelete}
+              className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] font-medium text-red-600 transition hover:bg-red-100 disabled:opacity-40 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400"
+            >
+              <Trash2 className="h-3 w-3" />
+              删除
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Drawer */}
       {drawerMode !== 'closed' && (
