@@ -517,6 +517,10 @@ export interface ProjectEntry {
     notes?: string;
   };
 
+  // ── AI 默认配置 ──
+  /** 创建待办时默认绑定的 Agent ID */
+  defaultAgentId?: string;
+
   // ── 视觉标识 ──
   icon?: string;
   color?: string;

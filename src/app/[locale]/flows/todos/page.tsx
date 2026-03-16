@@ -816,7 +816,7 @@ function TaskDrawer({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function TodosPage() {
-  const { activeKey: projectKey } = useProject();
+  const { activeKey: projectKey, projects } = useProject();
   const locale = useLocale();
   const router = useRouter();
 
@@ -855,6 +855,7 @@ export default function TodosPage() {
   const agentMap = useMemo(() => new Map(agents.map(a => [a.id, a])), [agents]);
   const activeTask = useMemo(() => todos.find(t => t.id === activeTaskId) ?? null, [todos, activeTaskId]);
   const dragTask = useMemo(() => todos.find(t => t.id === dragId) ?? null, [todos, dragId]);
+  const currentProject = useMemo(() => projects.find(p => p.key === projectKey), [projects, projectKey]);
 
   // ── Fetch data ──────────────────────────────────────────────────────────────
 
@@ -930,7 +931,10 @@ export default function TodosPage() {
   // ── Drawer helpers ──────────────────────────────────────────────────────────
 
   function openCreate(defaultStatus?: TodoStatus) {
-    setDraft(emptyDraft({ status: defaultStatus ?? 'pending' }));
+    setDraft(emptyDraft({
+      status: defaultStatus ?? 'pending',
+      agentId: currentProject?.defaultAgentId ?? '',
+    }));
     setActiveTaskId(null);
     setDrawerMode('create');
   }

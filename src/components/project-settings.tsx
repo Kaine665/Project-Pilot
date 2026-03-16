@@ -6,8 +6,8 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select } from '@/components/ui/select';
-import { Settings, X, Archive, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
-import type { ProjectEntry, ProjectLocation, ProjectTechStack } from '@/types';
+import { Settings, X, Archive, Trash2, ChevronDown, ChevronRight, Bot } from 'lucide-react';
+import type { Agent, ProjectEntry, ProjectLocation, ProjectTechStack } from '@/types';
 
 interface ProjectSettingsProps {
   projectKey: string;
@@ -84,6 +84,8 @@ export function ProjectSettings({
   const [color, setColor] = useState('');
   const [tagsInput, setTagsInput] = useState('');
   const [tags, setTags] = useState<string[]>([]);
+  const [defaultAgentId, setDefaultAgentId] = useState('');
+  const [agents, setAgents] = useState<Agent[]>([]);
 
   // Collapsible sections
   const [showRepo, setShowRepo] = useState(false);
@@ -113,6 +115,7 @@ export function ProjectSettings({
       setColor(entry?.color ?? '');
       setTags(entry?.tags ?? []);
       setTagsInput('');
+      setDefaultAgentId(entry?.defaultAgentId ?? '');
       setConfirmingDelete(false);
 
       // Auto-expand sections that have data
@@ -120,6 +123,11 @@ export function ProjectSettings({
       setShowDev(!!(entry?.devServer?.command || entry?.devServer?.url));
       setShowAccess(!!(entry?.access?.sshKey || entry?.access?.tokenEnvVar || entry?.access?.notes));
       setShowVisual(!!(entry?.icon || entry?.color || (entry?.tags && entry.tags.length > 0)));
+
+      // Fetch agents for default agent dropdown
+      fetch('/api/agents').then(r => r.ok ? r.json() : null).then(data => {
+        if (data?.agents) setAgents(data.agents);
+      }).catch(() => {});
     }
   }, [open, projectName, projectDescription, projectEntry]);
 
@@ -139,6 +147,7 @@ export function ProjectSettings({
         icon: icon.trim() || null,
         color: color.trim() || null,
         tags: tags.length > 0 ? tags : null,
+        defaultAgentId: defaultAgentId || null,
       };
 
       // Repository
@@ -188,7 +197,7 @@ export function ProjectSettings({
     } finally {
       setSaving(false);
     }
-  }, [projectKey, name, description, path, location, techStack, repoUrl, defaultBranch, repoProvider, devCommand, devUrl, devPort, sshKey, tokenEnvVar, accessNotes, icon, color, tags, onUpdated]);
+  }, [projectKey, name, description, path, location, techStack, repoUrl, defaultBranch, repoProvider, devCommand, devUrl, devPort, sshKey, tokenEnvVar, accessNotes, icon, color, tags, defaultAgentId, onUpdated]);
 
   const handleArchive = useCallback(async () => {
     try {
@@ -336,6 +345,27 @@ export function ProjectSettings({
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* ── Default Agent ── */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  <span className="flex items-center gap-1.5">
+                    <Bot className="h-3.5 w-3.5" />
+                    默认 Agent
+                  </span>
+                  <span className="text-[10px] font-normal text-zinc-400 mt-0.5 block">创建待办时自动绑定的 Agent</span>
+                </label>
+                <select
+                  value={defaultAgentId}
+                  onChange={e => setDefaultAgentId(e.target.value)}
+                  className="w-full appearance-none rounded-lg border border-zinc-200 bg-white py-2 pl-3 pr-8 text-sm text-zinc-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                >
+                  <option value="">不设默认 Agent</option>
+                  {agents.filter(a => !a.archived).map(a => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
               </div>
 
               {/* ── Repository ── */}

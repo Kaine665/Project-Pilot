@@ -126,7 +126,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   // Simple scalar fields
-  const simpleFields = ['name', 'description', 'location', 'path', 'techStack', 'icon', 'color'] as const;
+  const simpleFields = ['name', 'description', 'location', 'path', 'techStack', 'icon', 'color', 'defaultAgentId'] as const;
   for (const field of simpleFields) {
     if (updates[field] !== undefined) {
       if (updates[field] === '' || updates[field] === null) {
