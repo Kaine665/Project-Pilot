@@ -6,6 +6,9 @@ import {
   getLoginProvider,
   setLoginProvider,
 } from '@/lib/auth-login-state';
+import { setCredential } from '@/lib/settings-manager';
+import path from 'path';
+import os from 'os';
 
 /**
  * POST /api/settings/auth-code
@@ -52,6 +55,17 @@ export async function POST(req: Request) {
   try {
     const tokens = await exchangeCodeForTokens(extracted, session.codeVerifier);
     saveTokens(tokens);
+
+    // 同步更新 providerCredentials
+    await setCredential('anthropic', {
+      authMode: 'oauth',
+      oauth: {
+        tokenFile: path.join(os.homedir(), '.claude', '.credentials.json'),
+        lastStatus: 'authenticated',
+        lastCheckedAt: Date.now(),
+      },
+      lastVerifiedAt: Date.now(),
+    });
 
     // 清理 PKCE 状态
     setPkceSession(null);

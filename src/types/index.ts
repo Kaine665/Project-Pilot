@@ -94,8 +94,27 @@ export interface CustomProviderConfig {
   authMethod: CustomProviderAuthMethod;
   /** 模型 ID 列表，至少一个 */
   modelIds: string[];
-  /** API Key / Token，可选，可稍后设置 */
+  /** @deprecated API Key 统一到 providerCredentials[id].apiKey。旧数据迁移后保留供向后兼容。 */
   apiKey?: string;
+}
+
+/** 单个供应商的凭据记录 */
+export interface ProviderCredential {
+  /** 认证方式 */
+  authMode: ClaudeAuthMode;
+  /** API Key（authMode='api_key' 时有效） */
+  apiKey?: string;
+  /** OAuth 元数据（authMode='oauth' 时有效） */
+  oauth?: {
+    /** Token 文件路径（如 ~/.claude/.credentials.json），运行时解析 */
+    tokenFile: string;
+    /** 上次检查时的状态 */
+    lastStatus?: 'authenticated' | 'expired' | 'unknown';
+    /** 上次检查时间（epoch ms） */
+    lastCheckedAt?: number;
+  };
+  /** 上次成功验证的时间（epoch ms） */
+  lastVerifiedAt?: number;
 }
 
 /** 推理努力等级 */
@@ -108,8 +127,9 @@ export type OpenAIReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
 export interface ClaudeSettings {
   /** AI 供应商 */
   provider: ProviderId;
+  /** @deprecated 使用 providerCredentials[provider].authMode 代替。旧数据迁移后保留供向后兼容。 */
   authMode: ClaudeAuthMode;
-  /** @deprecated 使用 providerApiKeys[provider] 代替 */
+  /** @deprecated 使用 providerCredentials[provider].apiKey 代替 */
   apiKey?: string;
   /** 模型 ID（自由字符串，供应商不同格式不同） */
   model: string;
@@ -122,7 +142,9 @@ export interface ClaudeSettings {
   maxTurns?: number;
   /** 新建 Agent 时是否默认暴露提示词路径（默认 true） */
   defaultExposePromptPath?: boolean;
-  /** 每供应商 API Key 映射 */
+  /** 每供应商凭据（统一存储 authMode + apiKey + oauth 元数据） */
+  providerCredentials?: Partial<Record<ProviderId, ProviderCredential>>;
+  /** @deprecated 使用 providerCredentials[provider].apiKey 代替。迁移后不再写入。 */
   providerApiKeys?: Partial<Record<ProviderId, string>>;
   /** 每供应商当前选中的模型 ID */
   providerModels?: Partial<Record<ProviderId, string>>;
