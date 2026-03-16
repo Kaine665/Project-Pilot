@@ -153,6 +153,8 @@ class AgentChatManager {
     modelOverride?: string,
     effortOverride?: string,
     ephemeral?: boolean,
+    _depth?: number,
+    background?: boolean,
   ): Promise<string> {
     const agent = await loadAgent(agentId);
 
@@ -258,6 +260,7 @@ class AgentChatManager {
         config: persistedConfig,
         parentSessionId: parentSessionId ?? existing?.parentSessionId,
         importedTurnIndices: undefined,
+        background: background || undefined,
       });
     }
 

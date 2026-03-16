@@ -95,6 +95,9 @@ export type SessionMeta = Omit<AgentChatSession, 'messages'> & {
 
   /** 最近一次运行的执行记录（含状态、结构化结果等） */
   execution?: SessionExecution;
+
+  /** 后台创建的会话（不触发前端跳转，侧边栏显示但不自动切换） */
+  background?: boolean;
 };
 
 /**

@@ -534,6 +534,7 @@ export async function eagerlySaveUserTurn(opts: {
   config?: SessionConfig;
   parentSessionId?: string;
   importedTurnIndices?: number[];
+  background?: boolean;
 }): Promise<void> {
   const now = new Date().toISOString();
 
@@ -574,6 +575,7 @@ export async function eagerlySaveUserTurn(opts: {
           unreadCount: 0,
           messageCount: incomingLen,
           pendingUserQueue: undefined,
+          background: opts.background || undefined,
         });
       }
       return data;

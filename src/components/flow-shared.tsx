@@ -482,7 +482,7 @@ export interface ItemActionsCtx {
   onDelete: (itemId: string) => void;
   onAddChild: (parentItemId: string, content: string) => void;
   onToggleDefer: (itemId: string, currentDeferred: boolean) => void;
-  onLaunchAI: (item: TreeItem, ancestors: TreeItem[]) => void;
+  onLaunchAI: (item: TreeItem, ancestors: TreeItem[], options?: { background?: boolean }) => void;
   agents: Agent[];
   onAssignAgent: (itemId: string, agentId: string | null) => void;
 }

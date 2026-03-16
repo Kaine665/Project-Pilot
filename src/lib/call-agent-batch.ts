@@ -139,6 +139,7 @@ async function startSession(
     projectKey: projectKey || undefined,
     parentSessionId: parentSessionId || undefined,
     depth,
+    background: true,
   });
 
   const postResult = await httpRequest({
