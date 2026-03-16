@@ -8,12 +8,19 @@
 
 import type { ChatMessage } from '@/types/agent-chat';
 import type { SessionCheckpoint } from '@/types/agent-chat';
+import type { ContentBlock, ChatToolCall } from '@/types';
 
 /** 历史注入的最大消息条数（避免 prompt 过长） */
 const MAX_HISTORY_MESSAGES = 30;
 
 /** 单条消息内容截断长度（字符数） */
 const MAX_MESSAGE_CHARS = 2000;
+
+/** 单个工具调用输出的截断长度 */
+const MAX_TOOL_OUTPUT_CHARS = 500;
+
+/** 单个工具调用输入的截断长度 */
+const MAX_TOOL_INPUT_CHARS = 300;
 
 /**
  * 将历史消息格式化为可注入 prompt 的文本块。
@@ -70,25 +77,99 @@ export function formatConversationHistory(
 }
 
 /**
- * 将消息数组格式化为可读的对话记录文本
+ * 将消息数组格式化为可读的对话记录文本。
+ *
+ * 对于 assistant 消息，如果包含 contentBlocks（tool_call），
+ * 会按照原始顺序交替输出文本和工具调用摘要，
+ * 让 AI 看到「说了什么话 → 调了什么工具 → 工具返回了什么」的完整链路。
  */
 function formatMessages(messages: ChatMessage[]): string {
-  return messages.map((msg, i) => {
+  return messages.map((msg) => {
     const role = msg.role === 'user' ? '用户' : 'AI';
-    let content = msg.content || '';
-
-    // 截断过长内容
-    if (content.length > MAX_MESSAGE_CHARS) {
-      content = content.slice(0, MAX_MESSAGE_CHARS) + '\n...(内容过长，已截断)';
-    }
 
     // 图片附件提示
     const imageNote = msg.images?.length
       ? ` [附带 ${msg.images.length} 张图片]`
       : '';
 
+    // ── assistant 消息：优先用 contentBlocks（保留工具调用链路） ──
+    if (msg.role === 'assistant' && msg.contentBlocks && msg.contentBlocks.length > 0) {
+      const blockParts = formatContentBlocks(msg.contentBlocks);
+      return `**${role}**${imageNote}：\n${blockParts}`;
+    }
+
+    // ── user 消息 或 无 contentBlocks 的 assistant 消息：纯文本 ──
+    let content = msg.content || '';
+    if (content.length > MAX_MESSAGE_CHARS) {
+      content = content.slice(0, MAX_MESSAGE_CHARS) + '\n...(内容过长，已截断)';
+    }
+
     return `**${role}**${imageNote}：\n${content}`;
   }).join('\n\n---\n\n');
+}
+
+/**
+ * 将 contentBlocks 格式化为可读文本。
+ * 保持 text 和 tool_call 的原始交替顺序。
+ */
+function formatContentBlocks(blocks: ContentBlock[]): string {
+  const parts: string[] = [];
+
+  for (const block of blocks) {
+    if (block.type === 'text') {
+      let text = block.text || '';
+      if (text.length > MAX_MESSAGE_CHARS) {
+        text = text.slice(0, MAX_MESSAGE_CHARS) + '\n...(内容过长，已截断)';
+      }
+      if (text.trim()) {
+        parts.push(text);
+      }
+    } else if (block.type === 'tool_call') {
+      const summary = formatToolCallSummary(block.toolCall);
+      if (summary) {
+        parts.push(summary);
+      }
+    }
+  }
+
+  return parts.join('\n\n');
+}
+
+/**
+ * 将单个 tool_call 格式化为紧凑的摘要。
+ *
+ * 格式示例：
+ *   [工具调用] Read → 读取 src/lib/foo.ts (completed)
+ *   输入: {"file_path":"src/lib/foo.ts"}
+ *   输出: (500 字摘要...)
+ */
+function formatToolCallSummary(tc: ChatToolCall): string {
+  const status = tc.status === 'completed' ? '✓' : tc.status === 'failed' ? '✗' : '…';
+
+  // 输入摘要
+  let inputSummary = '';
+  if (tc.input) {
+    const inputStr = typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input);
+    inputSummary = inputStr.length > MAX_TOOL_INPUT_CHARS
+      ? inputStr.slice(0, MAX_TOOL_INPUT_CHARS) + '...'
+      : inputStr;
+  }
+
+  // 输出摘要
+  let outputSummary = '';
+  if (tc.output) {
+    outputSummary = tc.output.length > MAX_TOOL_OUTPUT_CHARS
+      ? tc.output.slice(0, MAX_TOOL_OUTPUT_CHARS) + '...(已截断)'
+      : tc.output;
+  }
+
+  const lines: string[] = [];
+  lines.push(`[${status} ${tc.toolName}] ${inputSummary}`);
+  if (outputSummary) {
+    lines.push(`  → ${outputSummary}`);
+  }
+
+  return lines.join('\n');
 }
 
 /**
