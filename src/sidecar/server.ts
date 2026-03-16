@@ -39,6 +39,7 @@ import { loadSession, listAllSessions } from '@/lib/chat-managers/agent-chat-ses
 import { subAgentWatcher } from '@/lib/chat-managers/sub-agent-watcher';
 import type { WatchEntry } from '@/lib/chat-managers/sub-agent-watcher';
 import { schedulerManager } from '@/lib/scheduler-manager';
+import { tokenRefreshManager } from '@/lib/token-refresh-manager';
 import type { ChatSSEEvent } from '@/types';
 import type { SessionConfig, SessionMeta } from '@/types/agent-chat';
 import type { ProviderId } from '@/types';
@@ -547,6 +548,7 @@ async function main(): Promise<void> {
   // Graceful shutdown
   const shutdown = (): void => {
     console.log('[Sidecar] Shutting down...');
+    tokenRefreshManager.destroy();
     removeLock();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(1), 5000).unref();
@@ -568,6 +570,9 @@ async function main(): Promise<void> {
   } catch (err) {
     console.error('[Sidecar] SchedulerManager init failed:', err);
   }
+
+  // Initialize OAuth token refresh (proactively refresh before expiry)
+  tokenRefreshManager.init();
 
   // Start HTTP server
   await new Promise<void>((resolve, reject) => {
