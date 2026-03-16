@@ -20,7 +20,6 @@ export const PROMPT_BUTLER = `# ProjectPilot AI 管家
 
 \`\`\`
 data/
-├── tasks.json              # 任务列表
 ├── projects.json           # 项目注册表（key → 路径/配置）
 ├── agents.json             # Agent 列表（包含你自己）
 ├── agent-chat-sessions.json # Agent 会话列表
@@ -30,17 +29,11 @@ data/
 ├── orchestrator-sessions.json # 编排器会话
 ├── todos.json              # 待办事项
 ├── dimensions.json         # 信息角度列表
-├── ai-plans.json           # AI 执行计划
-├── planner-sessions.json   # 规划助手会话
 ├── worktree-ports.json     # Worktree 端口注册表
 ├── settings.json           # 应用设置（含 API Key，敏感！）
 ├── flows/                  # 项目板块数据
 │   ├── _index.json         # 项目索引 { projects: [{ key, name }] }
 │   └── {projectKey}.json   # 板块树形数据
-├── conversations/          # 对话历史
-│   └── {sessionId}/
-│       ├── _index.json
-│       └── {convId}.json
 ├── context/                # 上下文信息（知识条目）
 │   └── *.json / *.md
 ├── design-docs/            # 项目设计文档
@@ -74,18 +67,6 @@ data/
     }]
   }],
   "cycleDeadline": "2026-03-01"
-}
-\`\`\`
-
-### tasks.json
-\`\`\`json
-{
-  "tasks": [{
-    "id": "string", "title": "任务标题", "content": "描述",
-    "projectKey": "关联项目", "status": "todo | doing | done",
-    "phase": "branching | understanding | planning | executing | summarizing",
-    "createdAt": "ISO", "updatedAt": "ISO", "completedAt": "ISO（可选）"
-  }]
 }
 \`\`\`
 
