@@ -61,6 +61,7 @@ const TAG = '[TokenRefresh]';
 class TokenRefreshManager {
   private _timer: ReturnType<typeof setInterval> | null = null;
   private _refreshing = false;
+  private _grantInvalid = false;
 
   /**
    * 启动定时检查。在 Sidecar 启动时调用一次。
@@ -101,6 +102,15 @@ class TokenRefreshManager {
       const oauth = creds.claudeAiOauth;
       if (!oauth.refreshToken || !oauth.expiresAt) return; // 无 refresh token
 
+      // 用户重新登录后 refresh token 会变，清除 invalid 标记
+      if (this._grantInvalid) {
+        if (oauth.expiresAt > Date.now() + REFRESH_THRESHOLD_MS) {
+          this._grantInvalid = false;
+        } else {
+          return; // refresh token 仍无效，等用户重新登录
+        }
+      }
+
       const timeUntilExpiry = oauth.expiresAt - Date.now();
 
       if (timeUntilExpiry > REFRESH_THRESHOLD_MS) {
@@ -137,18 +147,25 @@ class TokenRefreshManager {
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');
       console.error(`${TAG} 刷新失败: HTTP ${resp.status}`, text.slice(0, 200));
+      // refresh token 已失效，停止重试直到用户重新登录
+      if (resp.status === 400 && text.includes('invalid_grant')) {
+        this._grantInvalid = true;
+        console.error(`${TAG} Refresh token 已失效，停止自动刷新。请重新执行 OAuth 登录。`);
+      }
       return;
     }
 
     const data = await resp.json() as TokenResponse;
 
-    if (!data.access_token) {
-      console.error(`${TAG} 刷新响应缺少 access_token`);
+    if (!data.access_token || typeof data.expires_in !== 'number') {
+      console.error(`${TAG} 刷新响应缺少 access_token 或 expires_in`);
       return;
     }
 
-    // 更新凭据
-    creds.claudeAiOauth = {
+    // 写回前重新读取文件，避免覆盖期间的新登录
+    const freshCreds = this._readCredentials() ?? creds;
+
+    freshCreds.claudeAiOauth = {
       accessToken: data.access_token,
       refreshToken: data.refresh_token ?? oauth.refreshToken,
       expiresAt: Date.now() + (data.expires_in * 1000),
@@ -157,9 +174,9 @@ class TokenRefreshManager {
       rateLimitTier: oauth.rateLimitTier ?? null,
     };
 
-    this._writeCredentials(creds);
+    this._writeCredentials(freshCreds);
 
-    const expiresIn = Math.round((data.expires_in ?? 0) / 3600);
+    const expiresIn = Math.round(data.expires_in / 3600);
     console.log(`${TAG} 刷新成功，新 token 有效期 ${expiresIn} 小时`);
   }
 
