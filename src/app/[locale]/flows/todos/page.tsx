@@ -156,13 +156,18 @@ interface DraggableCardProps {
   batchMode?: boolean;
   selected?: boolean;
   onToggleSelect?: (id: string) => void;
+  onDispatch?: (taskId: string) => void;
+  dispatchingId?: string | null;
 }
 
-function DraggableCard({ task, agentMap, onClick, overlay, batchMode, selected, onToggleSelect }: DraggableCardProps) {
+function DraggableCard({ task, agentMap, onClick, overlay, batchMode, selected, onToggleSelect, onDispatch, dispatchingId }: DraggableCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task.id });
   const style = transform ? { transform: CSS.Translate.toString(transform) } : undefined;
   const overdue = isOverdue(task.dueAt) && task.status !== 'done';
   const agent = task.agentId ? agentMap.get(task.agentId) : undefined;
+  const canLaunch = !!task.agentId && !task.sessionId && task.status !== 'done';
+  const isRunning = !!task.sessionId && task.status !== 'done';
+  const isDispatching = dispatchingId === task.id;
 
   return (
     <div
@@ -231,6 +236,25 @@ function DraggableCard({ task, agentMap, onClick, overlay, batchMode, selected, 
             <span className="max-w-[80px] truncate text-[10px] text-zinc-500 dark:text-zinc-400">{agent.name}</span>
           </div>
         )}
+        {/* Inline launch button */}
+        {canLaunch && onDispatch && (
+          <button
+            type="button"
+            disabled={isDispatching}
+            onClick={(e) => { e.stopPropagation(); onDispatch(task.id); }}
+            className="flex items-center gap-1 rounded-full bg-blue-600 px-2.5 py-1 text-[10px] font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
+          >
+            <Zap className={`h-3 w-3 ${isDispatching ? 'animate-pulse' : ''}`} />
+            {isDispatching ? '启动中' : '启动'}
+          </button>
+        )}
+        {/* Running badge */}
+        {isRunning && agent && (
+          <span className="flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-600 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+            Running
+          </span>
+        )}
         {task.dueAt && (
           <div className={`ml-auto flex items-center gap-1 text-[10px] ${overdue ? 'text-red-500' : 'text-zinc-400'}`}>
             <Calendar className="h-3 w-3" />
@@ -253,9 +277,11 @@ interface DroppableColumnProps {
   batchMode?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
+  onDispatch?: (taskId: string) => void;
+  dispatchingId?: string | null;
 }
 
-function DroppableColumn({ status, tasks, agentMap, onCardClick, onAddClick, batchMode, selectedIds, onToggleSelect }: DroppableColumnProps) {
+function DroppableColumn({ status, tasks, agentMap, onCardClick, onAddClick, batchMode, selectedIds, onToggleSelect, onDispatch, dispatchingId }: DroppableColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   const meta = statusMeta[status];
 
@@ -277,7 +303,7 @@ function DroppableColumn({ status, tasks, agentMap, onCardClick, onAddClick, bat
         ].join(' ')}
       >
         {tasks.map(task => (
-          <DraggableCard key={task.id} task={task} agentMap={agentMap} onClick={() => onCardClick(task)} batchMode={batchMode} selected={selectedIds?.has(task.id)} onToggleSelect={onToggleSelect} />
+          <DraggableCard key={task.id} task={task} agentMap={agentMap} onClick={() => onCardClick(task)} batchMode={batchMode} selected={selectedIds?.has(task.id)} onToggleSelect={onToggleSelect} onDispatch={onDispatch} dispatchingId={dispatchingId} />
         ))}
         {tasks.length === 0 && (
           <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-zinc-200 py-8 text-xs text-zinc-300 dark:border-zinc-800 dark:text-zinc-600">
@@ -308,15 +334,19 @@ interface FlatTaskCardProps {
   batchMode?: boolean;
   selected?: boolean;
   onToggleSelect?: (id: string) => void;
+  onDispatch?: (taskId: string) => void;
+  dispatchingId?: string | null;
 }
 
-function FlatTaskCard({ task, agentMap, onClick, batchMode, selected, onToggleSelect }: FlatTaskCardProps) {
+function FlatTaskCard({ task, agentMap, onClick, batchMode, selected, onToggleSelect, onDispatch, dispatchingId }: FlatTaskCardProps) {
   const overdue = isOverdue(task.dueAt) && task.status !== 'done';
   const agent = task.agentId ? agentMap.get(task.agentId) : undefined;
+  const canLaunch = !!task.agentId && !task.sessionId && task.status !== 'done';
+  const isRunning = !!task.sessionId && task.status !== 'done';
+  const isDispatching = dispatchingId === task.id;
 
   return (
-    <button
-      type="button"
+    <div
       onClick={() => {
         if (batchMode && onToggleSelect) {
           onToggleSelect(task.id);
@@ -325,7 +355,7 @@ function FlatTaskCard({ task, agentMap, onClick, batchMode, selected, onToggleSe
         }
       }}
       className={[
-        'group flex w-full items-start gap-3 rounded-2xl border bg-white px-4 py-3 text-left transition dark:bg-zinc-900',
+        'group flex w-full cursor-pointer items-start gap-3 rounded-2xl border bg-white px-4 py-3 text-left transition dark:bg-zinc-900',
         selected
           ? 'border-blue-400 bg-blue-50/50 ring-1 ring-blue-200 dark:border-blue-600 dark:bg-blue-950/20 dark:ring-blue-800'
           : 'border-zinc-200 hover:border-zinc-300 hover:shadow-sm dark:border-zinc-800 dark:hover:border-zinc-700',
@@ -364,6 +394,25 @@ function FlatTaskCard({ task, agentMap, onClick, batchMode, selected, onToggleSe
               {agent.name}
             </span>
           )}
+          {/* Inline launch button */}
+          {canLaunch && onDispatch && (
+            <button
+              type="button"
+              disabled={isDispatching}
+              onClick={(e) => { e.stopPropagation(); onDispatch(task.id); }}
+              className="flex items-center gap-1 rounded-full bg-blue-600 px-2.5 py-0.5 text-[10px] font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
+            >
+              <Zap className={`h-3 w-3 ${isDispatching ? 'animate-pulse' : ''}`} />
+              {isDispatching ? '启动中' : '启动'}
+            </button>
+          )}
+          {/* Running badge */}
+          {isRunning && agent && (
+            <span className="flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-600 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+              Running
+            </span>
+          )}
           {task.dueAt && (
             <span className={`flex items-center gap-1 text-[10px] ${overdue ? 'text-red-500' : 'text-zinc-400'}`}>
               {overdue && <AlertCircle className="h-3 w-3" />}
@@ -381,7 +430,7 @@ function FlatTaskCard({ task, agentMap, onClick, batchMode, selected, onToggleSe
           )}
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -801,6 +850,7 @@ export default function TodosPage() {
 
   // Dispatch agent state
   const [dispatching, setDispatching] = useState(false);
+  const [dispatchingId, setDispatchingId] = useState<string | null>(null);
 
   const agentMap = useMemo(() => new Map(agents.map(a => [a.id, a])), [agents]);
   const activeTask = useMemo(() => todos.find(t => t.id === activeTaskId) ?? null, [todos, activeTaskId]);
@@ -1083,13 +1133,16 @@ export default function TodosPage() {
     closeDrawer();
   }
 
-  async function handleDispatchAgent() {
-    if (!activeTask || !activeTask.agentId || dispatching) return;
+  // Generic dispatch function: works for both inline card buttons and drawer
+  async function dispatchTask(taskId: string) {
+    const task = todos.find(t => t.id === taskId);
+    if (!task || !task.agentId || task.sessionId || dispatchingId) return;
     setDispatching(true);
+    setDispatchingId(taskId);
     try {
       // Build message from todo title + description
-      const parts = [activeTask.title];
-      if (activeTask.description) parts.push(activeTask.description);
+      const parts = [task.title];
+      if (task.description) parts.push(task.description);
       const message = parts.join('\n\n');
 
       // 1. Create agent session
@@ -1097,17 +1150,17 @@ export default function TodosPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          agentId: activeTask.agentId,
+          agentId: task.agentId,
           message,
-          projectKey: activeTask.projectKey || undefined,
-          initialTitle: activeTask.title.slice(0, 10) || undefined,
+          projectKey: task.projectKey || undefined,
+          initialTitle: task.title.slice(0, 10) || undefined,
         }),
       });
       if (!chatRes.ok) throw new Error(`Failed to start session: ${chatRes.status}`);
       const { sessionId: newSessionId } = await chatRes.json() as { sessionId: string };
 
       // 2. Write sessionId back to todo + set status to in_progress
-      const patchRes = await fetch(`/api/todos/${activeTask.id}`, {
+      const patchRes = await fetch(`/api/todos/${taskId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId: newSessionId, status: 'in_progress' }),
@@ -1117,18 +1170,38 @@ export default function TodosPage() {
       // 3. Update local state
       const now = new Date().toISOString();
       setTodos(cur => cur.map(t =>
-        t.id === activeTask.id
+        t.id === taskId
           ? { ...t, sessionId: newSessionId, status: 'in_progress' as TodoStatus, updatedAt: now }
           : t,
       ));
-      // Also update draft so drawer reflects the change immediately
-      patchDraft({ status: 'in_progress' });
+      // Also update draft if this task is open in drawer
+      if (activeTaskId === taskId) {
+        patchDraft({ status: 'in_progress' });
+      }
     } catch (err) {
       console.error('Dispatch agent failed:', err);
     } finally {
       setDispatching(false);
+      setDispatchingId(null);
     }
   }
+
+  function handleDispatchAgent() {
+    if (activeTask) dispatchTask(activeTask.id);
+  }
+
+  // Batch launch all launchable tasks
+  async function handleLaunchAll() {
+    const launchable = todos.filter(t => t.agentId && !t.sessionId && t.status !== 'done');
+    for (const task of launchable) {
+      await dispatchTask(task.id);
+    }
+  }
+
+  // Count of launchable tasks
+  const launchableCount = useMemo(() =>
+    todos.filter(t => t.agentId && !t.sessionId && t.status !== 'done').length,
+    [todos]);
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
@@ -1305,6 +1378,8 @@ export default function TodosPage() {
                     batchMode={batchMode}
                     selectedIds={selectedIds}
                     onToggleSelect={toggleSelect}
+                    onDispatch={dispatchTask}
+                    dispatchingId={dispatchingId}
                   />
                 ))}
               </div>
@@ -1355,7 +1430,7 @@ export default function TodosPage() {
                                 </div>
                                 <div className="space-y-2">
                                   {group.map(task => (
-                                    <FlatTaskCard key={task.id} task={task} agentMap={agentMap} onClick={() => openEdit(task)} batchMode={batchMode} selected={selectedIds.has(task.id)} onToggleSelect={toggleSelect} />
+                                    <FlatTaskCard key={task.id} task={task} agentMap={agentMap} onClick={() => openEdit(task)} batchMode={batchMode} selected={selectedIds.has(task.id)} onToggleSelect={toggleSelect} onDispatch={dispatchTask} dispatchingId={dispatchingId} />
                                   ))}
                                 </div>
                               </div>
@@ -1364,7 +1439,7 @@ export default function TodosPage() {
                         </>
                       )}
                       {view !== 'all' && filteredTodos.filter(t => t.status !== 'done').map(task => (
-                        <FlatTaskCard key={task.id} task={task} agentMap={agentMap} onClick={() => openEdit(task)} batchMode={batchMode} selected={selectedIds.has(task.id)} onToggleSelect={toggleSelect} />
+                        <FlatTaskCard key={task.id} task={task} agentMap={agentMap} onClick={() => openEdit(task)} batchMode={batchMode} selected={selectedIds.has(task.id)} onToggleSelect={toggleSelect} onDispatch={dispatchTask} dispatchingId={dispatchingId} />
                       ))}
                     </>
                   )}
@@ -1379,7 +1454,7 @@ export default function TodosPage() {
                       )}
                       <div className="space-y-2">
                         {filteredTodos.filter(t => t.status === 'done').map(task => (
-                          <FlatTaskCard key={task.id} task={task} agentMap={agentMap} onClick={() => openEdit(task)} batchMode={batchMode} selected={selectedIds.has(task.id)} onToggleSelect={toggleSelect} />
+                          <FlatTaskCard key={task.id} task={task} agentMap={agentMap} onClick={() => openEdit(task)} batchMode={batchMode} selected={selectedIds.has(task.id)} onToggleSelect={toggleSelect} onDispatch={dispatchTask} dispatchingId={dispatchingId} />
                         ))}
                       </div>
                     </div>
@@ -1446,6 +1521,32 @@ export default function TodosPage() {
             >
               <Trash2 className="h-3 w-3" />
               删除
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Launch bar (floating) — visible when there are launchable tasks and not in batch mode */}
+      {!batchMode && launchableCount > 0 && (
+        <div className="absolute bottom-6 left-1/2 z-20 -translate-x-1/2">
+          <div className="flex items-center gap-4 rounded-2xl border border-zinc-200 bg-white px-5 py-2.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-950/40">
+                <Zap className="h-4 w-4 text-blue-500" />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Ready to run</p>
+                <p className="text-xs text-zinc-600 dark:text-zinc-300">{launchableCount} 个任务可启动</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={!!dispatchingId}
+              onClick={handleLaunchAll}
+              className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
+            >
+              <Zap className={`h-4 w-4 ${dispatchingId ? 'animate-pulse' : ''}`} />
+              全部启动
             </button>
           </div>
         </div>
