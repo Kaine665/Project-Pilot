@@ -94,11 +94,13 @@ export async function listRunningTasks(): Promise<ActiveTaskEntry[]> {
   });
 }
 
-/** 注册一个新任务 */
+/** 注册一个新任务（自动清理过期/已完成记录，同一 branch 去重） */
 export async function registerTask(
   params: Omit<ActiveTaskEntry, 'id' | 'status' | 'registeredAt' | 'heartbeatAt'>,
 ): Promise<ActiveTaskEntry> {
   const now = new Date().toISOString();
+  const nowMs = Date.now();
+  const staleMs = STALE_HOURS * 60 * 60 * 1000;
   const entry: ActiveTaskEntry = {
     id: generateId(),
     status: 'running',
@@ -111,6 +113,25 @@ export async function registerTask(
     getActiveTasksPath(),
     DEFAULT_DATA,
     (data) => {
+      // Auto-prune: remove completed/failed/stale tasks
+      data.tasks = data.tasks.filter(t => {
+        if (t.status !== 'running') return false;
+        const heartbeat = new Date(t.heartbeatAt).getTime();
+        return nowMs - heartbeat <= staleMs;
+      });
+
+      // Dedup: if same branch already has a running task, mark it as failed
+      if (entry.branch) {
+        for (const t of data.tasks) {
+          if (t.branch === entry.branch && t.status === 'running') {
+            t.status = 'failed';
+            t.finishedAt = now;
+          }
+        }
+        // Remove the just-failed duplicates (they're stale anyway)
+        data.tasks = data.tasks.filter(t => t.status === 'running');
+      }
+
       data.tasks.push(entry);
       return data;
     },
@@ -282,15 +303,23 @@ async function main() {
     }
 
     case 'list': {
-      const tasks = await listActiveTasks();
-      const running = tasks.filter(t => t.status === 'running');
-      const finished = tasks.filter(t => t.status !== 'running');
+      const running = await listRunningTasks();
+      const runningIds = new Set(running.map(t => t.id));
+      const allTasks = await listActiveTasks();
+      const finished = allTasks.filter(t => t.status !== 'running');
+      const staleRunning = allTasks.filter(t => t.status === 'running' && !runningIds.has(t.id));
 
       console.log(`=== Running (${running.length}) ===`);
       for (const t of running) {
         const scope = t.scope ? ` [${t.scope.join(', ')}]` : '';
         const branch = t.branch ? ` (${t.branch})` : '';
         console.log(`  ${t.id}  ${t.agentType}  "${t.title}"${scope}${branch}  since ${t.registeredAt}`);
+      }
+      if (staleRunning.length > 0) {
+        console.log(`=== Stale (${staleRunning.length}, heartbeat expired) ===`);
+        for (const t of staleRunning) {
+          console.log(`  ${t.id}  "${t.title}"  last heartbeat ${t.heartbeatAt}`);
+        }
       }
       if (finished.length > 0) {
         console.log(`=== Finished (${finished.length}) ===`);
