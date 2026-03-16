@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAgentsPath, readJsonFile } from '@/lib/file-store';
-import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import { mergeAndRepairAgentsData } from '@/lib/agent-metadata-repair';
 import { resolveSystemPrompt } from '@/lib/agent-prompt-store';
 import { exportAgent } from '@/lib/agent-package';
-import type { Agent, AgentsData } from '@/types';
+import type { AgentsData } from '@/types';
 
 /** GET /api/agents/export/[id] — 导出 agent 为 .ppagent 格式 */
 export async function GET(
@@ -16,14 +16,9 @@ export async function GET(
   }
 
   // 读取 agent
-  const data = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
-
-  // 合并内置 agent
-  for (const defaultAgent of DEFAULT_AGENTS) {
-    if (!data.agents.find(a => a.id === defaultAgent.id)) {
-      data.agents.unshift(defaultAgent);
-    }
-  }
+  const { data } = await mergeAndRepairAgentsData(
+    await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] }),
+  );
 
   const agent = data.agents.find(a => a.id === id);
   if (!agent) {

@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import fs from 'fs';
-import { getFlowDataPath, ensureFlowsMigrated } from '@/lib/file-store';
+import { getFlowDataPath, ensureDataDirV2Migrated } from '@/lib/file-store';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     return new Response('project is required', { status: 400 });
   }
 
-  await ensureFlowsMigrated();
+  await ensureDataDirV2Migrated();
   const filePath = getFlowDataPath(project);
 
   const encoder = new TextEncoder();

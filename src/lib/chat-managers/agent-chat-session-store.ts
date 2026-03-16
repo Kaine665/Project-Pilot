@@ -1,50 +1,265 @@
 /**
- * Agent Chat Session Store — 纯数据操作函数，不依赖任何实例状态。
+ * Agent Chat Session Store — JSONL-backed message storage (v2).
  *
- * 从 AgentChatManager class 中拆分出来，解决 globalThis 单例导致的 HMR 问题：
- * - 这些函数作为模块级导出，HMR 可以正常更新
- * - class 只保留需要 this.runs（进程 Map）的有状态方法
+ * Architecture:
+ *   - Index file (agent-chat-sessions.json): lightweight metadata per session (no messages)
+ *   - Message files (agent-chat-messages/{sessionId}.jsonl): one JSON line per message
  *
- * API routes 应直接 import 这些函数，而不是通过 agentChatManager 单例调用。
+ * Benefits over the v1 monolithic JSON:
+ *   - Appending a message is O(1) (appendFileSync), not O(total-messages) rewrite
+ *   - Index file stays small (~100 bytes per session), fast to parse
+ *   - Crash during write loses at most one message, not the entire file
+ *   - Individual sessions can be deleted/archived without rewriting all others
+ *
+ * Backward compatibility:
+ *   - On first read, auto-migrates old format (sessions with embedded messages)
+ *     by extracting messages to JSONL files and stripping them from the index.
+ *
+ * API routes should import these functions directly, not via agentChatManager singleton.
  */
 
+import { promises as fs } from 'fs';
+import { appendFileSync, mkdirSync } from 'fs';
+import path from 'path';
 import {
   getAgentChatSessionsPath,
+  getAgentChatMessagesDir,
+  getAgentChatMessagePath,
   getAgentsPath,
   readJsonFile,
   modifyJsonFile,
+  parseJsonSafe,
 } from '@/lib/file-store';
 import { deleteRuntimePromptCopy } from '@/lib/agent-prompt-store';
 import type { Agent, AgentsData, ContentBlock } from '@/types';
-import type { AgentChatSession, AgentChatSessionsData, SessionConfig } from '@/types/agent-chat';
-import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import type {
+  AgentChatSession,
+  AgentChatSessionsData,
+  ChatMessage,
+  PendingUserQueueState,
+  SessionConfig,
+  SessionMeta,
+} from '@/types/agent-chat';
+import { getDefaultAgents } from '@/lib/default-agents';
 
 // ── Constants ──
 
 const DEFAULT_SESSIONS_DATA: AgentChatSessionsData = { sessions: [] };
 
-// ── Sessions data cache (reduce repeated full-file reads) ──
-let _sessionsCache: AgentChatSessionsData | null = null;
-let _sessionsCacheTs = 0;
-const SESSIONS_CACHE_TTL = 3_000; // 3s
+// ── Migration flag ──
+let _migrationDone = false;
 
-async function getSessionsData(): Promise<AgentChatSessionsData> {
-  const now = Date.now();
-  if (_sessionsCache && now - _sessionsCacheTs < SESSIONS_CACHE_TTL) {
-    return _sessionsCache;
+// ── Sessions index cache (reduce repeated full-file reads) ──
+// Now the index is much smaller (no messages), so caching is even more effective.
+let _indexCache: AgentChatSessionsData | null = null;
+let _indexCacheTs = 0;
+const INDEX_CACHE_TTL = 500; // 500ms
+
+async function getIndexData(): Promise<AgentChatSessionsData> {
+  // Ensure migration has run at least once
+  if (!_migrationDone) {
+    await migrateIfNeeded();
   }
-  _sessionsCache = await readJsonFile<AgentChatSessionsData>(
+
+  const now = Date.now();
+  if (_indexCache && now - _indexCacheTs < INDEX_CACHE_TTL) {
+    return _indexCache;
+  }
+  _indexCache = await readJsonFile<AgentChatSessionsData>(
     getAgentChatSessionsPath(),
     DEFAULT_SESSIONS_DATA,
   );
-  _sessionsCacheTs = now;
-  return _sessionsCache;
+  _indexCacheTs = now;
+  return _indexCache;
 }
 
-/** 写操作后使缓存失效 */
-function invalidateSessionsCache(): void {
-  _sessionsCache = null;
-  _sessionsCacheTs = 0;
+function invalidateIndexCache(): void {
+  _indexCache = null;
+  _indexCacheTs = 0;
+}
+
+// ── JSONL Message I/O ──
+
+/**
+ * Read all messages for a session from its JSONL file.
+ * Returns empty array if the file doesn't exist.
+ */
+export async function readMessages(sessionId: string): Promise<ChatMessage[]> {
+  const filePath = getAgentChatMessagePath(sessionId);
+  try {
+    const raw = await fs.readFile(filePath, 'utf-8');
+    const messages: ChatMessage[] = [];
+    for (const line of raw.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        messages.push(parseJsonSafe<ChatMessage>(trimmed));
+      } catch {
+        // Skip malformed lines (partial write from crash)
+        console.warn(`[readMessages] Skipping malformed line in ${sessionId}`);
+      }
+    }
+    return messages;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return [];
+    }
+    throw err;
+  }
+}
+
+/**
+ * Append a single message to the session's JSONL file.
+ * Uses synchronous appendFileSync to ensure the write is committed before returning.
+ */
+function appendMessage(sessionId: string, message: ChatMessage): void {
+  const filePath = getAgentChatMessagePath(sessionId);
+  const dir = getAgentChatMessagesDir();
+  try {
+    mkdirSync(dir, { recursive: true });
+  } catch { /* already exists */ }
+  const line = JSON.stringify(message) + '\n';
+  appendFileSync(filePath, line, 'utf-8');
+}
+
+/**
+ * Append multiple messages to the session's JSONL file.
+ */
+function appendMessages(sessionId: string, messages: ChatMessage[]): void {
+  if (messages.length === 0) return;
+  const filePath = getAgentChatMessagePath(sessionId);
+  const dir = getAgentChatMessagesDir();
+  try {
+    mkdirSync(dir, { recursive: true });
+  } catch { /* already exists */ }
+  const lines = messages.map(m => JSON.stringify(m)).join('\n') + '\n';
+  appendFileSync(filePath, lines, 'utf-8');
+}
+
+/**
+ * Overwrite all messages for a session (used by branch, compress, migration).
+ * Atomic: write to tmp then rename.
+ */
+async function writeAllMessages(sessionId: string, messages: ChatMessage[]): Promise<void> {
+  const filePath = getAgentChatMessagePath(sessionId);
+  const dir = getAgentChatMessagesDir();
+  await fs.mkdir(dir, { recursive: true });
+  const content = messages.map(m => JSON.stringify(m)).join('\n') + (messages.length ? '\n' : '');
+  const tmpPath = filePath + `.tmp_${Date.now()}`;
+  await fs.writeFile(tmpPath, content, 'utf-8');
+  try {
+    await fs.rename(tmpPath, filePath);
+  } catch {
+    // Windows fallback: copy + unlink
+    await fs.copyFile(tmpPath, filePath);
+    await fs.unlink(tmpPath).catch(() => {});
+  }
+}
+
+/**
+ * Delete the JSONL file for a session.
+ */
+async function deleteMessageFile(sessionId: string): Promise<void> {
+  const filePath = getAgentChatMessagePath(sessionId);
+  await fs.unlink(filePath).catch(() => {});
+}
+
+// ── Streaming Draft (crash recovery) ──
+
+/**
+ * Get the path for a session's streaming draft file.
+ * The draft stores partial raw assistant text while a stream is active.
+ * If the server crashes mid-stream, loadSession() recovers the partial text on next read.
+ */
+function getStreamingDraftPath(sessionId: string): string {
+  return path.join(getAgentChatMessagesDir(), `${sessionId}.streaming.json`);
+}
+
+/**
+ * Overwrite the streaming draft for a session with the latest accumulated text.
+ * Exported so AgentChatManager can call it during streaming (fire-and-forget).
+ */
+export async function writeStreamingDraft(sessionId: string, text: string): Promise<void> {
+  const draftPath = getStreamingDraftPath(sessionId);
+  const dir = getAgentChatMessagesDir();
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(draftPath, JSON.stringify({ text, ts: Date.now() }), 'utf-8');
+}
+
+/**
+ * Delete the streaming draft file. Safe to call even if the file doesn't exist.
+ * Exported so AgentChatManager can call it after a run completes normally.
+ */
+export async function deleteStreamingDraft(sessionId: string): Promise<void> {
+  await fs.unlink(getStreamingDraftPath(sessionId)).catch(() => {});
+}
+
+/**
+ * Strip known ProjectPilot action tags from raw streaming text.
+ * Called during crash recovery to avoid exposing internal XML tags to the user.
+ * Only handles the statically known tag set — new tag types remain visible as raw text,
+ * which is acceptable since crash recovery is an exceptional path.
+ */
+function stripActionTags(text: string): string {
+  return text
+    .replace(/<save-doc[^>]*>[\s\S]*?<\/save-doc>/g, '')
+    .replace(/<save-knowledge[^>]*>[\s\S]*?<\/save-knowledge>/g, '')
+    .replace(/<suspend-task[^>]*>[\s\S]*?<\/suspend-task>/g, '')
+    .replace(/<complete-suspended-task[^>]*/g, '')
+    .trim();
+}
+
+// ── Auto-migration from v1 (monolithic) to v2 (index + JSONL) ──
+
+async function migrateIfNeeded(): Promise<void> {
+  _migrationDone = true; // Set early to prevent re-entry
+
+  const data = await readJsonFile<{ sessions: Array<SessionMeta & { messages?: ChatMessage[] }> }>(
+    getAgentChatSessionsPath(),
+    { sessions: [] },
+  );
+
+  // Check if any session still has embedded messages
+  const sessionsWithMessages = data.sessions.filter(
+    s => Array.isArray(s.messages) && s.messages.length > 0,
+  );
+
+  if (sessionsWithMessages.length === 0) {
+    return; // Already migrated or fresh install
+  }
+
+  console.log(`[session-store] Migrating ${sessionsWithMessages.length} sessions from v1 (monolithic) to v2 (JSONL)...`);
+
+  // Ensure messages directory exists
+  await fs.mkdir(getAgentChatMessagesDir(), { recursive: true });
+
+  // Extract messages to JSONL files
+  for (const session of sessionsWithMessages) {
+    if (session.messages && session.messages.length > 0) {
+      await writeAllMessages(session.id, session.messages);
+      // Update messageCount for the index
+      session.messageCount = session.messages.length;
+    }
+  }
+
+  // Strip messages from index and write back
+  const cleanedSessions: SessionMeta[] = data.sessions.map(s => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { messages: _msgs, ...meta } = s;
+    return {
+      ...meta,
+      messageCount: meta.messageCount ?? (Array.isArray(_msgs) ? _msgs.length : 0),
+    };
+  });
+
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    () => ({ sessions: cleanedSessions }),
+  );
+
+  invalidateIndexCache();
+  console.log(`[session-store] Migration complete. ${sessionsWithMessages.length} sessions extracted to JSONL.`);
 }
 
 // ── ID Generation ──
@@ -55,43 +270,69 @@ export function generateSessionId(): string {
 
 // ── Session Read Operations ──
 
-/** 测试连接会话（__test-*）不列入会话列表，测完即销毁 */
+/** Test connection sessions (__test-*) are ephemeral, excluded from listings */
 const isEphemeralTestSession = (id: string) => id.startsWith('__test-');
 
+/**
+ * Load a full session (metadata + messages from JSONL).
+ * Returns null if the session doesn't exist in the index.
+ */
 export async function loadSession(sessionId: string): Promise<AgentChatSession | null> {
-  const data = await getSessionsData();
-  return data.sessions.find(s => s.id === sessionId) ?? null;
+  const data = await getIndexData();
+  const meta = data.sessions.find(s => s.id === sessionId);
+  if (!meta) return null;
+
+  const messages = await readMessages(sessionId);
+
+  // Crash recovery: check for leftover streaming draft.
+  // A draft file means the previous run was interrupted before finalizeRun() could
+  // write the assistant message and clean up. Recover the partial text and delete
+  // the draft so we don't append it again on the next load.
+  const draftPath = getStreamingDraftPath(sessionId);
+  try {
+    const draftRaw = await fs.readFile(draftPath, 'utf-8');
+    const draft = JSON.parse(draftRaw) as { text: string; ts: number };
+    if (draft.text && draft.text.trim()) {
+      const cleaned = stripActionTags(draft.text);
+      const recoveredContent = cleaned
+        ? cleaned + '\n\n*(回复在传输中被中断)*'
+        : '*(回复在传输中被中断)*';
+      messages.push({ role: 'assistant', content: recoveredContent });
+    }
+    // Always delete the draft after reading — avoid duplicate recovery on next load
+    await fs.unlink(draftPath).catch(() => {});
+  } catch {
+    // No draft file or malformed JSON — normal case, ignore
+  }
+
+  return { ...meta, messages };
 }
 
 export async function listSessions(agentId: string): Promise<Omit<AgentChatSession, 'messages'>[]> {
-  const data = await getSessionsData();
+  const data = await getIndexData();
   return data.sessions
     .filter(s => s.agentId === agentId && !isEphemeralTestSession(s.id))
-    .map(({ messages: _msgs, ...rest }) => rest)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
 export async function listSessionsByProject(agentId: string, projectKey: string): Promise<Omit<AgentChatSession, 'messages'>[]> {
-  const data = await getSessionsData();
+  const data = await getIndexData();
   return data.sessions
     .filter(s => s.agentId === agentId && s.projectKey === projectKey && !isEphemeralTestSession(s.id))
-    .map(({ messages: _msgs, ...rest }) => rest)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
 export async function listAllSessions(): Promise<Omit<AgentChatSession, 'messages'>[]> {
-  const data = await getSessionsData();
+  const data = await getIndexData();
   return data.sessions
     .filter(s => !isEphemeralTestSession(s.id))
-    .map(({ messages: _msgs, ...rest }) => rest)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
 export async function listGuestSessions(parentSessionId: string): Promise<Omit<AgentChatSession, 'messages'>[]> {
-  const data = await getSessionsData();
+  const data = await getIndexData();
   return data.sessions
     .filter(s => s.parentSessionId === parentSessionId && !isEphemeralTestSession(s.id))
-    .map(({ messages: _msgs, ...rest }) => rest)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
@@ -111,7 +352,7 @@ export async function markAsRead(sessionId: string): Promise<boolean> {
       return data;
     },
   );
-  invalidateSessionsCache();
+  invalidateIndexCache();
   return found;
 }
 
@@ -127,15 +368,14 @@ export async function setArchived(sessionId: string, archived: boolean): Promise
         session.archived = archived || undefined; // don't persist false
         found = true;
         if (archived) archivedAgentId = session.agentId;
-        console.log(`[setArchived] ${sessionId} → archived=${session.archived}`);
+        console.log(`[setArchived] ${sessionId} -> archived=${session.archived}`);
       } else {
         console.warn(`[setArchived] ${sessionId} NOT FOUND in ${data.sessions.length} sessions`);
       }
       return data;
     },
   );
-  invalidateSessionsCache();
-  // 归档时清理运行时 prompt 副本（软删除也应触发，避免文件堆积）
+  invalidateIndexCache();
   if (archived && found && archivedAgentId) {
     await deleteRuntimePromptCopy(archivedAgentId, sessionId).catch(() => {});
   }
@@ -157,7 +397,37 @@ export async function updateConfigOnDisk(sessionId: string, config: SessionConfi
       return data;
     },
   );
-  invalidateSessionsCache();
+  invalidateIndexCache();
+  return found;
+}
+
+export async function updatePendingUserQueueOnDisk(
+  sessionId: string,
+  queue: PendingUserQueueState,
+): Promise<boolean> {
+  let found = false;
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (data) => {
+      const session = data.sessions.find(s => s.id === sessionId);
+      if (session) {
+        session.pendingUserQueue = queue.items.length > 0
+          ? {
+              items: queue.items.map(item => ({
+                text: item.text,
+                images: item.images?.length ? [...item.images] : undefined,
+              })),
+              expanded: queue.expanded,
+            }
+          : undefined;
+        session.updatedAt = new Date().toISOString();
+        found = true;
+      }
+      return data;
+    },
+  );
+  invalidateIndexCache();
   return found;
 }
 
@@ -178,8 +448,11 @@ export async function deleteSessionFromDisk(sessionId: string): Promise<boolean>
       }),
     }),
   );
-  invalidateSessionsCache();
-  // 清理运行时 prompt 副本
+  invalidateIndexCache();
+
+  // Delete the JSONL message file
+  await deleteMessageFile(sessionId);
+
   if (found && deletedAgentId) {
     await deleteRuntimePromptCopy(deletedAgentId, sessionId).catch(() => {});
   }
@@ -198,16 +471,9 @@ export async function branchSession(
     throw new Error('Message index out of range');
   }
 
-  // When the frontend's message array is out of sync with disk (e.g. local
-  // deletions, streaming messages not yet persisted), the index may refer to
-  // a different position on disk. Clamp to disk bounds to avoid silent data
-  // loss or errors, and prefer using the relative position from the end when
-  // the frontend has extra messages that disk doesn't.
   let effectiveIndex = branchAtIndex;
   const diskLen = source.messages.length;
   if (frontendMessageCount !== undefined && frontendMessageCount !== diskLen) {
-    // Frontend has more messages (e.g. streaming assistant not yet persisted):
-    // the user's intended offset from the end is more reliable than absolute index.
     const fromEnd = frontendMessageCount - 1 - branchAtIndex;
     effectiveIndex = Math.max(0, diskLen - 1 - fromEnd);
   }
@@ -220,29 +486,34 @@ export async function branchSession(
   const branchedMessages = source.messages.slice(0, effectiveIndex + 1);
   const now = new Date().toISOString();
   const newId = generateSessionId();
-  const newSession: AgentChatSession = {
+
+  // Write branched messages to new JSONL file
+  await writeAllMessages(newId, branchedMessages);
+
+  // Add metadata to index
+  const newMeta: SessionMeta = {
     id: newId,
     agentId: source.agentId,
     projectKey: source.projectKey,
-    title: `🌿 ${source.title}`,
-    messages: branchedMessages,
+    title: `\u{1F33F} ${source.title}`,
     createdAt: now,
     updatedAt: now,
     config: source.config,
     unreadCount: 0,
+    messageCount: branchedMessages.length,
   };
 
   await modifyJsonFile<AgentChatSessionsData>(
     getAgentChatSessionsPath(),
     DEFAULT_SESSIONS_DATA,
     (data) => {
-      data.sessions.push(newSession);
+      data.sessions.push(newMeta);
       return data;
     },
   );
-  invalidateSessionsCache();
+  invalidateIndexCache();
 
-  return newSession;
+  return { ...newMeta, messages: branchedMessages };
 }
 
 // ── Internal Helpers (used by AgentChatManager) ──
@@ -250,6 +521,8 @@ export async function branchSession(
 /**
  * Eagerly write the user's message to disk BEFORE the Claude process starts.
  * Guarantees the user turn survives a dev-server restart.
+ *
+ * v2: Appends new messages to JSONL, updates index metadata.
  */
 export async function eagerlySaveUserTurn(opts: {
   sessionId: string;
@@ -263,23 +536,35 @@ export async function eagerlySaveUserTurn(opts: {
   importedTurnIndices?: number[];
 }): Promise<void> {
   const now = new Date().toISOString();
+
+  // Read existing messages from JSONL to determine what's new
+  const existingMessages = await readMessages(opts.sessionId);
+  const existingLen = existingMessages.length;
+  const incomingLen = opts.messages.length;
+
+  // Only append genuinely new messages
+  if (incomingLen > existingLen) {
+    const newMessages = opts.messages.slice(existingLen) as ChatMessage[];
+    appendMessages(opts.sessionId, newMessages);
+  }
+
+  // Update or create index entry
   await modifyJsonFile<AgentChatSessionsData>(
     getAgentChatSessionsPath(),
     DEFAULT_SESSIONS_DATA,
     (data) => {
       const idx = data.sessions.findIndex(s => s.id === opts.sessionId);
       if (idx >= 0) {
-        if (data.sessions[idx].messages.length < opts.messages.length) {
-          data.sessions[idx].messages = opts.messages;
+        if (incomingLen > existingLen) {
           data.sessions[idx].updatedAt = now;
+          data.sessions[idx].messageCount = incomingLen;
         }
       } else {
         data.sessions.push({
           id: opts.sessionId,
           agentId: opts.agentId,
           projectKey: opts.projectKey,
-          title: opts.sessionTitle ?? '新会话',
-          messages: opts.messages,
+          title: opts.sessionTitle ?? '\u65B0\u4F1A\u8BDD',
           claudeSessionId: opts.claudeSessionId,
           createdAt: now,
           updatedAt: now,
@@ -287,38 +572,67 @@ export async function eagerlySaveUserTurn(opts: {
           parentSessionId: opts.parentSessionId,
           importedTurnIndices: opts.importedTurnIndices,
           unreadCount: 0,
+          messageCount: incomingLen,
+          pendingUserQueue: undefined,
         });
       }
       return data;
     },
   );
-  invalidateSessionsCache();
+  invalidateIndexCache();
 }
 
 /**
  * Persist a completed run's session to disk.
+ *
+ * v2: Overwrites the JSONL file with the full message array (the run holds the
+ * authoritative message list after streaming completes), then updates index metadata.
  */
-export async function persistSessionToDisk(session: AgentChatSession): Promise<void> {
+export async function persistSessionToDisk(
+  session: AgentChatSession,
+  execution?: import('./types').SessionExecution,
+): Promise<void> {
+  // Write all messages to JSONL (authoritative after run completes)
+  await writeAllMessages(session.id, session.messages);
+
+  // Update index metadata
   await modifyJsonFile<AgentChatSessionsData>(
     getAgentChatSessionsPath(),
     DEFAULT_SESSIONS_DATA,
     (data) => {
       const idx = data.sessions.findIndex(s => s.id === session.id);
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { messages: _msgs, ...incomingMeta } = session;
+      const meta: SessionMeta = {
+        ...incomingMeta,
+        messageCount: session.messages.length,
+      };
+
+      // Write execution record (unified state source for sub-agent callers)
+      if (execution) {
+        meta.execution = execution;
+      }
+
       if (idx >= 0) {
-        session.createdAt = data.sessions[idx].createdAt;
-        session.archived = data.sessions[idx].archived;
-        session.config = session.config ?? data.sessions[idx].config;
-        session.guardRetryCount = session.guardRetryCount ?? data.sessions[idx].guardRetryCount;
-        session.unreadCount = (data.sessions[idx].unreadCount || 0) + 1;
-        data.sessions[idx] = session;
+        // Preserve fields from existing index entry
+        meta.createdAt = data.sessions[idx].createdAt;
+        meta.archived = data.sessions[idx].archived;
+        meta.config = meta.config ?? data.sessions[idx].config;
+        meta.guardRetryCount = meta.guardRetryCount ?? data.sessions[idx].guardRetryCount;
+        meta.pendingUserQueue = meta.pendingUserQueue ?? data.sessions[idx].pendingUserQueue;
+        meta.unreadCount = (data.sessions[idx].unreadCount || 0) + 1;
+        data.sessions[idx] = meta;
       } else {
-        session.unreadCount = 1;
-        data.sessions.push(session);
+        meta.unreadCount = 1;
+        data.sessions.push(meta);
       }
       return data;
     },
   );
-  invalidateSessionsCache();
+  invalidateIndexCache();
+
+  // Delete streaming draft — the run completed normally, draft is superseded
+  deleteStreamingDraft(session.id).catch(() => {});
 }
 
 export async function incrementGuardRetryCountOnDisk(sessionId: string): Promise<void> {
@@ -333,14 +647,111 @@ export async function incrementGuardRetryCountOnDisk(sessionId: string): Promise
       return data;
     },
   );
-  invalidateSessionsCache();
+  invalidateIndexCache();
+}
+
+// ── Compress support ──
+
+/**
+ * Replace all messages for a session (used by compress/apply).
+ * Updates both JSONL file and index messageCount.
+ */
+export async function replaceSessionMessages(sessionId: string, messages: ChatMessage[]): Promise<boolean> {
+  // Write new messages to JSONL
+  await writeAllMessages(sessionId, messages);
+
+  // Update index
+  let found = false;
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (data) => {
+      const session = data.sessions.find(s => s.id === sessionId);
+      if (session) {
+        session.updatedAt = new Date().toISOString();
+        session.messageCount = messages.length;
+        found = true;
+      }
+      return data;
+    },
+  );
+  invalidateIndexCache();
+  return found;
+}
+
+// ── Bulk operations (for clear/import/export) ──
+
+/**
+ * Delete all JSONL message files (used by clear).
+ */
+export async function deleteAllMessageFiles(): Promise<void> {
+  const dir = getAgentChatMessagesDir();
+  try {
+    const files = await fs.readdir(dir);
+    await Promise.all(
+      files
+        .filter(f => f.endsWith('.jsonl'))
+        .map(f => fs.unlink(path.join(dir, f)).catch(() => {})),
+    );
+  } catch {
+    // Directory doesn't exist — nothing to clean
+  }
+}
+
+/**
+ * Export a full session (metadata + messages) for backup/export.
+ */
+export async function exportSessionFull(sessionId: string): Promise<AgentChatSession | null> {
+  return loadSession(sessionId);
+}
+
+/**
+ * Import sessions with embedded messages (from v1 export format).
+ * Extracts messages to JSONL files and stores metadata in index.
+ */
+export async function importSessionsWithMessages(
+  sessions: AgentChatSession[],
+): Promise<void> {
+  // Write messages to JSONL files
+  for (const session of sessions) {
+    if (session.messages && session.messages.length > 0) {
+      await writeAllMessages(session.id, session.messages);
+    }
+  }
+
+  // Build metadata entries (without messages)
+  const metas: SessionMeta[] = sessions.map(s => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { messages: _msgs, ...meta } = s;
+    return { ...meta, messageCount: s.messages?.length ?? 0 };
+  });
+
+  // Merge into index
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (data) => {
+      for (const incoming of metas) {
+        const idx = data.sessions.findIndex(s => s.id === incoming.id);
+        if (idx >= 0) {
+          if (incoming.updatedAt > data.sessions[idx].updatedAt) {
+            data.sessions[idx] = incoming;
+          }
+        } else {
+          data.sessions.push(incoming);
+        }
+      }
+      return data;
+    },
+  );
+  invalidateIndexCache();
 }
 
 // ── Agent Loading ──
 
 let _agentsCache: AgentsData | null = null;
 let _agentsCacheTs = 0;
-const AGENTS_CACHE_TTL = 30_000; // 30s (与 settings 和 agents route 缓存 TTL 一致)
+const AGENTS_CACHE_TTL = 30_000;
 
 export async function loadAgent(agentId: string): Promise<Agent> {
   const now = Date.now();
@@ -351,10 +762,12 @@ export async function loadAgent(agentId: string): Promise<Agent> {
   const agentsData = _agentsCache;
   const agent = agentsData.agents.find(a => a.id === agentId && !a.archived);
   if (!agent) {
-    throw new Error('Agent not found or archived');
+    const { HttpError } = await import('@/lib/http-error');
+    throw new HttpError('Agent not found or archived', 404);
   }
   // Merge default agent fields (runtime migration)
-  const defaultAgent = DEFAULT_AGENTS.find(a => a.id === agentId);
+  const builtinAgents = await getDefaultAgents();
+  const defaultAgent = builtinAgents.find(a => a.id === agentId);
   if (defaultAgent) {
     for (const key of Object.keys(defaultAgent) as Array<keyof Agent>) {
       if (agent[key] === undefined && defaultAgent[key] !== undefined) {

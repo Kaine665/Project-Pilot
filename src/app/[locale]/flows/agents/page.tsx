@@ -1,19 +1,100 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
 import {
   Bot, Plus, Trash2, X, ChevronRight, Minimize2,
   Settings, MessageSquare, Archive, ArchiveRestore,
   Download, Upload, FileDown, FolderOpen,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
-import { AgentChatPanel } from '@/components/agent-chat-panel';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
+
+const AgentChatPanel = dynamic(
+  () => import('@/components/agent-chat-panel').then(m => ({ default: m.AgentChatPanel })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-muted-foreground/30 border-t-primary" />
+      </div>
+    ),
+  }
+);
 import { AgentIcon, SettingsForm, type FormData, emptyForm, agentToForm } from '@/components/agent-form';
 import { type AllSessionItem, type OpenedSession, groupSessionsByDay, syncUrlParams } from '@/components/agent-session-utils';
 import { useProject } from '@/components/project-context';
 import { getProviderPreset } from '@/lib/provider-registry';
 
+
+// ── Helpers ──
+
+function formatSessionElapsed(startedAt: string | undefined, nowTs: number): string {
+  if (!startedAt) return '0s';
+  const diffSeconds = Math.max(0, Math.floor((nowTs - new Date(startedAt).getTime()) / 1000));
+  if (diffSeconds < 60) return `${diffSeconds}s`;
+  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m`;
+  return `${Math.floor(diffSeconds / 3600)}h`;
+}
+
+// ── Session card (memo-ized to avoid re-render on listClockNow ticks) ──
+
+interface SessionCardProps {
+  session: AllSessionItem;
+  isActive: boolean;
+  listClockNow: number | undefined; // only passed when session.isRunning
+  onClick: (session: AllSessionItem) => void;
+  onArchiveToggle: (session: AllSessionItem, e: React.MouseEvent) => void;
+}
+
+const SessionCard = memo(function SessionCard({
+  session: s,
+  isActive,
+  listClockNow,
+  onClick,
+  onArchiveToggle,
+}: SessionCardProps) {
+  return (
+    <div
+      onClick={() => onClick(s)}
+      className={`group/session flex cursor-pointer items-center gap-3.5 rounded-xl border px-3 py-3.5 transition-all ${
+        isActive
+          ? 'bg-zinc-50 border-zinc-100 shadow-sm dark:bg-zinc-800 dark:border-zinc-700'
+          : 'border-transparent hover:bg-zinc-50 hover:border-zinc-100 dark:hover:bg-zinc-800/50 dark:hover:border-zinc-700/50'
+      } ${s.archived ? 'opacity-45' : ''}`}
+    >
+      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ${
+        isActive ? 'bg-white shadow-sm ring-zinc-200 dark:bg-zinc-700 dark:ring-zinc-600' : 'bg-zinc-50 ring-zinc-100 dark:bg-zinc-800 dark:ring-zinc-700'
+      }`}>
+        <AgentIcon iconKey={s.agentIcon} className={`h-5 w-5 ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400'}`} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className={`truncate text-[13px] ${s.archived ? 'font-medium text-zinc-400 dark:text-zinc-500' : 'font-semibold text-zinc-900 dark:text-zinc-100'}`}>
+          {s.title}
+        </div>
+        <div className={`truncate text-[11px] ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400'}`}>
+          {s.agentName}
+        </div>
+      </div>
+      {s.isRunning && listClockNow !== undefined ? (
+        <span className="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-blue-700 dark:bg-blue-950/70 dark:text-blue-300">
+          {formatSessionElapsed(s.runningStartedAt, listClockNow)}
+        </span>
+      ) : !isActive && !!s.unreadCount && s.unreadCount > 0 && !s.archived && (
+        <span className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-zinc-900 px-1.5 text-[10px] font-bold text-white dark:bg-zinc-100 dark:text-zinc-900">
+          {s.unreadCount > 99 ? '99+' : s.unreadCount}
+        </span>
+      )}
+      <button
+        onClick={(e) => onArchiveToggle(s, e)}
+        className="shrink-0 rounded-lg p-1.5 text-zinc-400 opacity-0 transition-all hover:bg-zinc-100 hover:text-zinc-600 group-hover/session:opacity-100 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-400"
+        title={s.archived ? '取消归档' : '归档'}
+      >
+        {s.archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+      </button>
+    </div>
+  );
+});
 
 // ── Main page ──
 
@@ -22,6 +103,8 @@ export default function AgentsPage() {
 
   // ── Core data ──
   const [agents, setAgents] = useState<Agent[]>([]);
+  const agentsRef = useRef<Agent[]>(agents);
+  agentsRef.current = agents;
   const [allSessions, setAllSessions] = useState<AllSessionItem[]>([]);
 
   // ── Sidebar tab ──
@@ -36,6 +119,8 @@ export default function AgentsPage() {
 
   // ── Multi-instance session panels (切换不销毁) ──
   const [openedSessions, setOpenedSessions] = useState<OpenedSession[]>([]);
+  const openedSessionsRef = useRef<OpenedSession[]>(openedSessions);
+  openedSessionsRef.current = openedSessions;
   const nextKeyRef = useRef(1);
 
   // ── Agent create/edit ──
@@ -44,6 +129,9 @@ export default function AgentsPage() {
   const [form, setForm] = useState<FormData>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [expandedPrompt, setExpandedPrompt] = useState(false);
+
+  // ── Session archive filter ──
+  const [sessionFilter, setSessionFilter] = useState<'active' | 'archived' | 'all'>('active');
 
   // ── New session agent picker ──
   const [showAgentPicker, setShowAgentPicker] = useState(false);
@@ -156,23 +244,34 @@ export default function AgentsPage() {
     const cacheKey = key ?? CACHE_KEY_ALL;
 
     // 切换项目时立即展示缓存数据（如有）
+    // 使用函数式更新，避免覆盖乐观插入的新会话
     const cached = sessionCacheRef.current.get(cacheKey);
     if (cached) {
-      setAllSessions(cached);
+      setAllSessions(prev => {
+        // 保留 prev 中已有但 cached 中没有的条目（乐观插入的新会话）
+        const cachedIds = new Set(cached.map(s => s.id));
+        const optimistic = prev.filter(s => !cachedIds.has(s.id));
+        // 保留 prev 中的运行时状态（isRunning 不会被持久化到缓存或 API）
+        const runtimeMap = new Map<string, Pick<AllSessionItem, 'isRunning' | 'runningStartedAt'>>();
+        for (const s of prev) {
+          if (s.isRunning) runtimeMap.set(s.id, { isRunning: s.isRunning, runningStartedAt: s.runningStartedAt });
+        }
+        const restored = runtimeMap.size > 0
+          ? cached.map(s => { const rt = runtimeMap.get(s.id); return rt ? { ...s, ...rt } : s; })
+          : cached;
+        return optimistic.length > 0 ? [...optimistic, ...restored] : restored;
+      });
     }
 
     try {
       const sessUrl = key
         ? `/api/agent-chat/sessions?projectKey=${encodeURIComponent(key)}`
         : '/api/agent-chat/sessions';
-      const [sessRes, agentsRes] = await Promise.all([
-        fetch(sessUrl, { cache: 'no-store' }),
-        fetch('/api/agents'),
-      ]);
+      const sessRes = await fetch(sessUrl, { cache: 'no-store' });
       const sessData = await sessRes.json();
-      const agentsData = await agentsRes.json();
+      // Reuse already-loaded agents from agentsRef instead of fetching /api/agents again
       const agentMap = new Map<string, Agent>();
-      for (const a of (agentsData.agents ?? []) as Agent[]) {
+      for (const a of agentsRef.current) {
         agentMap.set(a.id, a);
       }
       const sessions: AllSessionItem[] = (sessData.sessions ?? []).map((s: { id: string; title: string; updatedAt: string; agentId: string; unreadCount?: number; archived?: boolean; projectKey?: string }) => {
@@ -197,20 +296,53 @@ export default function AgentsPage() {
           !remoteIds.has(s.id)
           && (!key || !s.projectKey || s.projectKey === key),
         );
-        const merged = [...localOnly, ...sessions];
+        // 保留 prev 中的运行时状态（isRunning 不会被 API 返回）
+        const runtimeMap = new Map<string, Pick<AllSessionItem, 'isRunning' | 'runningStartedAt'>>();
+        for (const s of prev) {
+          if (s.isRunning) runtimeMap.set(s.id, { isRunning: s.isRunning, runningStartedAt: s.runningStartedAt });
+        }
+        const restoredSessions = runtimeMap.size > 0
+          ? sessions.map(s => { const rt = runtimeMap.get(s.id); return rt ? { ...s, ...rt } : s; })
+          : sessions;
+        const merged = [...localOnly, ...restoredSessions];
         // 写入缓存
         sessionCacheRef.current.set(cacheKey, merged);
         return merged;
       });
-      // Also update agents cache
-      setAgents(agentsData.agents ?? []);
+      // Agents are already kept up-to-date via fetchAgents(); no duplicate fetch needed.
     } catch { /* ignore */ }
   }, [effectiveProjectKey]);
 
   useEffect(() => { fetchAllSessions(); }, [fetchAllSessions]);
 
+  // ── Clear opened session panels when project changes ──
+  const prevProjectKeyRef = useRef(effectiveProjectKey);
+  useEffect(() => {
+    if (prevProjectKeyRef.current !== effectiveProjectKey) {
+      prevProjectKeyRef.current = effectiveProjectKey;
+      setOpenedSessions([]);
+      setActivePanel(null);
+    }
+  }, [effectiveProjectKey]);
+
+  // ── Clock for running-session elapsed display ──
+  const hasRunningSession = useMemo(() => allSessions.some(s => s.isRunning), [allSessions]);
+  const [listClockNow, setListClockNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!hasRunningSession) return;
+    const timer = setInterval(() => setListClockNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [hasRunningSession]);
+
+  // ── Filtered sessions by archive status ──
+  const filteredSessions = useMemo(() => {
+    if (sessionFilter === 'all') return allSessions;
+    if (sessionFilter === 'archived') return allSessions.filter(s => s.archived);
+    return allSessions.filter(s => !s.archived); // 'active'
+  }, [allSessions, sessionFilter]);
+
   // ── Grouped sessions for display ──
-  const groupedSessions = useMemo(() => groupSessionsByDay(allSessions), [allSessions]);
+  const groupedSessions = useMemo(() => groupSessionsByDay(filteredSessions), [filteredSessions]);
 
   // ── Project-filtered agents（项目专属排前面，全局排后面）──
   const filteredAgents = useMemo(() => {
@@ -238,7 +370,7 @@ export default function AgentsPage() {
 
   // ── Handlers: Conversations tab ──
 
-  const handleSessionClick = (session: AllSessionItem) => {
+  const handleSessionClick = useCallback((session: AllSessionItem) => {
     // Mark as read (fire-and-forget + clear local state immediately)
     if (session.unreadCount) {
       setAllSessions(prev => prev.map(s => s.id === session.id ? { ...s, unreadCount: 0 } : s));
@@ -249,21 +381,20 @@ export default function AgentsPage() {
       }).catch(() => {});
     }
 
-    // Check if already opened
-    const existing = openedSessions.find(
+    // Read latest via ref to avoid calling setState/syncUrlParams inside an updater
+    const existing = openedSessionsRef.current.find(
       o => o.sessionId === session.id && o.agentId === session.agentId,
     );
+
     if (existing) {
       setActivePanel({ type: 'session', key: existing.key });
-      syncUrlParams({ agent: session.agentId, session: session.id });
-      return;
+    } else {
+      const key = nextKeyRef.current++;
+      setOpenedSessions(prev => [...prev, { sessionId: session.id, agentId: session.agentId, key }]);
+      setActivePanel({ type: 'session', key });
     }
-    // Open new instance
-    const key = nextKeyRef.current++;
-    setOpenedSessions(prev => [...prev, { sessionId: session.id, agentId: session.agentId, key }]);
-    setActivePanel({ type: 'session', key });
     syncUrlParams({ agent: session.agentId, session: session.id });
-  };
+  }, []);
 
   const handleNewSession = (agent: Agent) => {
     const key = nextKeyRef.current++;
@@ -273,7 +404,7 @@ export default function AgentsPage() {
     syncUrlParams({ agent: agent.id, session: null });
   };
 
-  const handleArchiveToggle = (session: AllSessionItem, e: React.MouseEvent) => {
+  const handleArchiveToggle = useCallback((session: AllSessionItem, e: React.MouseEvent) => {
     e.stopPropagation();
     const newArchived = !session.archived;
     // Optimistic update
@@ -292,7 +423,7 @@ export default function AgentsPage() {
       // Rollback on network error
       setAllSessions(prev => prev.map(s => s.id === session.id ? { ...s, archived: !newArchived } : s));
     });
-  };
+  }, []);
 
   // ── Handlers: Agents tab ──
 
@@ -495,23 +626,29 @@ export default function AgentsPage() {
   const selectedAgent = agents.find(a => a.id === selectedAgentId) ?? null;
   const agentViewMode = activePanel?.type === 'agent' ? activePanel.mode : 'chat';
 
-  const hasChanges = creating
-    ? form.name.trim().length > 0
-    : selectedAgent
-      ? form.name !== selectedAgent.name
-        || form.description !== (selectedAgent.description ?? '')
-        || form.systemPrompt !== (selectedAgent.systemPrompt ?? '')
-        || form.icon !== (selectedAgent.icon ?? '')
-        || JSON.stringify(form.capabilities) !== JSON.stringify(selectedAgent.capabilities ?? DEFAULT_AGENT_CAPABILITIES)
-        || form.requiredParamsText !== (selectedAgent.requiredParams ?? []).join('\n')
-        || JSON.stringify([...form.contextIds].sort()) !== JSON.stringify([...(selectedAgent.contextIds ?? [])].sort())
-        || JSON.stringify([...form.skillIds].sort()) !== JSON.stringify(
-            [...(selectedAgent.defaultResources ?? []).filter(r => r.type === 'skill').map(r => r.id)].sort()
-          )
-        || form.projectKey !== (selectedAgent.projectKey ?? '')
-        || form.defaultProvider !== (selectedAgent.defaultProvider ?? '')
-        || form.defaultModel !== (selectedAgent.defaultModel ?? '')
-      : false;
+  const hasChanges = useMemo(() => {
+    if (creating) return form.name.trim().length > 0;
+    if (!selectedAgent) return false;
+    return form.name !== selectedAgent.name
+      || form.description !== (selectedAgent.description ?? '')
+      || form.systemPrompt !== (selectedAgent.systemPrompt ?? '')
+      || form.icon !== (selectedAgent.icon ?? '')
+      || JSON.stringify(form.capabilities) !== JSON.stringify(selectedAgent.capabilities ?? DEFAULT_AGENT_CAPABILITIES)
+      || form.requiredParamsText !== (selectedAgent.requiredParams ?? []).join('\n')
+      || JSON.stringify([...form.contextIds].sort()) !== JSON.stringify([...(selectedAgent.contextIds ?? [])].sort())
+      || JSON.stringify([...form.skillIds].sort()) !== JSON.stringify(
+          [...(selectedAgent.defaultResources ?? []).filter(r => r.type === 'skill').map(r => r.id)].sort()
+        )
+      || form.projectKey !== (selectedAgent.projectKey ?? '')
+      || form.defaultProvider !== (selectedAgent.defaultProvider ?? '')
+      || form.defaultModel !== (selectedAgent.defaultModel ?? '');
+  }, [creating, form, selectedAgent]);
+
+  // ── Pre-computed active session ID for sidebar highlight ──
+  const activeSessionId = useMemo(() => {
+    if (activePanel?.type !== 'session') return null;
+    return openedSessions.find(o => o.key === activePanel.key)?.sessionId ?? null;
+  }, [activePanel, openedSessions]);
 
   // ── Active session info (for header display) ──
   const activeOpened = activePanel?.type === 'session'
@@ -557,10 +694,26 @@ export default function AgentsPage() {
         {/* ── Tab content ── */}
         {sidebarTab === 'conversations' ? (
           <div className="flex flex-1 flex-col overflow-hidden">
-            {/* New session button */}
+            {/* Session filter + new session button */}
             <div className="relative flex items-center justify-between px-5 py-4">
-              <div className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
-                {allSessions.length > 0 ? `活跃会话 (${allSessions.length})` : '活跃会话'}
+              <div className="flex items-center gap-1 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800">
+                {([
+                  ['active', '活跃'],
+                  ['archived', '归档'],
+                  ['all', '全部'],
+                ] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    onClick={() => setSessionFilter(key)}
+                    className={`rounded-md px-2 py-1 text-[11px] font-medium transition-all ${
+                      sessionFilter === key
+                        ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
+                        : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
               <button
                 onClick={() => setShowAgentPicker(v => !v)}
@@ -593,11 +746,11 @@ export default function AgentsPage() {
             </div>
             {/* Session list */}
             <div className="flex-1 overflow-y-auto px-2 pb-4">
-              {allSessions.length === 0 ? (
+              {filteredSessions.length === 0 ? (
                 <div className="px-4 py-12 text-center text-xs text-zinc-400 dark:text-zinc-500">
                   <MessageSquare className="mx-auto mb-2 h-8 w-8 text-zinc-300 dark:text-zinc-600" />
-                  <p>暂无对话</p>
-                  <p className="mt-1">点击右上角 + 开始新对话</p>
+                  <p>{sessionFilter === 'archived' ? '暂无归档对话' : sessionFilter === 'all' ? '暂无对话' : '暂无活跃对话'}</p>
+                  {sessionFilter === 'active' && <p className="mt-1">点击右上角 + 开始新对话</p>}
                 </div>
               ) : (
                 groupedSessions.map(group => (
@@ -606,44 +759,16 @@ export default function AgentsPage() {
                       {group.label}
                     </div>
                     {group.items.map(s => {
-                      const isActive = activePanel?.type === 'session'
-                        && openedSessions.find(o => o.key === activePanel.key)?.sessionId === s.id;
+                      const isActive = activeSessionId === s.id;
                       return (
-                        <div
+                        <SessionCard
                           key={s.id}
-                          onClick={() => handleSessionClick(s)}
-                          className={`group/session flex cursor-pointer items-center gap-3.5 rounded-xl border px-3 py-3.5 transition-all ${
-                            isActive
-                              ? 'bg-zinc-50 border-zinc-100 shadow-sm dark:bg-zinc-800 dark:border-zinc-700'
-                              : 'border-transparent hover:bg-zinc-50 hover:border-zinc-100 dark:hover:bg-zinc-800/50 dark:hover:border-zinc-700/50'
-                          } ${s.archived ? 'opacity-45' : ''}`}
-                        >
-                          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ${
-                            isActive ? 'bg-white shadow-sm ring-zinc-200 dark:bg-zinc-700 dark:ring-zinc-600' : 'bg-zinc-50 ring-zinc-100 dark:bg-zinc-800 dark:ring-zinc-700'
-                          }`}>
-                            <AgentIcon iconKey={s.agentIcon} className={`h-5 w-5 ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400'}`} />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className={`truncate text-[13px] ${s.archived ? 'font-medium text-zinc-400 dark:text-zinc-500' : 'font-semibold text-zinc-900 dark:text-zinc-100'}`}>
-                              {s.title}
-                            </div>
-                            <div className={`truncate text-[11px] ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400'}`}>
-                              {s.agentName}
-                            </div>
-                          </div>
-                          {!isActive && !!s.unreadCount && s.unreadCount > 0 && !s.archived && (
-                            <span className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-zinc-900 px-1.5 text-[10px] font-bold text-white dark:bg-zinc-100 dark:text-zinc-900">
-                              {s.unreadCount > 99 ? '99+' : s.unreadCount}
-                            </span>
-                          )}
-                          <button
-                            onClick={(e) => handleArchiveToggle(s, e)}
-                            className="shrink-0 rounded-lg p-1.5 text-zinc-400 opacity-0 transition-all hover:bg-zinc-100 hover:text-zinc-600 group-hover/session:opacity-100 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-400"
-                            title={s.archived ? '取消归档' : '归档'}
-                          >
-                            {s.archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
-                          </button>
-                        </div>
+                          session={s}
+                          isActive={isActive}
+                          listClockNow={s.isRunning ? listClockNow : undefined}
+                          onClick={handleSessionClick}
+                          onArchiveToggle={handleArchiveToggle}
+                        />
                       );
                     })}
                   </div>
@@ -864,9 +989,19 @@ export default function AgentsPage() {
                         setAllSessions(prev => {
                           const existing = prev.find(s => s.id === newSession.id);
                           if (existing) {
-                            // 已存在 → 更新标题等字段（session_title_set 场景）
                             return prev.map(s => s.id === newSession.id
-                              ? { ...s, title: newSession.title, updatedAt: newSession.updatedAt }
+                              ? {
+                                  ...s,
+                                  title: newSession.title,
+                                  updatedAt: newSession.updatedAt,
+                                  ...(newSession.isRunning !== undefined && {
+                                    isRunning: newSession.isRunning,
+                                    runningStartedAt: newSession.runningStartedAt,
+                                  }),
+                                  ...(newSession.unreadCount !== undefined && {
+                                    unreadCount: newSession.unreadCount,
+                                  }),
+                                }
                               : s);
                           }
                           return [{
@@ -876,10 +1011,16 @@ export default function AgentsPage() {
                             agentId: selectedAgent.id,
                             agentName: selectedAgent.name,
                             agentIcon: selectedAgent.icon,
+                            isRunning: newSession.isRunning,
+                            runningStartedAt: newSession.runningStartedAt,
+                            unreadCount: newSession.unreadCount,
                           }, ...prev];
                         });
                       }
-                      fetchAllSessions();
+                      // Don't fetch on every streaming tick – only fetch on real content changes
+                      if (!newSession || newSession.isRunning !== true) {
+                        fetchAllSessions();
+                      }
                     }}
                   />
                 </div>
@@ -976,7 +1117,15 @@ export default function AgentsPage() {
                             const existing = prev.find(s => s.id === newSession.id);
                             if (existing) {
                               return prev.map(s => s.id === newSession.id
-                                ? { ...s, title: newSession.title, updatedAt: newSession.updatedAt }
+                                ? {
+                                    ...s,
+                                    title: newSession.title,
+                                    updatedAt: newSession.updatedAt,
+                                    ...(newSession.isRunning !== undefined && {
+                                      isRunning: newSession.isRunning,
+                                      runningStartedAt: newSession.runningStartedAt,
+                                    }),
+                                  }
                                 : s);
                             }
                             return [{
@@ -986,6 +1135,8 @@ export default function AgentsPage() {
                               agentId: os.agentId,
                               agentName: agent.name,
                               agentIcon: agent.icon,
+                              isRunning: newSession.isRunning,
+                              runningStartedAt: newSession.runningStartedAt,
                             }, ...prev];
                           });
                         }
@@ -998,7 +1149,10 @@ export default function AgentsPage() {
                             body: JSON.stringify({ action: 'markAsRead' }),
                           }).catch(() => {});
                         }
-                        fetchAllSessions();
+                        // Don't fetch on every streaming tick – only fetch on real content changes
+                        if (!newSession || newSession.isRunning !== true) {
+                          fetchAllSessions();
+                        }
                       }}
                     />
                   </div>

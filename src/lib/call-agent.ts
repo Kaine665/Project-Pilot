@@ -23,16 +23,24 @@
  *   --parent-session   Optional. Parent session ID for traceability
  *   --port             Optional. Server port (default: 4000 or PROJECT_PILOT_PORT)
  *   --timeout          Optional. Timeout in seconds (default: 300, sync mode only)
+ *   --task-file        Optional. Path to a file containing full task details (appended to --message)
  *   --depth            Optional. Current call depth for recursion guard (default: 0, max: 3)
  *
- * Stdout: Sub-agent's accumulated text response (clean, no SSE framing)
+ * Stdout (structured JSON — ALWAYS machine-parseable):
+ *   Sync completed:   {"status":"completed","sessionId":"...","content":"..."}
+ *   Async started:    {"status":"started","sessionId":"..."}
+ *   Poll completed:   {"status":"completed","sessionId":"...","content":"..."}
+ *   Poll running:     {"status":"running","sessionId":"..."}
+ *   Error:            {"status":"failed","sessionId":"...","error":"..."}
+ *
  * Stderr: Diagnostic messages (session lifecycle, errors)
  * Exit codes:
- *   0 — Success (completed, result on stdout)
+ *   0 — Success (completed/started, result on stdout as JSON)
  *   1 — Error (failed, stopped, or timeout)
  *   2 — Still running (--poll mode only)
  */
 
+import fs from 'fs';
 import http from 'http';
 
 // ── Constants ──
@@ -52,6 +60,23 @@ interface CallAgentOptions {
   port: number;
   timeoutSeconds: number;
   depth: number;
+}
+
+interface CallAgentResult {
+  sessionId: string;
+  content: string;
+}
+
+// ── Structured output helper ──
+
+/** Write a structured JSON result to stdout. All modes use this. */
+function writeResult(data: {
+  status: 'completed' | 'started' | 'running' | 'failed';
+  sessionId: string;
+  content?: string;
+  error?: string;
+}): void {
+  process.stdout.write(JSON.stringify(data) + '\n');
 }
 
 // ── Core logic ──
@@ -81,6 +106,7 @@ async function startSession(opts: {
     message,
     projectKey: projectKey || undefined,
     parentSessionId: parentSessionId || undefined,
+    depth,
   });
 
   const postResult = await httpRequest({
@@ -94,7 +120,12 @@ async function startSession(opts: {
   });
 
   if (postResult.statusCode !== 200) {
-    throw new Error(`POST /api/agent-chat failed: HTTP ${postResult.statusCode} — ${postResult.body}`);
+    let errorMsg = postResult.body;
+    try {
+      const parsed = JSON.parse(postResult.body);
+      if (parsed.error) errorMsg = parsed.error;
+    } catch { /* use raw body */ }
+    throw new Error(`${errorMsg} (HTTP ${postResult.statusCode})`);
   }
 
   let sessionId: string;
@@ -112,22 +143,66 @@ async function startSession(opts: {
   return sessionId;
 }
 
-/** 同步模式：发起 + 等待 SSE 完成 */
-async function callAgent(opts: CallAgentOptions): Promise<string> {
+/**
+ * 同步模式：发起 + 等待 SSE 完成 + fallback 验证。
+ *
+ * 关键改进：SSE 流结束后如果 fullText 为空，自动从磁盘读取结果。
+ * 这样即使 SSE 事件丢失或 text_delta 未到达，也能拿到完整结果。
+ */
+async function callAgent(opts: CallAgentOptions): Promise<CallAgentResult> {
   const { port, timeoutSeconds, depth } = opts;
 
   const sessionId = await startSession({ ...opts, depth });
+  // 立即输出 sessionId 到 stderr，即使后续 stdout 被吞也有据可查
   process.stderr.write(`[call-agent] Session started: ${sessionId} (depth=${depth})\n`);
 
-  const fullText = await consumeSSEStream({
+  const sseText = await consumeSSEStream({
     hostname: '127.0.0.1',
     port,
     path: `/api/agent-chat/stream?sessionId=${encodeURIComponent(sessionId)}&since=0`,
     timeoutMs: timeoutSeconds * 1000,
   });
 
-  process.stderr.write(`[call-agent] Session completed. Response length: ${fullText.length} chars\n`);
-  return fullText;
+  // ── Fallback：SSE 文本为空时从磁盘读取 ──
+  if (sseText.length > 0) {
+    process.stderr.write(`[call-agent] Session completed via SSE. Response length: ${sseText.length} chars\n`);
+    return { sessionId, content: sseText };
+  }
+
+  process.stderr.write(`[call-agent] SSE text empty, falling back to disk read for session ${sessionId}\n`);
+  const diskContent = await readSessionFromDisk(sessionId, port);
+  process.stderr.write(`[call-agent] Disk fallback result: ${diskContent.length} chars\n`);
+  return { sessionId, content: diskContent };
+}
+
+/**
+ * 从磁盘读取会话的最后一条 assistant 消息。
+ * 用于 SSE 流文本为空时的 fallback 验证。
+ */
+async function readSessionFromDisk(sessionId: string, port: number): Promise<string> {
+  const sessionResult = await httpRequest({
+    method: 'GET',
+    hostname: '127.0.0.1',
+    port,
+    path: `/api/agent-chat/sessions/${encodeURIComponent(sessionId)}`,
+    timeoutMs: POST_TIMEOUT_MS,
+  });
+
+  if (sessionResult.statusCode !== 200) {
+    throw new Error(`Disk read failed for session ${sessionId}: HTTP ${sessionResult.statusCode}`);
+  }
+
+  const session = JSON.parse(sessionResult.body);
+  const messages: Array<{ role: string; content: string }> = session.messages || [];
+
+  // Check execution record for failure
+  const execution = session.execution as { status?: string; result?: { error?: { message: string } } } | undefined;
+  if (execution?.status === 'failed' || execution?.status === 'stopped') {
+    throw new Error(execution.result?.error?.message ?? `Session ${execution.status}`);
+  }
+
+  const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+  return lastAssistant?.content ?? '';
 }
 
 // ── Poll logic ──
@@ -136,10 +211,15 @@ const POLL_EXIT_RUNNING = 2;
 
 /**
  * 查询会话状态和结果。
- * - running → 输出 "RUNNING"，exit 2
- * - completed → 输出 assistant 最终文本，exit 0
- * - failed/stopped → 输出错误信息，exit 1
- * - none（已从内存清除）→ 回退到磁盘读取
+ *
+ * 统一状态源策略：
+ * 1. 先查内存状态 (/api/agent-chat/status)
+ *    - `running` → 仍在执行，exit 2
+ *    - `completed` → 数据保证已落盘（finalizing→completed 原子化），直接取结果
+ *    - `failed`/`stopped` → exit 1
+ *    - `none` → 内存已清除，回退到磁盘
+ * 2. 内存 completed 时：优先使用内存消息（零延迟），否则从磁盘读取
+ * 3. 内存 none 时：从磁盘会话索引读取 execution 记录
  */
 async function pollSession(sessionId: string, port: number): Promise<void> {
   // Step 1: 查询内存中的运行状态
@@ -159,23 +239,28 @@ async function pollSession(sessionId: string, port: number): Promise<void> {
   const status: string = statusData.status;
   const statusMessages: Array<{ role: string; content: string }> = statusData.messages || [];
 
-  if (status === 'running') {
-    process.stdout.write('RUNNING');
+  if (status === 'running' || status === 'awaiting') {
+    writeResult({ status: 'running', sessionId });
     process.exit(POLL_EXIT_RUNNING);
   }
 
   if (status === 'failed' || status === 'stopped') {
     process.stderr.write(`[call-agent] Session ${status}: ${sessionId}\n`);
+    writeResult({ status: 'failed', sessionId, error: `Session ${status}` });
     process.exit(1);
   }
 
-  const inMemoryAssistant = [...statusMessages].reverse().find(m => m.role === 'assistant');
-  if (inMemoryAssistant) {
-    process.stdout.write(inMemoryAssistant.content);
-    return;
+  // status === 'completed': data is guaranteed on disk (finalizing→completed is atomic).
+  // Try in-memory messages first (faster), then disk.
+  if (status === 'completed') {
+    const inMemoryAssistant = [...statusMessages].reverse().find(m => m.role === 'assistant');
+    if (inMemoryAssistant) {
+      writeResult({ status: 'completed', sessionId, content: inMemoryAssistant.content });
+      return;
+    }
   }
 
-  // status === 'completed' 或 'none'（已从内存清除）→ 从磁盘读取结果
+  // status === 'completed' (no in-memory msgs) or 'none' → read from disk
   const sessionResult = await httpRequest({
     method: 'GET',
     hostname: '127.0.0.1',
@@ -185,11 +270,11 @@ async function pollSession(sessionId: string, port: number): Promise<void> {
   });
 
   if (sessionResult.statusCode === 404) {
-    if (status === 'none' || status === 'completed') {
-      process.stdout.write('RUNNING');
-      process.exit(POLL_EXIT_RUNNING);
+    if (status === 'none') {
+      throw new Error(`Session not found: ${sessionId}. It may have been deleted or never persisted.`);
     }
-    throw new Error(`Session not found: ${sessionId}`);
+    // completed but 404 should never happen now, but handle gracefully
+    throw new Error(`Session ${sessionId} completed but not found on disk (unexpected)`);
   }
   if (sessionResult.statusCode !== 200) {
     throw new Error(`GET /api/agent-chat/sessions/${sessionId} failed: HTTP ${sessionResult.statusCode}`);
@@ -198,19 +283,21 @@ async function pollSession(sessionId: string, port: number): Promise<void> {
   const session = JSON.parse(sessionResult.body);
   const messages: Array<{ role: string; content: string }> = session.messages || [];
 
-  // 找最后一条 assistant 消息
-  const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+  // Check execution record for terminal status (unified state source)
+  const execution = session.execution as { status?: string; result?: { status: string; summary: string; error?: { message: string } } } | undefined;
+  if (execution?.status === 'failed' || execution?.status === 'stopped') {
+    const errMsg = execution.result?.error?.message ?? `Session ${execution.status}`;
+    process.stderr.write(`[call-agent] Session ${execution.status}: ${errMsg}\n`);
+    writeResult({ status: 'failed', sessionId, error: errMsg });
+    process.exit(1);
+  }
 
+  const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
   if (!lastAssistant) {
-    // 有 session 记录但无 assistant 回复 — 可能还在跑（eagerly saved 但未完成）
-    if (status === 'none' || status === 'completed') {
-      process.stdout.write('RUNNING');
-      process.exit(POLL_EXIT_RUNNING);
-    }
     throw new Error(`Session ${sessionId} has no assistant response`);
   }
 
-  process.stdout.write(lastAssistant.content);
+  writeResult({ status: 'completed', sessionId, content: lastAssistant.content });
 }
 
 // ── HTTP helpers ──
@@ -371,6 +458,7 @@ async function main() {
       await pollSession(pollSessionId, port);
     } catch (err) {
       process.stderr.write(`[call-agent] POLL FAILED: ${(err as Error).message}\n`);
+      writeResult({ status: 'failed', sessionId: pollSessionId, error: (err as Error).message });
       process.exit(1);
     }
     return;
@@ -378,14 +466,21 @@ async function main() {
 
   // ── Mode: --async / sync (default) ──
   const agentId = opts['agent-id'];
-  const message = opts['message'];
   const isAsync = opts['async'] === 'true';
+
+  // --task-file: read file content and append/use as message
+  const taskFile = opts['task-file'];
+  let message = opts['message'] || '';
+  if (taskFile && taskFile !== 'true') {
+    const fileContent = fs.readFileSync(taskFile, 'utf-8').trim();
+    message = message ? `${message}\n\n---\n\n${fileContent}` : fileContent;
+  }
 
   if (!agentId || !message) {
     process.stderr.write(
       'Usage:\n' +
-      '  npx tsx src/lib/call-agent.ts --agent-id <ID> --message "指令" [options]\n' +
-      '  npx tsx src/lib/call-agent.ts --agent-id <ID> --message "指令" --async [options]\n' +
+      '  npx tsx src/lib/call-agent.ts --agent-id <ID> --message "指令" [--task-file path] [options]\n' +
+      '  npx tsx src/lib/call-agent.ts --agent-id <ID> --message "指令" --async [--task-file path] [options]\n' +
       '  npx tsx src/lib/call-agent.ts --poll <sessionId> [--port 4000]\n',
     );
     process.exit(1);
@@ -406,9 +501,9 @@ async function main() {
         depth,
       });
       process.stderr.write(`[call-agent] Async session started: ${sessionId} (depth=${depth})\n`);
-      process.stdout.write(sessionId);
+      writeResult({ status: 'started', sessionId });
     } else {
-      // 同步模式：阻塞等待完成
+      // 同步模式：阻塞等待完成，含 fallback 验证
       const result = await callAgent({
         agentId,
         message,
@@ -418,10 +513,11 @@ async function main() {
         timeoutSeconds,
         depth,
       });
-      process.stdout.write(result);
+      writeResult({ status: 'completed', sessionId: result.sessionId, content: result.content });
     }
   } catch (err) {
     process.stderr.write(`[call-agent] FAILED: ${(err as Error).message}\n`);
+    writeResult({ status: 'failed', sessionId: '', error: (err as Error).message });
     process.exit(1);
   }
 }

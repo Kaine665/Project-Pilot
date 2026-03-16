@@ -16,7 +16,7 @@ import type {
   TreeItem,
   Status,
 } from '@/types/flow';
-import type { Agent } from '@/types';
+import type { Agent, ProjectEntry } from '@/types';
 import { Search, X } from 'lucide-react';
 import { MillerSectionBlock as SectionBlock } from './miller-columns';
 import { getEffectiveStatus } from './flow-shared';
@@ -229,6 +229,7 @@ interface FlowEditorProps {
   projectKey: string;
   projectName: string;
   projectDescription?: string;
+  projectEntry?: ProjectEntry;
   initialHighlight?: HighlightTarget | null;
   onProjectUpdated?: () => void;
   onProjectDeleted?: () => void;
@@ -236,7 +237,7 @@ interface FlowEditorProps {
 
 const EMPTY_DATA: FlowData = { sections: [] };
 
-export function FlowEditor({ projectKey, projectName, projectDescription, initialHighlight, onProjectUpdated, onProjectDeleted }: FlowEditorProps) {
+export function FlowEditor({ projectKey, projectName, projectDescription, projectEntry, initialHighlight, onProjectUpdated, onProjectDeleted }: FlowEditorProps) {
   const t = useTranslations();
   const [data, setData] = useState<FlowData>(EMPTY_DATA);
   const [loading, setLoading] = useState(true);
@@ -306,32 +307,6 @@ export function FlowEditor({ projectKey, projectName, projectDescription, initia
       .catch(() => setData(EMPTY_DATA))
       .finally(() => setLoading(false));
   }, [projectKey]);
-
-  // Fetch AI status (skip setState if unchanged)
-  const aiStatusRef = useRef<string>('');
-  useEffect(() => {
-    const fetchAIStatus = () => {
-      fetch('/api/tasks')
-        .then(res => res.ok ? res.json() : { tasks: [] })
-        .then(({ tasks }: { tasks: Array<{ flowContext?: { flowTaskId: string }; aiStatus?: 'running' | 'waiting' | 'confirm' | null }> }) => {
-          const map: AIStatusMap = {};
-          for (const t of tasks) {
-            if (t.flowContext?.flowTaskId && t.aiStatus) {
-              map[t.flowContext.flowTaskId] = t.aiStatus;
-            }
-          }
-          const serialized = JSON.stringify(map);
-          if (serialized !== aiStatusRef.current) {
-            aiStatusRef.current = serialized;
-            setAiStatusMap(map);
-          }
-        })
-        .catch(() => {});
-    };
-    fetchAIStatus();
-    const timer = setInterval(fetchAIStatus, 5000);
-    return () => clearInterval(timer);
-  }, []);
 
   const persist = useCallback((newData: FlowData) => {
     setData(newData);
@@ -598,6 +573,7 @@ export function FlowEditor({ projectKey, projectName, projectDescription, initia
                 projectKey={projectKey}
                 projectName={projectName}
                 projectDescription={projectDescription}
+                projectEntry={projectEntry}
                 onUpdated={onProjectUpdated ?? (() => {})}
                 onDeleted={onProjectDeleted ?? (() => {})}
               />

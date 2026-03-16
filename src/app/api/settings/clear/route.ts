@@ -7,12 +7,14 @@ import {
   getFlowIndexPath,
   getAgentsPath,
   getAgentChatSessionsPath,
+  getAgentChatMessagesDir,
   getPromptsDir,
   writeJsonFile,
   readJsonFile,
 } from '@/lib/file-store';
-import { DEFAULT_AGENTS } from '@/lib/default-agents';
-import { invalidateAgentsCache } from '@/app/api/agents/route';
+import { deleteAllMessageFiles } from '@/lib/chat-managers/agent-chat-session-store';
+import { getDefaultAgents } from '@/lib/default-agents';
+import { invalidateAgentsCache } from '@/lib/agents-store';
 import type { AgentsData } from '@/types';
 import type { AgentChatSessionsData } from '@/types/agent-chat';
 
@@ -77,11 +79,13 @@ export async function POST(request: NextRequest) {
       );
       cleared.sessions = sessionsData.sessions.length;
 
-      // 备份 sessions 相关
+      // 备份 sessions index + JSONL message files
       await backupFile(getAgentChatSessionsPath());
+      await backupDir2(getAgentChatMessagesDir());
 
-      // 清空
+      // 清空 index + JSONL files
       await writeJsonFile(getAgentChatSessionsPath(), { sessions: [] });
+      await deleteAllMessageFiles();
 
       // 清理所有运行时 prompt 副本（.runtime/ 目录）
       try {
@@ -113,7 +117,8 @@ export async function POST(request: NextRequest) {
       await backupFile(getAgentsPath());
       const agentsData = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
       // Ensure all default built-in agents are present
-      for (const defaultAgent of DEFAULT_AGENTS) {
+      const builtinAgents = await getDefaultAgents();
+      for (const defaultAgent of builtinAgents) {
         if (!agentsData.agents.some(a => a.id === defaultAgent.id)) {
           agentsData.agents.unshift(defaultAgent);
         }

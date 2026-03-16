@@ -10,6 +10,8 @@ export interface AllSessionItem {
   unreadCount?: number;
   archived?: boolean;
   projectKey?: string;
+  isRunning?: boolean;
+  runningStartedAt?: string;
 }
 
 // Opened session instance: tracks a mounted AgentChatPanel
@@ -61,6 +63,8 @@ export interface SessionNavLink {
 // ── URL param sync helper ──
 
 export function syncUrlParams(params: Record<string, string | null | undefined>) {
+  if (typeof window === 'undefined') return;
+
   const url = new URL(window.location.href);
   for (const [key, value] of Object.entries(params)) {
     if (value) {
@@ -69,7 +73,16 @@ export function syncUrlParams(params: Record<string, string | null | undefined>)
       url.searchParams.delete(key);
     }
   }
-  window.history.replaceState({}, '', url.toString());
+
+  const next = url.toString();
+  if (next === window.location.href) return;
+
+  // Defer history update to avoid "setState during render" warnings from router internals.
+  setTimeout(() => {
+    if (window.location.href !== next) {
+      window.history.replaceState({}, '', next);
+    }
+  }, 0);
 }
 
 /**

@@ -6,15 +6,17 @@ import {
   getProjectsPath,
   getAgentsPath,
   getAgentChatSessionsPath,
+  getAgentChatMessagesDir,
   getFlowsDir,
   writeJsonFile,
   readJsonFile,
 } from '@/lib/file-store';
-import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import { importSessionsWithMessages } from '@/lib/chat-managers/agent-chat-session-store';
+import { getDefaultAgents } from '@/lib/default-agents';
 import { writePromptFile } from '@/lib/agent-prompt-store';
-import { invalidateAgentsCache } from '@/app/api/agents/route';
+import { invalidateAgentsCache } from '@/lib/agents-store';
 import type { Agent, AgentsData } from '@/types';
-import type { AgentChatSessionsData } from '@/types/agent-chat';
+import type { AgentChatSession } from '@/types/agent-chat';
 
 /**
  * POST /api/settings/import
@@ -37,16 +39,30 @@ export async function POST(request: NextRequest) {
     const backupDir = path.join(dataDir, `_backup_${timestamp}`);
     await fs.mkdir(backupDir, { recursive: true });
 
-    // 复制核心文件到备份
-    const filesToBackup = ['projects.json', 'agents.json', 'agent-chat-sessions.json'];
-    for (const file of filesToBackup) {
-      const src = path.join(dataDir, file);
+    // 复制核心 JSON 文件到备份
+    const filesToBackup = [getProjectsPath(), getAgentsPath(), getAgentChatSessionsPath()];
+    for (const src of filesToBackup) {
       try {
         await fs.stat(src);
-        await fs.copyFile(src, path.join(backupDir, file));
+        await fs.copyFile(src, path.join(backupDir, path.basename(src)));
       } catch {
         // 文件不存在则跳过
       }
+    }
+
+    // 备份 JSONL message files
+    const messagesDir = getAgentChatMessagesDir();
+    try {
+      const msgBackup = path.join(backupDir, 'chat-messages');
+      await fs.mkdir(msgBackup, { recursive: true });
+      const msgFiles = await fs.readdir(messagesDir);
+      for (const file of msgFiles) {
+        if (file.endsWith('.jsonl')) {
+          await fs.copyFile(path.join(messagesDir, file), path.join(msgBackup, file));
+        }
+      }
+    } catch {
+      // messages 目录不存在则跳过
     }
 
     // 备份 flows 目录
@@ -89,7 +105,8 @@ export async function POST(request: NextRequest) {
       }
 
       // Ensure built-in agents are present
-      for (const defaultAgent of DEFAULT_AGENTS) {
+      const builtinAgents = await getDefaultAgents();
+      for (const defaultAgent of builtinAgents) {
         if (!mergedAgents.some((a: Agent) => a.id === defaultAgent.id)) {
           mergedAgents.unshift(defaultAgent);
         }
@@ -107,27 +124,12 @@ export async function POST(request: NextRequest) {
       stats.agents = mergedAgents.length;
     }
     if (data.agentChatSessions) {
-      // 合并式导入：按 session ID 去重，保留更新的版本，不丢失已有会话
-      const imported = data.agentChatSessions as AgentChatSessionsData;
+      // Import sessions with embedded messages — extracts to JSONL + index
+      const imported = data.agentChatSessions as { sessions?: AgentChatSession[] };
       const importedSessions = Array.isArray(imported.sessions) ? imported.sessions : [];
-      const existing = await readJsonFile<AgentChatSessionsData>(
-        getAgentChatSessionsPath(), { sessions: [] },
-      );
-      const merged = [...existing.sessions];
-
-      for (const incoming of importedSessions) {
-        const idx = merged.findIndex(s => s.id === incoming.id);
-        if (idx >= 0) {
-          // 同 ID 的会话，取 updatedAt 更新的版本
-          if (incoming.updatedAt > merged[idx].updatedAt) {
-            merged[idx] = incoming;
-          }
-        } else {
-          merged.push(incoming);
-        }
+      if (importedSessions.length > 0) {
+        await importSessionsWithMessages(importedSessions);
       }
-
-      await writeJsonFile(getAgentChatSessionsPath(), { sessions: merged });
     }
 
     // 写入 flows

@@ -38,7 +38,12 @@ export async function GET(
   return NextResponse.json({ entry: found.entry, content });
 }
 
-/** PATCH /api/docs/[id] — { title?, description?, content? } */
+/**
+ * PATCH /api/docs/[id] — 更新文档
+ *
+ * Body fields (all optional):
+ *   title, description, content, category, tags, status, supersedes, supersededBy
+ */
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -52,13 +57,74 @@ export async function PATCH(
   }
 
   const { entry } = found;
+  const now = new Date().toISOString();
 
+  // 基础字段
   if (body.title !== undefined) entry.title = body.title.trim();
   if (body.description !== undefined) {
     entry.description = body.description?.trim() || undefined;
   }
-  entry.updatedAt = new Date().toISOString();
 
+  // 新增字段：分类
+  if (body.category !== undefined) {
+    entry.category = body.category?.trim() || undefined;
+  }
+
+  // 新增字段：标签
+  if (body.tags !== undefined) {
+    if (body.tags === null || (Array.isArray(body.tags) && body.tags.length === 0)) {
+      entry.tags = undefined;
+    } else if (Array.isArray(body.tags)) {
+      entry.tags = body.tags.map((t: string) => t.trim()).filter(Boolean);
+    }
+  }
+
+  // 新增字段：状态
+  if (body.status !== undefined) {
+    if (body.status && !['active', 'draft', 'deprecated'].includes(body.status)) {
+      return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
+    }
+    entry.status = body.status || undefined;
+  }
+
+  // 新增字段：替代关系
+  if (body.supersedes !== undefined) {
+    const oldSupersedes = entry.supersedes;
+
+    // 清除旧的双向关系
+    if (oldSupersedes && oldSupersedes !== body.supersedes) {
+      for (const entries of Object.values(data.projects)) {
+        const oldDoc = entries.find(e => e.id === oldSupersedes);
+        if (oldDoc && oldDoc.supersededBy === id) {
+          oldDoc.supersededBy = undefined;
+          oldDoc.updatedAt = now;
+          break;
+        }
+      }
+    }
+
+    entry.supersedes = body.supersedes?.trim() || undefined;
+
+    // 建立新的双向关系
+    if (entry.supersedes) {
+      for (const entries of Object.values(data.projects)) {
+        const targetDoc = entries.find(e => e.id === entry.supersedes);
+        if (targetDoc) {
+          targetDoc.supersededBy = id;
+          targetDoc.updatedAt = now;
+          break;
+        }
+      }
+    }
+  }
+
+  if (body.supersededBy !== undefined) {
+    entry.supersededBy = body.supersededBy?.trim() || undefined;
+  }
+
+  entry.updatedAt = now;
+
+  // 更新 Markdown 正文
   if (body.content !== undefined) {
     await fs.writeFile(getDesignDocFilePath(entry.fileName), body.content, 'utf-8');
   }
@@ -77,6 +143,28 @@ export async function DELETE(
   const found = findEntry(data, id);
   if (!found) {
     return NextResponse.json({ error: 'Doc not found' }, { status: 404 });
+  }
+
+  // 清除双向替代关系
+  if (found.entry.supersedes) {
+    for (const entries of Object.values(data.projects)) {
+      const oldDoc = entries.find(e => e.id === found.entry.supersedes);
+      if (oldDoc && oldDoc.supersededBy === id) {
+        oldDoc.supersededBy = undefined;
+        oldDoc.updatedAt = new Date().toISOString();
+        break;
+      }
+    }
+  }
+  if (found.entry.supersededBy) {
+    for (const entries of Object.values(data.projects)) {
+      const newDoc = entries.find(e => e.id === found.entry.supersededBy);
+      if (newDoc && newDoc.supersedes === id) {
+        newDoc.supersedes = undefined;
+        newDoc.updatedAt = new Date().toISOString();
+        break;
+      }
+    }
   }
 
   // 删除 Markdown 文件

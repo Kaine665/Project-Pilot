@@ -9,14 +9,17 @@
  *   └── CodexAgentRunner    (@openai/codex-sdk)
  */
 
-import { query, type Query as SdkQuery } from '@anthropic-ai/claude-agent-sdk';
-import { Codex, type Thread } from '@openai/codex-sdk';
+import { query, type Query as SdkQuery, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+// @openai/codex-sdk 是纯 ESM 包，静态 import 在 CJS 运行时（tsx/node）会失败。
+// 使用动态 import() 绕过这个限制——动态导入走 Node 的 ESM loader，可以加载 ESM-only 包。
+import type { Input as CodexInput, Thread } from '@openai/codex-sdk';
 import { SdkEventAdapter } from '@/lib/sdk-event-adapter';
 import { adaptCodexEvent } from '@/lib/codex-sdk-adapter';
 import { resolveCodexBinaryPath } from '@/lib/codex-cli';
 import { getAppWorkingDir } from '@/lib/app-paths';
 import { buildSdkQueryOptions, buildCodexExecEnv, getSettings } from '@/lib/settings-manager';
 import type { ChatSSEEvent, AgentCapabilities, ProviderId } from '@/types';
+export type AgentRunnerInput = string | AsyncIterable<SDKUserMessage> | CodexInput;
 
 // ── Public interface ─────────────────────────────────────────────────────────
 
@@ -26,7 +29,7 @@ import type { ChatSSEEvent, AgentCapabilities, ProviderId } from '@/types';
  */
 export interface IAgentRunner {
   /** 流式执行 prompt，yield ChatSSEEvent */
-  stream(prompt: string): AsyncIterable<ChatSSEEvent>;
+  stream(input: AgentRunnerInput): AsyncIterable<ChatSSEEvent>;
 
   /** 中止当前流 */
   abort(): void;
@@ -73,6 +76,8 @@ export async function createAgentRunner(opts: AgentRunnerCreateOptions): Promise
     const codexPathOverride = resolveCodexBinaryPath();
     console.log(`[AgentRunner] Codex binary override: ${codexPathOverride ?? '(none, SDK will resolve)'}`);
 
+    // 动态 import 确保在 CJS 环境（tsx/sidecar）也能加载 ESM-only 的 codex-sdk
+    const { Codex } = await import('@openai/codex-sdk');
     const codex = new Codex({
       env: envRecord,
       ...(codexPathOverride ? { codexPathOverride } : {}),
@@ -115,9 +120,13 @@ class ClaudeAgentRunner implements IAgentRunner {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(private readonly sdkOpts: any) {}
 
-  async *stream(prompt: string): AsyncIterable<ChatSSEEvent> {
+  async *stream(input: AgentRunnerInput): AsyncIterable<ChatSSEEvent> {
+    if (Array.isArray(input)) {
+      throw new Error('Claude runner does not accept Codex structured input');
+    }
+
     const adapter = new SdkEventAdapter();
-    this._sdkQuery = query({ prompt, options: this.sdkOpts });
+    this._sdkQuery = query({ prompt: input, options: this.sdkOpts });
 
     try {
       for await (const msg of this._sdkQuery) {
@@ -149,11 +158,15 @@ class CodexAgentRunner implements IAgentRunner {
 
   constructor(private readonly thread: Thread) {}
 
-  async *stream(prompt: string): AsyncIterable<ChatSSEEvent> {
+  async *stream(input: AgentRunnerInput): AsyncIterable<ChatSSEEvent> {
+    if (isAsyncIterable(input)) {
+      throw new Error('Codex runner does not accept Claude message streams');
+    }
+
     this._abortController = new AbortController();
 
     try {
-      const { events } = await this.thread.runStreamed(prompt, {
+      const { events } = await this.thread.runStreamed(input, {
         signal: this._abortController.signal,
       });
 
@@ -179,4 +192,8 @@ class CodexAgentRunner implements IAgentRunner {
   get capturedSessionId(): string | null {
     return this._capturedSessionId;
   }
+}
+
+function isAsyncIterable(value: AgentRunnerInput): value is AsyncIterable<SDKUserMessage> {
+  return typeof value === 'object' && value !== null && Symbol.asyncIterator in value;
 }

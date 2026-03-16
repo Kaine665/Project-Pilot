@@ -22,6 +22,8 @@
  *   GET  /schedules/:id
  *   PATCH /schedules/:id
  *   DELETE /schedules/:id
+ *   POST /schedules/:id/trigger
+ *   GET  /schedules/:id/runs
  */
 
 import http from 'http';
@@ -33,10 +35,16 @@ import { URL } from 'url';
 // 使用 @/ 别名 — tsx（dev）和 esbuild --tsconfig（prod）均可解析
 import { agentChatManager, generateSessionId } from '@/lib/chat-managers/agent-chat-manager';
 import type { FlowContext } from '@/lib/chat-managers/agent-chat-manager';
+import { loadSession, listAllSessions } from '@/lib/chat-managers/agent-chat-session-store';
+import { subAgentWatcher } from '@/lib/chat-managers/sub-agent-watcher';
+import type { WatchEntry } from '@/lib/chat-managers/sub-agent-watcher';
 import { schedulerManager } from '@/lib/scheduler-manager';
+import { tokenRefreshManager } from '@/lib/token-refresh-manager';
 import type { ChatSSEEvent } from '@/types';
-import type { SessionConfig } from '@/types/agent-chat';
+import type { SessionConfig, SessionMeta } from '@/types/agent-chat';
 import type { ProviderId } from '@/types';
+import type { ImageAttachment } from '@/lib/image-assets';
+import { HttpError } from '@/lib/http-error';
 
 // ── 配置 ─────────────────────────────────────────────────────────────────────
 
@@ -85,6 +93,27 @@ function notFound(res: http.ServerResponse): void {
   jsonResponse(res, { error: 'Not found' }, 404);
 }
 
+// ── Depth computation (recursive protection) ────────────────────────────────
+
+/**
+ * Walk the parentSessionId chain to compute the actual call depth.
+ * Each hop from child → parent increments depth by 1.
+ * Caps traversal at 10 to prevent infinite loops from circular refs.
+ */
+async function computeDepthFromParentChain(parentSessionId: string): Promise<number> {
+  let depth = 1; // the current session will be one level deeper than parent
+  let currentId: string | undefined = parentSessionId;
+  const MAX_CHAIN = 10;
+
+  while (currentId && depth < MAX_CHAIN) {
+    const session = await loadSession(currentId);
+    if (!session?.parentSessionId) break;
+    currentId = session.parentSessionId;
+    depth++;
+  }
+  return depth;
+}
+
 // ── Route handlers ───────────────────────────────────────────────────────────
 
 function handleHealth(res: http.ServerResponse): void {
@@ -107,9 +136,27 @@ async function handleStart(
     providerOverride?: ProviderId;
     modelOverride?: string;
     effortOverride?: string;
+    depth?: number;
   };
 
   const sessionId = body.sessionId ?? generateSessionId();
+
+  // ── Recursive depth enforcement (行动项 4) ──
+  // Server-side depth calculation from parentSessionId chain takes priority
+  // over client-supplied depth, preventing bypass by forgetting --depth.
+  let effectiveDepth: number = body.depth ?? 0;
+  if (body.parentSessionId) {
+    const serverDepth = await computeDepthFromParentChain(body.parentSessionId);
+    effectiveDepth = Math.max(effectiveDepth, serverDepth);
+  }
+  const MAX_SUB_AGENT_DEPTH = 3;
+  if (effectiveDepth > MAX_SUB_AGENT_DEPTH) {
+    jsonResponse(res, {
+      error: `Sub-agent call depth ${effectiveDepth} exceeds maximum ${MAX_SUB_AGENT_DEPTH}. ` +
+        `This prevents infinite recursion. Consider restructuring the task.`,
+    }, 400);
+    return;
+  }
 
   try {
     const runId = await agentChatManager.start(
@@ -117,17 +164,20 @@ async function handleStart(
       body.agentId,
       body.message,
       body.flowContext,
-      body.images as import('@/lib/chat-managers/agent-chat-manager').ImageAttachment[] | undefined,
+      body.images as ImageAttachment[] | undefined,
       body.initialTitle,
       body.config,
       body.parentSessionId,
       body.providerOverride,
       body.modelOverride,
       body.effortOverride,
+      undefined, // ephemeral
+      effectiveDepth,
     );
     jsonResponse(res, { runId, sessionId });
   } catch (err) {
-    jsonResponse(res, { error: (err as Error).message }, 500);
+    const status = err instanceof HttpError ? err.statusCode : 500;
+    jsonResponse(res, { error: (err as Error).message }, status);
   }
 }
 
@@ -164,7 +214,8 @@ async function handleGuest(
     );
     jsonResponse(res, { runId, sessionId: guestSessionId, parentSessionId: body.parentSessionId });
   } catch (err) {
-    jsonResponse(res, { error: (err as Error).message }, 500);
+    const status = err instanceof HttpError ? err.statusCode : 500;
+    jsonResponse(res, { error: (err as Error).message }, status);
   }
 }
 
@@ -192,7 +243,7 @@ function handleStream(
       res.write(`data: ${payload}\n\n`);
     } catch { /* 连接已关闭 */ }
 
-    if (event.type === 'done') {
+    if (event.type === 'done' || event.type === 'awaiting_sub_agents') {
       try { res.end(); } catch { /* already ended */ }
     }
   };
@@ -334,6 +385,34 @@ async function handleDeleteSchedule(
   jsonResponse(res, { success: true });
 }
 
+async function handleTriggerSchedule(
+  res: http.ServerResponse,
+  scheduleId: string,
+): Promise<void> {
+  try {
+    const run = await schedulerManager.triggerNow(scheduleId);
+    jsonResponse(res, { run });
+  } catch (err) {
+    const msg = (err as Error).message;
+    const status = msg.includes('不存在') ? 404 : 400;
+    jsonResponse(res, { error: msg }, status);
+  }
+}
+
+async function handleListRuns(
+  res: http.ServerResponse,
+  scheduleId: string,
+  url: URL,
+): Promise<void> {
+  const limit = parseInt(url.searchParams.get('limit') ?? '20', 10);
+  try {
+    const runs = await schedulerManager.listRuns(scheduleId, limit);
+    jsonResponse(res, { runs });
+  } catch (err) {
+    jsonResponse(res, { error: (err as Error).message }, 500);
+  }
+}
+
 // ── HTTP server ──────────────────────────────────────────────────────────────
 
 const server = http.createServer(async (req, res) => {
@@ -389,6 +468,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── Schedules ──
+    const scheduleTriggerMatch = pathname.match(/^\/schedules\/([^/]+)\/trigger$/);
+    const scheduleRunsMatch = pathname.match(/^\/schedules\/([^/]+)\/runs$/);
     const scheduleMatch = pathname.match(/^\/schedules\/([^/]+)$/);
 
     if (pathname === '/schedules' && method === 'GET') {
@@ -397,6 +478,14 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === '/schedules' && method === 'POST') {
       await handleCreateSchedule(req, res);
+      return;
+    }
+    if (scheduleTriggerMatch && method === 'POST') {
+      await handleTriggerSchedule(res, scheduleTriggerMatch[1]);
+      return;
+    }
+    if (scheduleRunsMatch && method === 'GET') {
+      await handleListRuns(res, scheduleRunsMatch[1], url);
       return;
     }
     if (scheduleMatch && method === 'GET') {
@@ -421,6 +510,35 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// ── Awaiting Watcher Recovery ─────────────────────────────────────────────────
+
+/**
+ * Scan all sessions for awaiting state and restore watcher entries.
+ * Called once during sidecar startup.
+ */
+async function restoreAwaitingWatchers(): Promise<void> {
+  const sessions = await listAllSessions() as SessionMeta[];
+  const entries: WatchEntry[] = [];
+
+  for (const session of sessions) {
+    if (session.execution?.status === 'awaiting' && session.execution.awaitingSubAgents) {
+      const aw = session.execution.awaitingSubAgents;
+      entries.push({
+        parentSessionId: session.id,
+        parentAgentId: session.agentId,
+        parentProjectKey: session.projectKey,
+        targetSessionIds: aw.sessionIds,
+        registeredAt: aw.registeredAt,
+        timeoutMs: aw.timeoutMs,
+      });
+    }
+  }
+
+  if (entries.length > 0) {
+    subAgentWatcher.restoreEntries(entries);
+  }
+}
+
 // ── Startup ──────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -430,6 +548,7 @@ async function main(): Promise<void> {
   // Graceful shutdown
   const shutdown = (): void => {
     console.log('[Sidecar] Shutting down...');
+    tokenRefreshManager.destroy();
     removeLock();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(1), 5000).unref();
@@ -438,12 +557,22 @@ async function main(): Promise<void> {
   process.on('SIGINT', shutdown);
   process.on('exit', removeLock);
 
+  // Restore SubAgentWatcher entries from disk (sessions in awaiting state)
+  try {
+    await restoreAwaitingWatchers();
+  } catch (err) {
+    console.error('[Sidecar] Failed to restore awaiting watchers:', err);
+  }
+
   // Initialize scheduler (reads schedules from disk, registers cron jobs)
   try {
     await schedulerManager.init();
   } catch (err) {
     console.error('[Sidecar] SchedulerManager init failed:', err);
   }
+
+  // Initialize OAuth token refresh (proactively refresh before expiry)
+  tokenRefreshManager.init();
 
   // Start HTTP server
   await new Promise<void>((resolve, reject) => {

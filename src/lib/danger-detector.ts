@@ -10,10 +10,9 @@
  * - 'disabled' — Detection skipped entirely for this category.
  */
 
-import os from 'os';
-import path from 'path';
 import type { DangerLevel, DangerCategory, DangerDetectorSettings } from '@/types';
 import { DEFAULT_DANGER_SETTINGS } from '@/types';
+import { getDataDir, getAgentDataDir } from '@/lib/file-store';
 
 interface DangerPattern {
   pattern: RegExp;
@@ -57,9 +56,6 @@ const DANGER_PATTERNS: DangerPattern[] = [
 
 // ── ProjectPilot data 目录写入保护 ──
 
-const DATA_DIR = process.env.PROJECT_PILOT_DATA_DIR
-  || path.join(os.homedir(), '.project-pilot', 'data');
-
 // 写入/删除操作的关键词
 const WRITE_INDICATORS = /\b(>|>>|tee|mv|cp|rm|del|unlink|echo\s+.*>|cat\s+.*>|printf\s+.*>|Write-Output|Set-Content|Out-File|Remove-Item|Move-Item|Copy-Item)\b/;
 
@@ -69,7 +65,8 @@ const WRITE_INDICATORS = /\b(>|>>|tee|mv|cp|rm|del|unlink|echo\s+.*>|cat\s+.*>|p
  */
 function detectDataDirWrite(command: string): { reason: string } | null {
   const normalized = command.replace(/\\/g, '/');
-  const dataDirNormalized = DATA_DIR.replace(/\\/g, '/');
+  const dataDirNormalized = getDataDir().replace(/\\/g, '/');
+  const agentDataNormalized = getAgentDataDir().replace(/\\/g, '/');
 
   const referencesDataDir = normalized.includes(dataDirNormalized)
     || normalized.includes('.project-pilot/data')
@@ -77,14 +74,14 @@ function detectDataDirWrite(command: string): { reason: string } | null {
 
   if (!referencesDataDir) return null;
 
-  // Whitelist: agent-data/ is the Agent's private data store — writes are expected
-  if (normalized.includes('agent-data/') || normalized.includes('agent-data\\')) {
+  // Whitelist: agent data dir is the Agent's private data store — writes are expected
+  if (normalized.includes(agentDataNormalized)) {
     return null;
   }
 
   if (WRITE_INDICATORS.test(command)) {
     return {
-      reason: `禁止写入 ProjectPilot 数据目录（${DATA_DIR}）`,
+      reason: `禁止写入 ProjectPilot 数据目录（${dataDirNormalized}）`,
     };
   }
 

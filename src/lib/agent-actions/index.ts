@@ -13,6 +13,7 @@ import { saveDocAction } from './save-doc';
 import { sessionTitleAction } from './session-title';
 import { suspendTaskAction } from './suspend-task';
 import { completeSuspendedTaskAction } from './complete-suspended-task';
+import { awaitSubAgentsAction } from './await-sub-agents';
 
 // Register all actions
 actionRegistry.register(saveKnowledgeAction);
@@ -20,6 +21,7 @@ actionRegistry.register(saveDocAction);
 actionRegistry.register(sessionTitleAction);
 actionRegistry.register(suspendTaskAction);
 actionRegistry.register(completeSuspendedTaskAction);
+actionRegistry.register(awaitSubAgentsAction);
 
 // Generate and register ResourceLoaders for backward compatibility
 for (const loader of actionRegistry.generateAllLoaders()) {

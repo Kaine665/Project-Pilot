@@ -1,0 +1,494 @@
+openapi: 3.1.0
+info:
+  title: ProjectPilot Agents Official API
+  version: 1.0.0
+  description: |
+    Machine-oriented REST API for managing ProjectPilot agents.
+
+    This is the **official** API for external systems (CLI tools, other agents, automation scripts)
+    to read and write agent definitions. It sits on top of the internal `agents-store` module,
+    so callers never need to touch `agents.json` or prompt files directly.
+
+    **Base URL**: `http://localhost:{port}` (default port: 4000)
+
+    **Authentication**: None (local-only service, not exposed to the internet)
+
+servers:
+  - url: http://localhost:4000
+    description: Default local instance
+
+paths:
+  /api/agents/official:
+    get:
+      operationId: listOrGetAgents
+      summary: List agents or get a single agent by id/slug
+      description: |
+        Without `id` or `slug`, returns all agents.
+        With `id` or `slug`, returns the single matching agent.
+      parameters:
+        - name: id
+          in: query
+          schema:
+            type: string
+          description: Agent ID (exact match). If provided, returns a single agent.
+        - name: slug
+          in: query
+          schema:
+            type: string
+          description: Agent slug (exact match, only built-in agents have slugs). If provided, returns a single agent.
+        - name: includeArchived
+          in: query
+          schema:
+            type: string
+            enum: ["true", "false"]
+            default: "false"
+          description: Include soft-deleted (archived) agents
+        - name: includePrompt
+          in: query
+          schema:
+            type: string
+            enum: ["true", "false"]
+            default: "false"
+          description: Include the full `systemPrompt` field in results (can be large)
+        - name: projectKey
+          in: query
+          schema:
+            type: string
+          description: Filter by project key (e.g. "elapp", "project-pilot")
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/AgentListResponse"
+                  - $ref: "#/components/schemas/SingleAgentResponse"
+        "404":
+          description: Agent not found (when `id` or `slug` is provided but no match)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    post:
+      operationId: writeAgent
+      summary: Create, update, or archive an agent
+      description: |
+        Unified write endpoint. The `action` field in the request body determines the operation:
+        - `upsert`: Create or update an agent
+        - `archive`: Soft-delete an agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/UpsertRequest"
+                - $ref: "#/components/schemas/ArchiveRequest"
+              discriminator:
+                propertyName: action
+                mapping:
+                  upsert: "#/components/schemas/UpsertRequest"
+                  archive: "#/components/schemas/ArchiveRequest"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/UpsertResponse"
+                  - $ref: "#/components/schemas/ArchiveResponse"
+        "400":
+          description: Invalid request (missing required fields)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden (e.g. trying to archive a built-in agent)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found (when `createIfMissing` is false)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/agents/export/{id}:
+    get:
+      operationId: exportAgent
+      summary: Export an agent as a .ppagent package
+      description: |
+        Downloads the agent definition (including full system prompt and context references)
+        as a JSON file in `.ppagent` format. Can be imported into another ProjectPilot instance.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Agent ID
+      responses:
+        "200":
+          description: Agent package JSON file
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: "attachment; filename=\"{name}.ppagent\""
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentPackage"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimpleError"
+
+  /api/agents/import:
+    post:
+      operationId: importAgent
+      summary: Import a .ppagent package to create a new agent
+      description: |
+        Accepts a `.ppagent` JSON package and creates a new agent from it.
+        Any embedded context entries are also imported.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentPackage"
+      responses:
+        "200":
+          description: Import successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    const: true
+                  agent:
+                    $ref: "#/components/schemas/Agent"
+                  contextsImported:
+                    type: integer
+                    description: Number of context entries imported alongside the agent
+        "400":
+          description: Invalid .ppagent format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimpleError"
+
+components:
+  schemas:
+    Agent:
+      type: object
+      required: [id, name, createdAt]
+      properties:
+        id:
+          type: string
+          description: Unique identifier (auto-generated, format `agent-{timestamp}-{random}`)
+          example: "agent-1772179200000-chat"
+        name:
+          type: string
+          description: Display name
+          example: "AI 管家"
+        slug:
+          type: string
+          description: Stable identifier for built-in agents (e.g. "butler"). User-created agents have no slug.
+          example: "butler"
+        builtIn:
+          type: boolean
+          description: True for system-provided agents that cannot be deleted
+        description:
+          type: string
+          description: Short description of the agent's role
+        systemPrompt:
+          type: string
+          description: Full system prompt / instructions. Only included when `includePrompt=true`.
+        icon:
+          type: string
+          description: Lucide icon name
+          example: "bot"
+        capabilities:
+          $ref: "#/components/schemas/AgentCapabilities"
+        requiredParams:
+          type: array
+          items:
+            type: string
+          description: Parameter names this agent requires (template variables)
+        contextIds:
+          type: array
+          items:
+            type: string
+          deprecated: true
+          description: "Deprecated: use defaultResources instead"
+        defaultResources:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResourceRef"
+          description: Default resource set for new chat sessions
+        triggerHints:
+          type: array
+          items:
+            type: string
+          description: Hints for other agents on when to delegate to this agent
+          example: ["需要审查 PR", "遇到数据库迁移问题"]
+        projectKey:
+          type: string
+          description: "Owning project key. undefined = global agent (visible to all projects)"
+          example: "project-pilot"
+        defaultProvider:
+          type: string
+          description: Default AI provider for new sessions
+          enum: [anthropic, openai, gemini, deepseek, openrouter]
+        defaultModel:
+          type: string
+          description: Default model ID for new sessions
+          example: "claude-sonnet-4-20250514"
+        archived:
+          type: boolean
+          description: True if agent has been soft-deleted
+        archivedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    AgentCapabilities:
+      type: object
+      description: Per-agent tool permissions
+      properties:
+        bash:
+          type: boolean
+          description: Command execution (including Git)
+        fileAccess:
+          type: boolean
+          description: Read, Write, Edit, Glob, Grep, NotebookEdit tools
+        web:
+          type: boolean
+          description: WebFetch, WebSearch tools
+        subAgent:
+          type: boolean
+          description: Ability to call sub-agents
+        skipReview:
+          type: boolean
+          description: Auto-approve all tool calls (maps to --dangerously-skip-permissions)
+        todoRead:
+          type: boolean
+          description: Inject pending todos into system prompt
+        exposePromptPath:
+          type: boolean
+          description: Let the AI read/edit its own prompt file
+        dataStore:
+          type: boolean
+          description: Read/write access to agent's private data store
+
+    ResourceRef:
+      type: object
+      required: [type, id]
+      properties:
+        type:
+          type: string
+          description: Resource type determining which loader handles it
+          enum: [context, system-prompt, todo-list, inline-text, knowledge-instructions, doc-save-instructions, session-title-instructions, context-index, active-tasks, global-prompt, project-prompt, suspended-tasks, design-docs-index, agent-data-store]
+        id:
+          type: string
+          description: Resource identifier (semantics depend on type)
+        label:
+          type: string
+          description: Display label
+        priority:
+          type: integer
+          description: Load order priority (lower = loaded first)
+
+    AgentPayload:
+      type: object
+      description: Fields for creating or updating an agent
+      properties:
+        name:
+          type: string
+          description: "Required when creating a new agent, optional when updating"
+        description:
+          type: string
+        systemPrompt:
+          type: string
+        icon:
+          type: string
+        capabilities:
+          $ref: "#/components/schemas/AgentCapabilities"
+        requiredParams:
+          type: array
+          items:
+            type: string
+        contextIds:
+          type: array
+          items:
+            type: string
+        defaultResources:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResourceRef"
+        projectKey:
+          type: string
+        triggerHints:
+          type: array
+          items:
+            type: string
+        defaultProvider:
+          type: string
+          enum: [anthropic, openai, gemini, deepseek, openrouter]
+        defaultModel:
+          type: string
+
+    AgentMatchInput:
+      type: object
+      description: How to find an existing agent for update/archive
+      properties:
+        id:
+          type: string
+          description: Match by agent ID
+        slug:
+          type: string
+          description: Match by slug (built-in agents only)
+
+    UpsertRequest:
+      type: object
+      required: [action, agent]
+      properties:
+        action:
+          type: string
+          const: upsert
+        match:
+          $ref: "#/components/schemas/AgentMatchInput"
+          description: |
+            How to find the existing agent to update.
+            If omitted or no match found (and `createIfMissing` is not false), a new agent is created.
+        createIfMissing:
+          type: boolean
+          default: true
+          description: "Set to false to fail if no existing agent matches (update-only mode)"
+        agent:
+          $ref: "#/components/schemas/AgentPayload"
+
+    ArchiveRequest:
+      type: object
+      required: [action, match]
+      properties:
+        action:
+          type: string
+          const: archive
+        match:
+          $ref: "#/components/schemas/AgentMatchInput"
+          description: "How to find the agent to archive. At least one of id/slug required."
+
+    UpsertResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          const: true
+        action:
+          type: string
+          const: upsert
+        created:
+          type: boolean
+          description: True if a new agent was created
+        updated:
+          type: boolean
+          description: True if an existing agent was updated
+        matchedBy:
+          type: string
+          enum: [id, slug]
+          description: Which field was used to match (only present when updated=true)
+        agent:
+          $ref: "#/components/schemas/Agent"
+
+    ArchiveResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          const: true
+        action:
+          type: string
+          const: archive
+        agent:
+          $ref: "#/components/schemas/Agent"
+
+    AgentListResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          const: true
+        agents:
+          type: array
+          items:
+            $ref: "#/components/schemas/Agent"
+
+    SingleAgentResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          const: true
+        agent:
+          $ref: "#/components/schemas/Agent"
+
+    AgentPackage:
+      type: object
+      required: [format, version, exportedAt, agent]
+      description: ".ppagent export/import package format"
+      properties:
+        format:
+          type: string
+          const: ppagent
+        version:
+          type: integer
+          const: 1
+        exportedAt:
+          type: string
+          format: date-time
+        source:
+          type: string
+          description: ProjectPilot version that exported this package
+        agent:
+          type: object
+          description: Agent metadata (subset of Agent, without runtime fields like id/createdAt)
+        contexts:
+          type: array
+          items:
+            type: object
+          description: Embedded context entries to import alongside the agent
+
+    ErrorResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          const: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              enum: [AGENT_NOT_FOUND, INVALID_REQUEST, INVALID_ACTION, BUILTIN_AGENT]
+            message:
+              type: string
+
+    SimpleError:
+      type: object
+      properties:
+        error:
+          type: string

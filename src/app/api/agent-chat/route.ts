@@ -1,20 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateSessionId } from '@/lib/agent-chat-manager';
-import type { ImageAttachment, ImageMediaType, FlowContext } from '@/lib/agent-chat-manager';
+import type { FlowContext } from '@/lib/agent-chat-manager';
 import type { SessionConfig } from '@/types/agent-chat';
-import { getFlowDataPath, getFlowIndexPath, readJsonFile, ensureFlowsMigrated } from '@/lib/file-store';
+import { getFlowDataPath, getFlowIndexPath, readJsonFile, ensureDataDirV2Migrated } from '@/lib/file-store';
 import { isValidProjectKey, isValidSessionId } from '@/lib/security';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import type { OpenAIReasoningEffort, ProviderId } from '@/types';
 import { sidecarFetch } from '@/lib/sidecar-bridge';
+import { normalizeImageAttachments } from '@/lib/image-assets';
 
 interface ProjectIndex {
   projects: Array<{ key: string; name: string }>;
 }
 
-const ALLOWED_IMAGE_TYPES: ImageMediaType[] = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
-const MAX_IMAGES = 5;
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB per image (base64 decoded)
 const ALLOWED_PROVIDERS: ProviderId[] = PROVIDER_REGISTRY.map((p) => p.id);
 const ALLOWED_OPENAI_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
 
@@ -28,7 +26,7 @@ export async function POST(request: NextRequest) {
   const {
     agentId, message, sessionId: requestedSessionId, projectKey,
     providerOverride, modelOverride, effortOverride,
-    images, initialTitle, config, parentSessionId,
+    images, initialTitle, config, parentSessionId, depth,
   } = body as {
     agentId: string;
     message: string;
@@ -41,6 +39,7 @@ export async function POST(request: NextRequest) {
     initialTitle?: string;
     config?: SessionConfig;
     parentSessionId?: string;
+    depth?: number;
   };
 
   // 🔒 Security: validate required fields
@@ -63,24 +62,12 @@ export async function POST(request: NextRequest) {
   }
 
   // 🔒 Security: validate images if provided
-  let validatedImages: ImageAttachment[] | undefined;
+  let validatedImages;
   if (hasImages) {
-    if (images!.length > MAX_IMAGES) {
-      return NextResponse.json({ error: `At most ${MAX_IMAGES} images per message` }, { status: 400 });
-    }
-    validatedImages = [];
-    for (const img of images!) {
-      if (!ALLOWED_IMAGE_TYPES.includes(img.mediaType as ImageMediaType)) {
-        return NextResponse.json({ error: `Unsupported image type: ${img.mediaType}` }, { status: 400 });
-      }
-      if (typeof img.data !== 'string' || !/^[A-Za-z0-9+/]+=*$/.test(img.data)) {
-        return NextResponse.json({ error: 'Invalid image data (must be base64)' }, { status: 400 });
-      }
-      const decodedSize = Math.floor(img.data.length * 0.75);
-      if (decodedSize > MAX_IMAGE_BYTES) {
-        return NextResponse.json({ error: 'Image too large (max 5 MB per image)' }, { status: 400 });
-      }
-      validatedImages.push({ mediaType: img.mediaType as ImageMediaType, data: img.data });
+    try {
+      validatedImages = normalizeImageAttachments(images);
+    } catch (error) {
+      return NextResponse.json({ error: (error as Error).message }, { status: 400 });
     }
   }
 
@@ -114,7 +101,7 @@ export async function POST(request: NextRequest) {
     // Build flowContext when projectKey is present
     let flowContext: FlowContext | undefined;
     if (projectKey) {
-      await ensureFlowsMigrated();
+      await ensureDataDirV2Migrated();
 
       const flowDataPath = getFlowDataPath(projectKey);
 
@@ -147,6 +134,7 @@ export async function POST(request: NextRequest) {
         providerOverride: normalizedProvider || undefined,
         modelOverride: normalizedModel || undefined,
         effortOverride: normalizedEffort || undefined,
+        depth: typeof depth === 'number' ? depth : undefined,
       }),
     });
     const data = await res.json() as { runId?: string; error?: string };

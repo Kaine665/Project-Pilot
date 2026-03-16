@@ -8,10 +8,10 @@ import {
   getFlowsDir,
   readJsonFile,
   writeJsonFile,
-  ensureFlowsMigrated,
+  ensureDataDirV2Migrated,
 } from '@/lib/file-store';
 import { deletePromptFile } from '@/lib/agent-prompt-store';
-import { invalidateAgentsCache } from '@/app/api/agents/route';
+import { invalidateAgentsCache } from '@/lib/agents-store';
 import type { AgentsData, DimensionsData, ProjectIndex } from '@/types';
 
 type RecycleBinCategory = 'project' | 'agent' | 'dimension';
@@ -28,7 +28,7 @@ interface RecycleBinItem {
  * List all archived items across project / agent / dimension.
  */
 export async function GET() {
-  await ensureFlowsMigrated();
+  await ensureDataDirV2Migrated();
 
   const [agentsData, dimensionsData, projectIndex] = await Promise.all([
     readJsonFile<AgentsData>(getAgentsPath(), { agents: [] }),
@@ -74,7 +74,7 @@ export async function DELETE(request: NextRequest) {
 
   switch (category as RecycleBinCategory) {
     case 'project': {
-      await ensureFlowsMigrated();
+      await ensureDataDirV2Migrated();
       const raw = await fs.readFile(getFlowIndexPath(), 'utf-8').catch(() => '{"projects":[]}');
       const index: ProjectIndex = JSON.parse(raw);
       const idx = index.projects.findIndex(p => p.key === id);

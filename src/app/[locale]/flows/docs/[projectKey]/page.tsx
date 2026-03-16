@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { FileText, Plus, Trash2, X, Clock } from 'lucide-react';
 import { useRouter } from '@/i18n/routing';
+import { useProject } from '@/components/project-context';
 import type { DocEntry } from '@/types';
 
 interface ProjectOption {
@@ -21,6 +22,24 @@ export default function DocsProjectPage() {
   const params = useParams();
   const projectKey = params.projectKey as string;
   const router = useRouter();
+  const { activeKey, setActiveKey } = useProject();
+
+  // Sync URL projectKey → ProjectContext.activeKey (docs → top-nav)
+  const syncedRef = useRef(false);
+  useEffect(() => {
+    if (projectKey && projectKey !== activeKey) {
+      setActiveKey(projectKey);
+    }
+    syncedRef.current = true;
+  }, [projectKey, activeKey, setActiveKey]);
+
+  // Sync ProjectContext.activeKey → URL (top-nav → docs)
+  useEffect(() => {
+    if (!syncedRef.current) return;
+    if (activeKey && activeKey !== projectKey) {
+      router.replace(`/flows/docs/${activeKey}`);
+    }
+  }, [activeKey, projectKey, router]);
 
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [docs, setDocs] = useState<DocEntry[]>([]);
@@ -74,6 +93,7 @@ export default function DocsProjectPage() {
   }, [projectKey, fetchDocs]);
 
   const handleProjectChange = (key: string) => {
+    setActiveKey(key);
     router.push(`/flows/docs/${key}`);
   };
 

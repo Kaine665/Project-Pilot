@@ -1,22 +1,57 @@
+/**
+ * @deprecated 旧版项目 API — 代理到新系统 /api/data/projects
+ *
+ * 保留此端点是为了兼容旧版调用方（orchestrator、ProjectRegistry 等）。
+ * 内部改为读写 flows/_index.json，不再操作 projects.json。
+ *
+ * GET 返回格式保持 { projects: Record<key, ProjectConfig> } 以兼容旧调用方。
+ */
 import { NextRequest, NextResponse } from 'next/server';
-import { getProjectsPath, readJsonFile, modifyJsonFile } from '@/lib/file-store';
-import type { ProjectsData } from '@/types';
+import {
+  getFlowIndexPath,
+  readJsonFile,
+  writeJsonFile,
+  ensureDataDirV2Migrated,
+} from '@/lib/file-store';
+import type { ProjectConfig, ProjectEntry, ProjectIndex } from '@/types';
 
-const DEFAULT_PROJECTS_DATA: ProjectsData = { projects: {} };
+async function readIndex(): Promise<ProjectIndex> {
+  await ensureDataDirV2Migrated();
+  return readJsonFile<ProjectIndex>(getFlowIndexPath(), { projects: [] });
+}
+
+/** 将 ProjectEntry 转换为旧版 ProjectConfig 格式 */
+function entryToConfig(entry: ProjectEntry): ProjectConfig {
+  return {
+    name: entry.name,
+    path: entry.path || '',
+    type: (entry.techStack as ProjectConfig['type']) || 'other',
+    ...(entry.description && { description: entry.description }),
+    ...(entry.repository?.defaultBranch && { defaultBranch: entry.repository.defaultBranch }),
+    ...(entry.devServer?.command && { webCommand: entry.devServer.command }),
+    ...(entry.devServer?.url && { webUrl: entry.devServer.url }),
+  };
+}
 
 /**
  * GET /api/projects
- * Return all projects.
+ * Return all projects in legacy format { projects: Record<key, ProjectConfig> }
  */
 export async function GET() {
-  const data = await readJsonFile<ProjectsData>(getProjectsPath(), DEFAULT_PROJECTS_DATA);
-  return NextResponse.json(data);
+  const index = await readIndex();
+  const projects: Record<string, ProjectConfig> = {};
+  for (const entry of index.projects) {
+    if (!entry.archived) {
+      projects[entry.key] = entryToConfig(entry);
+    }
+  }
+  return NextResponse.json({ projects });
 }
 
 /**
  * POST /api/projects
- * Add or update a project.
- * Body: { key, name, path, type, webCommand?, webUrl? }
+ * Add or update a project (legacy format).
+ * Body: { key, name, path, type, description?, defaultBranch?, webCommand?, webUrl? }
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -29,28 +64,59 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const updated = await modifyJsonFile<ProjectsData>(
-    getProjectsPath(),
-    DEFAULT_PROJECTS_DATA,
-    (data) => ({
-      ...data,
-      projects: {
-        ...data.projects,
-        [key]: {
-          ...data.projects[key],
-          name,
-          path: projectPath,
-          type,
-          ...(description !== undefined && { description: description || undefined }),
-          ...(defaultBranch !== undefined && { defaultBranch: defaultBranch || undefined }),
-          ...(webCommand !== undefined && { webCommand }),
-          ...(webUrl !== undefined && { webUrl }),
-        },
-      },
-    }),
-  );
+  const index = await readIndex();
+  const existing = index.projects.find(p => p.key === key);
 
-  return NextResponse.json(updated);
+  if (existing) {
+    // Update existing
+    existing.name = name;
+    existing.path = projectPath;
+    existing.techStack = type;
+    if (description !== undefined) existing.description = description || undefined;
+    if (defaultBranch !== undefined) {
+      existing.repository = { ...existing.repository, defaultBranch: defaultBranch || undefined };
+    }
+    if (webCommand !== undefined || webUrl !== undefined) {
+      existing.devServer = {
+        ...existing.devServer,
+        ...(webCommand !== undefined && { command: webCommand }),
+        ...(webUrl !== undefined && { url: webUrl }),
+      };
+    }
+    existing.updatedAt = new Date().toISOString();
+  } else {
+    // Create new
+    const now = new Date().toISOString();
+    const entry: ProjectEntry = {
+      key,
+      name,
+      path: projectPath,
+      techStack: type,
+      location: 'local',
+      createdAt: now,
+      updatedAt: now,
+      ...(description && { description }),
+      ...(defaultBranch && { repository: { defaultBranch } }),
+      ...((webCommand || webUrl) && {
+        devServer: {
+          ...(webCommand && { command: webCommand }),
+          ...(webUrl && { url: webUrl }),
+        },
+      }),
+    };
+    index.projects.push(entry);
+  }
+
+  await writeJsonFile(getFlowIndexPath(), index);
+
+  // Return in legacy format
+  const projects: Record<string, ProjectConfig> = {};
+  for (const entry of index.projects) {
+    if (!entry.archived) {
+      projects[entry.key] = entryToConfig(entry);
+    }
+  }
+  return NextResponse.json({ projects });
 }
 
 /**
@@ -66,22 +132,23 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: 'key is required' }, { status: 400 });
   }
 
-  let found = false;
-
-  const updated = await modifyJsonFile<ProjectsData>(
-    getProjectsPath(),
-    DEFAULT_PROJECTS_DATA,
-    (data) => {
-      if (!(key in data.projects)) return data;
-      found = true;
-      const { [key]: _, ...rest } = data.projects;
-      return { ...data, projects: rest };
-    },
-  );
-
-  if (!found) {
+  const index = await readIndex();
+  const project = index.projects.find(p => p.key === key);
+  if (!project) {
     return NextResponse.json({ error: 'Project not found' }, { status: 404 });
   }
 
-  return NextResponse.json(updated);
+  // Soft delete (archive)
+  project.archived = true;
+  project.archivedAt = new Date().toISOString();
+  await writeJsonFile(getFlowIndexPath(), index);
+
+  // Return in legacy format
+  const projects: Record<string, ProjectConfig> = {};
+  for (const entry of index.projects) {
+    if (!entry.archived) {
+      projects[entry.key] = entryToConfig(entry);
+    }
+  }
+  return NextResponse.json({ projects });
 }
