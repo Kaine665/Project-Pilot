@@ -324,14 +324,9 @@ export function SettingsAISection({
               )}
 
               {!loginFlowActive && (
-                <div className="space-y-1">
-                  <p className="text-xs text-zinc-500">
-                    {provider === 'openai' ? t('oauthHintOpenAI') : t('oauthHint')}
-                  </p>
-                  {provider === 'anthropic' && (
-                    <p className="text-xs text-amber-600 dark:text-amber-500">{t('oauthHintRedirect')}</p>
-                  )}
-                </div>
+                <p className="text-xs text-zinc-500">
+                  {provider === 'openai' ? t('oauthHintOpenAI') : t('oauthHint')}
+                </p>
               )}
             </div>
           )}
