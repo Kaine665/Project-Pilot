@@ -153,6 +153,7 @@ class AgentChatManager {
     modelOverride?: string,
     effortOverride?: string,
     ephemeral?: boolean,
+    _depth?: number,
   ): Promise<string> {
     const agent = await loadAgent(agentId);
 
