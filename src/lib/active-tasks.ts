@@ -43,6 +43,8 @@ export interface ActiveTaskEntry {
   scope?: string[];
   /** 关联的 git 分支 */
   branch?: string;
+  /** 关联的 Agent 会话 ID（用于会话结束时自动清理） */
+  sessionId?: string;
   /** 任务状态 */
   status: ActiveTaskStatus;
   /** 注册时间 */
@@ -178,6 +180,30 @@ export async function failTask(taskId: string): Promise<boolean> {
   return found;
 }
 
+/** 按 sessionId 批量完成/失败任务（供卫星任务调用） */
+export async function finishTasksBySession(
+  sessionId: string,
+  status: 'completed' | 'failed',
+): Promise<number> {
+  let count = 0;
+  const now = new Date().toISOString();
+  await modifyJsonFile<ActiveTasksData>(
+    getActiveTasksPath(),
+    DEFAULT_DATA,
+    (data) => {
+      for (const t of data.tasks) {
+        if (t.sessionId === sessionId && t.status === 'running') {
+          t.status = status;
+          t.finishedAt = now;
+          count++;
+        }
+      }
+      return data;
+    },
+  );
+  return count;
+}
+
 /** 更新心跳 */
 export async function heartbeatTask(taskId: string): Promise<boolean> {
   let found = false;
@@ -264,6 +290,7 @@ async function main() {
         title,
         scope: opts.scope ? opts.scope.split(',').map(s => s.trim()) : undefined,
         branch: opts.branch,
+        sessionId: opts.session,
       });
       console.log(JSON.stringify(entry, null, 2));
       break;

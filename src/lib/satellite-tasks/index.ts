@@ -9,8 +9,10 @@ import { healthGuardTask } from './tasks/health-guard';
 import { knowledgeExtractionTask } from './tasks/knowledge-extraction';
 import { topicCompletionTask } from './tasks/topic-completion';
 import { todoAutoCompleteTask } from './tasks/todo-auto-complete';
+import { activeTaskCleanupTask } from './tasks/active-task-cleanup';
 
 // Register all built-in satellite tasks
+satelliteRegistry.register(activeTaskCleanupTask);
 satelliteRegistry.register(titleGenerationTask);
 satelliteRegistry.register(healthGuardTask);
 satelliteRegistry.register(knowledgeExtractionTask);
