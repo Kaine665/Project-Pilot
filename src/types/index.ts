@@ -269,6 +269,8 @@ export type ChatSSEEvent =
   | { type: 'doc_created'; docId: string; title: string; projectKey: string }
   | { type: 'task_suspended'; taskId: string; title: string }
   | { type: 'task_completed'; taskId: string }
+  /** 会话检查点已生成（提示前端可显示续接按钮） */
+  | { type: 'checkpoint_saved'; checkpoint: import('@/types/agent-chat').SessionCheckpoint }
   /** 模型 token 用量（来自 SDK result.modelUsage 或 streaming message_start/message_delta） */
   | { type: 'token_usage'; inputTokens: number; outputTokens: number; contextWindow?: number; final?: boolean }
   | { type: 'error'; message: string }
