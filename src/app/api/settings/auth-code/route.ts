@@ -3,7 +3,7 @@ import { loginProcess, loginProvider } from '@/lib/auth-login-state';
 
 /**
  * 从用户输入中提取授权码。
- * 支持：纯授权码、完整回调 URL（?code=xxx 或 #code=xxx）。
+ * 支持：纯授权码、完整回调 URL（?code=xxx）、code#state 格式。
  */
 function extractCode(input: string): string {
   const trimmed = input.trim();
@@ -18,6 +18,9 @@ function extractCode(input: string): string {
   } catch {
     // 不是 URL，当作纯授权码
   }
+  // 回调页面可能显示 "code#state" 格式，只取 # 前面的授权码
+  const hashIdx = trimmed.indexOf('#');
+  if (hashIdx > 0) return trimmed.slice(0, hashIdx);
   return trimmed;
 }
 
