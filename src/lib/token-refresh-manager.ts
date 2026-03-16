@@ -29,13 +29,6 @@ const REFRESH_THRESHOLD_MS = 30 * 60 * 1000;    // 过期前 30 分钟就刷新
 /** Claude OAuth 常量（从 CLI 源码提取） */
 const OAUTH_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 const OAUTH_TOKEN_URL = 'https://platform.claude.com/v1/oauth/token';
-const OAUTH_SCOPES = [
-  'org:create_api_key',
-  'user:profile',
-  'user:inference',
-  'user:sessions:claude_code',
-  'user:mcp_servers',
-];
 
 // ── 类型 ─────────────────────────────────────────────────────────────────────
 
@@ -132,7 +125,6 @@ class TokenRefreshManager {
       grant_type: 'refresh_token',
       refresh_token: oauth.refreshToken,
       client_id: OAUTH_CLIENT_ID,
-      scope: (oauth.scopes?.length ? oauth.scopes : OAUTH_SCOPES).join(' '),
     };
 
     const resp = await fetch(OAUTH_TOKEN_URL, {
