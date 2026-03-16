@@ -16,13 +16,14 @@ import { callLightweightAI } from './lightweight-ai';
 import { appendRun } from './run-store';
 import { refreshTitleTriggerCache } from './tasks/title-generation';
 import { refreshHealthGuardCache } from './tasks/health-guard';
+import { refreshKnowledgeExtractionCache } from './tasks/knowledge-extraction';
 import type { SatelliteContext, SatelliteTask } from './types';
 
 const LOG_PREFIX = '[Satellite]';
 
 export async function runSatelliteTasks(ctx: SatelliteContext): Promise<void> {
   // Refresh config caches before evaluating shouldRun (which is sync)
-  await Promise.all([refreshTitleTriggerCache(), refreshHealthGuardCache()]);
+  await Promise.all([refreshTitleTriggerCache(), refreshHealthGuardCache(), refreshKnowledgeExtractionCache()]);
 
   const tasks = satelliteRegistry.getAllSorted();
 
