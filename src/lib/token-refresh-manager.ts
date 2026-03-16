@@ -139,8 +139,8 @@ class TokenRefreshManager {
 
     const resp = await fetch(OAUTH_TOKEN_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(body).toString(),
       signal: AbortSignal.timeout(15000),
     });
 
