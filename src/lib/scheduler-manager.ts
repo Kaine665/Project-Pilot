@@ -12,8 +12,15 @@
 
 import * as cron from 'node-cron';
 import { randomBytes } from 'crypto';
-import { getSchedulesPath, readJsonFile, modifyJsonFile } from './file-store';
-import type { AgentSchedule, AgentSchedulesData } from '@/types';
+import { getSchedulesPath, getScheduleRunsPath, readJsonFile, modifyJsonFile } from './file-store';
+import type { AgentSchedule, AgentSchedulesData, ScheduleRunRecord, ScheduleRunsData } from '@/types';
+
+// ── Constants ──
+
+/** 执行历史最多保留条数（每条调度规则） */
+const MAX_RUNS_PER_SCHEDULE = 50;
+/** 执行历史总量上限 */
+const MAX_TOTAL_RUNS = 500;
 
 // ── Helpers ──
 
@@ -21,6 +28,12 @@ function generateScheduleId(): string {
   const ts = Date.now();
   const rand = randomBytes(2).toString('hex');
   return `sched-${ts}-${rand}`;
+}
+
+function generateRunId(): string {
+  const ts = Date.now();
+  const rand = randomBytes(2).toString('hex');
+  return `run-${ts}-${rand}`;
 }
 
 /** 计算 cron 表达式的下次执行时间（node-cron 无 nextDate API，暂返回 undefined） */
@@ -75,7 +88,7 @@ export class SchedulerManager {
     }
 
     const task = cron.schedule(schedule.cron, () => {
-      void this._fire(schedule.id);
+      void this._fire(schedule.id, 'cron');
     });
 
     this.jobs.set(schedule.id, task);
@@ -89,48 +102,77 @@ export class SchedulerManager {
     }
   }
 
-  private async _fire(scheduleId: string): Promise<void> {
+  /** 构建 flowContext（如果绑定了项目） */
+  private async _buildFlowContext(
+    projectKey: string | undefined,
+  ): Promise<import('./chat-managers/agent-chat-manager').FlowContext | undefined> {
+    if (!projectKey) return undefined;
+
+    const { getFlowDataPath, getFlowIndexPath, ensureDataDirV2Migrated } = await import('./file-store');
+    await ensureDataDirV2Migrated();
+    const flowDataPath = getFlowDataPath(projectKey);
+    let projectName = projectKey;
     try {
-      // 重新读取最新配置（防止 cron job 创建后规则已被修改或禁用）
-      const data = await readJsonFile<AgentSchedulesData>(getSchedulesPath(), { schedules: [] });
-      const schedule = data.schedules.find(s => s.id === scheduleId);
-      if (!schedule || !schedule.enabled) {
-        console.log(`[SchedulerManager] 调度 ${scheduleId} 已禁用或不存在，跳过本次触发`);
-        return;
-      }
+      const { readJsonFile: rjf } = await import('./file-store');
+      const idx = await rjf<{ projects: Array<{ key: string; name: string }> }>(
+        getFlowIndexPath(), { projects: [] }
+      );
+      const found = idx.projects.find(p => p.key === projectKey);
+      if (found) projectName = found.name;
+    } catch { /* ignore */ }
 
-      console.log(`[SchedulerManager] 触发调度 ${scheduleId}（${schedule.label ?? schedule.agentId}）`);
+    return { projectKey, projectName, flowDataPath };
+  }
 
-      // 动态导入，避免循环依赖（SchedulerManager 在 agentChatManager 初始化之前加载）
+  /**
+   * 触发一条调度规则（cron 定时触发或手动触发共用）。
+   */
+  private async _fire(scheduleId: string, trigger: 'cron' | 'manual'): Promise<ScheduleRunRecord> {
+    // 重新读取最新配置（防止 cron job 创建后规则已被修改或禁用）
+    const data = await readJsonFile<AgentSchedulesData>(getSchedulesPath(), { schedules: [] });
+    const schedule = data.schedules.find(s => s.id === scheduleId);
+
+    if (!schedule) {
+      throw new Error(`调度规则 ${scheduleId} 不存在`);
+    }
+
+    // cron 触发时检查 enabled，手动触发不检查
+    if (trigger === 'cron' && !schedule.enabled) {
+      console.log(`[SchedulerManager] 调度 ${scheduleId} 已禁用，跳过本次触发`);
+      throw new Error(`调度规则 ${scheduleId} 已禁用`);
+    }
+
+    console.log(`[SchedulerManager] ${trigger === 'manual' ? '手动' : '定时'}触发调度 ${scheduleId}（${schedule.label ?? schedule.agentId}）`);
+
+    const runRecord: ScheduleRunRecord = {
+      id: generateRunId(),
+      scheduleId,
+      sessionId: '',
+      trigger,
+      startedAt: new Date().toISOString(),
+      status: 'started',
+    };
+
+    try {
+      // 动态导入，避免循环依赖
       const { agentChatManager, generateSessionId } = await import('./chat-managers/agent-chat-manager');
 
-      // 构建 flowContext（如果绑定了项目）
-      let flowContext: import('./chat-managers/agent-chat-manager').FlowContext | undefined;
-      if (schedule.projectKey) {
-        const { getFlowDataPath, getFlowIndexPath, ensureFlowsMigrated } = await import('./file-store');
-        await ensureFlowsMigrated();
-        const flowDataPath = getFlowDataPath(schedule.projectKey);
-        let projectName = schedule.projectKey;
-        try {
-          const { readJsonFile: rjf } = await import('./file-store');
-          const idx = await rjf<{ projects: Array<{ key: string; name: string }> }>(
-            getFlowIndexPath(), { projects: [] }
-          );
-          const found = idx.projects.find(p => p.key === schedule.projectKey);
-          if (found) projectName = found.name;
-        } catch { /* ignore */ }
-        flowContext = { projectKey: schedule.projectKey, projectName, flowDataPath };
-      }
+      const flowContext = await this._buildFlowContext(schedule.projectKey);
 
       const sessionId = generateSessionId();
+      runRecord.sessionId = sessionId;
+
+      const titlePrefix = trigger === 'manual' ? '[手动]' : '[定时]';
       await agentChatManager.start(
         sessionId,
         schedule.agentId,
         schedule.message,
         flowContext,
         undefined, // images
-        `[定时] ${schedule.label ?? schedule.agentId}`, // initialTitle
+        `${titlePrefix} ${schedule.label ?? schedule.agentId}`, // initialTitle
       );
+
+      runRecord.status = 'started'; // 会话已启动（不等待完成）
 
       // 更新 lastRunAt
       await modifyJsonFile<AgentSchedulesData>(
@@ -146,8 +188,73 @@ export class SchedulerManager {
         },
       );
     } catch (err) {
+      runRecord.status = 'failed';
+      runRecord.error = (err as Error).message;
       console.error(`[SchedulerManager] 触发调度 ${scheduleId} 失败：`, err);
     }
+
+    // 记录执行历史
+    await this._saveRunRecord(runRecord);
+
+    if (runRecord.status === 'failed') {
+      throw new Error(runRecord.error ?? '触发失败');
+    }
+
+    return runRecord;
+  }
+
+  /** 手动触发一次调度规则（不检查 enabled 状态） */
+  async triggerNow(scheduleId: string): Promise<ScheduleRunRecord> {
+    return this._fire(scheduleId, 'manual');
+  }
+
+  // ── 执行历史 ──
+
+  /** 保存一条执行记录，自动清理旧记录 */
+  private async _saveRunRecord(record: ScheduleRunRecord): Promise<void> {
+    await modifyJsonFile<ScheduleRunsData>(
+      getScheduleRunsPath(),
+      { runs: [] },
+      (d) => {
+        d.runs.push(record);
+
+        // 按 scheduleId 分组清理，每组最多保留 MAX_RUNS_PER_SCHEDULE 条
+        const grouped = new Map<string, ScheduleRunRecord[]>();
+        for (const r of d.runs) {
+          const group = grouped.get(r.scheduleId) ?? [];
+          group.push(r);
+          grouped.set(r.scheduleId, group);
+        }
+        const trimmed: ScheduleRunRecord[] = [];
+        for (const [, group] of grouped) {
+          // 按 startedAt 降序，保留最新的
+          group.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+          trimmed.push(...group.slice(0, MAX_RUNS_PER_SCHEDULE));
+        }
+        // 全局上限
+        trimmed.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+        d.runs = trimmed.slice(0, MAX_TOTAL_RUNS);
+
+        return d;
+      },
+    );
+  }
+
+  /** 查询某条调度规则的执行历史 */
+  async listRuns(scheduleId: string, limit = 20): Promise<ScheduleRunRecord[]> {
+    const data = await readJsonFile<ScheduleRunsData>(getScheduleRunsPath(), { runs: [] });
+    return data.runs
+      .filter(r => r.scheduleId === scheduleId)
+      .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+      .slice(0, limit);
+  }
+
+  /** 查询所有执行历史 */
+  async listAllRuns(limit = 50): Promise<ScheduleRunRecord[]> {
+    const data = await readJsonFile<ScheduleRunsData>(getScheduleRunsPath(), { runs: [] });
+    return data.runs
+      .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+      .slice(0, limit);
   }
 
   // ── 数据 CRUD（供 API 路由调用） ──

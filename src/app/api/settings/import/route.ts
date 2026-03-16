@@ -12,7 +12,7 @@ import {
   readJsonFile,
 } from '@/lib/file-store';
 import { importSessionsWithMessages } from '@/lib/chat-managers/agent-chat-session-store';
-import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import { getDefaultAgents } from '@/lib/default-agents';
 import { writePromptFile } from '@/lib/agent-prompt-store';
 import { invalidateAgentsCache } from '@/lib/agents-store';
 import type { Agent, AgentsData } from '@/types';
@@ -39,13 +39,12 @@ export async function POST(request: NextRequest) {
     const backupDir = path.join(dataDir, `_backup_${timestamp}`);
     await fs.mkdir(backupDir, { recursive: true });
 
-    // 复制核心文件到备份
-    const filesToBackup = ['projects.json', 'agents.json', 'agent-chat-sessions.json'];
-    for (const file of filesToBackup) {
-      const src = path.join(dataDir, file);
+    // 复制核心 JSON 文件到备份
+    const filesToBackup = [getProjectsPath(), getAgentsPath(), getAgentChatSessionsPath()];
+    for (const src of filesToBackup) {
       try {
         await fs.stat(src);
-        await fs.copyFile(src, path.join(backupDir, file));
+        await fs.copyFile(src, path.join(backupDir, path.basename(src)));
       } catch {
         // 文件不存在则跳过
       }
@@ -54,7 +53,7 @@ export async function POST(request: NextRequest) {
     // 备份 JSONL message files
     const messagesDir = getAgentChatMessagesDir();
     try {
-      const msgBackup = path.join(backupDir, 'agent-chat-messages');
+      const msgBackup = path.join(backupDir, 'chat-messages');
       await fs.mkdir(msgBackup, { recursive: true });
       const msgFiles = await fs.readdir(messagesDir);
       for (const file of msgFiles) {
@@ -106,7 +105,8 @@ export async function POST(request: NextRequest) {
       }
 
       // Ensure built-in agents are present
-      for (const defaultAgent of DEFAULT_AGENTS) {
+      const builtinAgents = await getDefaultAgents();
+      for (const defaultAgent of builtinAgents) {
         if (!mergedAgents.some((a: Agent) => a.id === defaultAgent.id)) {
           mergedAgents.unshift(defaultAgent);
         }

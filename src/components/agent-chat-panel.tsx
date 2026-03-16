@@ -160,7 +160,7 @@ type ChatState = {
 type ChatAction =
   | { type: 'SEND_START' }
   | { type: 'STREAM_BLOCKS'; blocks: ContentBlock[] }
-  | { type: 'STREAM_TOKENS'; input: number; output: number }
+  | { type: 'STREAM_TOKENS'; input: number; output: number; final?: boolean }
   | { type: 'STREAM_ERROR'; message: string }
   | { type: 'CLEAR_ERROR' }
   | { type: 'STREAM_END' }
@@ -188,10 +188,21 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'STREAM_BLOCKS':
       return { ...state, streamingBlocks: action.blocks };
     case 'STREAM_TOKENS':
+      // final = true：来自 result 事件的累计总量，直接替换
+      // final = false/undefined：来自流式增量事件
+      //   - input: 覆盖（每轮 message_start 的 input_tokens 包含完整历史，天然累计）
+      //   - output: 累加（每轮 message_delta 只报告当前轮的 output_tokens）
+      if (action.final) {
+        return {
+          ...state,
+          tokenInputs: action.input > 0 ? action.input : state.tokenInputs,
+          tokenOutputs: action.output > 0 ? action.output : state.tokenOutputs,
+        };
+      }
       return {
         ...state,
         tokenInputs: action.input > 0 ? action.input : state.tokenInputs,
-        tokenOutputs: action.output > 0 ? action.output : state.tokenOutputs,
+        tokenOutputs: action.output > 0 ? state.tokenOutputs + action.output : state.tokenOutputs,
       };
     case 'STREAM_ERROR':
       return { ...state, errorMsg: action.message };
@@ -921,7 +932,7 @@ export function AgentChatPanel({
               break;
 
             case 'token_usage':
-              chatDispatch({ type: 'STREAM_TOKENS', input: event.inputTokens, output: event.outputTokens });
+              chatDispatch({ type: 'STREAM_TOKENS', input: event.inputTokens, output: event.outputTokens, final: event.final });
               if (event.contextWindow && event.contextWindow > 0) setSseContextWindow(event.contextWindow);
               break;
 

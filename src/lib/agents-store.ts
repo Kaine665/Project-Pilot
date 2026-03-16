@@ -1,5 +1,5 @@
-import { getAgentsPath, readJsonFile, writeJsonFile } from '@/lib/file-store';
-import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import { getAgentsPath, readJsonFile, writeJsonFile, ensureDataDirV2Migrated } from '@/lib/file-store';
+import { DEFAULT_AGENTS, getDefaultAgents } from '@/lib/default-agents';
 import { mergeAndRepairAgentsData } from '@/lib/agent-metadata-repair';
 import {
   deletePromptFile,
@@ -76,6 +76,13 @@ export async function readAgentsData(): Promise<AgentsData> {
   if (cachedData && now - cacheTimestamp < AGENTS_CACHE_TTL_MS) {
     return cachedData;
   }
+
+  // 必须在读取 registry.json 之前完成 V2 迁移，
+  // 否则可能读到空文件 → 写入默认值 → 迁移跳过 → 旧数据丢失
+  await ensureDataDirV2Migrated();
+
+  // Ensure builtin defaults are loaded before merge
+  await getDefaultAgents();
 
   const { data, changed: mergedChanged } = await mergeAndRepairAgentsData(
     await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] }),

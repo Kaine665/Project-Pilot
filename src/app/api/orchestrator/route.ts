@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { orchestratorManager } from '@/lib/chat-managers/orchestrator-manager';
-import { readJsonFile, getFlowIndexPath, writeJsonFile, ensureProjectsMigrated } from '@/lib/file-store';
+import { readJsonFile, getFlowIndexPath, writeJsonFile, ensureDataDirV2Migrated } from '@/lib/file-store';
 import { isValidProjectKey } from '@/lib/security';
 import type { ProjectIndex, ProjectEntry } from '@/types';
 
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       execSync('git init', { cwd: resolvedPath, stdio: 'ignore' });
 
       // 注册到 flows/_index.json
-      await ensureProjectsMigrated();
+      await ensureDataDirV2Migrated();
       const index = await readJsonFile<ProjectIndex>(getFlowIndexPath(), { projects: [] });
       const now = new Date().toISOString();
       const entry: ProjectEntry = {
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid projectKey' }, { status: 400 });
       }
 
-      await ensureProjectsMigrated();
+      await ensureDataDirV2Migrated();
       const index = await readJsonFile<ProjectIndex>(getFlowIndexPath(), { projects: [] });
       const project = index.projects.find(p => p.key === projectKey && !p.archived);
       if (!project?.path) {

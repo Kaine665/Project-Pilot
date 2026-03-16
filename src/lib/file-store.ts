@@ -37,11 +37,11 @@ export function getProjectsPath(): string {
 }
 
 export function getFlowsDir(): string {
-  return path.join(DATA_DIR, 'flows');
+  return path.join(DATA_DIR, 'workflows', 'flows');
 }
 
 export function getFlowIndexPath(): string {
-  return path.join(DATA_DIR, 'flows', '_index.json');
+  return path.join(DATA_DIR, 'workflows', 'flows', '_index.json');
 }
 
 export function getFlowDataPath(projectKey: string): string {
@@ -52,7 +52,7 @@ export function getFlowDataPath(projectKey: string): string {
     throw new Error(`Invalid project key: ${projectKey}`);
   }
 
-  return path.join(DATA_DIR, 'flows', `${safe}.json`);
+  return path.join(DATA_DIR, 'workflows', 'flows', `${safe}.json`);
 }
 
 /** 旧版 flow 数据目录（源码内） */
@@ -66,15 +66,27 @@ let _flowsMigrated = false;
  */
 async function ensureDataDirInitialized(): Promise<void> {
   const dirs = [
-    getFlowsDir(),
-    getPromptsDir(),
+    // agents/
+    path.join(DATA_DIR, 'agents'),
+    getAgentDataDir(),
+    // chat/
+    getAgentChatMessagesDir(),
+    // tasks/
+    path.join(DATA_DIR, 'tasks'),
+    // prompts/
+    path.join(DATA_DIR, 'prompts', 'agents'),
+    path.join(DATA_DIR, 'prompts', 'history'),
+    path.join(DATA_DIR, 'prompts', 'runtime'),
+    getProjectPromptsDir(),
+    // knowledge/
     getContextDir(),
     getDesignDocsDir(),
+    // workflows/
+    getFlowsDir(),
+    path.join(DATA_DIR, 'workflows', 'orchestrations'),
+    // storage/
     getSkillsDir(),
-    getProjectPromptsDir(),
-    getAgentDataDir(),
-    getAgentChatMessagesDir(),
-    path.join(DATA_DIR, 'orchestrations'),
+    // top-level
     path.join(DATA_DIR, '_snapshots'),
   ];
   await Promise.all(dirs.map(d => fs.mkdir(d, { recursive: true })));
@@ -211,12 +223,263 @@ export async function ensureProjectsMigrated(): Promise<void> {
   await writeJsonFile(indexPath, { ...index, _migrated_projects_v2: true });
 }
 
+// ── V2 目录结构迁移 ──
+// 将扁平的 data/ 目录结构重组为按领域分组的层级结构。
+// 使用两阶段提交：先复制到新位置，写标记，再删旧文件。
+
+const V2_MIGRATION_MARKER = path.join(DATA_DIR, '_migration_v2_complete');
+let _v2Migrated = false;
+
+/**
+ * V2 目录结构迁移。
+ *
+ * 策略：
+ * 1. 检查标记文件 → 已迁移则跳过
+ * 2. Phase A：复制所有旧路径文件/目录到新路径（幂等）
+ * 3. Phase B：写标记文件
+ * 4. Phase C：删除旧文件（best-effort）
+ *
+ * 对 prompts/.runtime/ 目录，旧结构是 prompts/{agentId}.runtime/，
+ * 新结构是 prompts/runtime/{agentId}/。
+ */
+export async function ensureDataDirV2Migrated(): Promise<void> {
+  if (_v2Migrated) return;
+  _v2Migrated = true;
+
+  // 先确保 V1 迁移完成
+  await ensureProjectsMigrated();
+
+  // 检查是否已迁移
+  try {
+    await fs.stat(V2_MIGRATION_MARKER);
+    return; // 已迁移
+  } catch {
+    // 未迁移，继续
+  }
+
+  // 检查是否存在旧结构（用 agents.json 作为标志）
+  const oldAgentsJson = path.join(DATA_DIR, 'agents.json');
+  try {
+    await fs.stat(oldAgentsJson);
+  } catch {
+    // 旧结构也不存在 → 全新安装，直接标记完成
+    await fs.writeFile(V2_MIGRATION_MARKER, new Date().toISOString(), 'utf-8');
+    return;
+  }
+
+  console.log('[migration-v2] 开始数据目录 V2 迁移...');
+
+  // ── Phase A：复制到新位置 ──
+
+  // JSON 文件映射：旧路径 → 新路径
+  const jsonMoves: [string, string][] = [
+    // agents/
+    [path.join(DATA_DIR, 'agents.json'), getAgentsPath()],
+    [path.join(DATA_DIR, 'agent-teams.json'), getAgentTeamsPath()],
+    [path.join(DATA_DIR, 'agent-schedules.json'), getSchedulesPath()],
+    [path.join(DATA_DIR, 'agent-schedule-runs.json'), getScheduleRunsPath()],
+    // chat/
+    [path.join(DATA_DIR, 'agent-chat-sessions.json'), getAgentChatSessionsPath()],
+    [path.join(DATA_DIR, 'orchestrator-sessions.json'), getOrchestratorSessionsPath()],
+    // tasks/
+    [path.join(DATA_DIR, 'active-tasks.json'), getActiveTasksPath()],
+    [path.join(DATA_DIR, 'suspended-tasks.json'), getSuspendedTasksPath()],
+    [path.join(DATA_DIR, 'todos.json'), getTodosPath()],
+    [path.join(DATA_DIR, 'satellite-tasks-config.json'), path.join(DATA_DIR, 'tasks', 'satellite-config.json')],
+    // workflows/
+    [path.join(DATA_DIR, 'worktree-ports.json'), getWorktreePortsPath()],
+    // prompts/
+    [path.join(DATA_DIR, 'prompts', '_global.md'), getGlobalPromptPath()],
+  ];
+
+  // 目录映射：旧目录 → 新目录（整体搬移）
+  const dirMoves: [string, string][] = [
+    // agents/
+    [path.join(DATA_DIR, 'agent-data'), getAgentDataDir()],
+    [path.join(DATA_DIR, 'agent-library'), path.join(DATA_DIR, 'agents', 'library')],
+    // chat/
+    [path.join(DATA_DIR, 'agent-chat-messages'), getAgentChatMessagesDir()],
+    // tasks/
+    [path.join(DATA_DIR, 'task-artifacts'), path.join(DATA_DIR, 'tasks', 'artifacts')],
+    [path.join(DATA_DIR, 'satellite-task-runs'), path.join(DATA_DIR, 'tasks', 'satellite-runs')],
+    // knowledge/
+    [path.join(DATA_DIR, 'context'), getContextDir()],
+    [path.join(DATA_DIR, 'design-docs'), getDesignDocsDir()],
+    [path.join(DATA_DIR, 'docs'), path.join(DATA_DIR, 'knowledge', 'docs')],
+    [path.join(DATA_DIR, 'fundraising'), path.join(DATA_DIR, 'knowledge', 'fundraising')],
+    // workflows/
+    [path.join(DATA_DIR, 'flows'), getFlowsDir()],
+    [path.join(DATA_DIR, 'orchestrations'), path.join(DATA_DIR, 'workflows', 'orchestrations')],
+    // storage/
+    [path.join(DATA_DIR, 'artifacts'), path.join(DATA_DIR, 'storage', 'artifacts')],
+    [path.join(DATA_DIR, 'bitable'), path.join(DATA_DIR, 'storage', 'bitable')],
+    [path.join(DATA_DIR, 'skills'), getSkillsDir()],
+    // project-prompts → prompts/projects
+    [path.join(DATA_DIR, 'project-prompts'), getProjectPromptsDir()],
+  ];
+
+  // 复制 JSON 文件
+  for (const [src, dest] of jsonMoves) {
+    await _migrateCopyFile(src, dest);
+  }
+
+  // 复制目录
+  for (const [src, dest] of dirMoves) {
+    await _migrateCopyDir(src, dest);
+  }
+
+  // 特殊处理：prompt 模板文件（prompts/{agentId}.md → prompts/agents/{agentId}.md）
+  try {
+    const promptsRoot = path.join(DATA_DIR, 'prompts');
+    const entries = await fs.readdir(promptsRoot, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith('.md') && entry.name !== '_global.md' && entry.name !== 'global.md') {
+        const src = path.join(promptsRoot, entry.name);
+        const dest = path.join(DATA_DIR, 'prompts', 'agents', entry.name);
+        await _migrateCopyFile(src, dest);
+      }
+    }
+  } catch { /* prompts dir may not exist */ }
+
+  // 特殊处理：prompt history（prompts/{agentId}.history/ → prompts/history/{agentId}/）
+  try {
+    const promptsRoot = path.join(DATA_DIR, 'prompts');
+    const entries = await fs.readdir(promptsRoot, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory() && entry.name.endsWith('.history')) {
+        const agentId = entry.name.replace(/\.history$/, '');
+        const src = path.join(promptsRoot, entry.name);
+        const dest = path.join(DATA_DIR, 'prompts', 'history', agentId);
+        await _migrateCopyDir(src, dest);
+      }
+    }
+  } catch { /* ok */ }
+
+  // 特殊处理：prompt runtime（prompts/{agentId}.runtime/ → prompts/runtime/{agentId}/）
+  try {
+    const promptsRoot = path.join(DATA_DIR, 'prompts');
+    const entries = await fs.readdir(promptsRoot, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory() && entry.name.endsWith('.runtime')) {
+        const agentId = entry.name.replace(/\.runtime$/, '');
+        const src = path.join(promptsRoot, entry.name);
+        const dest = path.join(DATA_DIR, 'prompts', 'runtime', agentId);
+        await _migrateCopyDir(src, dest);
+      }
+    }
+  } catch { /* ok */ }
+
+  // ── Phase B：写标记文件 ──
+  await fs.writeFile(V2_MIGRATION_MARKER, new Date().toISOString(), 'utf-8');
+  console.log('[migration-v2] 标记文件已写入');
+
+  // ── Phase C：删除旧文件（best-effort）──
+  for (const [src] of jsonMoves) {
+    await fs.unlink(src).catch(() => {});
+  }
+  for (const [src, dest] of dirMoves) {
+    // 只删除旧目录和新目录不同的情况
+    if (src !== dest) {
+      await fs.rm(src, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+  // 删除旧的 prompt 模板文件（已搬到 prompts/agents/）
+  try {
+    const promptsRoot = path.join(DATA_DIR, 'prompts');
+    const entries = await fs.readdir(promptsRoot, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith('.md') && entry.name !== 'global.md') {
+        // 只删除根级的，不删子目录里的
+        await fs.unlink(path.join(promptsRoot, entry.name)).catch(() => {});
+      }
+      if (entry.isDirectory() && (entry.name.endsWith('.history') || entry.name.endsWith('.runtime'))) {
+        await fs.rm(path.join(promptsRoot, entry.name), { recursive: true, force: true }).catch(() => {});
+      }
+    }
+  } catch { /* ok */ }
+
+  console.log('[migration-v2] 数据目录 V2 迁移完成');
+}
+
+/**
+ * 复制单个文件（幂等 + 竞态安全）。
+ *
+ * 当目标已存在时，比较源和目标文件大小：
+ * - 如果源文件更大，说明目标可能是 store 自动生成的默认文件（竞态产物），用源文件覆盖
+ * - 如果目标文件 >= 源文件，说明目标已包含完整数据，跳过
+ *
+ * 这解决了「store 初始化创建默认文件 → 迁移跳过复制 → 旧数据丢失」的竞态条件。
+ */
+async function _migrateCopyFile(src: string, dest: string): Promise<void> {
+  let srcStat: Awaited<ReturnType<typeof fs.stat>>;
+  try {
+    srcStat = await fs.stat(src);
+  } catch {
+    return; // 源不存在，跳过
+  }
+
+  try {
+    const destStat = await fs.stat(dest);
+    // 目标已存在 — 比较大小决定是否覆盖
+    if (srcStat.size > destStat.size) {
+      console.warn(
+        `[migration-v2] 目标文件已存在但比源文件小 (src=${srcStat.size}B, dest=${destStat.size}B)，` +
+        `可能是竞态产物，用源文件覆盖: ${path.basename(src)}`,
+      );
+      await fs.mkdir(path.dirname(dest), { recursive: true });
+      await fs.copyFile(src, dest);
+    }
+    return;
+  } catch {
+    // 目标不存在，继续复制
+  }
+
+  try {
+    await fs.mkdir(path.dirname(dest), { recursive: true });
+    await fs.copyFile(src, dest);
+  } catch (err) {
+    console.warn(`[migration-v2] 复制文件失败: ${src} → ${dest}`, (err as Error).message);
+  }
+}
+
+/** 递归复制目录（幂等：逐文件复制，已存在的跳过） */
+async function _migrateCopyDir(src: string, dest: string): Promise<void> {
+  try {
+    await fs.stat(src);
+  } catch {
+    return; // 源不存在，跳过
+  }
+  // 如果新旧路径相同，跳过
+  if (path.resolve(src) === path.resolve(dest)) return;
+
+  try {
+    await fs.mkdir(dest, { recursive: true });
+    const entries = await fs.readdir(src, { withFileTypes: true });
+    for (const entry of entries) {
+      const srcPath = path.join(src, entry.name);
+      const destPath = path.join(dest, entry.name);
+      if (entry.isDirectory()) {
+        await _migrateCopyDir(srcPath, destPath);
+      } else {
+        // 只在目标不存在时复制
+        try {
+          await fs.stat(destPath);
+        } catch {
+          await fs.copyFile(srcPath, destPath);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[migration-v2] 复制目录失败: ${src} → ${dest}`, (err as Error).message);
+  }
+}
+
 export function getSettingsPath(): string {
   return path.join(DATA_DIR, 'settings.json');
 }
 
 export function getAgentsPath(): string {
-  return path.join(DATA_DIR, 'agents.json');
+  return path.join(DATA_DIR, 'agents', 'registry.json');
 }
 
 export function getDimensionsPath(): string {
@@ -224,12 +487,12 @@ export function getDimensionsPath(): string {
 }
 
 export function getAgentChatSessionsPath(): string {
-  return path.join(DATA_DIR, 'agent-chat-sessions.json');
+  return path.join(DATA_DIR, 'chat', 'sessions.json');
 }
 
 /** 每个会话的消息 JSONL 文件目录 */
 export function getAgentChatMessagesDir(): string {
-  return path.join(DATA_DIR, 'agent-chat-messages');
+  return path.join(DATA_DIR, 'chat', 'messages');
 }
 
 /** 单个会话的消息 JSONL 文件路径 */
@@ -238,37 +501,37 @@ export function getAgentChatMessagePath(sessionId: string): string {
   if (!safe || safe.length < 1 || safe.length > 200) {
     throw new Error(`Invalid session id: ${sessionId}`);
   }
-  return path.join(DATA_DIR, 'agent-chat-messages', `${safe}.jsonl`);
+  return path.join(DATA_DIR, 'chat', 'messages', `${safe}.jsonl`);
 }
 
 export function getWorktreePortsPath(): string {
-  return path.join(DATA_DIR, 'worktree-ports.json');
+  return path.join(DATA_DIR, 'workflows', 'worktree-ports.json');
 }
 
 export function getTodosPath(): string {
-  return path.join(DATA_DIR, 'todos.json');
+  return path.join(DATA_DIR, 'tasks', 'todos.json');
 }
 
 export function getOrchestratorSessionsPath(): string {
-  return path.join(DATA_DIR, 'orchestrator-sessions.json');
+  return path.join(DATA_DIR, 'chat', 'orchestrator-sessions.json');
 }
 
 export function getAgentTeamsPath(): string {
-  return path.join(DATA_DIR, 'agent-teams.json');
+  return path.join(DATA_DIR, 'agents', 'teams.json');
 }
 
 /** 编排会话的跨 Worker 消息文件（JSONL 格式，追加写） */
 export function getOrchestratorMessagesPath(orchId: string): string {
   const safeId = orchId.replace(/[^a-zA-Z0-9_-]/g, '');
-  return path.join(DATA_DIR, 'orchestrations', `${safeId}-messages.jsonl`);
+  return path.join(DATA_DIR, 'workflows', 'orchestrations', `${safeId}-messages.jsonl`);
 }
 
 export function getActiveTasksPath(): string {
-  return path.join(DATA_DIR, 'active-tasks.json');
+  return path.join(DATA_DIR, 'tasks', 'active.json');
 }
 
 export function getSuspendedTasksPath(): string {
-  return path.join(DATA_DIR, 'suspended-tasks.json');
+  return path.join(DATA_DIR, 'tasks', 'suspended.json');
 }
 
 // ── Prompt 文件路径函数 ──
@@ -282,7 +545,7 @@ export function getPromptFilePath(agentId: string): string {
   if (!safe || safe.length < 1 || safe.length > 100) {
     throw new Error(`Invalid agent id: ${agentId}`);
   }
-  return path.join(DATA_DIR, 'prompts', `${safe}.md`);
+  return path.join(DATA_DIR, 'prompts', 'agents', `${safe}.md`);
 }
 
 export function getPromptHistoryDir(agentId: string): string {
@@ -290,7 +553,7 @@ export function getPromptHistoryDir(agentId: string): string {
   if (!safe || safe.length < 1 || safe.length > 100) {
     throw new Error(`Invalid agent id: ${agentId}`);
   }
-  return path.join(DATA_DIR, 'prompts', `${safe}.history`);
+  return path.join(DATA_DIR, 'prompts', 'history', safe);
 }
 
 export function getPromptRuntimeDir(agentId: string): string {
@@ -298,7 +561,7 @@ export function getPromptRuntimeDir(agentId: string): string {
   if (!safe || safe.length < 1 || safe.length > 100) {
     throw new Error(`Invalid agent id: ${agentId}`);
   }
-  return path.join(DATA_DIR, 'prompts', `${safe}.runtime`);
+  return path.join(DATA_DIR, 'prompts', 'runtime', safe);
 }
 
 export function getPromptRuntimePath(agentId: string, sessionId: string): string {
@@ -310,15 +573,15 @@ export function getPromptRuntimePath(agentId: string, sessionId: string): string
   if (!safeSession || safeSession.length < 1 || safeSession.length > 200) {
     throw new Error(`Invalid session id: ${sessionId}`);
   }
-  return path.join(DATA_DIR, 'prompts', `${safeAgent}.runtime`, `${safeSession}.md`);
+  return path.join(DATA_DIR, 'prompts', 'runtime', safeAgent, `${safeSession}.md`);
 }
 
 export function getGlobalPromptPath(): string {
-  return path.join(DATA_DIR, 'prompts', '_global.md');
+  return path.join(DATA_DIR, 'prompts', 'global.md');
 }
 
 export function getProjectPromptsDir(): string {
-  return path.join(DATA_DIR, 'project-prompts');
+  return path.join(DATA_DIR, 'prompts', 'projects');
 }
 
 export function getProjectPromptPath(projectKey: string): string {
@@ -326,7 +589,7 @@ export function getProjectPromptPath(projectKey: string): string {
   if (!safe || safe.length < 1 || safe.length > 100) {
     throw new Error(`Invalid project key: ${projectKey}`);
   }
-  return path.join(DATA_DIR, 'project-prompts', `${safe}.md`);
+  return path.join(DATA_DIR, 'prompts', 'projects', `${safe}.md`);
 }
 
 // ── Context 路径函数 ──
@@ -336,11 +599,11 @@ export function getProjectPromptPath(projectKey: string): string {
 // getContextFilePath 的 path.basename 安全检查不可移除 — 防路径穿越
 
 export function getContextDir(): string {
-  return path.join(DATA_DIR, 'context');
+  return path.join(DATA_DIR, 'knowledge', 'context');
 }
 
 export function getContextIndexPath(): string {
-  return path.join(DATA_DIR, 'context', 'index.json');
+  return path.join(DATA_DIR, 'knowledge', 'context', 'index.json');
 }
 
 export function getContextFilePath(fileName: string): string {
@@ -349,7 +612,7 @@ export function getContextFilePath(fileName: string): string {
   if (!safe || safe !== fileName || safe.includes('..')) {
     throw new Error(`Invalid context file name: ${fileName}`);
   }
-  return path.join(DATA_DIR, 'context', safe);
+  return path.join(DATA_DIR, 'knowledge', 'context', safe);
 }
 
 // ── Design Docs 路径函数 ──
@@ -359,11 +622,11 @@ export function getContextFilePath(fileName: string): string {
 // getDesignDocFilePath 的 path.basename 安全检查不可移除 — 防路径穿越
 
 export function getDesignDocsDir(): string {
-  return path.join(DATA_DIR, 'design-docs');
+  return path.join(DATA_DIR, 'knowledge', 'design-docs');
 }
 
 export function getDesignDocsIndexPath(): string {
-  return path.join(DATA_DIR, 'design-docs', '_index.json');
+  return path.join(DATA_DIR, 'knowledge', 'design-docs', '_index.json');
 }
 
 export function getDesignDocFilePath(fileName: string): string {
@@ -371,7 +634,7 @@ export function getDesignDocFilePath(fileName: string): string {
   if (!safe || safe !== fileName || safe.includes('..')) {
     throw new Error(`Invalid doc file name: ${fileName}`);
   }
-  return path.join(DATA_DIR, 'design-docs', safe);
+  return path.join(DATA_DIR, 'knowledge', 'design-docs', safe);
 }
 
 // 🔒 Security: Maximum JSON file size to prevent DoS attacks
@@ -410,12 +673,22 @@ export async function readJsonFile<T>(filePath: string, defaultValue: T): Promis
 const SNAPSHOT_DIR = path.join(DATA_DIR, '_snapshots');
 const MAX_SNAPSHOTS = 10;
 
-/** 需要做写入前快照的文件（basename） */
-const SNAPSHOT_TARGETS = new Set(['agents.json', 'agent-chat-sessions.json']);
+/**
+ * 需要做写入前快照的文件 → 语义名映射。
+ * key = 完整路径（运行时计算），value = 快照前缀名。
+ * 使用语义名而非 basename，避免嵌套路径改名后命名冲突。
+ */
+function getSnapshotTargets(): Map<string, string> {
+  return new Map([
+    [getAgentsPath(), 'agents-registry'],
+    [getAgentChatSessionsPath(), 'chat-sessions'],
+  ]);
+}
 
 function snapshotBeforeWrite(filePath: string): void {
-  const baseName = path.basename(filePath);
-  if (!SNAPSHOT_TARGETS.has(baseName)) return;
+  const targets = getSnapshotTargets();
+  const stem = targets.get(filePath);
+  if (!stem) return;
 
   // Fire-and-forget：快照在后台执行，不阻塞写入路径
   void (async () => {
@@ -427,7 +700,6 @@ function snapshotBeforeWrite(filePath: string): void {
 
     try {
       await fs.mkdir(SNAPSHOT_DIR, { recursive: true });
-      const stem = baseName.replace('.json', '');
       const dest = path.join(SNAPSHOT_DIR, `${stem}_${Date.now()}.json`);
       await fs.copyFile(filePath, dest);
 
@@ -582,33 +854,63 @@ async function _modifyJsonFileImpl<T>(
 
 // ── Skills 路径函数 ──
 
+/** Skill 作用域级别 */
+export type SkillScopeLevel = 'global' | 'project' | 'agent';
+
+/** Skill 作用域定义 */
+export type SkillScope =
+  | { level: 'global' }
+  | { level: 'project'; projectKey: string }
+  | { level: 'agent'; agentId: string };
+
+/** 默认作用域（向后兼容） */
+export const DEFAULT_SKILL_SCOPE: SkillScope = { level: 'global' };
+
+function sanitizeSkillName(name: string): string {
+  const safe = name.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 100) {
+    throw new Error(`Invalid skill name: ${name}`);
+  }
+  return safe;
+}
+
+function sanitizeId(id: string): string {
+  const safe = id.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 200) {
+    throw new Error(`Invalid id: ${id}`);
+  }
+  return safe;
+}
+
+/** skills 根目录 */
 export function getSkillsDir(): string {
-  return path.join(DATA_DIR, 'skills');
+  return path.join(DATA_DIR, 'storage', 'skills');
 }
 
-export function getSkillFilePath(skillName: string): string {
-  const safe = skillName.replace(/[^a-zA-Z0-9_-]/g, '');
-  if (!safe || safe.length < 1 || safe.length > 100) {
-    throw new Error(`Invalid skill name: ${skillName}`);
+/** 根据 scope 获取 skills 所在目录 */
+export function getScopedSkillsDir(scope: SkillScope): string {
+  const base = getSkillsDir();
+  switch (scope.level) {
+    case 'global':
+      return path.join(base, '_global');
+    case 'project':
+      return path.join(base, '_projects', sanitizeId(scope.projectKey));
+    case 'agent':
+      return path.join(base, '_agents', sanitizeId(scope.agentId));
   }
-  return path.join(DATA_DIR, 'skills', safe, 'SKILL.md');
 }
 
-export function getSkillHistoryDir(skillName: string): string {
-  const safe = skillName.replace(/[^a-zA-Z0-9_-]/g, '');
-  if (!safe || safe.length < 1 || safe.length > 100) {
-    throw new Error(`Invalid skill name: ${skillName}`);
-  }
-  return path.join(DATA_DIR, 'skills', safe, '.history');
+export function getSkillFilePath(skillName: string, scope: SkillScope = DEFAULT_SKILL_SCOPE): string {
+  return path.join(getScopedSkillsDir(scope), sanitizeSkillName(skillName), 'SKILL.md');
+}
+
+export function getSkillHistoryDir(skillName: string, scope: SkillScope = DEFAULT_SKILL_SCOPE): string {
+  return path.join(getScopedSkillsDir(scope), sanitizeSkillName(skillName), '.history');
 }
 
 /** Skill 目录根路径 */
-export function getSkillDir(skillName: string): string {
-  const safe = skillName.replace(/[^a-zA-Z0-9_-]/g, '');
-  if (!safe || safe.length < 1 || safe.length > 100) {
-    throw new Error(`Invalid skill name: ${skillName}`);
-  }
-  return path.join(DATA_DIR, 'skills', safe);
+export function getSkillDir(skillName: string, scope: SkillScope = DEFAULT_SKILL_SCOPE): string {
+  return path.join(getScopedSkillsDir(scope), sanitizeSkillName(skillName));
 }
 
 /** Skill 子目录中允许的文件夹名 */
@@ -616,11 +918,11 @@ export const SKILL_SUBDIRS = ['scripts', 'references', 'assets'] as const;
 export type SkillSubdir = (typeof SKILL_SUBDIRS)[number];
 
 // ── Agent Data Store 路径函数 ──
-// 每个 Agent 的私有数据目录：agent-data/{agentId}/
+// 每个 Agent 的私有数据目录：agents/data/{agentId}/
 // Agent 通过 bash 自由读写，danger-detector 对此目录白名单放行
 
 export function getAgentDataDir(): string {
-  return path.join(DATA_DIR, 'agent-data');
+  return path.join(DATA_DIR, 'agents', 'data');
 }
 
 export function getAgentDataPath(agentId: string): string {
@@ -628,7 +930,7 @@ export function getAgentDataPath(agentId: string): string {
   if (!safe || safe.length < 1 || safe.length > 100) {
     throw new Error(`Invalid agent id: ${agentId}`);
   }
-  return path.join(DATA_DIR, 'agent-data', safe);
+  return path.join(DATA_DIR, 'agents', 'data', safe);
 }
 
 export function getAgentDataFilePath(agentId: string, fileName: string): string {
@@ -641,7 +943,7 @@ export function getAgentDataFilePath(agentId: string, fileName: string): string 
   if (!safeFile || safeFile !== fileName || safeFile.includes('..')) {
     throw new Error(`Invalid file name: ${fileName}`);
   }
-  return path.join(DATA_DIR, 'agent-data', safe, safeFile);
+  return path.join(DATA_DIR, 'agents', 'data', safe, safeFile);
 }
 
 // ── Inbox 路径函数 ──
@@ -654,7 +956,7 @@ export function getInboxPath(projectKey: string): string {
     throw new Error(`Invalid project key: ${projectKey}`);
   }
 
-  return path.join(DATA_DIR, 'flows', `${safe}_inbox.json`);
+  return path.join(DATA_DIR, 'workflows', 'flows', `${safe}_inbox.json`);
 }
 
 /** 读取项目收件箱数据，不存在时返回空列表 */
@@ -670,7 +972,11 @@ export async function writeInbox(projectKey: string, data: import('@/types').Pro
 // ── Agent Schedules 路径函数 ──
 
 export function getSchedulesPath(): string {
-  return path.join(DATA_DIR, 'agent-schedules.json');
+  return path.join(DATA_DIR, 'agents', 'schedules.json');
+}
+
+export function getScheduleRunsPath(): string {
+  return path.join(DATA_DIR, 'agents', 'schedule-runs.json');
 }
 
 /**

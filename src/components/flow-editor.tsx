@@ -308,32 +308,6 @@ export function FlowEditor({ projectKey, projectName, projectDescription, projec
       .finally(() => setLoading(false));
   }, [projectKey]);
 
-  // Fetch AI status (skip setState if unchanged)
-  const aiStatusRef = useRef<string>('');
-  useEffect(() => {
-    const fetchAIStatus = () => {
-      fetch('/api/tasks')
-        .then(res => res.ok ? res.json() : { tasks: [] })
-        .then(({ tasks }: { tasks: Array<{ flowContext?: { flowTaskId: string }; aiStatus?: 'running' | 'waiting' | 'confirm' | null }> }) => {
-          const map: AIStatusMap = {};
-          for (const t of tasks) {
-            if (t.flowContext?.flowTaskId && t.aiStatus) {
-              map[t.flowContext.flowTaskId] = t.aiStatus;
-            }
-          }
-          const serialized = JSON.stringify(map);
-          if (serialized !== aiStatusRef.current) {
-            aiStatusRef.current = serialized;
-            setAiStatusMap(map);
-          }
-        })
-        .catch(() => {});
-    };
-    fetchAIStatus();
-    const timer = setInterval(fetchAIStatus, 5000);
-    return () => clearInterval(timer);
-  }, []);
-
   const persist = useCallback((newData: FlowData) => {
     setData(newData);
     if (saveTimer.current) clearTimeout(saveTimer.current);

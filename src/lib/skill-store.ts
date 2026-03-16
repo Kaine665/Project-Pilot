@@ -1,13 +1,30 @@
 /**
- * Skill 文件 I/O + 版本管理。
+ * Skill 文件 I/O + 版本管理 + 四级作用域。
  *
- * 每个 skill 存储在 skills/{skillName}/SKILL.md（OpenClaw 兼容格式）。
- * 版本历史：skills/{skillName}/.history/v_YYMMDD_HHmmss.md（最多 20 份）
+ * 存储结构：
+ *   skills/_global/{name}/SKILL.md            — 全局
+ *   skills/_projects/{projectKey}/{name}/SKILL.md — 项目级
+ *   skills/_agents/{agentId}/{name}/SKILL.md   — Agent 级
+ *
+ * 旧格式（skills/{name}/SKILL.md，无 _global 前缀）在列表/读取时自动检测，
+ * 通过 API 或 UI 让用户选择迁移目标作用域。
+ *
+ * 版本历史：{skillDir}/.history/v_YYMMDD_HHmmss.md（最多 20 份）
  */
 
 import { promises as fs } from 'fs';
 import path from 'path';
-import { getSkillsDir, getSkillFilePath, getSkillHistoryDir, getSkillDir, SKILL_SUBDIRS, type SkillSubdir } from './file-store';
+import {
+  getSkillsDir,
+  getSkillFilePath,
+  getSkillHistoryDir,
+  getSkillDir,
+  getScopedSkillsDir,
+  SKILL_SUBDIRS,
+  type SkillSubdir,
+  type SkillScope,
+  DEFAULT_SKILL_SCOPE,
+} from './file-store';
 
 /** 最大 skill 文件大小：10MB */
 const MAX_SKILL_SIZE = 10 * 1024 * 1024;
@@ -24,31 +41,30 @@ export interface SkillMeta {
 
 /**
  * 解析 SKILL.md 顶部的 YAML frontmatter（仅提取 name 和 description）。
- * 格式：
- * ---
- * name: xxx
- * description: yyy
- * ---
  */
 export function parseSkillFrontmatter(content: string): SkillMeta | null {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return null;
   const fm = match[1];
   const name = fm.match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? '';
+  // description 可能是多行（YAML > 折叠语法），只取第一行
   const description = fm.match(/^description:\s*(.+)$/m)?.[1]?.trim() ?? '';
   if (!name) return null;
   return { name, description };
 }
 
-// ── 基础读写 ──
+// ── 基础读写（scope-aware）──
 
 /**
  * 读取 skill 的 SKILL.md 内容。
  * 文件不存在返回 undefined。
  */
-export async function readSkillFile(skillName: string): Promise<string | undefined> {
+export async function readSkillFile(
+  skillName: string,
+  scope: SkillScope = DEFAULT_SKILL_SCOPE,
+): Promise<string | undefined> {
   try {
-    const filePath = getSkillFilePath(skillName);
+    const filePath = getSkillFilePath(skillName, scope);
     const stats = await fs.stat(filePath);
     if (stats.size > MAX_SKILL_SIZE) {
       throw new Error(`Skill file too large: ${stats.size} bytes (max ${MAX_SKILL_SIZE})`);
@@ -63,23 +79,27 @@ export async function readSkillFile(skillName: string): Promise<string | undefin
 }
 
 /**
- * 写入 skill 到 skills/{skillName}/SKILL.md。
- * 写入前自动快照当前版本到 .history/。
+ * 写入 skill。写入前自动快照当前版本到 .history/。
  */
-export async function writeSkillFile(skillName: string, content: string): Promise<void> {
-  await snapshotSkillVersion(skillName);
-  const filePath = getSkillFilePath(skillName);
+export async function writeSkillFile(
+  skillName: string,
+  content: string,
+  scope: SkillScope = DEFAULT_SKILL_SCOPE,
+): Promise<void> {
+  await snapshotSkillVersion(skillName, scope);
+  const filePath = getSkillFilePath(skillName, scope);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, content, 'utf-8');
 }
 
 /**
  * 删除 skill 的目录（含 SKILL.md 和 .history/）。
- * 不存在时静默成功。
  */
-export async function deleteSkillFile(skillName: string): Promise<void> {
-  const filePath = getSkillFilePath(skillName);
-  const skillDir = path.dirname(filePath);
+export async function deleteSkillFile(
+  skillName: string,
+  scope: SkillScope = DEFAULT_SKILL_SCOPE,
+): Promise<void> {
+  const skillDir = getSkillDir(skillName, scope);
   try {
     await fs.rm(skillDir, { recursive: true, force: true });
   } catch {
@@ -93,22 +113,63 @@ export interface SkillListItem {
   name: string;
   description: string;
   updatedAt: string; // ISO 8601
+  scope: SkillScope;
 }
 
 /**
- * 列出所有 skill（从 skills/ 目录扫描）。
+ * 列出指定 scope 下的所有 skill。
  */
-export async function listSkills(): Promise<SkillListItem[]> {
-  const skillsDir = getSkillsDir();
-  let entries: string[];
-  try {
-    entries = await fs.readdir(skillsDir);
-  } catch {
-    return [];
+export async function listSkills(scope: SkillScope = DEFAULT_SKILL_SCOPE): Promise<SkillListItem[]> {
+  const scopedDir = getScopedSkillsDir(scope);
+  return scanSkillsInDir(scopedDir, scope);
+}
+
+/**
+ * 列出所有 scope 下的所有 skill。
+ */
+export async function listAllSkills(): Promise<SkillListItem[]> {
+  const results: SkillListItem[] = [];
+
+  // 1. 全局
+  results.push(...await listSkills({ level: 'global' }));
+
+  // 2. 所有项目级
+  const projectsDir = path.join(getSkillsDir(), '_projects');
+  for (const pk of await safeDirEntries(projectsDir)) {
+    results.push(...await listSkills({ level: 'project', projectKey: pk }));
   }
 
-  const results: SkillListItem[] = [];
-  for (const entry of entries) {
+  // 3. 所有 Agent 级
+  const agentsDir = path.join(getSkillsDir(), '_agents');
+  for (const aid of await safeDirEntries(agentsDir)) {
+    results.push(...await listSkills({ level: 'agent', agentId: aid }));
+  }
+
+  return results.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// ── 旧格式检测 ──
+
+/** 旧格式 skill 信息 */
+export interface LegacySkillInfo {
+  name: string;
+  dirName: string;
+  description: string;
+  updatedAt: string;
+}
+
+/**
+ * 检测旧格式 skill（直接在 skills/ 根目录下，不在 _global/_projects/_agents 中）。
+ * 返回需要迁移的 skill 列表。
+ */
+export async function detectLegacySkills(): Promise<LegacySkillInfo[]> {
+  const skillsDir = getSkillsDir();
+  const results: LegacySkillInfo[] = [];
+
+  for (const entry of await safeDirEntries(skillsDir)) {
+    // 跳过 scope 子目录
+    if (entry.startsWith('_')) continue;
+
     const filePath = path.join(skillsDir, entry, 'SKILL.md');
     try {
       const stats = await fs.stat(filePath);
@@ -118,32 +179,134 @@ export async function listSkills(): Promise<SkillListItem[]> {
       if (!meta) continue;
       results.push({
         name: meta.name,
+        dirName: entry,
         description: meta.description,
         updatedAt: stats.mtime.toISOString(),
       });
     } catch {
-      // 跳过无法读取的条目
+      // skip
     }
   }
-  return results.sort((a, b) => a.name.localeCompare(b.name));
+
+  return results;
 }
 
-// ── 版本管理 ──
+/**
+ * 将旧格式 skill 迁移到指定 scope。
+ * 物理移动整个目录（含 .history/ 和子文件）。
+ */
+export async function migrateLegacySkill(
+  dirName: string,
+  targetScope: SkillScope,
+): Promise<void> {
+  const skillsDir = getSkillsDir();
+  const srcDir = path.join(skillsDir, dirName);
+  const destDir = getSkillDir(dirName, targetScope);
+
+  // 确保目标父目录存在
+  await fs.mkdir(path.dirname(destDir), { recursive: true });
+
+  // 移动
+  await fs.rename(srcDir, destDir);
+}
+
+// ── 瀑布合并（resolve for session）──
+
+export interface ResolvedSkill {
+  name: string;
+  description: string;
+  scope: SkillScope;
+  /** 用于 ResourceRef.id 的限定 ID */
+  qualifiedId: string;
+}
 
 /**
- * 快照当前正式版到 .history/ 目录。
- * 文件不存在时静默跳过。快照失败不阻塞调用方。
+ * 为一个会话解析最终可见的 skill 集合。
+ * 合并顺序：全局 → 项目级 → Agent 级
+ * 同名 skill：窄范围覆盖宽范围。
  */
-export async function snapshotSkillVersion(skillName: string): Promise<void> {
-  const filePath = getSkillFilePath(skillName);
+export async function resolveSkillsForSession(opts: {
+  agentId: string;
+  projectKey?: string;
+}): Promise<ResolvedSkill[]> {
+  const map = new Map<string, ResolvedSkill>();
+
+  // 1. 全局（最低优先级）
+  for (const s of await listSkills({ level: 'global' })) {
+    map.set(s.name, {
+      name: s.name,
+      description: s.description,
+      scope: s.scope,
+      qualifiedId: s.name,
+    });
+  }
+
+  // 2. 项目级（覆盖全局）
+  if (opts.projectKey) {
+    const scope: SkillScope = { level: 'project', projectKey: opts.projectKey };
+    for (const s of await listSkills(scope)) {
+      map.set(s.name, {
+        name: s.name,
+        description: s.description,
+        scope: s.scope,
+        qualifiedId: `project:${opts.projectKey}:${s.name}`,
+      });
+    }
+  }
+
+  // 3. Agent 级（覆盖项目级和全局）
+  const agentScope: SkillScope = { level: 'agent', agentId: opts.agentId };
+  for (const s of await listSkills(agentScope)) {
+    map.set(s.name, {
+      name: s.name,
+      description: s.description,
+      scope: s.scope,
+      qualifiedId: `agent:${opts.agentId}:${s.name}`,
+    });
+  }
+
+  return Array.from(map.values());
+}
+
+/**
+ * 从 qualifiedId 解析出 scope 和 skillName。
+ * 格式：
+ *   "git-commit"                → global, "git-commit"
+ *   "project:elapp:rn-perf"     → project(elapp), "rn-perf"
+ *   "agent:xxx:safe-merge"      → agent(xxx), "safe-merge"
+ */
+export function parseQualifiedId(qualifiedId: string): { scope: SkillScope; skillName: string } {
+  if (qualifiedId.startsWith('project:')) {
+    const parts = qualifiedId.split(':');
+    // project:projectKey:skillName (skillName may contain colons, unlikely but safe)
+    const projectKey = parts[1];
+    const skillName = parts.slice(2).join(':');
+    return { scope: { level: 'project', projectKey }, skillName };
+  }
+  if (qualifiedId.startsWith('agent:')) {
+    const parts = qualifiedId.split(':');
+    const agentId = parts[1];
+    const skillName = parts.slice(2).join(':');
+    return { scope: { level: 'agent', agentId }, skillName };
+  }
+  return { scope: { level: 'global' }, skillName: qualifiedId };
+}
+
+// ── 版本管理（scope-aware）──
+
+export async function snapshotSkillVersion(
+  skillName: string,
+  scope: SkillScope = DEFAULT_SKILL_SCOPE,
+): Promise<void> {
+  const filePath = getSkillFilePath(skillName, scope);
   try {
     await fs.stat(filePath);
   } catch {
-    return; // 文件不存在，无需快照
+    return;
   }
 
   try {
-    const historyDir = getSkillHistoryDir(skillName);
+    const historyDir = getSkillHistoryDir(skillName, scope);
     await fs.mkdir(historyDir, { recursive: true });
 
     const now = new Date();
@@ -153,7 +316,6 @@ export async function snapshotSkillVersion(skillName: string): Promise<void> {
 
     await fs.copyFile(filePath, destPath);
 
-    // 清理旧版本：只保留最新 MAX_SKILL_VERSIONS 份
     const files = (await fs.readdir(historyDir))
       .filter(f => f.startsWith('v_') && f.endsWith('.md'))
       .sort();
@@ -167,13 +329,12 @@ export async function snapshotSkillVersion(skillName: string): Promise<void> {
   }
 }
 
-/**
- * 列出版本历史（新→旧）。
- * 返回版本名数组（如 ['v_260305_091500', 'v_260301_143022']）。
- */
-export async function listSkillVersions(skillName: string): Promise<string[]> {
+export async function listSkillVersions(
+  skillName: string,
+  scope: SkillScope = DEFAULT_SKILL_SCOPE,
+): Promise<string[]> {
   try {
-    const historyDir = getSkillHistoryDir(skillName);
+    const historyDir = getSkillHistoryDir(skillName, scope);
     const files = (await fs.readdir(historyDir))
       .filter(f => f.startsWith('v_') && f.endsWith('.md'))
       .sort()
@@ -184,51 +345,45 @@ export async function listSkillVersions(skillName: string): Promise<string[]> {
   }
 }
 
-/**
- * 读取特定版本的 skill 内容。
- * versionName 做 sanitize 防路径穿越。
- */
 export async function readSkillVersion(
   skillName: string,
   versionName: string,
+  scope: SkillScope = DEFAULT_SKILL_SCOPE,
 ): Promise<string | undefined> {
   try {
     const safe = versionName.replace(/[^a-zA-Z0-9_]/g, '');
-    const filePath = path.join(getSkillHistoryDir(skillName), `${safe}.md`);
+    const filePath = path.join(getSkillHistoryDir(skillName, scope), `${safe}.md`);
     return await fs.readFile(filePath, 'utf-8');
   } catch {
     return undefined;
   }
 }
 
-/**
- * 回滚到指定版本。
- * 调用 writeSkillFile，自动快照当前版本后再覆盖。
- */
 export async function revertSkillToVersion(
   skillName: string,
   versionName: string,
+  scope: SkillScope = DEFAULT_SKILL_SCOPE,
 ): Promise<boolean> {
-  const content = await readSkillVersion(skillName, versionName);
+  const content = await readSkillVersion(skillName, versionName, scope);
   if (content === undefined) return false;
-  await writeSkillFile(skillName, content);
+  await writeSkillFile(skillName, content, scope);
   return true;
 }
 
-// ── 文件夹级操作（OpenClaw 兼容） ──
+// ── 文件夹级操作（scope-aware）──
 
 export interface SkillFileItem {
   name: string;
   subdir: SkillSubdir;
   size: number;
-  updatedAt: string; // ISO 8601
+  updatedAt: string;
 }
 
-/**
- * 列出 skill 文件夹中 scripts/ references/ assets/ 下的所有文件。
- */
-export async function listSkillFiles(skillName: string): Promise<SkillFileItem[]> {
-  const skillDir = getSkillDir(skillName);
+export async function listSkillFiles(
+  skillName: string,
+  scope: SkillScope = DEFAULT_SKILL_SCOPE,
+): Promise<SkillFileItem[]> {
+  const skillDir = getSkillDir(skillName, scope);
   const results: SkillFileItem[] = [];
 
   for (const subdir of SKILL_SUBDIRS) {
@@ -258,9 +413,6 @@ export async function listSkillFiles(skillName: string): Promise<SkillFileItem[]
   return results;
 }
 
-/**
- * 安全校验子目录和文件名，防路径穿越。
- */
 function validateSubPath(subdir: string, fileName: string): { safeSubdir: SkillSubdir; safeName: string } {
   if (!SKILL_SUBDIRS.includes(subdir as SkillSubdir)) {
     throw new Error(`Invalid subdir: ${subdir}. Must be one of: ${SKILL_SUBDIRS.join(', ')}`);
@@ -272,16 +424,14 @@ function validateSubPath(subdir: string, fileName: string): { safeSubdir: SkillS
   return { safeSubdir: subdir as SkillSubdir, safeName };
 }
 
-/**
- * 读取 skill 子目录中的文件内容。
- */
 export async function readSkillSubFile(
   skillName: string,
   subdir: string,
   fileName: string,
+  scope: SkillScope = DEFAULT_SKILL_SCOPE,
 ): Promise<{ content: string; size: number } | undefined> {
   const { safeSubdir, safeName } = validateSubPath(subdir, fileName);
-  const filePath = path.join(getSkillDir(skillName), safeSubdir, safeName);
+  const filePath = path.join(getSkillDir(skillName, scope), safeSubdir, safeName);
   try {
     const stats = await fs.stat(filePath);
     if (stats.size > MAX_SKILL_SIZE) {
@@ -297,34 +447,65 @@ export async function readSkillSubFile(
   }
 }
 
-/**
- * 写入 skill 子目录中的文件。
- */
 export async function writeSkillSubFile(
   skillName: string,
   subdir: string,
   fileName: string,
   content: string,
+  scope: SkillScope = DEFAULT_SKILL_SCOPE,
 ): Promise<void> {
   const { safeSubdir, safeName } = validateSubPath(subdir, fileName);
-  const dirPath = path.join(getSkillDir(skillName), safeSubdir);
+  const dirPath = path.join(getSkillDir(skillName, scope), safeSubdir);
   await fs.mkdir(dirPath, { recursive: true });
   await fs.writeFile(path.join(dirPath, safeName), content, 'utf-8');
 }
 
-/**
- * 删除 skill 子目录中的文件。
- */
 export async function deleteSkillSubFile(
   skillName: string,
   subdir: string,
   fileName: string,
+  scope: SkillScope = DEFAULT_SKILL_SCOPE,
 ): Promise<void> {
   const { safeSubdir, safeName } = validateSubPath(subdir, fileName);
-  const filePath = path.join(getSkillDir(skillName), safeSubdir, safeName);
+  const filePath = path.join(getSkillDir(skillName, scope), safeSubdir, safeName);
   try {
     await fs.unlink(filePath);
   } catch {
     // 静默跳过
   }
+}
+
+// ── 内部工具 ──
+
+async function safeDirEntries(dirPath: string): Promise<string[]> {
+  try {
+    return await fs.readdir(dirPath);
+  } catch {
+    return [];
+  }
+}
+
+async function scanSkillsInDir(dir: string, scope: SkillScope): Promise<SkillListItem[]> {
+  const results: SkillListItem[] = [];
+  for (const entry of await safeDirEntries(dir)) {
+    // 跳过隐藏目录和 scope 前缀目录
+    if (entry.startsWith('.') || entry.startsWith('_')) continue;
+    const filePath = path.join(dir, entry, 'SKILL.md');
+    try {
+      const stats = await fs.stat(filePath);
+      if (!stats.isFile()) continue;
+      const content = await fs.readFile(filePath, 'utf-8');
+      const meta = parseSkillFrontmatter(content);
+      if (!meta) continue;
+      results.push({
+        name: meta.name,
+        description: meta.description,
+        updatedAt: stats.mtime.toISOString(),
+        scope,
+      });
+    } catch {
+      // skip
+    }
+  }
+  return results.sort((a, b) => a.name.localeCompare(b.name));
 }

@@ -26,6 +26,9 @@ import {
   countDone,
   findItemById,
   collectFlowTaskContext,
+  resolveFlowAgentId,
+  buildFlowTaskPrompt,
+  buildFlowAgentUrl,
   StatusIcon,
   StatusBadge,
   AIStatusBadge,
@@ -102,9 +105,6 @@ const MillerColumnItem = memo(function MillerColumnItem({
   const { selectionPath, onSelect, setAddingToItemId } = useContext(MillerSelectionContext);
   const { showDeferred, highlightTarget, aiStatusMap, batchMode, selectedItems, toggleItemSelection, data, agents, agentMap } = useFlowData();
 
-  if (!ctx) return null;
-  if (!showDeferred && item.deferred) return null;
-
   const hasChildren = !!(item.children && item.children.length > 0);
   const isDeferred = !!item.deferred;
   const filterDeferred = !showDeferred;
@@ -123,7 +123,7 @@ const MillerColumnItem = memo(function MillerColumnItem({
   const handleLaunchAI = () => {
     const pathToItem = selectionPath.slice(0, depth);
     const ancestors = getAncestors(sectionItems, pathToItem);
-    ctx.onLaunchAI(item, ancestors);
+    ctx?.onLaunchAI(item, ancestors);
   };
 
   const rowRef = useRef<HTMLDivElement>(null);
@@ -188,6 +188,9 @@ const MillerColumnItem = memo(function MillerColumnItem({
   }, [isHighlighted]);
 
   const isItemSelected = selectedItems.has(item.id);
+
+  if (!ctx) return null;
+  if (!showDeferred && item.deferred) return null;
 
   return (
     <div
@@ -646,19 +649,6 @@ export function MillerSectionBlock({ section }: { section: Section }) {
 
   // AI launch handler
   const handleLaunchAI = useCallback(async (item: TreeItem, ancestors: TreeItem[]) => {
-    try {
-      const lookupRes = await fetch(`/api/tasks?flowTaskId=${item.id}`);
-      if (lookupRes.ok) {
-        const { session: existing } = await lookupRes.json();
-        if (existing) {
-          router.push(`/tasks/${existing.id}`);
-          return;
-        }
-      }
-    } catch {
-      // fall through
-    }
-
     const flowContext = collectFlowTaskContext({
       projectKey,
       projectName,
@@ -672,20 +662,22 @@ export function MillerSectionBlock({ section }: { section: Section }) {
       globalContextIds: item.context?.globalContextIds,
     });
 
-    const res = await fetch('/api/tasks', {
+    const agentId = resolveFlowAgentId(item);
+
+    const res = await fetch('/api/agent-chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        title: item.content,
+        agentId,
+        message: buildFlowTaskPrompt(flowContext),
         projectKey,
-        flowContext,
-        ...(item.agentId && { agentId: item.agentId }),
+        initialTitle: item.content,
       }),
     });
 
     if (res.ok) {
-      const session = await res.json();
-      router.push(`/tasks/${session.id}`);
+      const data = await res.json() as { sessionId: string };
+      router.push(buildFlowAgentUrl({ projectKey, agentId, sessionId: data.sessionId }));
     }
   }, [projectKey, projectName, section, data.sections, data.cycleDeadline, router]);
 

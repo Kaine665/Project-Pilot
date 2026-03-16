@@ -40,7 +40,7 @@ import type {
   SessionConfig,
   SessionMeta,
 } from '@/types/agent-chat';
-import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import { getDefaultAgents } from '@/lib/default-agents';
 
 // ── Constants ──
 
@@ -766,7 +766,8 @@ export async function loadAgent(agentId: string): Promise<Agent> {
     throw new HttpError('Agent not found or archived', 404);
   }
   // Merge default agent fields (runtime migration)
-  const defaultAgent = DEFAULT_AGENTS.find(a => a.id === agentId);
+  const builtinAgents = await getDefaultAgents();
+  const defaultAgent = builtinAgents.find(a => a.id === agentId);
   if (defaultAgent) {
     for (const key of Object.keys(defaultAgent) as Array<keyof Agent>) {
       if (agent[key] === undefined && defaultAgent[key] !== undefined) {

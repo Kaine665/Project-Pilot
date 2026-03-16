@@ -32,7 +32,7 @@ const MAX_RECORDS_PER_TASK = 200;
 // ── Internal helpers ──
 
 function getRunsDir(): string {
-  return path.join(getDataDir(), 'satellite-task-runs');
+  return path.join(getDataDir(), 'tasks', 'satellite-runs');
 }
 
 function getRunsFilePath(taskId: string): string {

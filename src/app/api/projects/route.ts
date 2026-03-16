@@ -11,12 +11,12 @@ import {
   getFlowIndexPath,
   readJsonFile,
   writeJsonFile,
-  ensureProjectsMigrated,
+  ensureDataDirV2Migrated,
 } from '@/lib/file-store';
 import type { ProjectConfig, ProjectEntry, ProjectIndex } from '@/types';
 
 async function readIndex(): Promise<ProjectIndex> {
-  await ensureProjectsMigrated();
+  await ensureDataDirV2Migrated();
   return readJsonFile<ProjectIndex>(getFlowIndexPath(), { projects: [] });
 }
 

@@ -23,7 +23,7 @@ import type {
 // ==================== 路径函数 ====================
 
 export function getBitableDir(): string {
-  return path.join(getDataDir(), 'bitable');
+  return path.join(getDataDir(), 'storage', 'bitable');
 }
 
 export function getBitableIndexPath(): string {

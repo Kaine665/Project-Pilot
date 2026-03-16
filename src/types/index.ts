@@ -270,7 +270,7 @@ export type ChatSSEEvent =
   | { type: 'task_suspended'; taskId: string; title: string }
   | { type: 'task_completed'; taskId: string }
   /** 模型 token 用量（来自 SDK result.modelUsage 或 streaming message_start/message_delta） */
-  | { type: 'token_usage'; inputTokens: number; outputTokens: number; contextWindow?: number }
+  | { type: 'token_usage'; inputTokens: number; outputTokens: number; contextWindow?: number; final?: boolean }
   | { type: 'error'; message: string }
   | { type: 'awaiting_sub_agents' }
   | { type: 'done' };
@@ -517,6 +517,10 @@ export interface ProjectEntry {
     notes?: string;
   };
 
+  // ── AI 默认配置 ──
+  /** 创建待办时默认绑定的 Agent ID */
+  defaultAgentId?: string;
+
   // ── 视觉标识 ──
   icon?: string;
   color?: string;
@@ -634,4 +638,21 @@ export interface AgentSchedule {
 
 export interface AgentSchedulesData {
   schedules: AgentSchedule[];
+}
+
+/**
+ * 单次调度执行记录。
+ */
+export interface ScheduleRunRecord {
+  id: string;           // run-{timestamp}-{random4}
+  scheduleId: string;   // 关联的 AgentSchedule ID
+  sessionId: string;    // 创建的 Agent 会话 ID
+  trigger: 'cron' | 'manual';  // 触发方式
+  startedAt: string;    // ISO timestamp
+  status: 'started' | 'completed' | 'failed';
+  error?: string;       // 失败时的错误信息
+}
+
+export interface ScheduleRunsData {
+  runs: ScheduleRunRecord[];
 }

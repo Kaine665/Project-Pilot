@@ -22,6 +22,8 @@
  *   GET  /schedules/:id
  *   PATCH /schedules/:id
  *   DELETE /schedules/:id
+ *   POST /schedules/:id/trigger
+ *   GET  /schedules/:id/runs
  */
 
 import http from 'http';
@@ -37,6 +39,7 @@ import { loadSession, listAllSessions } from '@/lib/chat-managers/agent-chat-ses
 import { subAgentWatcher } from '@/lib/chat-managers/sub-agent-watcher';
 import type { WatchEntry } from '@/lib/chat-managers/sub-agent-watcher';
 import { schedulerManager } from '@/lib/scheduler-manager';
+import { tokenRefreshManager } from '@/lib/token-refresh-manager';
 import type { ChatSSEEvent } from '@/types';
 import type { SessionConfig, SessionMeta } from '@/types/agent-chat';
 import type { ProviderId } from '@/types';
@@ -382,6 +385,34 @@ async function handleDeleteSchedule(
   jsonResponse(res, { success: true });
 }
 
+async function handleTriggerSchedule(
+  res: http.ServerResponse,
+  scheduleId: string,
+): Promise<void> {
+  try {
+    const run = await schedulerManager.triggerNow(scheduleId);
+    jsonResponse(res, { run });
+  } catch (err) {
+    const msg = (err as Error).message;
+    const status = msg.includes('不存在') ? 404 : 400;
+    jsonResponse(res, { error: msg }, status);
+  }
+}
+
+async function handleListRuns(
+  res: http.ServerResponse,
+  scheduleId: string,
+  url: URL,
+): Promise<void> {
+  const limit = parseInt(url.searchParams.get('limit') ?? '20', 10);
+  try {
+    const runs = await schedulerManager.listRuns(scheduleId, limit);
+    jsonResponse(res, { runs });
+  } catch (err) {
+    jsonResponse(res, { error: (err as Error).message }, 500);
+  }
+}
+
 // ── HTTP server ──────────────────────────────────────────────────────────────
 
 const server = http.createServer(async (req, res) => {
@@ -437,6 +468,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── Schedules ──
+    const scheduleTriggerMatch = pathname.match(/^\/schedules\/([^/]+)\/trigger$/);
+    const scheduleRunsMatch = pathname.match(/^\/schedules\/([^/]+)\/runs$/);
     const scheduleMatch = pathname.match(/^\/schedules\/([^/]+)$/);
 
     if (pathname === '/schedules' && method === 'GET') {
@@ -445,6 +478,14 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === '/schedules' && method === 'POST') {
       await handleCreateSchedule(req, res);
+      return;
+    }
+    if (scheduleTriggerMatch && method === 'POST') {
+      await handleTriggerSchedule(res, scheduleTriggerMatch[1]);
+      return;
+    }
+    if (scheduleRunsMatch && method === 'GET') {
+      await handleListRuns(res, scheduleRunsMatch[1], url);
       return;
     }
     if (scheduleMatch && method === 'GET') {
@@ -507,6 +548,7 @@ async function main(): Promise<void> {
   // Graceful shutdown
   const shutdown = (): void => {
     console.log('[Sidecar] Shutting down...');
+    tokenRefreshManager.destroy();
     removeLock();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(1), 5000).unref();
@@ -528,6 +570,9 @@ async function main(): Promise<void> {
   } catch (err) {
     console.error('[Sidecar] SchedulerManager init failed:', err);
   }
+
+  // Initialize OAuth token refresh (proactively refresh before expiry)
+  tokenRefreshManager.init();
 
   // Start HTTP server
   await new Promise<void>((resolve, reject) => {

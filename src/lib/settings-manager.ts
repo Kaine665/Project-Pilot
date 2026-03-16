@@ -6,9 +6,9 @@
  */
 
 import { getSettingsPath, readJsonFile, writeJsonFile } from '@/lib/file-store';
-import { getProviderPreset } from '@/lib/provider-registry';
-import type { AgentCapabilities, AppSettings, ClaudeSettings, CustomProviderConfig, ProviderId, NotificationSettings } from '@/types';
-import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_APP_SETTINGS, DEFAULT_NOTIFICATION_SETTINGS } from '@/types';
+import { getKimiCandidateBaseUrls, getProviderPreset } from '@/lib/provider-registry';
+import type { AgentCapabilities, AppSettings, ClaudeSettings, CustomProviderConfig, ProviderId } from '@/types';
+import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_APP_SETTINGS } from '@/types';
 
 const CACHE_TTL_MS = 30_000;
 
@@ -74,9 +74,18 @@ export function getProviderScopedBaseUrl(
   claude: ClaudeSettings,
   preset: { baseUrl?: string },
   provider?: ProviderId,
+  modelOverride?: string,
 ): string | undefined {
   const p = provider ?? claude.provider ?? 'anthropic';
   const scoped = claude.providerBaseUrls?.[p];
+  if (p === 'kimi') {
+    const modelId = (modelOverride ?? getProviderScopedModel(claude, p)).trim();
+    const preferred = scoped || claude.baseUrl || preset.baseUrl;
+    const kimiCandidates = getKimiCandidateBaseUrls(modelId, preferred);
+    if (kimiCandidates.length > 0) {
+      return kimiCandidates[0];
+    }
+  }
   if (scoped) return scoped;
   if (claude.baseUrl) return claude.baseUrl;
   return preset.baseUrl;
@@ -101,7 +110,11 @@ export function getProviderScopedBaseUrl(
  *   - FORCE_COLOR / CLAUDECODE: 始终覆盖
  *   - CLAUDE_CODE_EFFORT_LEVEL: 非 high 时注入
  */
-export async function buildClaudeEnv(providerOverride?: ProviderId, effortOverride?: string): Promise<NodeJS.ProcessEnv> {
+export async function buildClaudeEnv(
+  providerOverride?: ProviderId,
+  effortOverride?: string,
+  modelOverride?: string,
+): Promise<NodeJS.ProcessEnv> {
   const settings = await getSettings();
   const claude = settings.claude;
   const provider = providerOverride ?? claude.provider ?? 'anthropic';
@@ -122,7 +135,7 @@ export async function buildClaudeEnv(providerOverride?: ProviderId, effortOverri
   } else {
     // 第三方供应商（优先使用 providerBaseUrls，如 Kimi 探测后持久化的 URL）
     // 强制覆盖，不受系统环境变量干扰
-    const baseUrl = getProviderScopedBaseUrl(claude, preset, provider);
+    const baseUrl = getProviderScopedBaseUrl(claude, preset, provider, modelOverride);
     if (baseUrl) {
       env.ANTHROPIC_BASE_URL = baseUrl;
     }
@@ -341,7 +354,7 @@ export async function buildSdkQueryOptions(opts: {
   const provider = opts.providerOverride ?? claude.provider ?? 'anthropic';
 
   // Environment variables (auth + provider routing)
-  const env = await buildClaudeEnv(provider, opts.effortOverride);
+  const env = await buildClaudeEnv(provider, opts.effortOverride, opts.modelOverride);
 
   // Model
   const model = opts.modelOverride ?? getProviderScopedModel(claude, provider);
@@ -377,30 +390,4 @@ export async function buildSdkQueryOptions(opts: {
   };
 
   return sdkOpts;
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// 通知和音频设置管理
-// ═══════════════════════════════════════════════════════════════════════
-
-/**
- * 获取通知设置
- */
-export async function getNotificationSettings(): Promise<NotificationSettings> {
-  const settings = await getSettings();
-  return settings.notifications ?? DEFAULT_NOTIFICATION_SETTINGS;
-}
-
-/**
- * 更新通知设置
- */
-export async function updateNotificationSettings(
-  updates: Partial<NotificationSettings>,
-): Promise<void> {
-  const settings = await getSettings();
-  settings.notifications = {
-    ...settings.notifications,
-    ...updates,
-  };
-  await saveSettings(settings);
 }
