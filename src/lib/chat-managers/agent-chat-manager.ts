@@ -28,6 +28,7 @@ import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_DANGER_SETTINGS } from '@/types';
 import type { AgentChatSession, SessionConfig, SessionCheckpoint } from '@/types/agent-chat';
 import type { ResourceRef, InlineTextRef, FlowContextRef, ReferenceTurnsRef } from '@/types/resource';
 import { resourceRegistry } from '@/lib/resource-registry';
+import { formatConversationHistory } from './conversation-history';
 import '@/lib/resource-loaders'; // side-effect: registers non-action loaders
 import '@/lib/agent-actions';    // side-effect: registers actions + their loaders
 import { actionRegistry } from '@/lib/agent-actions';
@@ -226,11 +227,22 @@ class AgentChatManager {
     // Build prompt
     const sessionProjectKey = flowContext?.projectKey ?? existing?.projectKey;
 
+    // 当 resume 不可用但存在历史消息时，将历史对话注入 prompt
+    // 这样即使 SDK 会话是全新的，AI 也能知道之前聊过什么
+    const existingMessages = existing?.messages ?? [];
+    const conversationHistory = (!resumeSessionId && existingMessages.length > 0)
+      ? formatConversationHistory(existingMessages, existing?.checkpoint ?? undefined)
+      : undefined;
+
+    if (conversationHistory && !resumeSessionId && existingMessages.length > 0) {
+      console.log(`${LOG_PREFIX} [${sessionId}] Resume unavailable, injecting ${existingMessages.length} messages as conversation history`);
+    }
+
     let promptContent: string;
     if (flowContext) {
-      promptContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext, persistedConfig, sessionId);
+      promptContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext, persistedConfig, sessionId, conversationHistory ?? undefined);
     } else {
-      promptContent = await buildAgentChatPrompt(agent, message, persistedConfig, sessionId, sessionProjectKey);
+      promptContent = await buildAgentChatPrompt(agent, message, persistedConfig, sessionId, sessionProjectKey, conversationHistory ?? undefined);
     }
 
     // Write images to temp files
@@ -949,11 +961,13 @@ async function buildResourcePrompt(
 
 // ── Prompt Builders (powered by Resource Registry) ──
 
-async function buildAgentChatPrompt(agent: Agent, message: string, sessionConfig?: SessionConfig, sessionId?: string, projectKey?: string): Promise<string> {
+async function buildAgentChatPrompt(agent: Agent, message: string, sessionConfig?: SessionConfig, sessionId?: string, projectKey?: string, conversationHistory?: string): Promise<string> {
   const resourcePrompt = await buildResourcePrompt(agent, undefined, sessionConfig, sessionId, projectKey);
 
-  return `${resourcePrompt}
+  const historyBlock = conversationHistory ? `\n${conversationHistory}\n` : '';
 
+  return `${resourcePrompt}
+${historyBlock}
 ---
 
 用户消息：${message}`;
@@ -965,6 +979,7 @@ async function buildAgentChatPromptWithFlowContext(
   flowContext: FlowContext,
   sessionConfig?: SessionConfig,
   sessionId?: string,
+  conversationHistory?: string,
 ): Promise<string> {
   const { projectKey, projectName, flowDataPath } = flowContext;
 
@@ -980,8 +995,10 @@ async function buildAgentChatPromptWithFlowContext(
 
   const resourcePrompt = await buildResourcePrompt(agent, [flowRef], sessionConfig, sessionId, projectKey);
 
-  return `${resourcePrompt}
+  const historyBlock = conversationHistory ? `\n${conversationHistory}\n` : '';
 
+  return `${resourcePrompt}
+${historyBlock}
 ---
 
 用户消息：${message}`;
