@@ -273,6 +273,8 @@ export type ChatSSEEvent =
   | { type: 'token_usage'; inputTokens: number; outputTokens: number; contextWindow?: number; final?: boolean }
   | { type: 'error'; message: string }
   | { type: 'awaiting_sub_agents' }
+  /** 卫星任务：主题完成检测结果 */
+  | { type: 'topic_completion'; completed: boolean; confidence: number; summary: string }
   | { type: 'done' };
 
 // ==================== Agent ====================
