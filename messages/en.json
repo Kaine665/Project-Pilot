@@ -474,6 +474,7 @@
     "oauthHintRedirect": "After auth you'll be redirected to localhost. For remote/headless setups, use API Key or SSH port forwarding instead.",
     "oauthWaiting": "Waiting for authorization link...",
     "oauthOpenUrl": "Open the following URL in your browser to authorize:",
+    "oauthRefreshUrl": "Refresh authorization URL",
     "oauthPasteCode": "After authorizing, paste the code or full callback URL:",
     "oauthDeviceCodeLabel": "Device code (enter on the webpage):",
     "oauthDeviceCodeHint": "Open the URL above and enter this code on the page to complete authorization. Do not paste it here.",

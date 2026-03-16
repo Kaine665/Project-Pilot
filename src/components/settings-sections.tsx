@@ -258,6 +258,14 @@ export function SettingsAISection({
                         >
                           <Copy className="h-3.5 w-3.5" />
                         </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => { onCancelLoginFlow(); setTimeout(onTriggerOAuthLogin, 300); }}
+                          title={t('oauthRefreshUrl')}
+                        >
+                          <RotateCw className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                     </>
                   ) : (
