@@ -1,19 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkAuthFromCredentials } from '@/lib/oauth-flow';
 import { parseAuthState, type AuthState } from '@/lib/oauth-status';
+import { getSettings, getCredential, getEffectiveAuthMode } from '@/lib/settings-manager';
 import type { ProviderId } from '@/types';
 
 /**
  * GET /api/settings/auth-status?provider=anthropic
- * 检查 OAuth 登录状态。
+ * 检查认证状态。
  *
- * - anthropic: 直接读取 ~/.claude/.credentials.json（不依赖 CLI 子进程）
- * - openai: `codex login status` (当 codex-cli 可用时)
- * - 其他: 不支持 OAuth，返回 unknown
+ * - anthropic (oauth): 直接读取 ~/.claude/.credentials.json
+ * - openai (oauth): `codex login status`
+ * - api_key 模式（任何供应商）: 检查是否有 API Key
  */
 export async function GET(request: NextRequest) {
   const provider = (request.nextUrl.searchParams.get('provider') ?? 'anthropic') as ProviderId;
 
+  const settings = await getSettings();
+  const claude = settings.claude;
+  const authMode = getEffectiveAuthMode(claude, provider);
+  const cred = getCredential(claude, provider);
+
+  // api_key 模式：直接检查是否配置了 API Key
+  if (authMode === 'api_key') {
+    const hasKey = Boolean(cred.apiKey);
+    return NextResponse.json({
+      provider,
+      authMode: 'api_key',
+      authState: (hasKey ? 'authenticated' : 'not_authenticated') as AuthState,
+      authenticated: hasKey,
+      hasApiKey: hasKey,
+    });
+  }
+
+  // OAuth 模式
   if (provider === 'openai') {
     return checkOpenAIStatus(provider);
   }
@@ -21,13 +40,14 @@ export async function GET(request: NextRequest) {
   if (provider !== 'anthropic') {
     return NextResponse.json({
       provider,
+      authMode,
       authState: 'unknown' as AuthState,
       authenticated: false,
       error: `OAuth not supported for provider: ${provider}`,
     });
   }
 
-  // Anthropic: 直接读取 credentials 文件
+  // Anthropic OAuth: 直接读取 credentials 文件
   const status = checkAuthFromCredentials();
 
   let authState: AuthState;
@@ -41,6 +61,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     provider,
+    authMode,
     authState,
     authenticated: status.authenticated,
     expired: status.expired,
@@ -56,6 +77,7 @@ async function checkOpenAIStatus(provider: ProviderId) {
     const authState: AuthState = parseAuthState(raw);
     return NextResponse.json({
       provider,
+      authMode: 'oauth',
       authState,
       authenticated: authState === 'authenticated',
       rawOutput: raw,
@@ -66,11 +88,12 @@ async function checkOpenAIStatus(provider: ProviderId) {
     if (raw) {
       const authState: AuthState = parseAuthState(raw);
       if (authState !== 'unknown') {
-        return NextResponse.json({ provider, authState, authenticated: authState === 'authenticated', rawOutput: raw });
+        return NextResponse.json({ provider, authMode: 'oauth', authState, authenticated: authState === 'authenticated', rawOutput: raw });
       }
     }
     return NextResponse.json({
       provider,
+      authMode: 'oauth',
       authState: 'unknown' as AuthState,
       authenticated: false,
       error: e.message || 'Codex CLI not available',

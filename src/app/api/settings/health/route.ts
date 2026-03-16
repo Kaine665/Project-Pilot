@@ -7,7 +7,7 @@
 
 import { NextResponse } from 'next/server';
 import { checkClaudeCliHealth } from '@/lib/claude-cli';
-import { getSettings, getProviderScopedApiKey } from '@/lib/settings-manager';
+import { getSettings, getCredential, getEffectiveAuthMode } from '@/lib/settings-manager';
 
 export async function GET() {
   const cliHealth = checkClaudeCliHealth();
@@ -15,9 +15,11 @@ export async function GET() {
   const settings = await getSettings();
   const claude = settings.claude;
   const provider = claude.provider ?? 'anthropic';
+  const cred = getCredential(claude, provider);
+  const authMode = getEffectiveAuthMode(claude, provider);
   const hasApiKey = !!(
-    getProviderScopedApiKey(claude, provider) ||
-    claude.authMode === 'oauth' ||
+    cred.apiKey ||
+    authMode === 'oauth' ||
     provider === 'ollama'
   );
 

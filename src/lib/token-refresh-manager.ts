@@ -151,6 +151,14 @@ class TokenRefreshManager {
       if (resp.status === 400 && text.includes('invalid_grant')) {
         this._grantInvalid = true;
         console.error(`${TAG} Refresh token 已失效，停止自动刷新。请重新执行 OAuth 登录。`);
+        // 同步更新 providerCredentials 的状态为 expired
+        try {
+          const { setCredential } = await import('@/lib/settings-manager');
+          await setCredential('anthropic', {
+            authMode: 'oauth',
+            oauth: { tokenFile: CREDENTIALS_PATH, lastStatus: 'expired', lastCheckedAt: Date.now() },
+          });
+        } catch { /* non-fatal */ }
       }
       return;
     }
@@ -175,6 +183,21 @@ class TokenRefreshManager {
     };
 
     this._writeCredentials(freshCreds);
+
+    // 同步更新 providerCredentials 的 oauth 状态
+    try {
+      const { setCredential } = await import('@/lib/settings-manager');
+      await setCredential('anthropic', {
+        authMode: 'oauth',
+        oauth: {
+          tokenFile: CREDENTIALS_PATH,
+          lastStatus: 'authenticated',
+          lastCheckedAt: Date.now(),
+        },
+      });
+    } catch {
+      // 非致命：settings-manager 不可用时静默跳过
+    }
 
     const expiresIn = Math.round(data.expires_in / 3600);
     console.log(`${TAG} 刷新成功，新 token 有效期 ${expiresIn} 小时`);
