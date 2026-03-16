@@ -350,6 +350,9 @@ export function AgentChatPanel({
   // Design doc saved notifications (auto-path)
   const [docsSaved, setDocsSaved] = useState<Array<{ docId: string; title: string; projectKey: string }>>([]);
 
+  // Topic completion detection
+  const [topicCompletion, setTopicCompletion] = useState<{ completed: boolean; confidence: number; summary: string } | null>(null);
+
   // Save as knowledge dialog
   const [saveDialogContent, setSaveDialogContent] = useState<string | null>(null);
 
@@ -939,6 +942,12 @@ export function AgentChatPanel({
             case 'error':
               console.error('Agent chat stream error:', event.message);
               chatDispatch({ type: 'STREAM_ERROR', message: event.message ?? 'Stream error' });
+              break;
+
+            case 'topic_completion':
+              if (event.completed) {
+                setTopicCompletion({ completed: event.completed, confidence: event.confidence, summary: event.summary });
+              }
               break;
 
             case 'awaiting_sub_agents':
@@ -1600,6 +1609,7 @@ export function AgentChatPanel({
   // Dismiss callbacks (stable references)
   const handleDismissKnowledge = useCallback(() => setKnowledgeDrafts([]), []);
   const handleDismissDocs = useCallback(() => setDocsSaved([]), []);
+  const handleDismissTopicCompletion = useCallback(() => setTopicCompletion(null), []);
   const handleSelectGuest = useCallback((a: Agent) => setGuestAgent(a), []);
 
   // View plan from a chat bubble badge
@@ -1796,8 +1806,10 @@ export function AgentChatPanel({
           <ChatNotificationBanners
             knowledgeDrafts={knowledgeDrafts}
             docsSaved={docsSaved}
+            topicCompletion={topicCompletion}
             onDismissKnowledge={handleDismissKnowledge}
             onDismissDocs={handleDismissDocs}
+            onDismissTopicCompletion={handleDismissTopicCompletion}
           />
         )}
 
@@ -2169,8 +2181,10 @@ export function AgentChatPanel({
         <ChatNotificationBanners
           knowledgeDrafts={knowledgeDrafts}
           docsSaved={docsSaved}
+          topicCompletion={topicCompletion}
           onDismissKnowledge={handleDismissKnowledge}
           onDismissDocs={handleDismissDocs}
+          onDismissTopicCompletion={handleDismissTopicCompletion}
           className="mx-2 mb-1"
         />
       )}

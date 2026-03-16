@@ -6,10 +6,12 @@
 import { satelliteRegistry } from './registry';
 import { titleGenerationTask } from './tasks/title-generation';
 import { healthGuardTask } from './tasks/health-guard';
+import { topicCompletionTask } from './tasks/topic-completion';
 
 // Register all built-in satellite tasks
 satelliteRegistry.register(titleGenerationTask);
 satelliteRegistry.register(healthGuardTask);
+satelliteRegistry.register(topicCompletionTask);
 
 // Re-exports
 export { satelliteRegistry } from './registry';
