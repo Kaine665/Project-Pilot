@@ -1,44 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { spawnClaude } from '@/lib/claude-cli';
+import { createOAuthSession } from '@/lib/oauth-flow';
 import {
-  loginProcess as currentProcess,
+  getPkceSession,
+  setPkceSession,
+  getLoginProvider,
+  setLoginProvider,
+  getLoginProcess,
   setLoginProcess,
   setCapturedLoginUrl,
   setCapturedLoginCode,
-  setLoginProvider,
-  loginProvider as currentLoginProvider,
 } from '@/lib/auth-login-state';
 import type { ProviderId } from '@/types';
 
-/** 从 CLI 输出中提取 OAuth URL（支持多种输出格式） */
+/** 从 CLI 输出中提取 OAuth URL（仅用于 OpenAI 流程） */
 function extractOAuthUrl(text: string): string | null {
-  // 优先匹配 claude.ai 授权页（用户需在浏览器打开此链接）
-  const claudeAuth = text.match(/https:\/\/claude\.ai\/oauth\/authorize\?[^\s"')\]]+/);
-  if (claudeAuth) return claudeAuth[0].trim();
-
-  // visit: / open: / open this URL: 等前缀
-  const prefixed = text.match(/(?:visit|open|url|link|authorize)[:\s]+(https:\/\/[^\s"')\]]+)/i);
-  if (prefixed) return prefixed[1].trim();
-
-  // 通用 https 链接（排除 localhost 回调）
   const httpsMatch = text.match(/https:\/\/[^\s"')\]]+/g);
   if (httpsMatch) {
-    const authUrl = httpsMatch.find((u) =>
-      u.includes('claude.ai') || u.includes('auth.openai.com')
-    );
+    const authUrl = httpsMatch.find((u) => u.includes('auth.openai.com'));
     if (authUrl) return authUrl.trim();
   }
-
-  // OpenAI device flow
-  const openaiMatch = text.match(/https:\/\/auth\.openai\.com\/[^\s"')\]]+/);
-  if (openaiMatch) return openaiMatch[0].trim();
-
   return null;
 }
 
-/** 从 Codex 输出中提取 device code（支持多种格式） */
+/** 从 Codex 输出中提取 device code */
 function extractDeviceCode(text: string): string | null {
-  // XXXX-XXXX 或 XXXXX-XXXXX 等格式
   const patterns = [
     /(?:code|enter)[:\s]+([A-Z0-9]{4,6}-[A-Z0-9]{4,8})/i,
     /([A-Z0-9]{4,6}-[A-Z0-9]{4,8})(?:\s|$|\.)/,
@@ -56,8 +41,8 @@ function extractDeviceCode(text: string): string | null {
  *
  * Body: { provider?: ProviderId }
  *
- * - anthropic: `claude auth login`（BROWSER=echo 捕获 URL）
- * - openai: `codex login`（捕获 device code）
+ * - anthropic: 自主 PKCE 流程（不依赖 CLI）
+ * - openai: `codex login`（捕获 device code，保持原逻辑）
  */
 export async function POST(request: NextRequest) {
   let provider: ProviderId = 'anthropic';
@@ -68,31 +53,48 @@ export async function POST(request: NextRequest) {
     }
   } catch { /* use default */ }
 
+  const currentProvider = getLoginProvider();
+  const currentProcess = getLoginProcess();
+
   // 防止不同 provider 的并发登录
-  if (currentProcess && !currentProcess.killed) {
-    if (currentLoginProvider && currentLoginProvider !== provider) {
+  if (currentProvider && currentProvider !== provider) {
+    if (provider === 'openai' || currentProvider === 'openai') {
+      // OpenAI 流程有子进程
+      if (currentProcess && !currentProcess.killed) {
+        return NextResponse.json(
+          { error: `Another login (${currentProvider}) is already in progress.` },
+          { status: 409 },
+        );
+      }
+    }
+    if (getPkceSession()) {
       return NextResponse.json(
-        { error: `Another login (${currentLoginProvider}) is already in progress.` },
+        { error: `Another login (${currentProvider}) is already in progress.` },
         { status: 409 },
       );
     }
-    // 同 provider 重新请求：杀掉旧进程，重新开始（支持刷新 URL）
+  }
+
+  // 同 provider 重新请求：清理旧状态
+  if (currentProcess && !currentProcess.killed) {
     try { currentProcess.kill(); } catch { /* ignore */ }
     setLoginProcess(null);
   }
+  setPkceSession(null);
+  setCapturedLoginUrl(null);
+  setCapturedLoginCode(null);
 
   try {
-    setCapturedLoginUrl(null);
-    setCapturedLoginCode(null);
     setLoginProvider(provider);
 
     if (provider === 'openai') {
       return await startOpenAILogin();
     }
 
-    return await startAnthropicLogin();
+    return startAnthropicLogin();
   } catch (err) {
     setLoginProcess(null);
+    setPkceSession(null);
     setCapturedLoginUrl(null);
     setCapturedLoginCode(null);
     setLoginProvider(null);
@@ -103,38 +105,25 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function startAnthropicLogin(): Promise<NextResponse> {
-  const env = { ...process.env, BROWSER: 'echo' };
-  const child = spawnClaude(['auth', 'login'], {
-    stdio: ['pipe', 'pipe', 'pipe'],
-    env,
-  });
-
-  setLoginProcess(child);
-
-  let buffer = '';
-  const collect = (chunk: Buffer) => {
-    buffer += chunk.toString();
-    const url = extractOAuthUrl(buffer);
-    if (url) setCapturedLoginUrl(url);
-  };
-
-  child.stdout?.on('data', collect);
-  child.stderr?.on('data', collect);
-
-  child.on('exit', () => { setLoginProcess(null); });
-  child.on('error', () => { setLoginProcess(null); });
+/**
+ * Anthropic: 自主 PKCE OAuth 流程。
+ * 生成 PKCE + authorize URL，前端显示给用户。
+ * 用户在浏览器完成授权后，复制代码提交到 auth-code 端点。
+ */
+function startAnthropicLogin(): NextResponse {
+  const session = createOAuthSession();
+  setPkceSession(session);
 
   return NextResponse.json({
     success: true,
-    message: 'Login started. Poll /api/settings/auth-url for the link.',
+    loginUrl: session.authorizeUrl,
+    message: 'OAuth session created. Open the URL and paste the authorization code.',
   });
 }
 
 async function startOpenAILogin(): Promise<NextResponse> {
   try {
     const { spawnCodex } = await import('@/lib/codex-cli');
-    // 浏览器 OAuth：BROWSER=echo 捕获 URL，用户复制到浏览器打开，回调到 localhost 完成
     const child = spawnCodex(['login'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, BROWSER: 'echo' },
