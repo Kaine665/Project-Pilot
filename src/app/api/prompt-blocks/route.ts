@@ -12,12 +12,14 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { readFile, readdir } from 'fs/promises';
-import path from 'path';
 import {
   getGlobalPromptPath,
   getProjectPromptPath,
   getPromptFilePath,
   getProjectPromptsDir,
+  getScopedSkillsDir,
+  getSkillFilePath,
+  type SkillScope,
 } from '@/lib/file-store';
 
 interface PromptBlock {
@@ -111,69 +113,29 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // 4. Skills — scan skills directories
-  const DATA_DIR = path.join(process.env.HOME || process.env.USERPROFILE || '', '.project-pilot', 'data');
-  const skillsDir = path.join(DATA_DIR, 'skills');
-
-  // Global skills
-  try {
-    const globalSkillsDir = path.join(skillsDir, '_global');
-    const skillDirs = await readdir(globalSkillsDir);
-    for (const skillName of skillDirs) {
-      const skillMd = path.join(globalSkillsDir, skillName, 'SKILL.md');
-      const content = await safeReadFile(skillMd);
-      if (content) {
-        blocks.push({
-          id: `skill-global-${skillName}`,
-          name: skillName,
-          description: `全局 Skill`,
-          source: 'skill',
-          tokenEstimate: estimateTokens(content),
-          enabled: true,
-          contentPreview: truncate(content),
-          location: skillMd,
-        });
-      }
-    }
-  } catch { /* no global skills */ }
-
-  // Agent-level skills
+  // 4. Skills — scan skills directories (global / agent / project scopes)
+  const skillScopes: { scope: SkillScope; idPrefix: string; label: string }[] = [
+    { scope: { level: 'global' }, idPrefix: 'skill-global', label: '全局 Skill' },
+  ];
   if (agentId) {
-    try {
-      const agentSkillsDir = path.join(skillsDir, agentId);
-      const skillDirs = await readdir(agentSkillsDir);
-      for (const skillName of skillDirs) {
-        const skillMd = path.join(agentSkillsDir, skillName, 'SKILL.md');
-        const content = await safeReadFile(skillMd);
-        if (content) {
-          blocks.push({
-            id: `skill-agent-${agentId}-${skillName}`,
-            name: skillName,
-            description: `Agent 级别 Skill`,
-            source: 'skill',
-            tokenEstimate: estimateTokens(content),
-            enabled: true,
-            contentPreview: truncate(content),
-            location: skillMd,
-          });
-        }
-      }
-    } catch { /* no agent skills */ }
+    skillScopes.push({ scope: { level: 'agent', agentId }, idPrefix: `skill-agent-${agentId}`, label: 'Agent 级别 Skill' });
+  }
+  if (projectKey) {
+    skillScopes.push({ scope: { level: 'project', projectKey }, idPrefix: `skill-project-${projectKey}`, label: `项目 Skill (${projectKey})` });
   }
 
-  // Project-level skills
-  if (projectKey) {
+  for (const { scope, idPrefix, label } of skillScopes) {
     try {
-      const projSkillsDir = path.join(skillsDir, `_project_${projectKey}`);
-      const skillDirs = await readdir(projSkillsDir);
+      const scopeDir = getScopedSkillsDir(scope);
+      const skillDirs = await readdir(scopeDir);
       for (const skillName of skillDirs) {
-        const skillMd = path.join(projSkillsDir, skillName, 'SKILL.md');
+        const skillMd = getSkillFilePath(skillName, scope);
         const content = await safeReadFile(skillMd);
         if (content) {
           blocks.push({
-            id: `skill-project-${projectKey}-${skillName}`,
+            id: `${idPrefix}-${skillName}`,
             name: skillName,
-            description: `项目 Skill (${projectKey})`,
+            description: label,
             source: 'skill',
             tokenEstimate: estimateTokens(content),
             enabled: true,
@@ -182,7 +144,7 @@ export async function GET(request: NextRequest) {
           });
         }
       }
-    } catch { /* no project skills */ }
+    } catch { /* scope dir may not exist */ }
   }
 
   const totalTokens = blocks.filter(b => b.enabled).reduce((sum, b) => sum + b.tokenEstimate, 0);

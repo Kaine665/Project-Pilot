@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { generateSessionId } from '@/lib/agent-chat-manager';
 import type { FlowContext } from '@/lib/agent-chat-manager';
 import type { SessionConfig } from '@/types/agent-chat';
-import { getFlowDataPath, getFlowIndexPath, readJsonFile, ensureFlowsMigrated } from '@/lib/file-store';
+import { getFlowDataPath, getFlowIndexPath, readJsonFile, ensureDataDirV2Migrated } from '@/lib/file-store';
 import { isValidProjectKey, isValidSessionId } from '@/lib/security';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import type { OpenAIReasoningEffort, ProviderId } from '@/types';
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
     // Build flowContext when projectKey is present
     let flowContext: FlowContext | undefined;
     if (projectKey) {
-      await ensureFlowsMigrated();
+      await ensureDataDirV2Migrated();
 
       const flowDataPath = getFlowDataPath(projectKey);
 

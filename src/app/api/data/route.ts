@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs/promises';
-import { getFlowDataPath, ensureFlowsMigrated } from '@/lib/file-store';
+import { getFlowDataPath, ensureDataDirV2Migrated } from '@/lib/file-store';
 import { isLegacyFormat, migrateLegacyToSections, isItemsOnlyFormat, migrateItemsOnlyToSections } from '@/lib/flow-migration';
 
 export async function GET(request: NextRequest) {
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'project is required' }, { status: 400 });
   }
 
-  await ensureFlowsMigrated();
+  await ensureDataDirV2Migrated();
   const filePath = getFlowDataPath(project);
   try {
     const raw = await fs.readFile(filePath, 'utf-8');
@@ -43,7 +43,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: 'project is required' }, { status: 400 });
   }
 
-  await ensureFlowsMigrated();
+  await ensureDataDirV2Migrated();
   const data = await request.json();
   const filePath = getFlowDataPath(project);
   await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');

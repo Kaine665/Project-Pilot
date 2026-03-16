@@ -25,7 +25,7 @@ const DEFAULT_CONFIG: SatelliteTaskConfig = {
 // ── File path ──
 
 function getConfigPath(): string {
-  return path.join(getDataDir(), 'satellite-tasks-config.json');
+  return path.join(getDataDir(), 'tasks', 'satellite-config.json');
 }
 
 // ── Public API ──
