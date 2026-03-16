@@ -108,8 +108,8 @@ export class SchedulerManager {
   ): Promise<import('./chat-managers/agent-chat-manager').FlowContext | undefined> {
     if (!projectKey) return undefined;
 
-    const { getFlowDataPath, getFlowIndexPath, ensureFlowsMigrated } = await import('./file-store');
-    await ensureFlowsMigrated();
+    const { getFlowDataPath, getFlowIndexPath, ensureDataDirV2Migrated } = await import('./file-store');
+    await ensureDataDirV2Migrated();
     const flowDataPath = getFlowDataPath(projectKey);
     let projectName = projectKey;
     try {

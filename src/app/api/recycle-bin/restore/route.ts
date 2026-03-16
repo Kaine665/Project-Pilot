@@ -5,7 +5,7 @@ import {
   getFlowIndexPath,
   readJsonFile,
   writeJsonFile,
-  ensureFlowsMigrated,
+  ensureDataDirV2Migrated,
 } from '@/lib/file-store';
 import { invalidateAgentsCache } from '@/lib/agents-store';
 import type { AgentsData, DimensionsData, ProjectIndex } from '@/types';
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
 
   switch (category as RecycleBinCategory) {
     case 'project': {
-      await ensureFlowsMigrated();
+      await ensureDataDirV2Migrated();
       const index = await readJsonFile<ProjectIndex>(getFlowIndexPath(), { projects: [] });
       const project = index.projects.find(p => p.key === id);
       if (!project) return NextResponse.json({ error: 'not found' }, { status: 404 });

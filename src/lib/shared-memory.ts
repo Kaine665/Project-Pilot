@@ -47,7 +47,7 @@ const EMPTY_DATA: SharedMemoryData = { entries: [] };
 // ── 路径 ──
 
 function getSharedMemoryDir(): string {
-  return path.join(getDataDir(), 'shared-memory');
+  return path.join(getDataDir(), 'storage', 'shared-memory');
 }
 
 function getSharedMemoryPath(projectKey?: string): string {
