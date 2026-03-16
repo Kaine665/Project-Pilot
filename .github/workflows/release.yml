@@ -4,6 +4,16 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (build only, no release)'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 jobs:
   build-windows:
@@ -38,7 +48,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: List build output
+        run: dir build /s /b
+        shell: cmd
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: build/*.exe
+          retention-days: 7
+
       - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') && inputs.dry_run != 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: |
