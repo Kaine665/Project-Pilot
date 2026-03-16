@@ -28,11 +28,19 @@ export async function GET(request: NextRequest) {
         rawOutput: raw,
       });
     } catch (err) {
+      const e = err as Error & { stdout?: string; stderr?: string };
+      const raw = ((e.stdout ?? '') + (e.stderr ?? '')).trim();
+      if (raw) {
+        const authState: AuthState = parseAuthState(raw);
+        if (authState !== 'unknown') {
+          return NextResponse.json({ provider, authState, authenticated: authState === 'authenticated', rawOutput: raw });
+        }
+      }
       return NextResponse.json({
         provider,
         authState: 'unknown' as AuthState,
         authenticated: false,
-        error: err instanceof Error ? err.message : 'Codex CLI not available',
+        error: e.message || 'Codex CLI not available',
       });
     }
   }
@@ -58,11 +66,25 @@ export async function GET(request: NextRequest) {
       rawOutput: raw,
     });
   } catch (err) {
+    // CLI 可能 exit code 非零但 stdout 仍有有效输出（如 credentials 异常但仍可解析状态）
+    const e = err as Error & { stdout?: string; stderr?: string };
+    const raw = ((e.stdout ?? '') + (e.stderr ?? '')).trim();
+    if (raw) {
+      const authState: AuthState = parseAuthState(raw);
+      if (authState !== 'unknown') {
+        return NextResponse.json({
+          provider,
+          authState,
+          authenticated: authState === 'authenticated',
+          rawOutput: raw,
+        });
+      }
+    }
     return NextResponse.json({
       provider,
       authState: 'unknown' as AuthState,
       authenticated: false,
-      error: err instanceof Error ? err.message : 'Unknown error',
+      error: e.message || 'Unknown error',
     });
   }
 }
