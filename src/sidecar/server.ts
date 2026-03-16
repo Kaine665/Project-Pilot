@@ -137,6 +137,7 @@ async function handleStart(
     modelOverride?: string;
     effortOverride?: string;
     depth?: number;
+    background?: boolean;
   };
 
   const sessionId = body.sessionId ?? generateSessionId();
@@ -173,6 +174,7 @@ async function handleStart(
       body.effortOverride,
       undefined, // ephemeral
       effectiveDepth,
+      body.background,
     );
     jsonResponse(res, { runId, sessionId });
   } catch (err) {

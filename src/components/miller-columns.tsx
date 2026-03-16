@@ -648,7 +648,7 @@ export function MillerSectionBlock({ section }: { section: Section }) {
     totalCount === 0 ? 'todo' : doneCount === totalCount ? 'done' : doneCount > 0 ? 'doing' : 'todo';
 
   // AI launch handler
-  const handleLaunchAI = useCallback(async (item: TreeItem, ancestors: TreeItem[]) => {
+  const handleLaunchAI = useCallback(async (item: TreeItem, ancestors: TreeItem[], options?: { background?: boolean }) => {
     const flowContext = collectFlowTaskContext({
       projectKey,
       projectName,
@@ -672,10 +672,11 @@ export function MillerSectionBlock({ section }: { section: Section }) {
         message: buildFlowTaskPrompt(flowContext),
         projectKey,
         initialTitle: item.content,
+        background: options?.background || undefined,
       }),
     });
 
-    if (res.ok) {
+    if (res.ok && !options?.background) {
       const data = await res.json() as { sessionId: string };
       router.push(buildFlowAgentUrl({ projectKey, agentId, sessionId: data.sessionId }));
     }
