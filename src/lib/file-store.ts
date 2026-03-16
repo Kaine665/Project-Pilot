@@ -401,19 +401,39 @@ export async function ensureDataDirV2Migrated(): Promise<void> {
   console.log('[migration-v2] 数据目录 V2 迁移完成');
 }
 
-/** 复制单个文件（幂等：目标已存在则跳过） */
+/**
+ * 复制单个文件（幂等 + 竞态安全）。
+ *
+ * 当目标已存在时，比较源和目标文件大小：
+ * - 如果源文件更大，说明目标可能是 store 自动生成的默认文件（竞态产物），用源文件覆盖
+ * - 如果目标文件 >= 源文件，说明目标已包含完整数据，跳过
+ *
+ * 这解决了「store 初始化创建默认文件 → 迁移跳过复制 → 旧数据丢失」的竞态条件。
+ */
 async function _migrateCopyFile(src: string, dest: string): Promise<void> {
+  let srcStat: Awaited<ReturnType<typeof fs.stat>>;
   try {
-    await fs.stat(src);
+    srcStat = await fs.stat(src);
   } catch {
     return; // 源不存在，跳过
   }
+
   try {
-    await fs.stat(dest);
-    return; // 目标已存在，跳过
+    const destStat = await fs.stat(dest);
+    // 目标已存在 — 比较大小决定是否覆盖
+    if (srcStat.size > destStat.size) {
+      console.warn(
+        `[migration-v2] 目标文件已存在但比源文件小 (src=${srcStat.size}B, dest=${destStat.size}B)，` +
+        `可能是竞态产物，用源文件覆盖: ${path.basename(src)}`,
+      );
+      await fs.mkdir(path.dirname(dest), { recursive: true });
+      await fs.copyFile(src, dest);
+    }
+    return;
   } catch {
     // 目标不存在，继续复制
   }
+
   try {
     await fs.mkdir(path.dirname(dest), { recursive: true });
     await fs.copyFile(src, dest);
