@@ -76,10 +76,9 @@ export async function POST(request: NextRequest) {
         { status: 409 },
       );
     }
-    return NextResponse.json({
-      success: true,
-      message: 'Login already in progress.',
-    });
+    // 同 provider 重新请求：杀掉旧进程，重新开始（支持刷新 URL）
+    try { currentProcess.kill(); } catch { /* ignore */ }
+    setLoginProcess(null);
   }
 
   try {
