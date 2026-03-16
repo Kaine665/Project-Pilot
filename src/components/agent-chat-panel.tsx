@@ -353,6 +353,10 @@ export function AgentChatPanel({
   // Topic completion detection
   const [topicCompletion, setTopicCompletion] = useState<{ completed: boolean; confidence: number; summary: string } | null>(null);
 
+  // Session checkpoint notification
+  const [checkpointSaved, setCheckpointSaved] = useState(false);
+  const checkpointRef = useRef<import('@/types/agent-chat').SessionCheckpoint | null>(null);
+
   // Save as knowledge dialog
   const [saveDialogContent, setSaveDialogContent] = useState<string | null>(null);
 
@@ -934,6 +938,11 @@ export function AgentChatPanel({
               setDocsSaved(prev => [...prev, { docId: event.docId, title: event.title, projectKey: event.projectKey }]);
               break;
 
+            case 'checkpoint_saved':
+              checkpointRef.current = event.checkpoint;
+              setCheckpointSaved(true);
+              break;
+
             case 'token_usage':
               chatDispatch({ type: 'STREAM_TOKENS', input: event.inputTokens, output: event.outputTokens, final: event.final });
               if (event.contextWindow && event.contextWindow > 0) setSseContextWindow(event.contextWindow);
@@ -1459,6 +1468,29 @@ export function AgentChatPanel({
     modelConfig.resetToAgentDefaults(agent);
   }, [isStreaming, hasProject, t, setSessionIdSync, agent, replacePendingUserQueue]);
 
+  // Resume from checkpoint: start fresh session, inject checkpoint content as first message
+  const handleResumeCheckpoint = useCallback(() => {
+    const checkpoint = checkpointRef.current;
+    if (!checkpoint) return;
+
+    const resumeMsg = `请续接之前的工作。以下是工作检查点：\n\n${checkpoint.rawContent}\n\n请直接从"下一步"开始继续，无需重新探索已知信息。`;
+
+    // Start fresh session (same as clicking "New Session")
+    handleNewSession();
+    setCheckpointSaved(false);
+    checkpointRef.current = null;
+
+    // Defer send so state updates (sessionId cleared) are flushed first
+    setTimeout(() => {
+      doSendRef.current(resumeMsg);
+    }, 0);
+  }, [handleNewSession]);
+
+  const handleDismissCheckpoint = useCallback(() => {
+    setCheckpointSaved(false);
+    checkpointRef.current = null;
+  }, []);
+
   // Switch to an existing session
   const handleSwitchSession = useCallback(async (target: SessionListItem) => {
     if (isStreaming) return;
@@ -1810,6 +1842,9 @@ export function AgentChatPanel({
             onDismissKnowledge={handleDismissKnowledge}
             onDismissDocs={handleDismissDocs}
             onDismissTopicCompletion={handleDismissTopicCompletion}
+            checkpointSaved={checkpointSaved}
+            onResumeCheckpoint={handleResumeCheckpoint}
+            onDismissCheckpoint={handleDismissCheckpoint}
           />
         )}
 
@@ -2185,6 +2220,9 @@ export function AgentChatPanel({
           onDismissKnowledge={handleDismissKnowledge}
           onDismissDocs={handleDismissDocs}
           onDismissTopicCompletion={handleDismissTopicCompletion}
+          checkpointSaved={checkpointSaved}
+          onResumeCheckpoint={handleResumeCheckpoint}
+          onDismissCheckpoint={handleDismissCheckpoint}
           className="mx-2 mb-1"
         />
       )}

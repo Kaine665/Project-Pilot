@@ -25,7 +25,7 @@ import { createAgentRunner, type IAgentRunner } from './agent-runner';
 import { detectDangerousCommand } from '@/lib/danger-detector';
 import type { ChatSSEEvent, ContentBlock, Agent, AgentCapabilities, ProviderId } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_DANGER_SETTINGS } from '@/types';
-import type { AgentChatSession, SessionConfig } from '@/types/agent-chat';
+import type { AgentChatSession, SessionConfig, SessionCheckpoint } from '@/types/agent-chat';
 import type { ResourceRef, InlineTextRef, FlowContextRef, ReferenceTurnsRef } from '@/types/resource';
 import { resourceRegistry } from '@/lib/resource-registry';
 import '@/lib/resource-loaders'; // side-effect: registers non-action loaders
@@ -115,6 +115,8 @@ export interface AgentChatRun {
   _guardRetryCount?: number;
   /** 临时测试会话，不持久化到会话列表 */
   _ephemeral?: boolean;
+  /** 会话检查点（context window 快满时由 AI 生成） */
+  checkpoint?: import('@/types/agent-chat').SessionCheckpoint;
 }
 
 // ── Constants ──
@@ -584,6 +586,7 @@ class AgentChatManager {
         projectKey: run.projectKey,
         emit: (event: ChatSSEEvent) => this.trackAndEmit(run, event),
         setSessionTitle: (title: string) => { if (!run.sessionTitle) run.sessionTitle = title; },
+        setCheckpoint: (checkpoint: SessionCheckpoint) => { run.checkpoint = checkpoint; },
       };
 
       const cleaned = await actionRegistry.processResponse(run.assistantText, actionCtx);
@@ -742,6 +745,7 @@ class AgentChatManager {
       guardRetryCount: run._guardRetryCount,
       parentSessionId: run.parentSessionId,
       importedTurnIndices: run.importedTurnIndices,
+      checkpoint: run.checkpoint,
     };
     await persistSessionToDisk(session);
 
