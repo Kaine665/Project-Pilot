@@ -1,7 +1,7 @@
 'use client';
 
 import { memo } from 'react';
-import { BookMarked, CheckCircle2, FileText, RotateCcw, X } from 'lucide-react';
+import { BookMarked, CheckCircle2, ExternalLink, FileText, RotateCcw, X } from 'lucide-react';
 
 export interface TopicCompletionInfo {
   completed: boolean;
@@ -16,6 +16,10 @@ interface ChatNotificationBannersProps {
   onDismissKnowledge: () => void;
   onDismissDocs: () => void;
   onDismissTopicCompletion: () => void;
+  /** 点击知识草稿横幅，跳转到知识管理页 */
+  onNavigateToKnowledge?: () => void;
+  /** 点击文档保存横幅，跳转到设计文档页 */
+  onNavigateToDoc?: (projectKey: string) => void;
   /** 会话检查点已生成，显示续接按钮 */
   checkpointSaved?: boolean;
   onResumeCheckpoint?: () => void;
@@ -31,6 +35,8 @@ export const ChatNotificationBanners = memo(function ChatNotificationBanners({
   onDismissKnowledge,
   onDismissDocs,
   onDismissTopicCompletion,
+  onNavigateToKnowledge,
+  onNavigateToDoc,
   checkpointSaved,
   onResumeCheckpoint,
   onDismissCheckpoint,
@@ -78,10 +84,15 @@ export const ChatNotificationBanners = memo(function ChatNotificationBanners({
       )}
       {knowledgeDrafts.length > 0 && (
         <div className={`${className} flex items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs dark:border-amber-800/50 dark:bg-amber-900/15`}>
-          <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
+          <button
+            onClick={onNavigateToKnowledge}
+            disabled={!onNavigateToKnowledge}
+            className={`flex min-w-0 items-center gap-1.5 text-amber-700 dark:text-amber-400 ${onNavigateToKnowledge ? 'cursor-pointer hover:underline' : ''}`}
+          >
             <BookMarked className="h-3 w-3 shrink-0" />
-            <span>Agent 已保存 {knowledgeDrafts.length} 条知识草稿，待确认</span>
-          </div>
+            <span className="truncate">Agent 已保存 {knowledgeDrafts.length} 条知识草稿，待确认</span>
+            {onNavigateToKnowledge && <ExternalLink className="h-3 w-3 shrink-0 opacity-50" />}
+          </button>
           <button
             onClick={onDismissKnowledge}
             className="shrink-0 text-amber-400 hover:text-amber-600 dark:text-amber-600 dark:hover:text-amber-400"
@@ -92,10 +103,19 @@ export const ChatNotificationBanners = memo(function ChatNotificationBanners({
       )}
       {docsSaved.length > 0 && (
         <div className={`${className} flex items-center justify-between gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs dark:border-blue-800/50 dark:bg-blue-900/15`}>
-          <div className="flex items-center gap-1.5 text-blue-700 dark:text-blue-400">
+          <button
+            onClick={() => {
+              if (!onNavigateToDoc || docsSaved.length === 0) return;
+              // 用第一条文档的 projectKey 导航
+              onNavigateToDoc(docsSaved[0].projectKey);
+            }}
+            disabled={!onNavigateToDoc}
+            className={`flex min-w-0 items-center gap-1.5 text-blue-700 dark:text-blue-400 ${onNavigateToDoc ? 'cursor-pointer hover:underline' : ''}`}
+          >
             <FileText className="h-3 w-3 shrink-0" />
-            <span>Agent 已保存 {docsSaved.length} 条设计文档</span>
-          </div>
+            <span className="truncate">Agent 已保存 {docsSaved.length} 条设计文档</span>
+            {onNavigateToDoc && <ExternalLink className="h-3 w-3 shrink-0 opacity-50" />}
+          </button>
           <button
             onClick={onDismissDocs}
             className="shrink-0 text-blue-400 hover:text-blue-600 dark:text-blue-600 dark:hover:text-blue-400"
