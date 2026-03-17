@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { ToolCallCard } from '@/components/tool-call-card';
 import { ToolExecutionWindow } from '@/components/tool-execution-window';
 import { FormattedText } from '@/components/formatted-text';
+import type { ParsedActionTag } from '@/lib/action-tag-parser';
 import type { ChatMessage, ContentBlock, ChatToolCall } from '@/types';
 import { isRepetitiveTool } from '@/lib/tool-utils';
 
@@ -36,6 +37,12 @@ interface ChatBubbleProps {
   onViewPlan?: (content: string) => void;
   /** Callback when a file path in the message is clicked */
   onFileClick?: (filePath: string) => void;
+  /** Callback when user clicks an action card to preview its content */
+  onActionPreview?: (tag: ParsedActionTag) => void;
+  /** Callback when user rejects an action */
+  onActionReject?: (tag: ParsedActionTag) => void;
+  /** Callback when user restores a rejected action */
+  onActionRestore?: (tag: ParsedActionTag) => void;
 }
 
 export const ChatBubble = memo(function ChatBubble({
@@ -53,6 +60,9 @@ export const ChatBubble = memo(function ChatBubble({
   hasSendError,
   onViewPlan,
   onFileClick,
+  onActionPreview,
+  onActionReject,
+  onActionRestore,
 }: ChatBubbleProps) {
   const t = useTranslations();
   const isUser = message.role === 'user';
@@ -163,7 +173,15 @@ export const ChatBubble = memo(function ChatBubble({
         }
         return (
           <div key={i} className="wrap-break-word">
-            <FormattedText text={block.text} className="leading-relaxed space-y-1.5" onFileClick={onFileClick} />
+            <FormattedText
+              text={block.text}
+              className="leading-relaxed space-y-1.5"
+              onFileClick={onFileClick}
+              isStreaming={isStreaming && i === lastTextIdx}
+              onActionPreview={onActionPreview}
+              onActionReject={onActionReject}
+              onActionRestore={onActionRestore}
+            />
             {isStreaming && i === lastTextIdx && (
               <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-current opacity-60" />
             )}
@@ -204,7 +222,14 @@ export const ChatBubble = memo(function ChatBubble({
           {isUser ? (
             <div className="whitespace-pre-wrap leading-relaxed">{message.content}</div>
           ) : (
-            <FormattedText text={message.content} className="leading-relaxed space-y-1.5" onFileClick={onFileClick} />
+            <FormattedText
+              text={message.content}
+              className="leading-relaxed space-y-1.5"
+              onFileClick={onFileClick}
+              onActionPreview={onActionPreview}
+              onActionReject={onActionReject}
+              onActionRestore={onActionRestore}
+            />
           )}
         </div>
       )}
