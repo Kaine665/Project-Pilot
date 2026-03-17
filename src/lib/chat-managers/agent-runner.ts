@@ -21,6 +21,15 @@ import { buildSdkQueryOptions, buildCodexExecEnv, getSettings } from '@/lib/sett
 import type { ChatSSEEvent, AgentCapabilities, ProviderId } from '@/types';
 export type AgentRunnerInput = string | AsyncIterable<SDKUserMessage> | CodexInput;
 
+/** Options passed alongside the main input to stream() */
+export interface StreamOptions {
+  /** Image attachments to include with the prompt (base64 encoded) */
+  images?: Array<{
+    mediaType: string;
+    data: string; // base64
+  }>;
+}
+
 // ── Public interface ─────────────────────────────────────────────────────────
 
 /**
@@ -29,7 +38,7 @@ export type AgentRunnerInput = string | AsyncIterable<SDKUserMessage> | CodexInp
  */
 export interface IAgentRunner {
   /** 流式执行 prompt，yield ChatSSEEvent */
-  stream(input: AgentRunnerInput): AsyncIterable<ChatSSEEvent>;
+  stream(input: AgentRunnerInput, options?: StreamOptions): AsyncIterable<ChatSSEEvent>;
 
   /** 中止当前流 */
   abort(): void;
@@ -120,13 +129,42 @@ class ClaudeAgentRunner implements IAgentRunner {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(private readonly sdkOpts: any) {}
 
-  async *stream(input: AgentRunnerInput): AsyncIterable<ChatSSEEvent> {
+  async *stream(input: AgentRunnerInput, options?: StreamOptions): AsyncIterable<ChatSSEEvent> {
     if (Array.isArray(input)) {
       throw new Error('Claude runner does not accept Codex structured input');
     }
 
     const adapter = new SdkEventAdapter();
-    this._sdkQuery = query({ prompt: input, options: this.sdkOpts });
+    const images = options?.images;
+
+    if (images && images.length > 0 && typeof input === 'string') {
+      // Build multimodal prompt: images + text as content blocks inside SDKUserMessage
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const contentBlocks: any[] = images.map(img => ({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: img.mediaType,
+          data: img.data,
+        },
+      }));
+      contentBlocks.push({ type: 'text', text: input });
+
+      const userMessage: SDKUserMessage = {
+        type: 'user',
+        message: { role: 'user', content: contentBlocks },
+        parent_tool_use_id: null,
+        session_id: `img-${Date.now()}`, // placeholder, SDK captures real session_id from init event
+      };
+
+      async function* singleMessage(): AsyncIterable<SDKUserMessage> {
+        yield userMessage;
+      }
+
+      this._sdkQuery = query({ prompt: singleMessage(), options: this.sdkOpts });
+    } else {
+      this._sdkQuery = query({ prompt: input, options: this.sdkOpts });
+    }
 
     try {
       for await (const msg of this._sdkQuery) {
@@ -158,7 +196,7 @@ class CodexAgentRunner implements IAgentRunner {
 
   constructor(private readonly thread: Thread) {}
 
-  async *stream(input: AgentRunnerInput): AsyncIterable<ChatSSEEvent> {
+  async *stream(input: AgentRunnerInput, _options?: StreamOptions): AsyncIterable<ChatSSEEvent> {
     if (isAsyncIterable(input)) {
       throw new Error('Codex runner does not accept Claude message streams');
     }

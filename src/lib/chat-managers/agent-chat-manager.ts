@@ -11,10 +11,6 @@
  * - StreamParser → SdkEventAdapter
  */
 
-import { writeFile, unlink } from 'fs/promises';
-import { tmpdir } from 'os';
-import { join } from 'path';
-import { randomBytes } from 'crypto';
 import { getAppWorkingDir } from '@/lib/app-paths';
 import { getPromptFilePath, getContextIndexPath, getTodosPath, readJsonFile } from '@/lib/file-store';
 import type { ContextIndexData, TodosData } from '@/types';
@@ -115,7 +111,7 @@ export interface AgentChatRun {
   config?: SessionConfig;
   parentSessionId?: string;
   importedTurnIndices?: number[];
-  _tempImagePaths?: string[];
+  _images?: ImageAttachment[];
   _guardRetryCount?: number;
   /** 临时测试会话，不持久化到会话列表 */
   _ephemeral?: boolean;
@@ -258,20 +254,6 @@ class AgentChatManager {
       promptContent = await buildAgentChatPrompt(agent, message, persistedConfig, sessionId, sessionProjectKey, conversationHistory ?? undefined);
     }
 
-    // Write images to temp files
-    const tempPaths: string[] = [];
-    const extMap: Record<string, string> = {
-      'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp',
-    };
-    if (images && images.length > 0) {
-      for (const img of images) {
-        const ext = extMap[img.mediaType] ?? 'png';
-        const tmpPath = join(tmpdir(), `agent-img-${randomBytes(8).toString('hex')}.${ext}`);
-        await writeFile(tmpPath, Buffer.from(img.data, 'base64'));
-        tempPaths.push(tmpPath);
-      }
-    }
-
     // Merge capabilities
     const effectiveCaps = mergeCapabilities(agent.capabilities, persistedConfig?.capabilities);
 
@@ -311,7 +293,7 @@ class AgentChatManager {
       messages,
       config: persistedConfig,
       parentSessionId: parentSessionId ?? existing?.parentSessionId,
-      _tempImagePaths: tempPaths,
+      _images: images,
       _guardRetryCount: existing?._guardRetryCount,
       _ephemeral: ephemeral,
     };
@@ -339,7 +321,7 @@ class AgentChatManager {
       run.runner = runner;
 
       run._completionPromise = new Promise<void>(resolve => { run._resolveCompletion = resolve; });
-      this.consumeRunnerStream(run, runner, promptContent).catch(err => {
+      this.consumeRunnerStream(run, runner, promptContent, images).catch(err => {
         console.error(`${LOG_PREFIX} Runner stream error for ${sessionId}:`, err);
       }).finally(() => { run._resolveCompletion?.(); });
     } catch (err) {
@@ -578,9 +560,10 @@ class AgentChatManager {
     run: AgentChatRun,
     runner: IAgentRunner,
     prompt: string,
+    images?: ImageAttachment[],
   ): Promise<void> {
     try {
-      for await (const event of runner.stream(prompt)) {
+      for await (const event of runner.stream(prompt, { images })) {
         if (run.status === 'stopped') break;
         this.trackAndEmit(run, event);
       }
@@ -613,12 +596,8 @@ class AgentChatManager {
    * 清理临时文件 → 处理 Agent Actions → 生成标题 → 持久化 → emit done。
    */
   private async finalizeRun(run: AgentChatRun, aborted: boolean): Promise<void> {
-    // Clean up temp image files
-    if (run._tempImagePaths) {
-      for (const tmpPath of run._tempImagePaths) {
-        unlink(tmpPath).catch(() => {});
-      }
-    }
+    // Release image references (no longer needed after stream completes)
+    run._images = undefined;
 
     // Process all agent actions: parse tags, execute side-effects, strip tags
     if (run.assistantText) {
