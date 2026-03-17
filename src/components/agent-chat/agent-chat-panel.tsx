@@ -1327,6 +1327,10 @@ export function AgentChatPanel({
   // Dismiss callbacks (stable references)
   const handleDismissKnowledge = useCallback(() => setKnowledgeDrafts([]), []);
   const handleDismissDocs = useCallback(() => setDocsSaved([]), []);
+  const handleNavigateToKnowledge = useCallback(() => router.push('/flows/knowledge'), [router]);
+  const handleNavigateToDoc = useCallback((projectKey: string) => {
+    router.push(projectKey ? `/flows/docs/${projectKey}` : '/flows/docs');
+  }, [router]);
   const handleDismissTopicCompletion = useCallback(() => setTopicCompletion(null), []);
   const handleSelectGuest = useCallback((a: Agent) => setGuestAgent(a), []);
 
@@ -1413,6 +1417,8 @@ export function AgentChatPanel({
       onDismissKnowledge={handleDismissKnowledge}
       onDismissDocs={handleDismissDocs}
       onDismissTopicCompletion={handleDismissTopicCompletion}
+      onNavigateToKnowledge={handleNavigateToKnowledge}
+      onNavigateToDoc={handleNavigateToDoc}
       checkpointSaved={checkpointSaved}
       onResumeCheckpoint={handleResumeCheckpoint}
       onDismissCheckpoint={handleDismissCheckpoint}
@@ -1643,6 +1649,8 @@ export function AgentChatPanel({
           onDismissKnowledge={handleDismissKnowledge}
           onDismissDocs={handleDismissDocs}
           onDismissTopicCompletion={handleDismissTopicCompletion}
+          onNavigateToKnowledge={handleNavigateToKnowledge}
+          onNavigateToDoc={handleNavigateToDoc}
           checkpointSaved={checkpointSaved}
           onResumeCheckpoint={handleResumeCheckpoint}
           onDismissCheckpoint={handleDismissCheckpoint}
