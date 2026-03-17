@@ -9,12 +9,60 @@ import {
   Shield, Brain, Wrench, Check, X, Loader2, ExternalLink, Server, Copy,
   Gauge, RotateCw, Eye, Sun, Moon, Monitor,
   Download, Upload, Trash2, FolderOpen, Info, Github, ShieldAlert,
-  Sparkles, Plus, Minus, Zap,
+  Sparkles, Plus, Minus, Zap, ActivitySquare,
 } from 'lucide-react';
 import type { DangerCategory, DangerActionLevel, DangerDetectorSettings, TitleGenerationChainEntry } from '@/types';
 import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
 import type { Theme } from '@/components/theme-provider';
 import type { CustomProviderConfig, ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort } from '@/types';
+
+// ── Model Health Types ──
+
+export interface ModelHealthResult {
+  status: 'ok' | 'failed' | 'skipped';
+  latencyMs?: number;
+  error?: string;
+  checkedAt?: string;
+}
+
+export interface ModelHealthData {
+  lastRunAt: string;
+  results: Record<string, ModelHealthResult>;
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function ModelStatusBadge({ status }: { status: 'ok' | 'failed' | 'skipped' }) {
+  if (status === 'ok') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+        <Check className="h-3 w-3" />
+        ok
+      </span>
+    );
+  }
+  if (status === 'failed') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
+        <X className="h-3 w-3" />
+        failed
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+      skipped
+    </span>
+  );
+}
 
 // ── Shared props ──
 
@@ -68,6 +116,9 @@ interface AIConfigSectionProps extends TranslationProps {
   customProviders?: CustomProviderConfig[];
   onAddCustomProvider?: () => void;
   onDeleteCustomProvider?: (id: `custom-${string}`) => void;
+  modelHealthData?: ModelHealthData | null;
+  healthCheckRunning?: boolean;
+  onRunHealthCheck?: () => void;
 }
 
 export function SettingsAISection({
@@ -85,6 +136,9 @@ export function SettingsAISection({
   customProviders = [],
   onAddCustomProvider,
   onDeleteCustomProvider,
+  modelHealthData,
+  healthCheckRunning = false,
+  onRunHealthCheck,
 }: AIConfigSectionProps) {
   return (
     <>
@@ -422,6 +476,77 @@ export function SettingsAISection({
           </div>
         </CardContent>
       </Card>
+
+      {/* Model Health */}
+      {(modelHealthData || onRunHealthCheck) && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <ActivitySquare className="h-5 w-5" />
+                {t('modelHealth')}
+              </span>
+              <div className="flex items-center gap-2">
+                {modelHealthData?.lastRunAt && (
+                  <span className="text-xs font-normal text-zinc-400">
+                    {timeAgo(modelHealthData.lastRunAt)}
+                  </span>
+                )}
+                {onRunHealthCheck && (
+                  <Button variant="outline" size="sm" onClick={onRunHealthCheck} disabled={healthCheckRunning}>
+                    {healthCheckRunning
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <RotateCw className="h-3.5 w-3.5" />}
+                    {t('runHealthCheck')}
+                  </Button>
+                )}
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {modelHealthData && preset.models.length > 0 ? (
+              <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                {preset.models.map((m) => {
+                  const key = `${provider}/${m.id}`;
+                  const result = modelHealthData.results[key];
+                  const isOAuthVerified = result?.status === 'ok' && !result?.latencyMs;
+                  return (
+                    <div key={m.id} className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
+                      {/* Model name */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-zinc-700 dark:text-zinc-300 truncate">{m.label}</p>
+                        {result?.status === 'failed' && result.error && (
+                          <p className="mt-0.5 text-xs text-red-500 dark:text-red-400 line-clamp-2">{result.error}</p>
+                        )}
+                      </div>
+                      {/* Status badge */}
+                      {result ? (
+                        <div className="flex items-center gap-2 shrink-0">
+                          <ModelStatusBadge status={result.status} />
+                          {isOAuthVerified ? (
+                            <span className="text-xs font-medium text-blue-500 dark:text-blue-400">OAuth</span>
+                          ) : result.latencyMs ? (
+                            <span className="text-xs text-zinc-400">{result.latencyMs}ms</span>
+                          ) : null}
+                          {result.checkedAt && (
+                            <span className="text-xs text-zinc-400">{timeAgo(result.checkedAt)}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-zinc-400 shrink-0">—</span>
+                      )}
+                      {/* Reserved: quick links (task 2) */}
+                      <div className="w-6 shrink-0" />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-zinc-400">{t('noHealthData')}</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Advanced: Base URL */}
       {(preset.editableBaseUrl || provider === 'anthropic') && (

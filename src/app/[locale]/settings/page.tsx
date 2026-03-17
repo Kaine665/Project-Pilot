@@ -18,6 +18,7 @@ import {
   SettingsSafetySection,
   SettingsTitleGenerationSection,
 } from '@/components/settings-sections';
+import type { ModelHealthData } from '@/components/settings-sections';
 import type { CustomProviderConfig, ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort, DangerCategory, DangerActionLevel, DangerDetectorSettings, TitleGenerationChainEntry } from '@/types';
 import { DEFAULT_DANGER_SETTINGS, DEFAULT_TITLE_GENERATION } from '@/types';
 
@@ -113,6 +114,8 @@ export default function SettingsPage() {
   const [oauthSubmitError, setOauthSubmitError] = useState<string | null>(null);
   const [testState, setTestState] = useState<'idle' | 'testing' | 'success' | 'failed'>('idle');
   const [testMessage, setTestMessage] = useState('');
+  const [modelHealthData, setModelHealthData] = useState<ModelHealthData | null>(null);
+  const [healthCheckRunning, setHealthCheckRunning] = useState(false);
 
   // Data management state
   const [dataDir, setDataDir] = useState('');
@@ -304,7 +307,36 @@ export default function SettingsPage() {
     }
   }, [t]);
 
+  // Fetch model health data
+  const fetchModelHealth = useCallback(async () => {
+    try {
+      const res = await fetch('/api/settings/model-health');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.ok && json.data) setModelHealthData(json.data as ModelHealthData);
+      }
+    } catch {
+      // ignore — health data is best-effort
+    }
+  }, []);
+
+  const handleRunHealthCheck = useCallback(async () => {
+    setHealthCheckRunning(true);
+    try {
+      const res = await fetch('/api/settings/model-health', { method: 'POST' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.ok && json.data) setModelHealthData(json.data as ModelHealthData);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setHealthCheckRunning(false);
+    }
+  }, []);
+
   useEffect(() => { fetchSettings(); }, [fetchSettings]);
+  useEffect(() => { fetchModelHealth(); }, [fetchModelHealth]);
   useEffect(() => {
     if (activeSection === 'data') fetchDataInfo();
   }, [activeSection, fetchDataInfo]);
@@ -791,6 +823,9 @@ export default function SettingsPage() {
                 customProviders={customProviders}
                 onAddCustomProvider={() => setShowAddCustomProvider(true)}
                 onDeleteCustomProvider={handleDeleteCustomProvider}
+                modelHealthData={modelHealthData}
+                healthCheckRunning={healthCheckRunning}
+                onRunHealthCheck={handleRunHealthCheck}
               />
             )}
 
