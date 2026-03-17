@@ -14,6 +14,7 @@ import { sessionTitleAction } from './session-title';
 import { suspendTaskAction } from './suspend-task';
 import { completeSuspendedTaskAction } from './complete-suspended-task';
 import { awaitSubAgentsAction } from './await-sub-agents';
+import { sessionCheckpointAction } from './session-checkpoint';
 
 // Register all actions
 actionRegistry.register(saveKnowledgeAction);
@@ -22,6 +23,7 @@ actionRegistry.register(sessionTitleAction);
 actionRegistry.register(suspendTaskAction);
 actionRegistry.register(completeSuspendedTaskAction);
 actionRegistry.register(awaitSubAgentsAction);
+actionRegistry.register(sessionCheckpointAction);
 
 // Generate and register ResourceLoaders for backward compatibility
 for (const loader of actionRegistry.generateAllLoaders()) {

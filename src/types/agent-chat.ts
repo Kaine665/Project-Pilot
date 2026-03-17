@@ -5,6 +5,25 @@
 import type { SessionExecution } from '@/lib/chat-managers/types';
 
 /**
+ * 会话检查点 — 记录会话上下文断裂前的工作状态，
+ * 以便在新会话中快速恢复，无需重新探索已知信息。
+ */
+export interface SessionCheckpoint {
+  /** 检查点生成时间 */
+  createdAt: string;
+  /** 当前正在做什么（1-3 句话） */
+  workingSummary: string;
+  /** 发现的关键信息（文件路径、API 端点、Agent ID 等） */
+  keyFacts: string[];
+  /** 当前进度（步骤、分支、worktree 等） */
+  inProgressState?: string;
+  /** 接续时需要做的事 */
+  nextSteps: string[];
+  /** AI 输出的原始检查点文本（用于注入新会话） */
+  rawContent: string;
+}
+
+/**
  * 会话级别的可选配置。
  *
  * 设计原则：会话是 Agent（模板）的实例。
@@ -28,6 +47,12 @@ export interface SessionConfig {
   systemPrompt?: string;
   /** 会话级别的能力覆盖（与 Agent 默认值合并，只能收紧不能放宽） */
   capabilities?: Partial<import('./index').AgentCapabilities>;
+  /**
+   * 统一资源引用列表（Phase 4）。
+   * 替代 contextIds / skillNames，直接使用 ResourceRef[] 配置会话级资源。
+   * 与 contextIds / skillNames 共存（向后兼容），优先级更高。
+   */
+  resourceRefs?: import('@/types/resource').ResourceRef[];
 }
 
 /** 单条消息 */
@@ -82,6 +107,9 @@ export interface AgentChatSession {
 
   /** 助手回复期间用户继续提交的待发送消息队列 */
   pendingUserQueue?: PendingUserQueueState;
+
+  /** 会话检查点（context window 接近上限时由 AI 生成，用于续接新会话） */
+  checkpoint?: SessionCheckpoint;
 }
 
 /**
@@ -95,6 +123,9 @@ export type SessionMeta = Omit<AgentChatSession, 'messages'> & {
 
   /** 最近一次运行的执行记录（含状态、结构化结果等） */
   execution?: SessionExecution;
+
+  /** 后台创建的会话（不触发前端跳转，侧边栏显示但不自动切换） */
+  background?: boolean;
 };
 
 /**

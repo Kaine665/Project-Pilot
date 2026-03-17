@@ -29,13 +29,6 @@ const REFRESH_THRESHOLD_MS = 30 * 60 * 1000;    // 过期前 30 分钟就刷新
 /** Claude OAuth 常量（从 CLI 源码提取） */
 const OAUTH_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 const OAUTH_TOKEN_URL = 'https://platform.claude.com/v1/oauth/token';
-const OAUTH_SCOPES = [
-  'org:create_api_key',
-  'user:profile',
-  'user:inference',
-  'user:sessions:claude_code',
-  'user:mcp_servers',
-];
 
 // ── 类型 ─────────────────────────────────────────────────────────────────────
 
@@ -68,6 +61,7 @@ const TAG = '[TokenRefresh]';
 class TokenRefreshManager {
   private _timer: ReturnType<typeof setInterval> | null = null;
   private _refreshing = false;
+  private _grantInvalid = false;
 
   /**
    * 启动定时检查。在 Sidecar 启动时调用一次。
@@ -108,6 +102,15 @@ class TokenRefreshManager {
       const oauth = creds.claudeAiOauth;
       if (!oauth.refreshToken || !oauth.expiresAt) return; // 无 refresh token
 
+      // 用户重新登录后 refresh token 会变，清除 invalid 标记
+      if (this._grantInvalid) {
+        if (oauth.expiresAt > Date.now() + REFRESH_THRESHOLD_MS) {
+          this._grantInvalid = false;
+        } else {
+          return; // refresh token 仍无效，等用户重新登录
+        }
+      }
+
       const timeUntilExpiry = oauth.expiresAt - Date.now();
 
       if (timeUntilExpiry > REFRESH_THRESHOLD_MS) {
@@ -132,31 +135,45 @@ class TokenRefreshManager {
       grant_type: 'refresh_token',
       refresh_token: oauth.refreshToken,
       client_id: OAUTH_CLIENT_ID,
-      scope: (oauth.scopes?.length ? oauth.scopes : OAUTH_SCOPES).join(' '),
     };
 
     const resp = await fetch(OAUTH_TOKEN_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(body).toString(),
       signal: AbortSignal.timeout(15000),
     });
 
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');
       console.error(`${TAG} 刷新失败: HTTP ${resp.status}`, text.slice(0, 200));
+      // refresh token 已失效，停止重试直到用户重新登录
+      if (resp.status === 400 && text.includes('invalid_grant')) {
+        this._grantInvalid = true;
+        console.error(`${TAG} Refresh token 已失效，停止自动刷新。请重新执行 OAuth 登录。`);
+        // 同步更新 providerCredentials 的状态为 expired
+        try {
+          const { setCredential } = await import('@/lib/settings-manager');
+          await setCredential('anthropic', {
+            authMode: 'oauth',
+            oauth: { tokenFile: CREDENTIALS_PATH, lastStatus: 'expired', lastCheckedAt: Date.now() },
+          });
+        } catch { /* non-fatal */ }
+      }
       return;
     }
 
     const data = await resp.json() as TokenResponse;
 
-    if (!data.access_token) {
-      console.error(`${TAG} 刷新响应缺少 access_token`);
+    if (!data.access_token || typeof data.expires_in !== 'number') {
+      console.error(`${TAG} 刷新响应缺少 access_token 或 expires_in`);
       return;
     }
 
-    // 更新凭据
-    creds.claudeAiOauth = {
+    // 写回前重新读取文件，避免覆盖期间的新登录
+    const freshCreds = this._readCredentials() ?? creds;
+
+    freshCreds.claudeAiOauth = {
       accessToken: data.access_token,
       refreshToken: data.refresh_token ?? oauth.refreshToken,
       expiresAt: Date.now() + (data.expires_in * 1000),
@@ -165,9 +182,24 @@ class TokenRefreshManager {
       rateLimitTier: oauth.rateLimitTier ?? null,
     };
 
-    this._writeCredentials(creds);
+    this._writeCredentials(freshCreds);
 
-    const expiresIn = Math.round((data.expires_in ?? 0) / 3600);
+    // 同步更新 providerCredentials 的 oauth 状态
+    try {
+      const { setCredential } = await import('@/lib/settings-manager');
+      await setCredential('anthropic', {
+        authMode: 'oauth',
+        oauth: {
+          tokenFile: CREDENTIALS_PATH,
+          lastStatus: 'authenticated',
+          lastCheckedAt: Date.now(),
+        },
+      });
+    } catch {
+      // 非致命：settings-manager 不可用时静默跳过
+    }
+
+    const expiresIn = Math.round(data.expires_in / 3600);
     console.log(`${TAG} 刷新成功，新 token 有效期 ${expiresIn} 小时`);
   }
 

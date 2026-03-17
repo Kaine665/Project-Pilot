@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
   const {
     agentId, message, sessionId: requestedSessionId, projectKey,
     providerOverride, modelOverride, effortOverride,
-    images, initialTitle, config, parentSessionId, depth,
+    images, initialTitle, config, parentSessionId, depth, background,
   } = body as {
     agentId: string;
     message: string;
@@ -40,6 +40,7 @@ export async function POST(request: NextRequest) {
     config?: SessionConfig;
     parentSessionId?: string;
     depth?: number;
+    background?: boolean;
   };
 
   // 🔒 Security: validate required fields
@@ -135,6 +136,7 @@ export async function POST(request: NextRequest) {
         modelOverride: normalizedModel || undefined,
         effortOverride: normalizedEffort || undefined,
         depth: typeof depth === 'number' ? depth : undefined,
+        background: background || undefined,
       }),
     });
     const data = await res.json() as { runId?: string; error?: string };

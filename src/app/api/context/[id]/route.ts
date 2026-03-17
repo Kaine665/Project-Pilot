@@ -11,22 +11,22 @@ import {
   readJsonFile,
   writeJsonFile,
 } from '@/lib/file-store';
+import { apiHandler } from '@/lib/api-handler';
+import { notFound, conflict } from '@/lib/http-error';
 import type { ContextIndexData } from '@/types';
 import { generateContextSummary } from '../route';
 
 const DEFAULT_INDEX: ContextIndexData = { entries: [] };
 
 /** GET /api/context/[id] — return entry metadata + file content */
-export async function GET(
+export const GET = apiHandler(async (
   _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+  { params },
+) => {
   const { id } = await params;
   const data = await readJsonFile<ContextIndexData>(getContextIndexPath(), DEFAULT_INDEX);
   const entry = data.entries.find(e => e.id === id);
-  if (!entry) {
-    return NextResponse.json({ error: 'Entry not found' }, { status: 404 });
-  }
+  if (!entry) throw notFound('Entry not found');
 
   let content = '';
   try {
@@ -35,20 +35,18 @@ export async function GET(
   } catch { /* file may not exist yet */ }
 
   return NextResponse.json({ entry, content });
-}
+});
 
 /** PATCH /api/context/[id] — update metadata and/or content */
-export async function PATCH(
+export const PATCH = apiHandler(async (
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+  { params },
+) => {
   const { id } = await params;
   const body = await request.json();
   const data = await readJsonFile<ContextIndexData>(getContextIndexPath(), DEFAULT_INDEX);
   const entry = data.entries.find(e => e.id === id);
-  if (!entry) {
-    return NextResponse.json({ error: 'Entry not found' }, { status: 404 });
-  }
+  if (!entry) throw notFound('Entry not found');
 
   // Update metadata fields
   if (body.label !== undefined) entry.label = body.label.trim();
@@ -95,6 +93,13 @@ export async function PATCH(
       delete entry.tags;
     }
   }
+  if (body.coveredPaths !== undefined) {
+    if (Array.isArray(body.coveredPaths) && body.coveredPaths.length) {
+      entry.coveredPaths = body.coveredPaths.filter((p: unknown) => typeof p === 'string' && (p as string).trim()).map((p: string) => p.trim());
+    } else {
+      delete entry.coveredPaths;
+    }
+  }
   entry.updatedAt = new Date().toISOString();
 
   // Handle fileName rename
@@ -105,7 +110,7 @@ export async function PATCH(
 
     // Check uniqueness of new fileName
     if (data.entries.some(e => e.id !== id && e.fileName === newFileName)) {
-      return NextResponse.json({ error: 'fileName already exists' }, { status: 409 });
+      throw conflict('fileName already exists');
     }
 
     try {
@@ -135,19 +140,17 @@ export async function PATCH(
 
   await writeJsonFile(getContextIndexPath(), data);
   return NextResponse.json({ ok: true, entry });
-}
+});
 
 /** DELETE /api/context/[id] — remove from index + delete file (hard delete) */
-export async function DELETE(
+export const DELETE = apiHandler(async (
   _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+  { params },
+) => {
   const { id } = await params;
   const data = await readJsonFile<ContextIndexData>(getContextIndexPath(), DEFAULT_INDEX);
   const idx = data.entries.findIndex(e => e.id === id);
-  if (idx === -1) {
-    return NextResponse.json({ error: 'Entry not found' }, { status: 404 });
-  }
+  if (idx === -1) throw notFound('Entry not found');
 
   const entry = data.entries[idx];
 
@@ -161,4 +164,4 @@ export async function DELETE(
   await writeJsonFile(getContextIndexPath(), data);
 
   return NextResponse.json({ ok: true });
-}
+});

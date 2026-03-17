@@ -18,6 +18,7 @@ import {
   SettingsSafetySection,
   SettingsTitleGenerationSection,
 } from '@/components/settings-sections';
+import type { ModelHealthData } from '@/components/settings-sections';
 import type { CustomProviderConfig, ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort, DangerCategory, DangerActionLevel, DangerDetectorSettings, TitleGenerationChainEntry } from '@/types';
 import { DEFAULT_DANGER_SETTINGS, DEFAULT_TITLE_GENERATION } from '@/types';
 
@@ -113,6 +114,8 @@ export default function SettingsPage() {
   const [oauthSubmitError, setOauthSubmitError] = useState<string | null>(null);
   const [testState, setTestState] = useState<'idle' | 'testing' | 'success' | 'failed'>('idle');
   const [testMessage, setTestMessage] = useState('');
+  const [modelHealthData, setModelHealthData] = useState<ModelHealthData | null>(null);
+  const [healthCheckRunning, setHealthCheckRunning] = useState(false);
 
   // Data management state
   const [dataDir, setDataDir] = useState('');
@@ -304,7 +307,36 @@ export default function SettingsPage() {
     }
   }, [t]);
 
+  // Fetch model health data
+  const fetchModelHealth = useCallback(async () => {
+    try {
+      const res = await fetch('/api/settings/model-health');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.ok && json.data) setModelHealthData(json.data as ModelHealthData);
+      }
+    } catch {
+      // ignore — health data is best-effort
+    }
+  }, []);
+
+  const handleRunHealthCheck = useCallback(async () => {
+    setHealthCheckRunning(true);
+    try {
+      const res = await fetch('/api/settings/model-health', { method: 'POST' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.ok && json.data) setModelHealthData(json.data as ModelHealthData);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setHealthCheckRunning(false);
+    }
+  }, []);
+
   useEffect(() => { fetchSettings(); }, [fetchSettings]);
+  useEffect(() => { fetchModelHealth(); }, [fetchModelHealth]);
   useEffect(() => {
     if (activeSection === 'data') fetchDataInfo();
   }, [activeSection, fetchDataInfo]);
@@ -526,6 +558,11 @@ export default function SettingsPage() {
         setLoginFlowActive(false);
         return;
       }
+      // Anthropic PKCE: auth-login 直接返回 loginUrl
+      const data = await res.json();
+      if (data.loginUrl) {
+        setLoginUrl(data.loginUrl);
+      }
     } catch (err) {
       console.error('Failed to trigger login:', err);
       setLoginPending(false);
@@ -573,9 +610,12 @@ export default function SettingsPage() {
     }
   };
 
-  // 轮询 auth-url 获取 OAuth 链接 / device code
+  // 轮询 auth-url 获取 OAuth 链接 / device code（主要用于 OpenAI）
+  // Anthropic PKCE: URL 已在 triggerOAuthLogin 中设置，轮询仅用于检测 session 状态
   useEffect(() => {
     if (!loginFlowActive) return;
+    // Anthropic 不需要轮询（URL 同步返回，code 由用户手动提交）
+    if (provider !== 'openai') return;
     let wasAlive = true;
     const poll = async () => {
       try {
@@ -583,10 +623,9 @@ export default function SettingsPage() {
         const data = await res.json();
         if (data.loginUrl) setLoginUrl(data.loginUrl);
         if (data.loginCode) setLoginCode(data.loginCode);
-        if (!data.processAlive) {
+        if (!data.sessionActive) {
           setLoginProcessAlive(false);
-          // OpenAI：进程结束表示用户已在浏览器完成授权，自动刷新状态
-          if (wasAlive && provider === 'openai') {
+          if (wasAlive) {
             wasAlive = false;
             setLoginFlowActive(false);
             setLoginUrl(null);
@@ -624,7 +663,7 @@ export default function SettingsPage() {
         const err = await res.json();
         const msg = err?.error || '';
         setOauthSubmitError(
-          msg.includes('No active login process') || msg.includes('login process')
+          msg.includes('No active') || msg.includes('session')
             ? t('oauthProcessGone')
             : msg || t('oauthSubmitFailed')
         );
@@ -784,6 +823,9 @@ export default function SettingsPage() {
                 customProviders={customProviders}
                 onAddCustomProvider={() => setShowAddCustomProvider(true)}
                 onDeleteCustomProvider={handleDeleteCustomProvider}
+                modelHealthData={modelHealthData}
+                healthCheckRunning={healthCheckRunning}
+                onRunHealthCheck={handleRunHealthCheck}
               />
             )}
 

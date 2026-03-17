@@ -1,63 +1,95 @@
 import { NextResponse } from 'next/server';
-import { loginProcess, loginProvider } from '@/lib/auth-login-state';
-
-/**
- * 从用户输入中提取授权码。
- * 支持：纯授权码、完整回调 URL（?code=xxx 或 #code=xxx）。
- */
-function extractCode(input: string): string {
-  const trimmed = input.trim();
-  if (!trimmed) return '';
-  try {
-    const url = new URL(trimmed);
-    const fromQuery = url.searchParams.get('code');
-    if (fromQuery) return fromQuery;
-    const hash = url.hash.replace(/^#/, '');
-    const fromHash = new URLSearchParams(hash).get('code');
-    if (fromHash) return fromHash;
-  } catch {
-    // 不是 URL，当作纯授权码
-  }
-  return trimmed;
-}
+import { extractAuthCode, exchangeCodeForTokens, saveTokens } from '@/lib/oauth-flow';
+import {
+  getPkceSession,
+  setPkceSession,
+  getLoginProvider,
+  setLoginProvider,
+} from '@/lib/auth-login-state';
+import { setCredential } from '@/lib/settings-manager';
+import path from 'path';
+import os from 'os';
 
 /**
  * POST /api/settings/auth-code
- * 把用户从浏览器回调页面复制的授权码（或完整回调 URL）写入 claude auth login 的 stdin。
+ * 用户从浏览器授权页复制的授权码，后端用 PKCE code_verifier 交换 token。
+ *
+ * Body: { code: string }
  */
 export async function POST(req: Request) {
   const { code } = await req.json() as { code?: string };
 
-  const extracted = extractCode(code ?? '');
+  const extracted = extractAuthCode(code ?? '');
   if (!extracted) {
     return NextResponse.json({ error: 'code is required' }, { status: 400 });
   }
 
-  // Manual code submission only works for Anthropic OAuth flow
-  if (loginProvider && loginProvider !== 'anthropic') {
+  const provider = getLoginProvider();
+
+  // 仅 Anthropic 支持 PKCE 代码提交
+  if (provider && provider !== 'anthropic') {
     return NextResponse.json(
-      { error: `Manual code submission is not supported for ${loginProvider}. Use the device code flow instead.` },
+      { error: `Manual code submission is not supported for ${provider}. Use the device code flow instead.` },
       { status: 400 },
     );
   }
 
-  if (!loginProcess || loginProcess.killed) {
-    return NextResponse.json({ error: 'No active login process. Please click "Login" first.' }, { status: 409 });
+  const session = getPkceSession();
+  if (!session) {
+    return NextResponse.json(
+      { error: 'No active OAuth session. Please click "Login" first.' },
+      { status: 409 },
+    );
   }
 
-  const stdin = loginProcess.stdin;
-  if (!stdin || stdin.destroyed) {
-    return NextResponse.json({ error: 'Login process stdin not available.' }, { status: 409 });
+  // 会话超时检查（10 分钟）
+  if (Date.now() - session.createdAt > 10 * 60 * 1000) {
+    setPkceSession(null);
+    setLoginProvider(null);
+    return NextResponse.json(
+      { error: 'OAuth session expired. Please click "Login" to start a new session.' },
+      { status: 410 },
+    );
   }
 
   try {
-    const eol = process.platform === 'win32' ? '\r\n' : '\n';
-    stdin.write(extracted + eol);
-    stdin.end();
-    return NextResponse.json({ success: true });
+    const tokens = await exchangeCodeForTokens(extracted, session.codeVerifier);
+    saveTokens(tokens);
+
+    // 同步更新 providerCredentials
+    await setCredential('anthropic', {
+      authMode: 'oauth',
+      oauth: {
+        tokenFile: path.join(os.homedir(), '.claude', '.credentials.json'),
+        lastStatus: 'authenticated',
+        lastCheckedAt: Date.now(),
+      },
+      lastVerifiedAt: Date.now(),
+    });
+
+    // 清理 PKCE 状态
+    setPkceSession(null);
+    setLoginProvider(null);
+
+    return NextResponse.json({
+      success: true,
+      message: 'Authentication successful. Tokens saved.',
+    });
   } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Token exchange failed';
+
+    // 授权码一次性使用 — 如果交换失败，需要重新登录
+    if (msg.includes('invalid_grant') || msg.includes('expired')) {
+      setPkceSession(null);
+      setLoginProvider(null);
+      return NextResponse.json(
+        { error: 'Authorization code expired or already used. Please click "Login" to try again.' },
+        { status: 400 },
+      );
+    }
+
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed to write code' },
+      { error: msg },
       { status: 500 },
     );
   }

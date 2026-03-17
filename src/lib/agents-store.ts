@@ -32,6 +32,7 @@ export interface AgentMutationInput {
   triggerHints?: string[];
   defaultProvider?: Agent['defaultProvider'];
   defaultModel?: string;
+  contextStrategy?: 'additive' | 'exclusive';
 }
 
 export interface CreateAgentInput extends Required<Pick<AgentMutationInput, 'name'>> {
@@ -46,6 +47,7 @@ export interface CreateAgentInput extends Required<Pick<AgentMutationInput, 'nam
   triggerHints?: string[];
   defaultProvider?: Agent['defaultProvider'];
   defaultModel?: string;
+  contextStrategy?: 'additive' | 'exclusive';
 }
 
 function normalizeOptionalString(value?: string): string | undefined {
@@ -206,6 +208,7 @@ export async function createAgent(input: CreateAgentInput): Promise<Agent> {
     projectKey: normalizeOptionalString(input.projectKey),
     defaultProvider: input.defaultProvider || undefined,
     defaultModel: normalizeOptionalString(input.defaultModel),
+    contextStrategy: input.contextStrategy || undefined,
     createdAt: now,
     updatedAt: now,
   };
@@ -242,6 +245,7 @@ export async function updateAgent(id: string, input: AgentMutationInput): Promis
   if (input.projectKey !== undefined) agent.projectKey = normalizeOptionalString(input.projectKey);
   if (input.defaultProvider !== undefined) agent.defaultProvider = input.defaultProvider || undefined;
   if (input.defaultModel !== undefined) agent.defaultModel = normalizeOptionalString(input.defaultModel);
+  if (input.contextStrategy !== undefined) agent.contextStrategy = input.contextStrategy || undefined;
 
   if (input.systemPrompt !== undefined) {
     const promptText = input.systemPrompt.trim();

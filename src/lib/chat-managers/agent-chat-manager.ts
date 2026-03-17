@@ -11,13 +11,11 @@
  * - StreamParser → SdkEventAdapter
  */
 
-import { writeFile, unlink } from 'fs/promises';
-import { tmpdir } from 'os';
-import { join } from 'path';
-import { randomBytes } from 'crypto';
 import { getAppWorkingDir } from '@/lib/app-paths';
-import { getPromptFilePath, getContextIndexPath, readJsonFile } from '@/lib/file-store';
-import type { ContextIndexData } from '@/types';
+import { getPromptFilePath, getContextIndexPath, getContextDir, getTodosPath, readJsonFile } from '@/lib/file-store';
+import { matchCodeCards, buildCodeCardIndex } from '@/lib/code-card-matcher';
+import { listRunningTasks } from '@/lib/active-tasks';
+import type { ContextIndexData, TodosData } from '@/types';
 import { resolveSystemPrompt, createRuntimePromptCopy } from '@/lib/agent-prompt-store';
 import { resolveSkillsForSession } from '@/lib/skill-store';
 import { getSettings } from '@/lib/settings-manager';
@@ -25,17 +23,19 @@ import { createAgentRunner, type IAgentRunner } from './agent-runner';
 import { detectDangerousCommand } from '@/lib/danger-detector';
 import type { ChatSSEEvent, ContentBlock, Agent, AgentCapabilities, ProviderId } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_DANGER_SETTINGS } from '@/types';
-import type { AgentChatSession, SessionConfig } from '@/types/agent-chat';
+import type { AgentChatSession, SessionConfig, SessionCheckpoint } from '@/types/agent-chat';
 import type { ResourceRef, InlineTextRef, FlowContextRef, ReferenceTurnsRef } from '@/types/resource';
 import { resourceRegistry } from '@/lib/resource-registry';
+import { formatConversationHistory } from './conversation-history';
 import '@/lib/resource-loaders'; // side-effect: registers non-action loaders
 import '@/lib/agent-actions';    // side-effect: registers actions + their loaders
 import { actionRegistry } from '@/lib/agent-actions';
 import { estimateTokens } from '@/lib/token-estimate';
 import { migrateAgentToResources } from '@/lib/resource-migration';
 import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
-import { checkSessionHealth, buildGuardMessage } from './session-health-guard';
-import { shouldGenerateTitle, generateSessionTitle } from '@/lib/session-title-generator';
+import { runSatelliteTasks } from '@/lib/satellite-tasks';
+import '@/lib/satellite-tasks'; // side-effect: registers all satellite tasks
+import type { SatelliteContext } from '@/lib/satellite-tasks';
 import type { RunStatus, RunStatusInfo } from './types';
 
 // Re-export store functions so existing callers don't break during migration
@@ -50,6 +50,8 @@ import {
   incrementGuardRetryCountOnDisk,
   deleteSessionFromDisk,
   updateConfigOnDisk,
+  writeStreamingDraft,
+  deleteStreamingDraft,
 } from './agent-chat-session-store';
 
 // ── Types ──
@@ -111,16 +113,28 @@ export interface AgentChatRun {
   config?: SessionConfig;
   parentSessionId?: string;
   importedTurnIndices?: number[];
-  _tempImagePaths?: string[];
+  _images?: ImageAttachment[];
   _guardRetryCount?: number;
   /** 临时测试会话，不持久化到会话列表 */
   _ephemeral?: boolean;
+  /** 会话检查点（context window 快满时由 AI 生成） */
+  checkpoint?: import('@/types/agent-chat').SessionCheckpoint;
+  /** Throttle timestamp for streaming draft writes (crash recovery) */
+  _lastDraftWriteTs?: number;
+
+  /**
+   * Resolves when consumeRunnerStream() (including finalizeRun) has completed.
+   * Used by stop() to wait for graceful shutdown before returning to the caller.
+   */
+  _completionPromise?: Promise<void>;
+  _resolveCompletion?: () => void;
 }
 
 // ── Constants ──
 
 const SWEEP_INTERVAL_MS = 60_000;
 const COMPLETED_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const STREAMING_DRAFT_INTERVAL_MS = 2_000; // Write streaming draft every 2s for crash recovery
 const LOG_PREFIX = '[AgentChat]';
 
 // ── AgentChatManager ──
@@ -153,6 +167,8 @@ class AgentChatManager {
     modelOverride?: string,
     effortOverride?: string,
     ephemeral?: boolean,
+    _depth?: number,
+    background?: boolean,
   ): Promise<string> {
     const agent = await loadAgent(agentId);
 
@@ -222,25 +238,22 @@ class AgentChatManager {
     // Build prompt
     const sessionProjectKey = flowContext?.projectKey ?? existing?.projectKey;
 
-    let promptContent: string;
-    if (flowContext) {
-      promptContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext, persistedConfig, sessionId);
-    } else {
-      promptContent = await buildAgentChatPrompt(agent, message, persistedConfig, sessionId, sessionProjectKey);
+    // 当 resume 不可用但存在历史消息时，将历史对话注入 prompt
+    // 这样即使 SDK 会话是全新的，AI 也能知道之前聊过什么
+    const existingMessages = existing?.messages ?? [];
+    const conversationHistory = (!resumeSessionId && existingMessages.length > 0)
+      ? formatConversationHistory(existingMessages, existing?.checkpoint ?? undefined)
+      : undefined;
+
+    if (conversationHistory && !resumeSessionId && existingMessages.length > 0) {
+      console.log(`${LOG_PREFIX} [${sessionId}] Resume unavailable, injecting ${existingMessages.length} messages as conversation history`);
     }
 
-    // Write images to temp files
-    const tempPaths: string[] = [];
-    const extMap: Record<string, string> = {
-      'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp',
-    };
-    if (images && images.length > 0) {
-      for (const img of images) {
-        const ext = extMap[img.mediaType] ?? 'png';
-        const tmpPath = join(tmpdir(), `agent-img-${randomBytes(8).toString('hex')}.${ext}`);
-        await writeFile(tmpPath, Buffer.from(img.data, 'base64'));
-        tempPaths.push(tmpPath);
-      }
+    let promptContent: string;
+    if (flowContext) {
+      promptContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext, persistedConfig, sessionId, conversationHistory ?? undefined);
+    } else {
+      promptContent = await buildAgentChatPrompt(agent, message, persistedConfig, sessionId, sessionProjectKey, conversationHistory ?? undefined);
     }
 
     // Merge capabilities
@@ -258,6 +271,7 @@ class AgentChatManager {
         config: persistedConfig,
         parentSessionId: parentSessionId ?? existing?.parentSessionId,
         importedTurnIndices: undefined,
+        background: background || undefined,
       });
     }
 
@@ -281,7 +295,7 @@ class AgentChatManager {
       messages,
       config: persistedConfig,
       parentSessionId: parentSessionId ?? existing?.parentSessionId,
-      _tempImagePaths: tempPaths,
+      _images: images,
       _guardRetryCount: existing?._guardRetryCount,
       _ephemeral: ephemeral,
     };
@@ -308,9 +322,10 @@ class AgentChatManager {
       });
       run.runner = runner;
 
-      this.consumeRunnerStream(run, runner, promptContent).catch(err => {
+      run._completionPromise = new Promise<void>(resolve => { run._resolveCompletion = resolve; });
+      this.consumeRunnerStream(run, runner, promptContent, images).catch(err => {
         console.error(`${LOG_PREFIX} Runner stream error for ${sessionId}:`, err);
-      });
+      }).finally(() => { run._resolveCompletion?.(); });
     } catch (err) {
       this.trackAndEmit(run, { type: 'error', message: `Failed to start runner: ${err instanceof Error ? err.message : String(err)}` });
       this.trackAndEmit(run, { type: 'done' });
@@ -413,9 +428,10 @@ class AgentChatManager {
       });
       run.runner = runner;
 
+      run._completionPromise = new Promise<void>(resolve => { run._resolveCompletion = resolve; });
       this.consumeRunnerStream(run, runner, promptContent).catch(err => {
         console.error(`${LOG_PREFIX} Runner stream error for guest ${guestSessionId}:`, err);
-      });
+      }).finally(() => { run._resolveCompletion?.(); });
     } catch (err) {
       this.trackAndEmit(run, { type: 'error', message: `Failed to start runner: ${err instanceof Error ? err.message : String(err)}` });
       this.trackAndEmit(run, { type: 'done' });
@@ -476,6 +492,14 @@ class AgentChatManager {
     run.status = 'stopped';
     run.runner?.abort();
     run.runner = null;
+
+    // Wait for consumeRunnerStream → finalizeRun to complete so that
+    // the session is fully persisted before we return to the caller.
+    // Timeout after 8s to avoid hanging if something goes wrong.
+    if (run._completionPromise) {
+      const timeout = new Promise<void>(resolve => setTimeout(resolve, 8_000));
+      await Promise.race([run._completionPromise, timeout]);
+    }
     return true;
   }
 
@@ -538,9 +562,10 @@ class AgentChatManager {
     run: AgentChatRun,
     runner: IAgentRunner,
     prompt: string,
+    images?: ImageAttachment[],
   ): Promise<void> {
     try {
-      for await (const event of runner.stream(prompt)) {
+      for await (const event of runner.stream(prompt, { images })) {
         if (run.status === 'stopped') break;
         this.trackAndEmit(run, event);
       }
@@ -549,6 +574,13 @@ class AgentChatManager {
         const errMsg = err instanceof Error ? err.message : String(err);
         this.trackAndEmit(run, { type: 'error', message: errMsg });
       }
+    }
+
+    // Write a final draft snapshot before entering finalizeRun(),
+    // which may take time (title generation, action processing).
+    // If the server crashes during finalization, this ensures the full assistant text is recoverable.
+    if (run.assistantText) {
+      writeStreamingDraft(run.sessionId, run.assistantText).catch(() => {});
     }
 
     const aborted = run.status === 'stopped';
@@ -566,12 +598,8 @@ class AgentChatManager {
    * 清理临时文件 → 处理 Agent Actions → 生成标题 → 持久化 → emit done。
    */
   private async finalizeRun(run: AgentChatRun, aborted: boolean): Promise<void> {
-    // Clean up temp image files
-    if (run._tempImagePaths) {
-      for (const tmpPath of run._tempImagePaths) {
-        unlink(tmpPath).catch(() => {});
-      }
-    }
+    // Release image references (no longer needed after stream completes)
+    run._images = undefined;
 
     // Process all agent actions: parse tags, execute side-effects, strip tags
     if (run.assistantText) {
@@ -581,6 +609,7 @@ class AgentChatManager {
         projectKey: run.projectKey,
         emit: (event: ChatSSEEvent) => this.trackAndEmit(run, event),
         setSessionTitle: (title: string) => { if (!run.sessionTitle) run.sessionTitle = title; },
+        setCheckpoint: (checkpoint: SessionCheckpoint) => { run.checkpoint = checkpoint; },
       };
 
       const cleaned = await actionRegistry.processResponse(run.assistantText, actionCtx);
@@ -598,20 +627,7 @@ class AgentChatManager {
         contentBlocks: cleanedBlocks.length > 0 ? cleanedBlocks : undefined,
       });
 
-      // Async title generation
-      const assistantTurnCount = run.messages.filter(m => m.role === 'assistant').length;
-      if (shouldGenerateTitle(assistantTurnCount)) {
-        try {
-          const aiTitle = await generateSessionTitle(
-            run.messages.map(m => ({ role: m.role, content: m.content })),
-            run.sessionTitle,
-          );
-          if (aiTitle) run.sessionTitle = aiTitle;
-        } catch (err) {
-          console.error(`${LOG_PREFIX} Title generation failed:`, err);
-        }
-      }
-
+      // Fallback title (non-AI, sync) — satellite task will generate a better one later
       if (!run.sessionTitle) {
         const firstUserMsg = run.messages.find(m => m.role === 'user')?.content;
         const defaultTitle = run.parentSessionId ? '旁听会话' : '新会话';
@@ -641,6 +657,13 @@ class AgentChatManager {
       run.claudeSessionId = undefined;
     }
 
+    // When user aborts mid-stream, the SDK session may be in an inconsistent state
+    // (e.g. tool call started but never completed). Clear the session ID to force
+    // a fresh session on next message, avoiding resume into a broken state.
+    if (aborted) {
+      run.claudeSessionId = undefined;
+    }
+
     try {
       await this.persistAfterClose(run, aborted);
     } catch (err) {
@@ -648,6 +671,13 @@ class AgentChatManager {
     }
 
     this.trackAndEmit(run, { type: 'done' });
+
+    // Fire-and-forget: run all registered satellite tasks (title, health guard, task card, etc.)
+    if (!run._ephemeral) {
+      this.runSatelliteTasks(run).catch((err) => {
+        console.error(`${LOG_PREFIX} Satellite tasks error:`, err);
+      });
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -662,6 +692,14 @@ class AgentChatManager {
         last.text += event.text;
       } else {
         run.contentBlocks.push({ type: 'text', text: event.text });
+      }
+
+      // Throttled streaming draft write for crash recovery.
+      // If the server dies mid-stream, loadSession() will recover partial text from the draft file.
+      const now = Date.now();
+      if (!run._lastDraftWriteTs || now - run._lastDraftWriteTs >= STREAMING_DRAFT_INTERVAL_MS) {
+        run._lastDraftWriteTs = now;
+        writeStreamingDraft(run.sessionId, run.assistantText).catch(() => {});
       }
     } else if (event.type === 'tool_use_start') {
       const tc: ChatToolCall = {
@@ -739,49 +777,80 @@ class AgentChatManager {
       guardRetryCount: run._guardRetryCount,
       parentSessionId: run.parentSessionId,
       importedTurnIndices: run.importedTurnIndices,
+      checkpoint: run.checkpoint,
     };
     await persistSessionToDisk(session);
+  }
 
-    // Session Health Guard
-    if (
-      (run.status === 'failed' || run.status === 'stopped')
-      && !(run._guardRetryCount && run._guardRetryCount >= 1)
-    ) {
-      const tailText = run.assistantText.slice(-100);
-      checkSessionHealth({
-        sessionId: run.sessionId,
-        agentId: run.agentId,
-        status: run.status,
-        tailText,
-        guardRetryCount: run._guardRetryCount ?? 0,
-      }).then(async (result) => {
-        if (!result?.abnormal) return;
+  /**
+   * Build a SatelliteContext and run all registered satellite tasks.
+   * Called fire-and-forget after emit 'done'.
+   */
+  private async runSatelliteTasks(run: AgentChatRun): Promise<void> {
+    const ctx: SatelliteContext = {
+      sessionId: run.sessionId,
+      agentId: run.agentId,
+      projectKey: run.projectKey,
+      messages: run.messages.map(m => ({ role: m.role, content: m.content })),
+      assistantText: run.assistantText,
+      assistantTurnCount: run.messages.filter(m => m.role === 'assistant').length,
+      runStatus: run.status as RunStatus,
+      guardRetryCount: run._guardRetryCount ?? 0,
+      sessionTitle: run.sessionTitle,
 
-        const memRun = this.runs.get(run.sessionId);
-        // 竞态：用户可能在 Health Guard 检查期间已发送新消息，会话已在运行
-        if (memRun?.status === 'running') {
-          console.log(`${LOG_PREFIX} Session ${run.sessionId} already running (user retried), skip resume`);
-          return;
-        }
-        if (memRun) {
-          memRun._guardRetryCount = (memRun._guardRetryCount ?? 0) + 1;
-        }
-        await incrementGuardRetryCountOnDisk(run.sessionId);
+      emit: (event: ChatSSEEvent) => this.trackAndEmit(run, event),
 
-        const guardMsg = buildGuardMessage(run.status, result.reason);
-        try {
-          await this.start(run.sessionId, run.agentId, guardMsg);
-          console.log(`${LOG_PREFIX} Health guard resumed session ${run.sessionId}`);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (msg.includes('already running')) {
-            console.log(`${LOG_PREFIX} Session ${run.sessionId} already running (race), skip resume`);
-          } else {
-            console.error(`${LOG_PREFIX} Health guard failed to resume session:`, err);
+      setSessionTitle: (title: string) => {
+        run.sessionTitle = title;
+        this.trackAndEmit(run, { type: 'session_title_set', title });
+        // Re-persist updated title to disk (fire-and-forget)
+        persistSessionToDisk({
+          id: run.sessionId,
+          agentId: run.agentId,
+          projectKey: run.projectKey,
+          title,
+          messages: run.messages,
+          claudeSessionId: run.claudeSessionId,
+          createdAt: new Date(run.startedAt).toISOString(),
+          updatedAt: new Date().toISOString(),
+          config: run.config,
+          guardRetryCount: run._guardRetryCount,
+          parentSessionId: run.parentSessionId,
+          importedTurnIndices: run.importedTurnIndices,
+          checkpoint: run.checkpoint,
+        }).catch(() => {});
+      },
+
+      resumeSession: (message: string) => {
+        // Defer until after all satellite tasks complete
+        setTimeout(async () => {
+          try {
+            const memRun = this.runs.get(run.sessionId);
+            // Race condition: user may have already started a new message
+            if (memRun?.status === 'running') {
+              console.log(`${LOG_PREFIX} Session ${run.sessionId} already running (user retried), skip resume`);
+              return;
+            }
+            if (memRun) {
+              memRun._guardRetryCount = (memRun._guardRetryCount ?? 0) + 1;
+            }
+            await incrementGuardRetryCountOnDisk(run.sessionId);
+
+            await this.start(run.sessionId, run.agentId, message);
+            console.log(`${LOG_PREFIX} Satellite task resumed session ${run.sessionId}`);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.includes('already running')) {
+              console.log(`${LOG_PREFIX} Session ${run.sessionId} already running (race), skip resume`);
+            } else {
+              console.error(`${LOG_PREFIX} Satellite resume failed:`, err);
+            }
           }
-        }
-      }).catch(err => console.error(`${LOG_PREFIX} Health guard error:`, err));
-    }
+        }, 0);
+      },
+    };
+
+    await runSatelliteTasks(ctx);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -858,13 +927,18 @@ async function buildResourcePrompt(
     merged.push({ type: 'project-prompt', id: '_project', priority: 2 });
   }
 
-  if (projectKey) {
+  // Load context index (hoisted — needed by both auto-inject and code cards)
+  const ctxIndex = projectKey
+    ? await readJsonFile<ContextIndexData>(getContextIndexPath(), { entries: [] })
+    : { entries: [] };
+
+  // Auto-inject project-level contexts (skip when agent uses 'exclusive' strategy)
+  if (projectKey && agent.contextStrategy !== 'exclusive') {
     const existingCtxIds = new Set([
       ...(baseRefs.filter(r => r.type === 'context').map(r => r.id)),
       ...(sessionConfig?.contextIds ?? []),
     ]);
     const agentTags = agent.contextTags;
-    const ctxIndex = await readJsonFile<ContextIndexData>(getContextIndexPath(), { entries: [] });
     for (const entry of ctxIndex.entries) {
       if (entry.projectKey !== projectKey) continue;
       if (entry.status && entry.status !== 'active') continue;
@@ -874,7 +948,79 @@ async function buildResourcePrompt(
     }
   }
 
+  // ── Auto-inject Code Cards matching active task scope ──
+  {
+    const allCodeCards = ctxIndex.entries.filter(
+      e => e.coveredPaths?.length &&
+        e.tags?.includes('code-card') &&
+        (!e.status || e.status === 'active'),
+    );
+
+    if (allCodeCards.length > 0) {
+      // Try to find active task scope for this session
+      let scopePaths: string[] = [];
+      if (sessionId) {
+        try {
+          const runningTasks = await listRunningTasks();
+          const myTask = runningTasks.find(t => t.sessionId === sessionId);
+          if (myTask?.scope?.length) {
+            scopePaths = myTask.scope;
+          }
+        } catch { /* active-tasks may not exist yet */ }
+      }
+
+      const matched = scopePaths.length > 0
+        ? matchCodeCards(scopePaths, ctxIndex.entries)
+        : [];
+
+      if (matched.length > 0) {
+        // Scope matched → inject full content at high priority
+        for (const card of matched) {
+          merged.push({ type: 'context', id: card.id, priority: 15, injectMode: 'full' });
+        }
+      } else {
+        // No scope match (cold start or unrelated task) → inject index table
+        const indexTable = buildCodeCardIndex(allCodeCards, getContextDir());
+        if (indexTable) {
+          const indexRef: InlineTextRef = {
+            type: 'inline-text',
+            id: '_code-card-index',
+            priority: 40,
+            label: 'Code Cards 索引',
+            inlineContent: indexTable,
+          };
+          merged.push(indexRef);
+        }
+      }
+
+      // Append update reminder (low priority, always present when code cards exist)
+      const reminderRef: InlineTextRef = {
+        type: 'inline-text',
+        id: '_code-card-update-reminder',
+        priority: 90,
+        label: 'Code Card 维护提醒',
+        inlineContent: '任务完成后，如果你修改了 Code Card 覆盖范围内的文件（新增函数、改变数据流、修复重要 bug），请更新对应的 Code Card 内容，保持代码理解层的准确性。使用 PATCH /api/context/[id] 更新内容。',
+      };
+      merged.push(reminderRef);
+    }
+  }
+
   if (extraRefs) merged.push(...extraRefs);
+
+  // ── Phase 2: Merge contextRefs from active todos assigned to this agent ──
+  {
+    const todosData = await readJsonFile<TodosData>(getTodosPath(), { todos: [] });
+    const activeTodos = todosData.todos.filter(t =>
+      t.status === 'in_progress' &&
+      t.agentId === agent.id &&
+      t.contextRefs?.length,
+    );
+    for (const todo of activeTodos) {
+      for (const ref of todo.contextRefs!) {
+        merged.push({ ...ref, priority: ref.priority ?? 33 });
+      }
+    }
+  }
 
   // ── Auto-inject scoped skills (global → project → agent cascade) ──
   {
@@ -891,6 +1037,11 @@ async function buildResourcePrompt(
   }
 
   if (sessionConfig) {
+    // Phase 4: unified resourceRefs take precedence over legacy contextIds/skillNames
+    if (sessionConfig.resourceRefs?.length) {
+      merged.push(...sessionConfig.resourceRefs);
+    }
+    // Legacy fields still work (backward compatible)
     if (sessionConfig.contextIds?.length) {
       for (const cid of sessionConfig.contextIds) {
         merged.push({ type: 'context', id: cid, priority: 35 });
@@ -942,11 +1093,13 @@ async function buildResourcePrompt(
 
 // ── Prompt Builders (powered by Resource Registry) ──
 
-async function buildAgentChatPrompt(agent: Agent, message: string, sessionConfig?: SessionConfig, sessionId?: string, projectKey?: string): Promise<string> {
+async function buildAgentChatPrompt(agent: Agent, message: string, sessionConfig?: SessionConfig, sessionId?: string, projectKey?: string, conversationHistory?: string): Promise<string> {
   const resourcePrompt = await buildResourcePrompt(agent, undefined, sessionConfig, sessionId, projectKey);
 
-  return `${resourcePrompt}
+  const historyBlock = conversationHistory ? `\n${conversationHistory}\n` : '';
 
+  return `${resourcePrompt}
+${historyBlock}
 ---
 
 用户消息：${message}`;
@@ -958,6 +1111,7 @@ async function buildAgentChatPromptWithFlowContext(
   flowContext: FlowContext,
   sessionConfig?: SessionConfig,
   sessionId?: string,
+  conversationHistory?: string,
 ): Promise<string> {
   const { projectKey, projectName, flowDataPath } = flowContext;
 
@@ -973,8 +1127,10 @@ async function buildAgentChatPromptWithFlowContext(
 
   const resourcePrompt = await buildResourcePrompt(agent, [flowRef], sessionConfig, sessionId, projectKey);
 
-  return `${resourcePrompt}
+  const historyBlock = conversationHistory ? `\n${conversationHistory}\n` : '';
 
+  return `${resourcePrompt}
+${historyBlock}
 ---
 
 用户消息：${message}`;

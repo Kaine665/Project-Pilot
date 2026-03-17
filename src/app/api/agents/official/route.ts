@@ -28,6 +28,7 @@ interface OfficialAgentPayload {
   triggerHints?: string[];
   defaultProvider?: Agent['defaultProvider'];
   defaultModel?: string;
+  contextStrategy?: 'additive' | 'exclusive';
 }
 
 interface OfficialAgentsUpsertRequest {

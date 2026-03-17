@@ -6,10 +6,20 @@
 import { satelliteRegistry } from './registry';
 import { titleGenerationTask } from './tasks/title-generation';
 import { healthGuardTask } from './tasks/health-guard';
+import { knowledgeExtractionTask } from './tasks/knowledge-extraction';
+import { topicCompletionTask } from './tasks/topic-completion';
+import { todoAutoCompleteTask } from './tasks/todo-auto-complete';
+import { activeTaskCleanupTask } from './tasks/active-task-cleanup';
+import { taskCardGenerationTask } from './tasks/task-card-generation';
 
 // Register all built-in satellite tasks
+satelliteRegistry.register(activeTaskCleanupTask);
+satelliteRegistry.register(taskCardGenerationTask);
 satelliteRegistry.register(titleGenerationTask);
 satelliteRegistry.register(healthGuardTask);
+satelliteRegistry.register(knowledgeExtractionTask);
+satelliteRegistry.register(topicCompletionTask);
+satelliteRegistry.register(todoAutoCompleteTask);
 
 // Re-exports
 export { satelliteRegistry } from './registry';

@@ -11,6 +11,7 @@
  */
 
 import type { ChatSSEEvent } from '@/types';
+import type { SessionCheckpoint } from '@/types/agent-chat';
 
 // ── Action execution context ──
 
@@ -22,6 +23,8 @@ export interface ActionContext {
   emit: (event: ChatSSEEvent) => void;
   /** Set the session title (used by session-title action) */
   setSessionTitle: (title: string) => void;
+  /** Save a session checkpoint for context-window continuity */
+  setCheckpoint: (checkpoint: SessionCheckpoint) => void;
 }
 
 // ── AgentAction interface ──

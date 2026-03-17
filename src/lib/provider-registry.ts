@@ -1,12 +1,95 @@
 /**
  * AI 供应商注册表 — 前后端共用。
  *
+ * 数据源：src/data/providers-registry.json（纯数据，改配置不碰代码）
+ * 校验：启动时用 Zod schema 校验，不合规直接报错，防止配置被无意改坏。
+ *
  * 每个供应商预设了 baseUrl、可选模型列表、认证方式说明。
  * 第三方供应商均使用原生 Anthropic 兼容端点，无需代理。
  * 自定义供应商通过 customProviders 传入，转为 ProviderPreset。
  */
 
+import { z } from 'zod';
 import type { ProviderId, CustomProviderConfig } from '@/types';
+import registryJson from '@/data/providers-registry.json';
+
+// ─── Zod Schemas ───────────────────────────────────────────────
+
+const ModelOptionSchema = z.object({
+  id: z.string().min(1, 'Model id must not be empty'),
+  label: z.string().min(1, 'Model label must not be empty'),
+  contextWindow: z.number().int().positive().optional(),
+});
+
+const ProviderEntrySchema = z.object({
+  id: z.string().min(1),
+  nameKey: z.string().min(1),
+  baseUrl: z.string().url().optional(),
+  candidateBaseUrls: z.array(z.string().url()).optional(),
+  models: z.array(ModelOptionSchema),
+  supportsOAuth: z.boolean(),
+  editableBaseUrl: z.boolean(),
+  editableModel: z.boolean(),
+  apiKeyPlaceholder: z.string().optional(),
+  useApiKeyForAuth: z.boolean().optional(),
+  apiProtocol: z.enum(['anthropic', 'openai']).optional(),
+  authMethod: z.enum(['AUTH_TOKEN', 'API_KEY']).optional(),
+  extraEnv: z.record(z.string(), z.string()).optional(),
+});
+
+const FallbackRuleSchema = z.object({
+  pattern: z.string().min(1),
+  contextWindow: z.number().int().positive(),
+});
+
+const RegistrySchema = z.object({
+  providers: z.array(ProviderEntrySchema).min(1, 'At least one provider required'),
+  contextWindowFallbacks: z.object({
+    rules: z.array(FallbackRuleSchema),
+    containsRules: z.array(FallbackRuleSchema),
+    default: z.number().int().positive(),
+  }),
+  extraContextWindows: z.record(z.string(), z.number().int().positive()),
+  kimiRouting: z.object({
+    codeBaseUrl: z.string().url(),
+    moonshotBaseUrls: z.array(z.string().url()).min(1),
+    codeModelIds: z.array(z.string().min(1)).min(1),
+    moonshotModelIds: z.array(z.string().min(1)).min(1),
+  }),
+});
+
+/** Re-export schema for external validation / testing */
+export { RegistrySchema as ProvidersRegistrySchema };
+
+// ─── 启动时校验 ────────────────────────────────────────────────
+
+// 过滤掉 JSON 中的 _comment 字段后校验
+function stripComments<T>(obj: T): T {
+  if (Array.isArray(obj)) return obj.map(stripComments) as T;
+  if (obj && typeof obj === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      if (k === '_comment') continue;
+      result[k] = stripComments(v);
+    }
+    return result as T;
+  }
+  return obj;
+}
+
+const parsed = RegistrySchema.safeParse(stripComments(registryJson));
+if (!parsed.success) {
+  const issues = parsed.error.issues
+    .map((i: z.core.$ZodIssue) => `  - [${i.path.join('.')}] ${i.message}`)
+    .join('\n');
+  throw new Error(
+    `[provider-registry] providers-registry.json schema validation failed:\n${issues}`,
+  );
+}
+
+const REGISTRY_DATA = parsed.data;
+
+// ─── 导出类型（保持与原有接口完全兼容） ──────────────────────────
 
 export interface ModelOption {
   id: string;
@@ -43,227 +126,37 @@ export interface ProviderPreset {
   authMethod?: 'AUTH_TOKEN' | 'API_KEY';
 }
 
-const KIMI_CODE_BASE_URL = 'https://api.kimi.com/coding/';
-const KIMI_MOONSHOT_BASE_URLS = [
-  'https://api.moonshot.cn/anthropic',
-  'https://api.moonshot.ai/anthropic',
-] as const;
-const KIMI_CODE_MODEL_IDS = new Set([
-  'kimi-for-coding',
-  // 历史别名，继续兼容已保存配置
-  'k2p5',
-]);
-const KIMI_MOONSHOT_MODEL_IDS = new Set([
-  'kimi-k2.5',
-  'kimi-k2',
-  'kimi-k2-thinking',
-  'kimi-k2-turbo',
-  'kimi-k2-thinking-turbo',
-]);
+// ─── 从 JSON 数据构建 PROVIDER_REGISTRY ─────────────────────────
 
-export const PROVIDER_REGISTRY: ProviderPreset[] = [
-  // ── Anthropic 官方 ──
-  {
-    id: 'anthropic',
-    nameKey: 'settings.providers.anthropic',
-    models: [
-      { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-      { id: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
-      { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
-    ],
-    supportsOAuth: true,
-    editableBaseUrl: false,
-    editableModel: true,
-    apiKeyPlaceholder: 'sk-ant-api03-...',
-    useApiKeyForAuth: true,
-  },
+export const PROVIDER_REGISTRY: ProviderPreset[] = REGISTRY_DATA.providers.map((p) => ({
+  ...p,
+  id: p.id as ProviderId,
+}));
 
-  // ── OpenAI / Codex ──
-  {
-    id: 'openai',
-    nameKey: 'settings.providers.openai',
-    models: [
-      { id: 'gpt-5.4', label: 'GPT-5.4' },
-      { id: 'gpt-5.3-codex', label: 'GPT-5.3 Codex' },
-      { id: 'gpt-5.3-codex-spark', label: 'GPT-5.3 Codex Spark' },
-      { id: 'gpt-5.2-codex', label: 'GPT-5.2 Codex' },
-      { id: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max' },
-      { id: 'gpt-5.2', label: 'GPT-5.2' },
-      { id: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini' },
-    ],
-    supportsOAuth: true,
-    editableBaseUrl: false,
-    editableModel: true,
-    apiKeyPlaceholder: 'sk-...',
-  },
+// ─── 上下文窗口查找表（从 JSON model.contextWindow + extraContextWindows 构建）
 
-  // ── 中国厂商（原生 Anthropic 兼容端点） ──
-  {
-    id: 'deepseek',
-    nameKey: 'settings.providers.deepseek',
-    baseUrl: 'https://api.deepseek.com/anthropic',
-    candidateBaseUrls: ['https://api.deepseek.com/anthropic'],
-    models: [
-      { id: 'deepseek-chat', label: 'DeepSeek V3' },
-      { id: 'deepseek-reasoner', label: 'DeepSeek R1' },
-    ],
-    supportsOAuth: false,
-    editableBaseUrl: false,
-    editableModel: true,
-    apiKeyPlaceholder: 'sk-...',
-    useApiKeyForAuth: true,
-    extraEnv: {
-      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
-      API_TIMEOUT_MS: '600000',
-    },
-  },
-  {
-    id: 'qwen',
-    nameKey: 'settings.providers.qwen',
-    baseUrl: 'https://coding.dashscope.aliyuncs.com/apps/anthropic',
-    candidateBaseUrls: [
-      'https://coding.dashscope.aliyuncs.com/apps/anthropic',
-      'https://dashscope-intl.aliyuncs.com/apps/anthropic',
-      'https://coding-intl.dashscope.aliyuncs.com/apps/anthropic',
-    ],
-    models: [
-      { id: 'qwen3-coder-plus', label: 'Qwen3 Coder Plus' },
-      { id: 'qwen3-coder-flash', label: 'Qwen3 Coder Flash' },
-      { id: 'qwen3-coder', label: 'Qwen3 Coder' },
-    ],
-    supportsOAuth: false,
-    editableBaseUrl: true,
-    editableModel: true,
-    apiKeyPlaceholder: 'sk-...',
-    extraEnv: {
-      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
-    },
-  },
-  {
-    id: 'zhipu',
-    nameKey: 'settings.providers.zhipu',
-    baseUrl: 'https://open.bigmodel.cn/api/anthropic',
-    candidateBaseUrls: ['https://open.bigmodel.cn/api/anthropic'],
-    models: [
-      { id: 'glm-4.7', label: 'GLM-4.7' },
-      { id: 'glm-4.7-flashx', label: 'GLM-4.7 FlashX' },
-      { id: 'glm-4.5', label: 'GLM-4.5' },
-      { id: 'glm-4.5-air', label: 'GLM-4.5 Air' },
-    ],
-    supportsOAuth: false,
-    editableBaseUrl: false,
-    editableModel: true,
-    apiKeyPlaceholder: 'your-zhipu-api-key',
-    useApiKeyForAuth: true,
-    extraEnv: {
-      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
-      API_TIMEOUT_MS: '3000000',
-    },
-  },
-  {
-    id: 'minimax',
-    nameKey: 'settings.providers.minimax',
-    baseUrl: 'https://api.minimax.chat/anthropic',
-    candidateBaseUrls: [
-      'https://api.minimax.chat/anthropic',
-      'https://api.minimax.io/anthropic',
-      'https://api.minimaxi.com/anthropic',
-    ],
-    models: [
-      { id: 'MiniMax-M2.5', label: 'MiniMax M2.5' },
-      { id: 'MiniMax-M2.5-highspeed', label: 'MiniMax M2.5 Highspeed' },
-      { id: 'MiniMax-M2.1', label: 'MiniMax M2.1' },
-      { id: 'MiniMax-M2', label: 'MiniMax M2' },
-    ],
-    supportsOAuth: false,
-    editableBaseUrl: true,
-    editableModel: true,
-    apiKeyPlaceholder: 'your-minimax-api-key',
-    extraEnv: {
-      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
-    },
-  },
+const MODEL_CONTEXT_WINDOWS: Record<string, number> = {};
 
-  {
-    id: 'kimi',
-    nameKey: 'settings.providers.kimi',
-    // Claude Code 要求 base 不带 /v1，SDK 会拼接 /v1/messages
-    baseUrl: KIMI_CODE_BASE_URL,
-    candidateBaseUrls: [
-      KIMI_CODE_BASE_URL,
-      ...KIMI_MOONSHOT_BASE_URLS,
-    ],
-    models: [
-      // Kimi Code (api.kimi.com) 模型，官方文档唯一正确 ID
-      { id: 'kimi-for-coding', label: 'Kimi For Coding (K2.5)' },
-      // Moonshot (api.moonshot.ai) 模型
-      { id: 'kimi-k2.5', label: 'Kimi K2.5 (Moonshot)' },
-      { id: 'kimi-k2', label: 'Kimi K2' },
-      { id: 'kimi-k2-thinking', label: 'Kimi K2 Thinking' },
-    ],
-    supportsOAuth: false,
-    editableBaseUrl: false,
-    editableModel: true,
-    apiKeyPlaceholder: 'sk-kimi-...',
-    extraEnv: {
-      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
-      ENABLE_TOOL_SEARCH: 'FALSE',
-    },
-  },
+// 从每个供应商的 models 中收集 contextWindow
+for (const provider of REGISTRY_DATA.providers) {
+  for (const model of provider.models) {
+    if (model.contextWindow) {
+      MODEL_CONTEXT_WINDOWS[model.id] = model.contextWindow;
+    }
+  }
+}
 
-  // ── 聚合网关 ──
-  {
-    id: 'openrouter',
-    nameKey: 'settings.providers.openrouter',
-    baseUrl: 'https://openrouter.ai/api',
-    candidateBaseUrls: ['https://openrouter.ai/api'],
-    models: [
-      { id: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-      { id: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6' },
-      { id: 'openai/gpt-4o', label: 'GPT-4o' },
-      { id: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-      { id: 'deepseek/deepseek-chat', label: 'DeepSeek V3' },
-    ],
-    supportsOAuth: false,
-    editableBaseUrl: false,
-    editableModel: true,
-    apiKeyPlaceholder: 'sk-or-v1-...',
-    extraEnv: {
-      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
-    },
-  },
+// 合并 extraContextWindows（旧版/别名模型 ID）
+Object.assign(MODEL_CONTEXT_WINDOWS, REGISTRY_DATA.extraContextWindows);
 
-  // ── 本地模型 ──
-  {
-    id: 'ollama',
-    nameKey: 'settings.providers.ollama',
-    baseUrl: 'http://localhost:11434',
-    models: [
-      { id: 'qwen3-coder', label: 'Qwen3 Coder' },
-      { id: 'deepseek-coder-v2', label: 'DeepSeek Coder V2' },
-    ],
-    supportsOAuth: false,
-    editableBaseUrl: true,
-    editableModel: true,
-    extraEnv: {
-      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
-    },
-  },
+// ─── Kimi 路由（从 JSON kimiRouting 构建） ──────────────────────
 
-  // ── 自定义 ──
-  {
-    id: 'custom',
-    nameKey: 'settings.providers.custom',
-    models: [],
-    supportsOAuth: false,
-    editableBaseUrl: true,
-    editableModel: true,
-    apiKeyPlaceholder: 'your-api-key',
-    extraEnv: {
-      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
-    },
-  },
-];
+const KIMI_CODE_BASE_URL = REGISTRY_DATA.kimiRouting.codeBaseUrl;
+const KIMI_MOONSHOT_BASE_URLS = REGISTRY_DATA.kimiRouting.moonshotBaseUrls;
+const KIMI_CODE_MODEL_IDS = new Set(REGISTRY_DATA.kimiRouting.codeModelIds);
+const KIMI_MOONSHOT_MODEL_IDS = new Set(REGISTRY_DATA.kimiRouting.moonshotModelIds);
+
+// ─── 公共 API（签名与原有完全一致） ─────────────────────────────
 
 /** 按 ID 查找供应商预设，支持自定义供应商 */
 export function getProviderPreset(id: ProviderId, customProviders?: CustomProviderConfig[]): ProviderPreset {
@@ -326,66 +219,25 @@ export function getKimiCandidateBaseUrls(modelId: string, preferredBaseUrl?: str
 }
 
 /**
- * 常用模型的上下文窗口大小（token 数）。
- * 不在此表中的模型走 pattern-based fallback。
- */
-const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
-  // ── Anthropic Claude ──
-  'claude-opus-4-6': 200000,
-  'claude-sonnet-4-6': 200000,
-  'claude-haiku-4-5-20251001': 200000,
-  'claude-haiku-4-5-20250929': 200000,
-  'claude-sonnet-4-5-20250929': 200000,
-  'claude-3-5-sonnet-20241022': 200000,
-  'claude-3-5-haiku-20241022': 200000,
-  'claude-3-opus-20240229': 200000,
-  // ── DeepSeek ──
-  'deepseek-chat': 65536,
-  'deepseek-reasoner': 65536,
-  // ── Qwen ──
-  'qwen3-coder-plus': 131072,
-  'qwen3-coder-flash': 131072,
-  'qwen3-coder': 131072,
-  // ── Zhipu GLM ──
-  'glm-4.7': 128000,
-  'glm-4.7-flashx': 128000,
-  'glm-4.5': 128000,
-  'glm-4.5-air': 128000,
-  // ── MiniMax ──
-  'MiniMax-M2.5': 1000000,
-  'MiniMax-M2.5-highspeed': 1000000,
-  'MiniMax-M2.1': 1000000,
-  'MiniMax-M2': 1000000,
-  // ── Kimi / Moonshot ──
-  'kimi-for-coding': 131072,
-  'k2p5': 131072,
-  'kimi-k2.5': 131072,
-  'kimi-k2': 131072,
-  'kimi-k2-thinking': 131072,
-};
-
-/**
  * 根据模型 ID 查询上下文窗口大小（token 数）。
  * 优先精确匹配，其次按供应商前缀推断，最后返回通用默认值。
  */
 export function getModelContextWindow(modelId: string): number {
   // 精确匹配
   if (MODEL_CONTEXT_WINDOWS[modelId]) return MODEL_CONTEXT_WINDOWS[modelId];
+
+  const { rules, containsRules } = REGISTRY_DATA.contextWindowFallbacks;
+
   // 前缀推断
-  if (modelId.startsWith('claude-')) return 200000;
-  if (modelId.startsWith('gpt-')) return 128000;
-  if (modelId.startsWith('o1') || modelId.startsWith('o3')) return 200000;
-  if (modelId.startsWith('deepseek-')) return 65536;
-  if (modelId.startsWith('qwen')) return 131072;
-  if (modelId.startsWith('glm-')) return 128000;
-  if (modelId.startsWith('kimi-') || modelId.startsWith('moonshot-')) return 131072;
-  if (modelId.startsWith('MiniMax-')) return 1000000;
-  if (modelId.includes('gemini-2.5')) return 1000000;
-  if (modelId.includes('gemini-')) return 128000;
-  // OpenRouter 格式 "provider/model"
-  if (modelId.includes('/claude-')) return 200000;
-  if (modelId.includes('/gpt-')) return 128000;
-  if (modelId.includes('/gemini-2.5')) return 1000000;
+  for (const rule of rules) {
+    if (modelId.startsWith(rule.pattern)) return rule.contextWindow;
+  }
+
+  // 包含推断（OpenRouter 格式 "provider/model" 等）
+  for (const rule of containsRules) {
+    if (modelId.includes(rule.pattern)) return rule.contextWindow;
+  }
+
   // 通用默认值
-  return 128000;
+  return REGISTRY_DATA.contextWindowFallbacks.default;
 }

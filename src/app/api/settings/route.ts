@@ -44,6 +44,19 @@ export async function GET() {
     masked.claude.providerApiKeys = maskedKeys;
   }
 
+  // 脱敏 providerCredentials 中的 API Key
+  if (masked.claude.providerCredentials) {
+    const maskedCreds: typeof masked.claude.providerCredentials = {};
+    for (const [pid, cred] of Object.entries(masked.claude.providerCredentials)) {
+      if (cred) {
+        maskedCreds[pid as ProviderId] = cred.apiKey
+          ? { ...cred, apiKey: maskKey(cred.apiKey) }
+          : { ...cred };
+      }
+    }
+    masked.claude.providerCredentials = maskedCreds;
+  }
+
   // 脱敏自定义供应商的 apiKey
   if (masked.claude.customProviders) {
     masked.claude.customProviders = masked.claude.customProviders.map((cp) =>
@@ -298,6 +311,14 @@ export async function POST(request: NextRequest) {
     version: current.version,
   };
 
+  // authMode 变更时同步到 providerCredentials
+  if (body.claude?.authMode !== undefined) {
+    const targetProvider = (body.claude?.provider ?? updated.claude.provider ?? 'anthropic') as ProviderId;
+    if (!updated.claude.providerCredentials) updated.claude.providerCredentials = { ...current.claude.providerCredentials };
+    const existing = updated.claude.providerCredentials?.[targetProvider] ?? { authMode: 'api_key' as const };
+    updated.claude.providerCredentials[targetProvider] = { ...existing, authMode: body.claude.authMode };
+  }
+
   // API Key 特殊处理（legacy flat key）
   if (body.claude?.apiKey !== undefined) {
     const newKey = body.claude.apiKey;
@@ -327,6 +348,23 @@ export async function POST(request: NextRequest) {
     // 同步 legacy flat apiKey：当 anthropic 的 scoped key 更新时，同步到 flat field
     if (merged.anthropic) {
       updated.claude.apiKey = merged.anthropic;
+    }
+
+    // 同步到 providerCredentials（新统一存储）
+    if (!updated.claude.providerCredentials) updated.claude.providerCredentials = { ...current.claude.providerCredentials };
+    for (const [pid, val] of Object.entries(body.claude.providerApiKeys as Record<string, string | null>)) {
+      const p = pid as ProviderId;
+      if (val === null || val === '') {
+        // 清除 API Key，但保留其他凭据字段（如 oauth）
+        if (updated.claude.providerCredentials?.[p]) {
+          updated.claude.providerCredentials[p] = { ...updated.claude.providerCredentials[p]!, apiKey: undefined };
+        }
+      } else if (typeof val === 'string' && val.startsWith('••')) {
+        // 掩码回传，不动 providerCredentials
+      } else {
+        const existing = updated.claude.providerCredentials?.[p] ?? { authMode: 'api_key' as const };
+        updated.claude.providerCredentials[p] = { ...existing, apiKey: val as string };
+      }
     }
   }
 

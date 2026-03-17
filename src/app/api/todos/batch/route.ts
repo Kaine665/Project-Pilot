@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTodosPath, modifyJsonFile } from '@/lib/file-store';
+import { apiHandler } from '@/lib/api-handler';
+import { badRequest } from '@/lib/http-error';
 import type { TodosData } from '@/types';
 
 const DEFAULT: TodosData = { todos: [] };
@@ -9,40 +11,28 @@ const DEFAULT: TodosData = { todos: [] };
  * Batch operations on todo items.
  * Body: { ids: string[], action: 'delete' | 'update', updates?: { status?, priority?, agentId? } }
  */
-export async function POST(request: NextRequest) {
+export const POST = apiHandler(async (request: NextRequest) => {
   const body = await request.json();
   const { ids, action, updates } = body;
 
-  if (!Array.isArray(ids) || ids.length === 0) {
-    return NextResponse.json({ error: 'ids must be a non-empty array' }, { status: 400 });
-  }
+  if (!Array.isArray(ids) || ids.length === 0) throw badRequest('ids must be a non-empty array');
 
   // Validate all ids
   for (const id of ids) {
     if (typeof id !== 'string' || !/^todo-\d+$/.test(id)) {
-      return NextResponse.json({ error: `Invalid todo id: ${id}` }, { status: 400 });
+      throw badRequest(`Invalid todo id: ${id}`);
     }
   }
 
-  if (action !== 'delete' && action !== 'update') {
-    return NextResponse.json({ error: 'action must be "delete" or "update"' }, { status: 400 });
-  }
+  if (action !== 'delete' && action !== 'update') throw badRequest('action must be "delete" or "update"');
 
   if (action === 'update') {
-    if (!updates || typeof updates !== 'object') {
-      return NextResponse.json({ error: 'updates is required for update action' }, { status: 400 });
-    }
+    if (!updates || typeof updates !== 'object') throw badRequest('updates is required for update action');
     const validStatuses = ['pending', 'in_progress', 'done'];
     const validPriorities = ['high', 'medium', 'low'];
-    if (updates.status !== undefined && !validStatuses.includes(updates.status)) {
-      return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
-    }
-    if (updates.priority !== undefined && !validPriorities.includes(updates.priority)) {
-      return NextResponse.json({ error: 'Invalid priority' }, { status: 400 });
-    }
-    if (updates.agentId !== undefined && updates.agentId !== null && typeof updates.agentId !== 'string') {
-      return NextResponse.json({ error: 'Invalid agentId' }, { status: 400 });
-    }
+    if (updates.status !== undefined && !validStatuses.includes(updates.status)) throw badRequest('Invalid status');
+    if (updates.priority !== undefined && !validPriorities.includes(updates.priority)) throw badRequest('Invalid priority');
+    if (updates.agentId !== undefined && updates.agentId !== null && typeof updates.agentId !== 'string') throw badRequest('Invalid agentId');
   }
 
   const idSet = new Set(ids);
@@ -77,4 +67,4 @@ export async function POST(request: NextRequest) {
   });
 
   return NextResponse.json({ ok: true, affected });
-}
+});

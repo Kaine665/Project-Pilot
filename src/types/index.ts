@@ -94,8 +94,27 @@ export interface CustomProviderConfig {
   authMethod: CustomProviderAuthMethod;
   /** 模型 ID 列表，至少一个 */
   modelIds: string[];
-  /** API Key / Token，可选，可稍后设置 */
+  /** @deprecated API Key 统一到 providerCredentials[id].apiKey。旧数据迁移后保留供向后兼容。 */
   apiKey?: string;
+}
+
+/** 单个供应商的凭据记录 */
+export interface ProviderCredential {
+  /** 认证方式 */
+  authMode: ClaudeAuthMode;
+  /** API Key（authMode='api_key' 时有效） */
+  apiKey?: string;
+  /** OAuth 元数据（authMode='oauth' 时有效） */
+  oauth?: {
+    /** Token 文件路径（如 ~/.claude/.credentials.json），运行时解析 */
+    tokenFile: string;
+    /** 上次检查时的状态 */
+    lastStatus?: 'authenticated' | 'expired' | 'unknown';
+    /** 上次检查时间（epoch ms） */
+    lastCheckedAt?: number;
+  };
+  /** 上次成功验证的时间（epoch ms） */
+  lastVerifiedAt?: number;
 }
 
 /** 推理努力等级 */
@@ -108,8 +127,9 @@ export type OpenAIReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
 export interface ClaudeSettings {
   /** AI 供应商 */
   provider: ProviderId;
+  /** @deprecated 使用 providerCredentials[provider].authMode 代替。旧数据迁移后保留供向后兼容。 */
   authMode: ClaudeAuthMode;
-  /** @deprecated 使用 providerApiKeys[provider] 代替 */
+  /** @deprecated 使用 providerCredentials[provider].apiKey 代替 */
   apiKey?: string;
   /** 模型 ID（自由字符串，供应商不同格式不同） */
   model: string;
@@ -122,7 +142,9 @@ export interface ClaudeSettings {
   maxTurns?: number;
   /** 新建 Agent 时是否默认暴露提示词路径（默认 true） */
   defaultExposePromptPath?: boolean;
-  /** 每供应商 API Key 映射 */
+  /** 每供应商凭据（统一存储 authMode + apiKey + oauth 元数据） */
+  providerCredentials?: Partial<Record<ProviderId, ProviderCredential>>;
+  /** @deprecated 使用 providerCredentials[provider].apiKey 代替。迁移后不再写入。 */
   providerApiKeys?: Partial<Record<ProviderId, string>>;
   /** 每供应商当前选中的模型 ID */
   providerModels?: Partial<Record<ProviderId, string>>;
@@ -269,10 +291,16 @@ export type ChatSSEEvent =
   | { type: 'doc_created'; docId: string; title: string; projectKey: string }
   | { type: 'task_suspended'; taskId: string; title: string }
   | { type: 'task_completed'; taskId: string }
+  /** 会话检查点已生成（提示前端可显示续接按钮） */
+  | { type: 'checkpoint_saved'; checkpoint: import('@/types/agent-chat').SessionCheckpoint }
   /** 模型 token 用量（来自 SDK result.modelUsage 或 streaming message_start/message_delta） */
   | { type: 'token_usage'; inputTokens: number; outputTokens: number; contextWindow?: number; final?: boolean }
   | { type: 'error'; message: string }
   | { type: 'awaiting_sub_agents' }
+  /** 卫星任务：主题完成检测结果 */
+  | { type: 'topic_completion'; completed: boolean; confidence: number; summary: string }
+  /** 卫星任务：任务卡片已更新 */
+  | { type: 'task_card_updated'; card: import('@/lib/task-card-store').TaskCard }
   | { type: 'done' };
 
 // ==================== Agent ====================
@@ -342,6 +370,12 @@ export interface Agent {
   projectKey?: string;
   /** 上下文标签筛选：只自动注入包含这些标签的项目级上下文。为空则注入所有匹配 projectKey 的上下文 */
   contextTags?: string[];
+  /**
+   * 上下文注入策略：
+   * - 'additive'（默认）：自动注入项目级上下文（按 contextTags 过滤） + Agent 自身绑定的上下文
+   * - 'exclusive'：只注入 Agent 自身绑定的上下文（defaultResources / contextIds），跳过项目级自动注入
+   */
+  contextStrategy?: 'additive' | 'exclusive';
   /** 默认供应商（创建新会话时预选）。留空则继承全局设置。 */
   defaultProvider?: ProviderId;
   /** 默认模型 ID（创建新会话时预选）。留空则继承全局设置。 */
@@ -400,6 +434,12 @@ export interface ContextEntry {
    * 可选；缺失时 fallback 到 description（>20字符）或文件前 500 字符。
    */
   summary?: string;
+  /**
+   * 此条目覆盖的源码路径前缀（仅 code-card 类型使用）。
+   * 用于与 ActiveTask.scope 做前缀匹配，实现自动注入。
+   * 示例：["src/lib/oauth-", "src/app/api/settings/auth-"]
+   */
+  coveredPaths?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -412,6 +452,19 @@ export interface ContextIndexData {
 
 export type TodoPriority = 'high' | 'medium' | 'low';
 export type TodoStatus = 'pending' | 'in_progress' | 'done';
+
+/**
+ * Backend lifecycle — 比 status 更精细的状态，用于 Agent 决策。
+ * 前端仍然只展示 status（pending/in_progress/done），lifecycle 对用户透明。
+ *
+ * draft    → AI 自动生成，未经人工确认，不可被 Agent 认领
+ * pending  → 已确认，等待认领
+ * active   → 有 Agent 正在执行（绑定了 activeTaskId）
+ * stale    → 内容可能过期（超期未认领 / 关联文件已变更），需重新确认
+ * done     → 已完成
+ * archived → 不再活跃但保留记录
+ */
+export type TodoLifecycle = 'draft' | 'pending' | 'active' | 'stale' | 'done' | 'archived';
 
 export interface TodoSubTask {
   id: string;
@@ -433,6 +486,23 @@ export interface TodoItem {
   subTasks?: TodoSubTask[];
   createdAt: string;
   updatedAt: string;
+
+  // ── Lifecycle 扩展（后端使用，前端透明） ──
+
+  /** 精细生命周期状态，默认跟随 status 映射 */
+  lifecycle?: TodoLifecycle;
+  /** 被哪个 ActiveTask 认领（双向绑定） */
+  activeTaskId?: string;
+  /** 被哪个 git 分支认领 */
+  claimedByBranch?: string;
+  /** 关联的源码文件路径（用于 stale 检测） */
+  subjectFiles?: string[];
+  /**
+   * 任务级上下文引用列表。
+   * 当 Agent 认领此 Todo 时，这些引用会自动合并到会话的资源列表中，
+   * 实现零信息丢失的任务交接。
+   */
+  contextRefs?: import('@/types/resource').ResourceRef[];
 }
 
 export interface TodosData {
