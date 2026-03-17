@@ -230,6 +230,48 @@ async function readOAuthAccessToken(provider: ProviderId): Promise<string | null
 }
 
 /**
+ * Check if an OAuth token file is valid (exists + not expired).
+ * Anthropic REST API doesn't accept OAuth tokens — only CLI/SDK does.
+ * So we verify token validity without making an API call.
+ */
+async function checkOAuthTokenValidity(
+  provider: ProviderId,
+): Promise<{ valid: boolean; error?: string }> {
+  try {
+    if (provider === 'anthropic') {
+      const credPath = path.join(require('os').homedir(), '.claude', '.credentials.json');
+      const raw = await fs.readFile(credPath, 'utf-8');
+      const data = JSON.parse(raw);
+      const oauth = data?.claudeAiOauth;
+      if (!oauth?.accessToken) {
+        return { valid: false, error: 'OAuth token file exists but no accessToken found' };
+      }
+      if (oauth.expiresAt && Date.now() > oauth.expiresAt) {
+        return { valid: false, error: `OAuth token expired at ${new Date(oauth.expiresAt).toISOString()}` };
+      }
+      return { valid: true };
+    }
+    // OpenAI OAuth: check ~/.codex/auth.json
+    if (provider === 'openai') {
+      const credPath = path.join(require('os').homedir(), '.codex', 'auth.json');
+      const raw = await fs.readFile(credPath, 'utf-8');
+      const data = JSON.parse(raw);
+      if (!data?.accessToken && !data?.token) {
+        return { valid: false, error: 'Codex auth file exists but no token found' };
+      }
+      return { valid: true };
+    }
+    return { valid: false, error: `OAuth not supported for ${provider}` };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('ENOENT')) {
+      return { valid: false, error: 'OAuth credential file not found' };
+    }
+    return { valid: false, error: msg };
+  }
+}
+
+/**
  * Resolve effective API key for a provider, including OAuth tokens.
  */
 async function resolveApiKey(
@@ -362,9 +404,25 @@ export async function runHealthCheck(options: CheckOptions = {}): Promise<Models
 
     if (onProgress) onProgress(provider, model.id, i + 1, tasks.length);
 
+    const authMode = getEffectiveAuthMode(settings.claude, provider);
+
+    // OAuth providers (Anthropic/OpenAI): REST API doesn't accept OAuth tokens directly.
+    // Instead, verify the token file is valid and not expired.
+    if (authMode === 'oauth' && (provider === 'anthropic' || provider === 'openai')) {
+      const tokenStatus = await checkOAuthTokenValidity(provider);
+      const r: ModelHealthResult = {
+        status: tokenStatus.valid ? 'ok' : 'failed',
+        checkedAt: now,
+        ...(tokenStatus.valid ? {} : { error: tokenStatus.error }),
+      };
+      results[key] = r;
+      onResult?.(key, r);
+      continue;
+    }
+
     const apiKey = await resolveApiKey(settings, provider);
     if (!apiKey) {
-      const r: ModelHealthResult = { status: 'skipped', checkedAt: now, error: 'No API key or OAuth token' };
+      const r: ModelHealthResult = { status: 'skipped', checkedAt: now, error: 'No API key' };
       results[key] = r;
       onResult?.(key, r);
       continue;
@@ -373,7 +431,7 @@ export async function runHealthCheck(options: CheckOptions = {}): Promise<Models
     let result: ApiCallResult;
 
     if (provider === 'anthropic') {
-      // Anthropic official API (API key or OAuth access token both work with x-api-key header)
+      // Anthropic official API with API key
       result = await testAnthropicOfficial(model.id, apiKey);
     } else if (provider === 'openai') {
       // OpenAI official API
