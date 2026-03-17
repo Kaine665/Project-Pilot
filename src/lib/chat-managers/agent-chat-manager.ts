@@ -123,6 +123,13 @@ export interface AgentChatRun {
   checkpoint?: import('@/types/agent-chat').SessionCheckpoint;
   /** Throttle timestamp for streaming draft writes (crash recovery) */
   _lastDraftWriteTs?: number;
+
+  /**
+   * Resolves when consumeRunnerStream() (including finalizeRun) has completed.
+   * Used by stop() to wait for graceful shutdown before returning to the caller.
+   */
+  _completionPromise?: Promise<void>;
+  _resolveCompletion?: () => void;
 }
 
 // ── Constants ──
@@ -331,9 +338,10 @@ class AgentChatManager {
       });
       run.runner = runner;
 
+      run._completionPromise = new Promise<void>(resolve => { run._resolveCompletion = resolve; });
       this.consumeRunnerStream(run, runner, promptContent).catch(err => {
         console.error(`${LOG_PREFIX} Runner stream error for ${sessionId}:`, err);
-      });
+      }).finally(() => { run._resolveCompletion?.(); });
     } catch (err) {
       this.trackAndEmit(run, { type: 'error', message: `Failed to start runner: ${err instanceof Error ? err.message : String(err)}` });
       this.trackAndEmit(run, { type: 'done' });
@@ -436,9 +444,10 @@ class AgentChatManager {
       });
       run.runner = runner;
 
+      run._completionPromise = new Promise<void>(resolve => { run._resolveCompletion = resolve; });
       this.consumeRunnerStream(run, runner, promptContent).catch(err => {
         console.error(`${LOG_PREFIX} Runner stream error for guest ${guestSessionId}:`, err);
-      });
+      }).finally(() => { run._resolveCompletion?.(); });
     } catch (err) {
       this.trackAndEmit(run, { type: 'error', message: `Failed to start runner: ${err instanceof Error ? err.message : String(err)}` });
       this.trackAndEmit(run, { type: 'done' });
@@ -499,6 +508,14 @@ class AgentChatManager {
     run.status = 'stopped';
     run.runner?.abort();
     run.runner = null;
+
+    // Wait for consumeRunnerStream → finalizeRun to complete so that
+    // the session is fully persisted before we return to the caller.
+    // Timeout after 8s to avoid hanging if something goes wrong.
+    if (run._completionPromise) {
+      const timeout = new Promise<void>(resolve => setTimeout(resolve, 8_000));
+      await Promise.race([run._completionPromise, timeout]);
+    }
     return true;
   }
 
@@ -656,6 +673,13 @@ class AgentChatManager {
         ),
     );
     if (!aborted && !run.assistantText.trim() && hasExecutionError) {
+      run.claudeSessionId = undefined;
+    }
+
+    // When user aborts mid-stream, the SDK session may be in an inconsistent state
+    // (e.g. tool call started but never completed). Clear the session ID to force
+    // a fresh session on next message, avoiding resume into a broken state.
+    if (aborted) {
       run.claudeSessionId = undefined;
     }
 

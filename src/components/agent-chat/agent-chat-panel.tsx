@@ -202,9 +202,20 @@ export function AgentChatPanel({
     return () => window.clearInterval(timer);
   }, [sessionList]);
 
-  // Abort any in-flight stream when the component unmounts
+  // Stop backend runner + abort SSE stream when the component unmounts
   useEffect(() => {
     return () => {
+      const sid = sessionIdRef.current;
+      if (sid && isStreamingRef.current) {
+        // Fire-and-forget: tell backend to stop the runner.
+        // Without this, navigating away leaves the backend running indefinitely.
+        fetch('/api/agent-chat/stop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: sid }),
+          keepalive: true, // ensures the request survives page unload
+        }).catch(() => {});
+      }
       streamAbortRef.current?.abort();
       pendingAnswerRef.current = null;
       pendingUserMessagesRef.current = [];
@@ -707,7 +718,12 @@ export function AgentChatPanel({
       }
       finalizeStream();
     }).catch((err) => {
-      if ((err as Error).name === 'AbortError') return;
+      if ((err as Error).name === 'AbortError') {
+        // Abort may come from handleAbort's fallback force-close.
+        // If the stream is still marked active, finalize it so UI state is consistent.
+        if (isStreamingRef.current) finalizeStream();
+        return;
+      }
       console.error('Agent chat stream connection failed:', err);
       chatDispatch({ type: 'STREAM_ERROR', message: `Stream connection failed: ${(err as Error).message}` });
       finalizeStream();
@@ -1054,6 +1070,10 @@ export function AgentChatPanel({
 
   const handleAbort = async () => {
     if (!sessionId) return;
+
+    // Send stop to backend — it now waits for finalizeRun (up to 8s) before responding.
+    // The backend stop causes the SSE stream to end naturally (emit 'done' → res.end()),
+    // which triggers finalizeStream() via the normal reader-done path.
     try {
       await fetch('/api/agent-chat/stop', {
         method: 'POST',
@@ -1063,12 +1083,18 @@ export function AgentChatPanel({
     } catch (err) {
       console.error('Failed to stop agent chat:', err);
     }
+
+    // After stop returns, the stream should have closed naturally already.
+    // If for any reason it hasn't (timeout, network issue), force-close it.
     if (streamAbortRef.current) {
       streamAbortRef.current.abort();
       streamAbortRef.current = null;
     }
-    clearSessionRunning(sessionId);
-    finalizeStream();
+    // Ensure UI state is cleaned up even if finalizeStream was already called by the stream.
+    if (isStreamingRef.current) {
+      clearSessionRunning(sessionId);
+      finalizeStream();
+    }
   };
 
   const handleSendNow = useCallback(async (index: number) => {
@@ -1092,8 +1118,12 @@ export function AgentChatPanel({
       streamAbortRef.current.abort();
       streamAbortRef.current = null;
     }
-    finalizeStream();
-    doSendRef.current(item.text, item.images);
+    if (isStreamingRef.current) {
+      finalizeStream();
+    }
+    // Defer doSend to next tick so React has time to process STREAM_END
+    // and update isStreaming to false — otherwise doSend's guard rejects the call.
+    setTimeout(() => doSendRef.current(item.text, item.images), 0);
   }, [sessionId, finalizeStream, replacePendingUserQueue]);
 
   const handleRemoveFromQueue = useCallback((index: number) => {
