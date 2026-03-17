@@ -113,6 +113,7 @@ function AcceptedCard({
 
   return (
     <div
+      data-action-type={tag.type}
       role={clickable ? 'button' : undefined}
       tabIndex={clickable ? 0 : undefined}
       onClick={clickable ? onClick : undefined}
@@ -182,7 +183,7 @@ function RejectedCard({
   onRestore: (e: React.MouseEvent) => void;
 }) {
   return (
-    <div className="my-2 flex items-center gap-2.5 rounded-md border-l-[3px] border-l-zinc-300 bg-zinc-100/60 px-3 py-2 dark:border-l-zinc-600 dark:bg-zinc-800/40">
+    <div data-action-type={tag.type} className="my-2 flex items-center gap-2.5 rounded-md border-l-[3px] border-l-zinc-300 bg-zinc-100/60 px-3 py-2 dark:border-l-zinc-600 dark:bg-zinc-800/40">
       {/* Icon — grayed out */}
       <div className="shrink-0 text-zinc-400 dark:text-zinc-500">
         <Icon className="h-4 w-4" />
@@ -226,6 +227,7 @@ function StreamingCard({
 }) {
   return (
     <div
+      data-action-type={tag.type}
       className={`
         my-2 flex items-center gap-2.5 rounded-md border-l-[3px] border-dashed px-3 py-2
         ${colors.border} ${colors.bg} animate-pulse
