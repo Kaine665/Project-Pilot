@@ -47,6 +47,12 @@ export interface SessionConfig {
   systemPrompt?: string;
   /** 会话级别的能力覆盖（与 Agent 默认值合并，只能收紧不能放宽） */
   capabilities?: Partial<import('./index').AgentCapabilities>;
+  /**
+   * 统一资源引用列表（Phase 4）。
+   * 替代 contextIds / skillNames，直接使用 ResourceRef[] 配置会话级资源。
+   * 与 contextIds / skillNames 共存（向后兼容），优先级更高。
+   */
+  resourceRefs?: import('@/types/resource').ResourceRef[];
 }
 
 /** 单条消息 */

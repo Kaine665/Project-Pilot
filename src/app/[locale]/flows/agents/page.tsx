@@ -510,6 +510,7 @@ export default function AgentsPage() {
             projectKey: form.projectKey || undefined,
             defaultProvider: form.defaultProvider || undefined,
             defaultModel: form.defaultModel || undefined,
+            contextStrategy: form.contextStrategy !== 'additive' ? form.contextStrategy : undefined,
           }),
         });
         if (res.ok) {
@@ -542,6 +543,7 @@ export default function AgentsPage() {
             projectKey: form.projectKey || undefined,
             defaultProvider: form.defaultProvider || undefined,
             defaultModel: form.defaultModel || undefined,
+            contextStrategy: form.contextStrategy !== 'additive' ? form.contextStrategy : undefined,
           }),
         });
         if (res.ok) await fetchAgents();

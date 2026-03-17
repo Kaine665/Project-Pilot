@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { title, description, priority, status, agentId, projectKey, dueAt, lifecycle, subjectFiles } = body;
+  const { title, description, priority, status, agentId, projectKey, dueAt, lifecycle, subjectFiles, contextRefs } = body;
 
   if (!title || typeof title !== 'string') {
     return NextResponse.json({ error: 'title is required' }, { status: 400 });
@@ -75,6 +75,7 @@ export async function POST(request: NextRequest) {
     dueAt: todoDueAt,
     lifecycle: todoLifecycle,
     subjectFiles: Array.isArray(subjectFiles) ? subjectFiles.filter((s: unknown) => typeof s === 'string') : undefined,
+    contextRefs: Array.isArray(contextRefs) && contextRefs.length > 0 ? contextRefs : undefined,
     createdAt: now,
     updatedAt: now,
   };
