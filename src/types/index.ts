@@ -299,6 +299,8 @@ export type ChatSSEEvent =
   | { type: 'awaiting_sub_agents' }
   /** 卫星任务：主题完成检测结果 */
   | { type: 'topic_completion'; completed: boolean; confidence: number; summary: string }
+  /** 卫星任务：任务卡片已更新 */
+  | { type: 'task_card_updated'; card: import('@/lib/task-card-store').TaskCard }
   | { type: 'done' };
 
 // ==================== Agent ====================

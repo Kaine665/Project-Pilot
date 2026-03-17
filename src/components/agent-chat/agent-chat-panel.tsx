@@ -32,6 +32,7 @@ import { ChatMessageList } from './chat-message-list';
 import { ChatQueueOverlay } from './chat-queue-overlay';
 import { ChatSessionHeader } from './chat-session-header';
 import { ChatSessionSidebar } from './chat-session-sidebar';
+import { TaskCardBanner } from './task-card-banner';
 
 export function AgentChatPanel({
   agent,
@@ -87,6 +88,9 @@ export function AgentChatPanel({
 
   // Topic completion detection
   const [topicCompletion, setTopicCompletion] = useState<{ completed: boolean; confidence: number; summary: string } | null>(null);
+
+  // Task card
+  const [taskCard, setTaskCard] = useState<import('@/lib/task-card-store').TaskCard | null>(null);
 
   // Session checkpoint notification
   const [checkpointSaved, setCheckpointSaved] = useState(false);
@@ -405,6 +409,15 @@ export function AgentChatPanel({
       setQueueExpanded(loadedQueueState?.expanded !== false);
       modelConfig.applySessionConfig(loadedConfig);
       loadSessionNavLinks(sid, data.parentSessionId);
+
+      // Load task card
+      try {
+        const cardRes = await fetch(`/api/agent-chat/sessions/${sid}/task-card`, { cache: 'no-store' });
+        if (cardRes.ok) {
+          const cardData = await cardRes.json();
+          setTaskCard(cardData.card ?? null);
+        }
+      } catch { /* ignore task card load failure */ }
     } catch {
       // ignore
     }
@@ -657,6 +670,10 @@ export function AgentChatPanel({
               if (event.completed) {
                 setTopicCompletion({ completed: event.completed, confidence: event.confidence, summary: event.summary });
               }
+              break;
+
+            case 'task_card_updated':
+              setTaskCard(event.card);
               break;
 
             case 'awaiting_sub_agents':
@@ -1127,6 +1144,7 @@ export function AgentChatPanel({
     chatDispatch({ type: 'SET_MESSAGES', messages: [] });
     setShowConfig(false);
     setCompressDismissed(false);
+    setTaskCard(null);
     replacePendingUserQueue([]);
     setQueueExpanded(true);
     blocksRef.current = [];
@@ -1512,6 +1530,9 @@ export function AgentChatPanel({
           onScroll={handleChatScroll}
           className={`h-full space-y-3 overflow-y-auto p-3 ${isStreaming && pendingUserMessages.length > 0 ? 'pb-44' : ''}`}
         >
+        {/* Task Card Banner */}
+        {taskCard && <TaskCardBanner card={taskCard} />}
+
         {messages.length === 0 && !isStreaming ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
             <Sparkles className="h-8 w-8 stroke-1" />
