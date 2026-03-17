@@ -1327,10 +1327,15 @@ export function AgentChatPanel({
   // Dismiss callbacks (stable references)
   const handleDismissKnowledge = useCallback(() => setKnowledgeDrafts([]), []);
   const handleDismissDocs = useCallback(() => setDocsSaved([]), []);
-  const handleNavigateToKnowledge = useCallback(() => router.push('/flows/knowledge'), [router]);
-  const handleNavigateToDoc = useCallback((projectKey: string) => {
-    router.push(projectKey ? `/flows/docs/${projectKey}` : '/flows/docs');
-  }, [router]);
+  const handleScrollToAction = useCallback((actionType: string) => {
+    const el = document.querySelector(`[data-action-type="${actionType}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // 短暂高亮闪烁提示
+      el.classList.add('ring-2', 'ring-offset-1', 'ring-yellow-400');
+      setTimeout(() => el.classList.remove('ring-2', 'ring-offset-1', 'ring-yellow-400'), 1500);
+    }
+  }, []);
   const handleDismissTopicCompletion = useCallback(() => setTopicCompletion(null), []);
   const handleSelectGuest = useCallback((a: Agent) => setGuestAgent(a), []);
 
@@ -1417,8 +1422,7 @@ export function AgentChatPanel({
       onDismissKnowledge={handleDismissKnowledge}
       onDismissDocs={handleDismissDocs}
       onDismissTopicCompletion={handleDismissTopicCompletion}
-      onNavigateToKnowledge={handleNavigateToKnowledge}
-      onNavigateToDoc={handleNavigateToDoc}
+      onScrollToAction={handleScrollToAction}
       checkpointSaved={checkpointSaved}
       onResumeCheckpoint={handleResumeCheckpoint}
       onDismissCheckpoint={handleDismissCheckpoint}
@@ -1649,8 +1653,7 @@ export function AgentChatPanel({
           onDismissKnowledge={handleDismissKnowledge}
           onDismissDocs={handleDismissDocs}
           onDismissTopicCompletion={handleDismissTopicCompletion}
-          onNavigateToKnowledge={handleNavigateToKnowledge}
-          onNavigateToDoc={handleNavigateToDoc}
+          onScrollToAction={handleScrollToAction}
           checkpointSaved={checkpointSaved}
           onResumeCheckpoint={handleResumeCheckpoint}
           onDismissCheckpoint={handleDismissCheckpoint}
