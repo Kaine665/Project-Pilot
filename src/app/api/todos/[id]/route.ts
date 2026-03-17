@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTodosPath, modifyJsonFile } from '@/lib/file-store';
+import { apiHandler } from '@/lib/api-handler';
+import { badRequest, notFound } from '@/lib/http-error';
 import type { TodoSubTask, TodosData, TodoLifecycle } from '@/types';
 
 const DEFAULT: TodosData = { todos: [] };
@@ -8,15 +10,13 @@ const DEFAULT: TodosData = { todos: [] };
  * PATCH /api/todos/:id
  * Update a todo item.
  */
-export async function PATCH(
+export const PATCH = apiHandler(async (
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+  { params },
+) => {
   const { id } = await params;
 
-  if (!id || !/^todo-\d+$/.test(id)) {
-    return NextResponse.json({ error: 'Invalid todo id' }, { status: 400 });
-  }
+  if (!id || !/^todo-\d+$/.test(id)) throw badRequest('Invalid todo id');
 
   const body = await request.json();
   const { title, description, status, priority, agentId, sessionId, projectKey, dueAt, tags, subTasks, lifecycle, subjectFiles } = body;
@@ -25,30 +25,14 @@ export async function PATCH(
   const validPriorities = ['high', 'medium', 'low'];
   const validLifecycles: TodoLifecycle[] = ['draft', 'pending', 'active', 'stale', 'done', 'archived'];
 
-  if (title !== undefined && (typeof title !== 'string' || title.length > 500)) {
-    return NextResponse.json({ error: 'Invalid title' }, { status: 400 });
-  }
-  if (description !== undefined && typeof description !== 'string') {
-    return NextResponse.json({ error: 'Invalid description' }, { status: 400 });
-  }
-  if (status !== undefined && !validStatuses.includes(status)) {
-    return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
-  }
-  if (priority !== undefined && !validPriorities.includes(priority)) {
-    return NextResponse.json({ error: 'Invalid priority' }, { status: 400 });
-  }
-  if (agentId !== undefined && agentId !== null && typeof agentId !== 'string') {
-    return NextResponse.json({ error: 'Invalid agentId' }, { status: 400 });
-  }
-  if (dueAt !== undefined && dueAt !== null && typeof dueAt !== 'string') {
-    return NextResponse.json({ error: 'Invalid dueAt' }, { status: 400 });
-  }
-  if (tags !== undefined && !Array.isArray(tags)) {
-    return NextResponse.json({ error: 'tags must be an array' }, { status: 400 });
-  }
-  if (subTasks !== undefined && !Array.isArray(subTasks)) {
-    return NextResponse.json({ error: 'subTasks must be an array' }, { status: 400 });
-  }
+  if (title !== undefined && (typeof title !== 'string' || title.length > 500)) throw badRequest('Invalid title');
+  if (description !== undefined && typeof description !== 'string') throw badRequest('Invalid description');
+  if (status !== undefined && !validStatuses.includes(status)) throw badRequest('Invalid status');
+  if (priority !== undefined && !validPriorities.includes(priority)) throw badRequest('Invalid priority');
+  if (agentId !== undefined && agentId !== null && typeof agentId !== 'string') throw badRequest('Invalid agentId');
+  if (dueAt !== undefined && dueAt !== null && typeof dueAt !== 'string') throw badRequest('Invalid dueAt');
+  if (tags !== undefined && !Array.isArray(tags)) throw badRequest('tags must be an array');
+  if (subTasks !== undefined && !Array.isArray(subTasks)) throw badRequest('subTasks must be an array');
 
   let updated: TodosData['todos'][number] | null = null;
 
@@ -77,26 +61,22 @@ export async function PATCH(
     }),
   }));
 
-  if (!updated) {
-    return NextResponse.json({ error: 'Todo not found' }, { status: 404 });
-  }
+  if (!updated) throw notFound('Todo not found');
 
   return NextResponse.json(updated);
-}
+});
 
 /**
  * DELETE /api/todos/:id
  * Delete a todo item.
  */
-export async function DELETE(
+export const DELETE = apiHandler(async (
   _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+  { params },
+) => {
   const { id } = await params;
 
-  if (!id || !/^todo-\d+$/.test(id)) {
-    return NextResponse.json({ error: 'Invalid todo id' }, { status: 400 });
-  }
+  if (!id || !/^todo-\d+$/.test(id)) throw badRequest('Invalid todo id');
 
   let found = false;
 
@@ -108,9 +88,7 @@ export async function DELETE(
     }),
   }));
 
-  if (!found) {
-    return NextResponse.json({ error: 'Todo not found' }, { status: 404 });
-  }
+  if (!found) throw notFound('Todo not found');
 
   return NextResponse.json({ ok: true });
-}
+});

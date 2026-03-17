@@ -7,6 +7,8 @@ import {
   readJsonFile,
   writeJsonFile,
 } from '@/lib/file-store';
+import { apiHandler } from '@/lib/api-handler';
+import { badRequest } from '@/lib/http-error';
 import type { DocEntry, DocsIndexData, DocStatus } from '@/types';
 
 const DEFAULT_INDEX: DocsIndexData = { projects: {} };
@@ -28,7 +30,7 @@ async function writeIndex(data: DocsIndexData): Promise<void> {
  *   tag        — 按标签过滤（可多次出现，OR 关系）
  *   status     — 按状态过滤（active/draft/deprecated），默认不过滤
  */
-export async function GET(request: NextRequest) {
+export const GET = apiHandler(async (request: NextRequest) => {
   const sp = request.nextUrl.searchParams;
   const projectKey = sp.get('project');
   const category = sp.get('category');
@@ -73,77 +75,62 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({ docs: filtered });
-}
+});
 
 /** POST /api/docs — { projectKey, title, description?, content?, category?, tags?, status?, supersedes? } */
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { projectKey, title, description, content, category, tags, status, supersedes } = body;
+export const POST = apiHandler(async (request: NextRequest) => {
+  const body = await request.json();
+  const { projectKey, title, description, content, category, tags, status, supersedes } = body;
 
-    if (!projectKey?.trim()) {
-      return NextResponse.json({ error: 'projectKey is required' }, { status: 400 });
-    }
-    if (!title?.trim()) {
-      return NextResponse.json({ error: 'title is required' }, { status: 400 });
-    }
+  if (!projectKey?.trim()) throw badRequest('projectKey is required');
+  if (!title?.trim()) throw badRequest('title is required');
+  if (status && !['active', 'draft', 'deprecated'].includes(status)) {
+    throw badRequest('Invalid status. Must be active, draft, or deprecated');
+  }
+  if (tags && !Array.isArray(tags)) throw badRequest('tags must be an array of strings');
 
-    // 验证 status
-    if (status && !['active', 'draft', 'deprecated'].includes(status)) {
-      return NextResponse.json({ error: 'Invalid status. Must be active, draft, or deprecated' }, { status: 400 });
-    }
+  const now = new Date().toISOString();
+  const docId = `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const fileName = `${docId}.md`;
 
-    // 验证 tags
-    if (tags && !Array.isArray(tags)) {
-      return NextResponse.json({ error: 'tags must be an array of strings' }, { status: 400 });
-    }
+  const entry: DocEntry = {
+    id: docId,
+    title: title.trim(),
+    description: description?.trim() || undefined,
+    fileName,
+    projectKey: projectKey.trim(),
+    category: category?.trim() || undefined,
+    tags: tags?.length ? tags.map((t: string) => t.trim()).filter(Boolean) : undefined,
+    status: status || undefined,
+    supersedes: supersedes?.trim() || undefined,
+    createdAt: now,
+    updatedAt: now,
+  };
 
-    const now = new Date().toISOString();
-    const docId = `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const fileName = `${docId}.md`;
+  // 确保目录存在，写入 Markdown 文件
+  await fs.mkdir(getDesignDocsDir(), { recursive: true });
+  await fs.writeFile(getDesignDocFilePath(fileName), content ?? '', 'utf-8');
 
-    const entry: DocEntry = {
-      id: docId,
-      title: title.trim(),
-      description: description?.trim() || undefined,
-      fileName,
-      projectKey: projectKey.trim(),
-      category: category?.trim() || undefined,
-      tags: tags?.length ? tags.map((t: string) => t.trim()).filter(Boolean) : undefined,
-      status: status || undefined,
-      supersedes: supersedes?.trim() || undefined,
-      createdAt: now,
-      updatedAt: now,
-    };
+  // 更新索引
+  const data = await readIndex();
+  if (!data.projects[entry.projectKey]) {
+    data.projects[entry.projectKey] = [];
+  }
+  data.projects[entry.projectKey].push(entry);
 
-    // 确保目录存在，写入 Markdown 文件
-    await fs.mkdir(getDesignDocsDir(), { recursive: true });
-    await fs.writeFile(getDesignDocFilePath(fileName), content ?? '', 'utf-8');
-
-    // 更新索引
-    const data = await readIndex();
-    if (!data.projects[entry.projectKey]) {
-      data.projects[entry.projectKey] = [];
-    }
-    data.projects[entry.projectKey].push(entry);
-
-    // 如果设置了 supersedes，更新被替代文档的 supersededBy
-    if (entry.supersedes) {
-      for (const entries of Object.values(data.projects)) {
-        const oldDoc = entries.find(e => e.id === entry.supersedes);
-        if (oldDoc) {
-          oldDoc.supersededBy = docId;
-          oldDoc.updatedAt = now;
-          break;
-        }
+  // 如果设置了 supersedes，更新被替代文档的 supersededBy
+  if (entry.supersedes) {
+    for (const entries of Object.values(data.projects)) {
+      const oldDoc = entries.find(e => e.id === entry.supersedes);
+      if (oldDoc) {
+        oldDoc.supersededBy = docId;
+        oldDoc.updatedAt = now;
+        break;
       }
     }
-
-    await writeIndex(data);
-
-    return NextResponse.json({ ok: true, entry });
-  } catch (error) {
-    console.error('Create doc failed:', error);
-    return NextResponse.json({ error: 'Create failed' }, { status: 500 });
   }
-}
+
+  await writeIndex(data);
+
+  return NextResponse.json({ ok: true, entry });
+});
