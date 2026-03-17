@@ -16,8 +16,8 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
 import { getAppWorkingDir } from '@/lib/app-paths';
-import { getPromptFilePath, getContextIndexPath, readJsonFile } from '@/lib/file-store';
-import type { ContextIndexData } from '@/types';
+import { getPromptFilePath, getContextIndexPath, getTodosPath, readJsonFile } from '@/lib/file-store';
+import type { ContextIndexData, TodosData } from '@/types';
 import { resolveSystemPrompt, createRuntimePromptCopy } from '@/lib/agent-prompt-store';
 import { resolveSkillsForSession } from '@/lib/skill-store';
 import { getSettings } from '@/lib/settings-manager';
@@ -946,7 +946,8 @@ async function buildResourcePrompt(
     merged.push({ type: 'project-prompt', id: '_project', priority: 2 });
   }
 
-  if (projectKey) {
+  // Auto-inject project-level contexts (skip when agent uses 'exclusive' strategy)
+  if (projectKey && agent.contextStrategy !== 'exclusive') {
     const existingCtxIds = new Set([
       ...(baseRefs.filter(r => r.type === 'context').map(r => r.id)),
       ...(sessionConfig?.contextIds ?? []),
@@ -964,6 +965,21 @@ async function buildResourcePrompt(
 
   if (extraRefs) merged.push(...extraRefs);
 
+  // ── Phase 2: Merge contextRefs from active todos assigned to this agent ──
+  {
+    const todosData = await readJsonFile<TodosData>(getTodosPath(), { todos: [] });
+    const activeTodos = todosData.todos.filter(t =>
+      t.status === 'in_progress' &&
+      t.agentId === agent.id &&
+      t.contextRefs?.length,
+    );
+    for (const todo of activeTodos) {
+      for (const ref of todo.contextRefs!) {
+        merged.push({ ...ref, priority: ref.priority ?? 33 });
+      }
+    }
+  }
+
   // ── Auto-inject scoped skills (global → project → agent cascade) ──
   {
     const sessionSkillNames = new Set(sessionConfig?.skillNames ?? []);
@@ -979,6 +995,11 @@ async function buildResourcePrompt(
   }
 
   if (sessionConfig) {
+    // Phase 4: unified resourceRefs take precedence over legacy contextIds/skillNames
+    if (sessionConfig.resourceRefs?.length) {
+      merged.push(...sessionConfig.resourceRefs);
+    }
+    // Legacy fields still work (backward compatible)
     if (sessionConfig.contextIds?.length) {
       for (const cid of sessionConfig.contextIds) {
         merged.push({ type: 'context', id: cid, priority: 35 });

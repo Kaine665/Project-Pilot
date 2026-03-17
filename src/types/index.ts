@@ -370,6 +370,12 @@ export interface Agent {
   projectKey?: string;
   /** 上下文标签筛选：只自动注入包含这些标签的项目级上下文。为空则注入所有匹配 projectKey 的上下文 */
   contextTags?: string[];
+  /**
+   * 上下文注入策略：
+   * - 'additive'（默认）：自动注入项目级上下文（按 contextTags 过滤） + Agent 自身绑定的上下文
+   * - 'exclusive'：只注入 Agent 自身绑定的上下文（defaultResources / contextIds），跳过项目级自动注入
+   */
+  contextStrategy?: 'additive' | 'exclusive';
   /** 默认供应商（创建新会话时预选）。留空则继承全局设置。 */
   defaultProvider?: ProviderId;
   /** 默认模型 ID（创建新会话时预选）。留空则继承全局设置。 */
@@ -485,6 +491,12 @@ export interface TodoItem {
   claimedByBranch?: string;
   /** 关联的源码文件路径（用于 stale 检测） */
   subjectFiles?: string[];
+  /**
+   * 任务级上下文引用列表。
+   * 当 Agent 认领此 Todo 时，这些引用会自动合并到会话的资源列表中，
+   * 实现零信息丢失的任务交接。
+   */
+  contextRefs?: import('@/types/resource').ResourceRef[];
 }
 
 export interface TodosData {

@@ -72,6 +72,7 @@ export type FormData = {
   projectKey: string; // '' = 全局
   defaultProvider: ProviderId | ''; // '' = 继承全局设置
   defaultModel: string;             // '' = 继承全局设置
+  contextStrategy: 'additive' | 'exclusive';
 };
 
 export const emptyForm: FormData = {
@@ -83,6 +84,7 @@ export const emptyForm: FormData = {
   projectKey: '',
   defaultProvider: '',
   defaultModel: '',
+  contextStrategy: 'additive',
 };
 
 export function agentToForm(a: Agent): FormData {
@@ -100,6 +102,7 @@ export function agentToForm(a: Agent): FormData {
     projectKey: a.projectKey ?? '',
     defaultProvider: a.defaultProvider ?? '',
     defaultModel: a.defaultModel ?? '',
+    contextStrategy: a.contextStrategy ?? 'additive',
   };
 }
 
@@ -415,6 +418,37 @@ export function SettingsForm({
                     />
                   </div>
                 </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Context Strategy */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              上下文注入策略
+            </label>
+            <div className="flex gap-2">
+              {([
+                { value: 'additive' as const, label: '叠加模式', desc: '自动注入项目级上下文 + Agent 绑定的上下文' },
+                { value: 'exclusive' as const, label: '排他模式', desc: '只注入 Agent 绑定的上下文，跳过项目级自动注入' },
+              ] as const).map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, contextStrategy: opt.value }))}
+                  className={`flex-1 rounded-lg border px-4 py-3 text-left transition-colors ${
+                    form.contextStrategy === opt.value
+                      ? 'border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-800'
+                      : 'border-zinc-200 hover:border-zinc-400 dark:border-zinc-700 dark:hover:border-zinc-500'
+                  }`}
+                >
+                  <div className={`text-sm font-medium ${
+                    form.contextStrategy === opt.value
+                      ? 'text-zinc-900 dark:text-zinc-100'
+                      : 'text-zinc-500 dark:text-zinc-400'
+                  }`}>{opt.label}</div>
+                  <div className="mt-0.5 text-xs text-zinc-400">{opt.desc}</div>
+                </button>
               ))}
             </div>
           </div>

@@ -19,7 +19,7 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const { title, description, status, priority, agentId, sessionId, projectKey, dueAt, tags, subTasks, lifecycle, subjectFiles } = body;
+  const { title, description, status, priority, agentId, sessionId, projectKey, dueAt, tags, subTasks, lifecycle, subjectFiles, contextRefs } = body;
 
   const validStatuses = ['pending', 'in_progress', 'done'];
   const validPriorities = ['high', 'medium', 'low'];
@@ -70,6 +70,7 @@ export async function PATCH(
         ...(subTasks !== undefined && { subTasks: subTasks as TodoSubTask[] }),
         ...(lifecycle !== undefined && validLifecycles.includes(lifecycle) && { lifecycle }),
         ...(subjectFiles !== undefined && { subjectFiles: Array.isArray(subjectFiles) ? subjectFiles.filter((s: unknown) => typeof s === 'string') : undefined }),
+        ...(contextRefs !== undefined && { contextRefs: Array.isArray(contextRefs) && contextRefs.length > 0 ? contextRefs : undefined }),
         updatedAt: new Date().toISOString(),
       };
       updated = patched;
