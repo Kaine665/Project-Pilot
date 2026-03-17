@@ -51,6 +51,8 @@ import {
   incrementGuardRetryCountOnDisk,
   deleteSessionFromDisk,
   updateConfigOnDisk,
+  writeStreamingDraft,
+  deleteStreamingDraft,
 } from './agent-chat-session-store';
 
 // ── Types ──
@@ -118,12 +120,15 @@ export interface AgentChatRun {
   _ephemeral?: boolean;
   /** 会话检查点（context window 快满时由 AI 生成） */
   checkpoint?: import('@/types/agent-chat').SessionCheckpoint;
+  /** Throttle timestamp for streaming draft writes (crash recovery) */
+  _lastDraftWriteTs?: number;
 }
 
 // ── Constants ──
 
 const SWEEP_INTERVAL_MS = 60_000;
 const COMPLETED_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const STREAMING_DRAFT_INTERVAL_MS = 2_000; // Write streaming draft every 2s for crash recovery
 const LOG_PREFIX = '[AgentChat]';
 
 // ── AgentChatManager ──
@@ -568,6 +573,13 @@ class AgentChatManager {
       }
     }
 
+    // Write a final draft snapshot before entering finalizeRun(),
+    // which may take time (title generation, action processing).
+    // If the server crashes during finalization, this ensures the full assistant text is recoverable.
+    if (run.assistantText) {
+      writeStreamingDraft(run.sessionId, run.assistantText).catch(() => {});
+    }
+
     const aborted = run.status === 'stopped';
     run.runner = null;
 
@@ -680,6 +692,14 @@ class AgentChatManager {
         last.text += event.text;
       } else {
         run.contentBlocks.push({ type: 'text', text: event.text });
+      }
+
+      // Throttled streaming draft write for crash recovery.
+      // If the server dies mid-stream, loadSession() will recover partial text from the draft file.
+      const now = Date.now();
+      if (!run._lastDraftWriteTs || now - run._lastDraftWriteTs >= STREAMING_DRAFT_INTERVAL_MS) {
+        run._lastDraftWriteTs = now;
+        writeStreamingDraft(run.sessionId, run.assistantText).catch(() => {});
       }
     } else if (event.type === 'tool_use_start') {
       const tc: ChatToolCall = {
