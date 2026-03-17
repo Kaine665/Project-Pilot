@@ -65,7 +65,7 @@ export const GET = apiHandler(async (request: NextRequest) => {
 
 /** POST /api/context — create a new context entry + content file */
 export const POST = apiHandler(async (request: NextRequest) => {
-  const { label, description, fileName, format, content, group, sourcePath, tags, status, sourceAgentSessionId, producedAt, projectKey, summary: manualSummary } = await request.json();
+  const { label, description, fileName, format, content, group, sourcePath, tags, coveredPaths, status, sourceAgentSessionId, producedAt, projectKey, summary: manualSummary } = await request.json();
 
   if (!label?.trim()) throw badRequest('label is required');
   if (!fileName?.trim()) throw badRequest('fileName is required');
@@ -103,7 +103,8 @@ export const POST = apiHandler(async (request: NextRequest) => {
     ...(trimmedGroup ? { group: trimmedGroup } : {}),
     ...(trimmedProjectKey ? { projectKey: trimmedProjectKey } : {}),
     ...(trimmedSourcePath ? { sourcePath: trimmedSourcePath } : {}),
-    ...(Array.isArray(tags) && tags.length ? { tags: tags.filter((t: unknown) => typeof t === 'string' && t.trim()).map((t: string) => t.trim()) } : {}),
+    ...(Array.isArray(tags) && tags.length ? { tags: tags.filter((t: unknown) => typeof t === 'string' && (t as string).trim()).map((t: string) => t.trim()) } : {}),
+    ...(Array.isArray(coveredPaths) && coveredPaths.length ? { coveredPaths: coveredPaths.filter((p: unknown) => typeof p === 'string' && (p as string).trim()).map((p: string) => p.trim()) } : {}),
     ...(trimmedStatus ? { status: trimmedStatus } : {}),
     ...(trimmedSourceAgentSessionId ? { sourceAgentSessionId: trimmedSourceAgentSessionId } : {}),
     ...(trimmedProducedAt ? { producedAt: trimmedProducedAt } : {}),
