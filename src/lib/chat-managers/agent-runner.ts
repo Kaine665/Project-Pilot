@@ -13,6 +13,10 @@ import { query, type Query as SdkQuery, type SDKUserMessage } from '@anthropic-a
 // @openai/codex-sdk 是纯 ESM 包，静态 import 在 CJS 运行时（tsx/node）会失败。
 // 使用动态 import() 绕过这个限制——动态导入走 Node 的 ESM loader，可以加载 ESM-only 包。
 import type { Input as CodexInput, Thread } from '@openai/codex-sdk';
+import { writeFile, unlink } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { randomBytes } from 'crypto';
 import { SdkEventAdapter } from '@/lib/sdk-event-adapter';
 import { adaptCodexEvent } from '@/lib/codex-sdk-adapter';
 import { resolveCodexBinaryPath } from '@/lib/codex-cli';
@@ -196,15 +200,35 @@ class CodexAgentRunner implements IAgentRunner {
 
   constructor(private readonly thread: Thread) {}
 
-  async *stream(input: AgentRunnerInput, _options?: StreamOptions): AsyncIterable<ChatSSEEvent> {
+  async *stream(input: AgentRunnerInput, options?: StreamOptions): AsyncIterable<ChatSSEEvent> {
     if (isAsyncIterable(input)) {
       throw new Error('Codex runner does not accept Claude message streams');
+    }
+
+    // Codex SDK uses local_image with file paths — write base64 images to temp files
+    const tempPaths: string[] = [];
+    let codexInput: CodexInput = input;
+    const images = options?.images;
+    if (images && images.length > 0 && typeof input === 'string') {
+      const extMap: Record<string, string> = {
+        'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp',
+      };
+      const parts: Array<{ type: 'text'; text: string } | { type: 'local_image'; path: string }> = [];
+      for (const img of images) {
+        const ext = extMap[img.mediaType] ?? 'png';
+        const tmpPath = join(tmpdir(), `codex-img-${randomBytes(8).toString('hex')}.${ext}`);
+        await writeFile(tmpPath, Buffer.from(img.data, 'base64'));
+        tempPaths.push(tmpPath);
+        parts.push({ type: 'local_image', path: tmpPath });
+      }
+      parts.push({ type: 'text', text: input });
+      codexInput = parts;
     }
 
     this._abortController = new AbortController();
 
     try {
-      const { events } = await this.thread.runStreamed(input, {
+      const { events } = await this.thread.runStreamed(codexInput, {
         signal: this._abortController.signal,
       });
 
@@ -219,6 +243,10 @@ class CodexAgentRunner implements IAgentRunner {
       throw err;
     } finally {
       this._abortController = null;
+      // Clean up temp image files
+      for (const p of tempPaths) {
+        unlink(p).catch(() => {});
+      }
     }
   }
 
