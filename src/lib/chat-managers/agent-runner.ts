@@ -13,6 +13,10 @@ import { query, type Query as SdkQuery, type SDKUserMessage } from '@anthropic-a
 // @openai/codex-sdk 是纯 ESM 包，静态 import 在 CJS 运行时（tsx/node）会失败。
 // 使用动态 import() 绕过这个限制——动态导入走 Node 的 ESM loader，可以加载 ESM-only 包。
 import type { Input as CodexInput, Thread } from '@openai/codex-sdk';
+import { writeFile, unlink } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { randomBytes } from 'crypto';
 import { SdkEventAdapter } from '@/lib/sdk-event-adapter';
 import { adaptCodexEvent } from '@/lib/codex-sdk-adapter';
 import { resolveCodexBinaryPath } from '@/lib/codex-cli';
@@ -20,6 +24,15 @@ import { getAppWorkingDir } from '@/lib/app-paths';
 import { buildSdkQueryOptions, buildCodexExecEnv, getSettings } from '@/lib/settings-manager';
 import type { ChatSSEEvent, AgentCapabilities, ProviderId } from '@/types';
 export type AgentRunnerInput = string | AsyncIterable<SDKUserMessage> | CodexInput;
+
+/** Options passed alongside the main input to stream() */
+export interface StreamOptions {
+  /** Image attachments to include with the prompt (base64 encoded) */
+  images?: Array<{
+    mediaType: string;
+    data: string; // base64
+  }>;
+}
 
 // ── Public interface ─────────────────────────────────────────────────────────
 
@@ -29,7 +42,7 @@ export type AgentRunnerInput = string | AsyncIterable<SDKUserMessage> | CodexInp
  */
 export interface IAgentRunner {
   /** 流式执行 prompt，yield ChatSSEEvent */
-  stream(input: AgentRunnerInput): AsyncIterable<ChatSSEEvent>;
+  stream(input: AgentRunnerInput, options?: StreamOptions): AsyncIterable<ChatSSEEvent>;
 
   /** 中止当前流 */
   abort(): void;
@@ -120,13 +133,42 @@ class ClaudeAgentRunner implements IAgentRunner {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(private readonly sdkOpts: any) {}
 
-  async *stream(input: AgentRunnerInput): AsyncIterable<ChatSSEEvent> {
+  async *stream(input: AgentRunnerInput, options?: StreamOptions): AsyncIterable<ChatSSEEvent> {
     if (Array.isArray(input)) {
       throw new Error('Claude runner does not accept Codex structured input');
     }
 
     const adapter = new SdkEventAdapter();
-    this._sdkQuery = query({ prompt: input, options: this.sdkOpts });
+    const images = options?.images;
+
+    if (images && images.length > 0 && typeof input === 'string') {
+      // Build multimodal prompt: images + text as content blocks inside SDKUserMessage
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const contentBlocks: any[] = images.map(img => ({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: img.mediaType,
+          data: img.data,
+        },
+      }));
+      contentBlocks.push({ type: 'text', text: input });
+
+      const userMessage: SDKUserMessage = {
+        type: 'user',
+        message: { role: 'user', content: contentBlocks },
+        parent_tool_use_id: null,
+        session_id: `img-${Date.now()}`, // placeholder, SDK captures real session_id from init event
+      };
+
+      async function* singleMessage(): AsyncIterable<SDKUserMessage> {
+        yield userMessage;
+      }
+
+      this._sdkQuery = query({ prompt: singleMessage(), options: this.sdkOpts });
+    } else {
+      this._sdkQuery = query({ prompt: input, options: this.sdkOpts });
+    }
 
     try {
       for await (const msg of this._sdkQuery) {
@@ -158,15 +200,35 @@ class CodexAgentRunner implements IAgentRunner {
 
   constructor(private readonly thread: Thread) {}
 
-  async *stream(input: AgentRunnerInput): AsyncIterable<ChatSSEEvent> {
+  async *stream(input: AgentRunnerInput, options?: StreamOptions): AsyncIterable<ChatSSEEvent> {
     if (isAsyncIterable(input)) {
       throw new Error('Codex runner does not accept Claude message streams');
+    }
+
+    // Codex SDK uses local_image with file paths — write base64 images to temp files
+    const tempPaths: string[] = [];
+    let codexInput: CodexInput = input;
+    const images = options?.images;
+    if (images && images.length > 0 && typeof input === 'string') {
+      const extMap: Record<string, string> = {
+        'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp',
+      };
+      const parts: Array<{ type: 'text'; text: string } | { type: 'local_image'; path: string }> = [];
+      for (const img of images) {
+        const ext = extMap[img.mediaType] ?? 'png';
+        const tmpPath = join(tmpdir(), `codex-img-${randomBytes(8).toString('hex')}.${ext}`);
+        await writeFile(tmpPath, Buffer.from(img.data, 'base64'));
+        tempPaths.push(tmpPath);
+        parts.push({ type: 'local_image', path: tmpPath });
+      }
+      parts.push({ type: 'text', text: input });
+      codexInput = parts;
     }
 
     this._abortController = new AbortController();
 
     try {
-      const { events } = await this.thread.runStreamed(input, {
+      const { events } = await this.thread.runStreamed(codexInput, {
         signal: this._abortController.signal,
       });
 
@@ -181,6 +243,10 @@ class CodexAgentRunner implements IAgentRunner {
       throw err;
     } finally {
       this._abortController = null;
+      // Clean up temp image files
+      for (const p of tempPaths) {
+        unlink(p).catch(() => {});
+      }
     }
   }
 
