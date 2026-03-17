@@ -34,12 +34,12 @@ export const TodoListCard = memo(function TodoListCard({ toolCall }: TodoListCar
   let todos: TodoItem[] = [];
   try {
     const input = JSON.parse(toolCall.input);
-    todos = input.todos || [];
+    todos = Array.isArray(input.todos) ? input.todos : [];
   } catch {
     return null;
   }
 
-  if (todos.length === 0) return null;
+  if (!Array.isArray(todos) || todos.length === 0) return null;
 
   const completed = todos.filter((t) => t.status === 'completed').length;
   const inProgress = todos.filter((t) => t.status === 'in_progress').length;
