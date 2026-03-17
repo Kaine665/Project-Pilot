@@ -1,0 +1,236 @@
+{
+  "$schema": "./providers-registry.schema.json",
+  "providers": [
+    {
+      "id": "anthropic",
+      "nameKey": "settings.providers.anthropic",
+      "models": [
+        { "id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "contextWindow": 200000 },
+        { "id": "claude-opus-4-6", "label": "Claude Opus 4.6", "contextWindow": 200000 },
+        { "id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5", "contextWindow": 200000 }
+      ],
+      "supportsOAuth": true,
+      "editableBaseUrl": false,
+      "editableModel": true,
+      "apiKeyPlaceholder": "sk-ant-api03-...",
+      "useApiKeyForAuth": true
+    },
+    {
+      "id": "openai",
+      "nameKey": "settings.providers.openai",
+      "models": [
+        { "id": "gpt-5.4", "label": "GPT-5.4", "contextWindow": 128000 },
+        { "id": "gpt-5.3-codex", "label": "GPT-5.3 Codex", "contextWindow": 128000 },
+        { "id": "gpt-5.3-codex-spark", "label": "GPT-5.3 Codex Spark", "contextWindow": 128000 },
+        { "id": "gpt-5.2-codex", "label": "GPT-5.2 Codex", "contextWindow": 128000 },
+        { "id": "gpt-5.1-codex-max", "label": "GPT-5.1 Codex Max", "contextWindow": 128000 },
+        { "id": "gpt-5.2", "label": "GPT-5.2", "contextWindow": 128000 },
+        { "id": "gpt-5.1-codex-mini", "label": "GPT-5.1 Codex Mini", "contextWindow": 128000 }
+      ],
+      "supportsOAuth": true,
+      "editableBaseUrl": false,
+      "editableModel": true,
+      "apiKeyPlaceholder": "sk-..."
+    },
+    {
+      "id": "deepseek",
+      "nameKey": "settings.providers.deepseek",
+      "baseUrl": "https://api.deepseek.com/anthropic",
+      "candidateBaseUrls": ["https://api.deepseek.com/anthropic"],
+      "models": [
+        { "id": "deepseek-chat", "label": "DeepSeek V3", "contextWindow": 65536 },
+        { "id": "deepseek-reasoner", "label": "DeepSeek R1", "contextWindow": 65536 }
+      ],
+      "supportsOAuth": false,
+      "editableBaseUrl": false,
+      "editableModel": true,
+      "apiKeyPlaceholder": "sk-...",
+      "useApiKeyForAuth": true,
+      "extraEnv": {
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "API_TIMEOUT_MS": "600000"
+      }
+    },
+    {
+      "id": "qwen",
+      "nameKey": "settings.providers.qwen",
+      "baseUrl": "https://coding.dashscope.aliyuncs.com/apps/anthropic",
+      "candidateBaseUrls": [
+        "https://coding.dashscope.aliyuncs.com/apps/anthropic",
+        "https://dashscope-intl.aliyuncs.com/apps/anthropic",
+        "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic"
+      ],
+      "models": [
+        { "id": "qwen3-coder-plus", "label": "Qwen3 Coder Plus", "contextWindow": 131072 },
+        { "id": "qwen3-coder-flash", "label": "Qwen3 Coder Flash", "contextWindow": 131072 },
+        { "id": "qwen3-coder", "label": "Qwen3 Coder", "contextWindow": 131072 }
+      ],
+      "supportsOAuth": false,
+      "editableBaseUrl": true,
+      "editableModel": true,
+      "apiKeyPlaceholder": "sk-...",
+      "extraEnv": {
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+      }
+    },
+    {
+      "id": "zhipu",
+      "nameKey": "settings.providers.zhipu",
+      "baseUrl": "https://open.bigmodel.cn/api/anthropic",
+      "candidateBaseUrls": ["https://open.bigmodel.cn/api/anthropic"],
+      "models": [
+        { "id": "glm-4.7", "label": "GLM-4.7", "contextWindow": 128000 },
+        { "id": "glm-4.7-flashx", "label": "GLM-4.7 FlashX", "contextWindow": 128000 },
+        { "id": "glm-4.5", "label": "GLM-4.5", "contextWindow": 128000 },
+        { "id": "glm-4.5-air", "label": "GLM-4.5 Air", "contextWindow": 128000 }
+      ],
+      "supportsOAuth": false,
+      "editableBaseUrl": false,
+      "editableModel": true,
+      "apiKeyPlaceholder": "your-zhipu-api-key",
+      "useApiKeyForAuth": true,
+      "extraEnv": {
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "API_TIMEOUT_MS": "3000000"
+      }
+    },
+    {
+      "id": "minimax",
+      "nameKey": "settings.providers.minimax",
+      "baseUrl": "https://api.minimax.chat/anthropic",
+      "candidateBaseUrls": [
+        "https://api.minimax.chat/anthropic",
+        "https://api.minimax.io/anthropic",
+        "https://api.minimaxi.com/anthropic"
+      ],
+      "models": [
+        { "id": "MiniMax-M2.5", "label": "MiniMax M2.5", "contextWindow": 1000000 },
+        { "id": "MiniMax-M2.5-highspeed", "label": "MiniMax M2.5 Highspeed", "contextWindow": 1000000 },
+        { "id": "MiniMax-M2.1", "label": "MiniMax M2.1", "contextWindow": 1000000 },
+        { "id": "MiniMax-M2", "label": "MiniMax M2", "contextWindow": 1000000 }
+      ],
+      "supportsOAuth": false,
+      "editableBaseUrl": true,
+      "editableModel": true,
+      "apiKeyPlaceholder": "your-minimax-api-key",
+      "extraEnv": {
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+      }
+    },
+    {
+      "id": "kimi",
+      "nameKey": "settings.providers.kimi",
+      "baseUrl": "https://api.kimi.com/coding/",
+      "candidateBaseUrls": [
+        "https://api.kimi.com/coding/",
+        "https://api.moonshot.cn/anthropic",
+        "https://api.moonshot.ai/anthropic"
+      ],
+      "models": [
+        { "id": "kimi-for-coding", "label": "Kimi For Coding (K2.5)", "contextWindow": 131072 },
+        { "id": "kimi-k2.5", "label": "Kimi K2.5 (Moonshot)", "contextWindow": 131072 },
+        { "id": "kimi-k2", "label": "Kimi K2", "contextWindow": 131072 },
+        { "id": "kimi-k2-thinking", "label": "Kimi K2 Thinking", "contextWindow": 131072 }
+      ],
+      "supportsOAuth": false,
+      "editableBaseUrl": false,
+      "editableModel": true,
+      "apiKeyPlaceholder": "sk-kimi-...",
+      "extraEnv": {
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "ENABLE_TOOL_SEARCH": "FALSE"
+      }
+    },
+    {
+      "id": "openrouter",
+      "nameKey": "settings.providers.openrouter",
+      "baseUrl": "https://openrouter.ai/api",
+      "candidateBaseUrls": ["https://openrouter.ai/api"],
+      "models": [
+        { "id": "anthropic/claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "contextWindow": 200000 },
+        { "id": "anthropic/claude-opus-4-6", "label": "Claude Opus 4.6", "contextWindow": 200000 },
+        { "id": "openai/gpt-4o", "label": "GPT-4o", "contextWindow": 128000 },
+        { "id": "google/gemini-2.5-pro", "label": "Gemini 2.5 Pro", "contextWindow": 1000000 },
+        { "id": "deepseek/deepseek-chat", "label": "DeepSeek V3", "contextWindow": 65536 }
+      ],
+      "supportsOAuth": false,
+      "editableBaseUrl": false,
+      "editableModel": true,
+      "apiKeyPlaceholder": "sk-or-v1-...",
+      "extraEnv": {
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+      }
+    },
+    {
+      "id": "ollama",
+      "nameKey": "settings.providers.ollama",
+      "baseUrl": "http://localhost:11434",
+      "models": [
+        { "id": "qwen3-coder", "label": "Qwen3 Coder", "contextWindow": 131072 },
+        { "id": "deepseek-coder-v2", "label": "DeepSeek Coder V2", "contextWindow": 65536 }
+      ],
+      "supportsOAuth": false,
+      "editableBaseUrl": true,
+      "editableModel": true,
+      "extraEnv": {
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+      }
+    },
+    {
+      "id": "custom",
+      "nameKey": "settings.providers.custom",
+      "models": [],
+      "supportsOAuth": false,
+      "editableBaseUrl": true,
+      "editableModel": true,
+      "apiKeyPlaceholder": "your-api-key",
+      "extraEnv": {
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+      }
+    }
+  ],
+  "contextWindowFallbacks": {
+    "_comment": "Pattern-based fallback rules for models not listed above. Prefix match, first wins.",
+    "rules": [
+      { "pattern": "claude-", "contextWindow": 200000 },
+      { "pattern": "gpt-", "contextWindow": 128000 },
+      { "pattern": "o1", "contextWindow": 200000 },
+      { "pattern": "o3", "contextWindow": 200000 },
+      { "pattern": "deepseek-", "contextWindow": 65536 },
+      { "pattern": "qwen", "contextWindow": 131072 },
+      { "pattern": "glm-", "contextWindow": 128000 },
+      { "pattern": "kimi-", "contextWindow": 131072 },
+      { "pattern": "moonshot-", "contextWindow": 131072 },
+      { "pattern": "MiniMax-", "contextWindow": 1000000 }
+    ],
+    "containsRules": [
+      { "pattern": "gemini-2.5", "contextWindow": 1000000 },
+      { "pattern": "gemini-", "contextWindow": 128000 },
+      { "pattern": "/claude-", "contextWindow": 200000 },
+      { "pattern": "/gpt-", "contextWindow": 128000 },
+      { "pattern": "/gemini-2.5", "contextWindow": 1000000 }
+    ],
+    "default": 128000
+  },
+  "extraContextWindows": {
+    "_comment": "Legacy/alias model IDs not in provider models but still need context window lookup.",
+    "claude-haiku-4-5-20250929": 200000,
+    "claude-sonnet-4-5-20250929": 200000,
+    "claude-3-5-sonnet-20241022": 200000,
+    "claude-3-5-haiku-20241022": 200000,
+    "claude-3-opus-20240229": 200000,
+    "k2p5": 131072,
+    "kimi-k2-turbo": 131072,
+    "kimi-k2-thinking-turbo": 131072
+  },
+  "kimiRouting": {
+    "_comment": "Kimi model-to-channel routing for base URL selection.",
+    "codeBaseUrl": "https://api.kimi.com/coding/",
+    "moonshotBaseUrls": [
+      "https://api.moonshot.cn/anthropic",
+      "https://api.moonshot.ai/anthropic"
+    ],
+    "codeModelIds": ["kimi-for-coding", "k2p5"],
+    "moonshotModelIds": ["kimi-k2.5", "kimi-k2", "kimi-k2-thinking", "kimi-k2-turbo", "kimi-k2-thinking-turbo"]
+  }
+}
