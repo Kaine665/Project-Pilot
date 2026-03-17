@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import { Loader2, FileDown, ClipboardList } from 'lucide-react';
 import { ChatBubble } from '@/components/chat-bubble';
+import type { ParsedActionTag } from '@/lib/action-tag-parser';
 import type { ChatMessage, ContentBlock } from '@/types';
 
 export interface ChatMessageListProps {
@@ -25,6 +26,9 @@ export interface ChatMessageListProps {
   onFileClick: (filePath: string) => void;
   onCompressOpen: () => void;
   onCompressDismiss: () => void;
+  onActionPreview?: (tag: ParsedActionTag) => void;
+  onActionReject?: (tag: ParsedActionTag) => void;
+  onActionRestore?: (tag: ParsedActionTag) => void;
 }
 
 export function ChatMessageList({
@@ -45,6 +49,9 @@ export function ChatMessageList({
   onFileClick,
   onCompressOpen,
   onCompressDismiss,
+  onActionPreview,
+  onActionReject,
+  onActionRestore,
 }: ChatMessageListProps) {
   const lastAssistantId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -92,6 +99,9 @@ export function ChatMessageList({
           hasSendError={!!errorMsg && msg.role === 'user' && msg.id === messages[messages.length - 1]?.id}
           onViewPlan={onViewPlan}
           onFileClick={onFileClick}
+          onActionPreview={onActionPreview}
+          onActionReject={onActionReject}
+          onActionRestore={onActionRestore}
         />
       ))}
 
@@ -100,6 +110,9 @@ export function ChatMessageList({
           message={streamingMessage}
           streamingBlocks={streamingBlocks}
           isStreaming
+          onActionPreview={onActionPreview}
+          onActionReject={onActionReject}
+          onActionRestore={onActionRestore}
         />
       )}
 
