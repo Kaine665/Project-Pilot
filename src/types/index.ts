@@ -440,6 +440,11 @@ export interface ContextEntry {
    * 示例：["src/lib/oauth-", "src/app/api/settings/auth-"]
    */
   coveredPaths?: string[];
+  /**
+   * 上次检查/更新此 Code Card 时的 git commit hash。
+   * 用于增量检测：只比较此 commit 之后的文件变更。
+   */
+  lastCheckedCommit?: string;
   createdAt: string;
   updatedAt: string;
 }
