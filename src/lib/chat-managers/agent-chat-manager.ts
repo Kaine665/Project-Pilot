@@ -12,7 +12,9 @@
  */
 
 import { getAppWorkingDir } from '@/lib/app-paths';
-import { getPromptFilePath, getContextIndexPath, getTodosPath, readJsonFile } from '@/lib/file-store';
+import { getPromptFilePath, getContextIndexPath, getContextDir, getTodosPath, readJsonFile } from '@/lib/file-store';
+import { matchCodeCards, buildCodeCardIndex } from '@/lib/code-card-matcher';
+import { listRunningTasks } from '@/lib/active-tasks';
 import type { ContextIndexData, TodosData } from '@/types';
 import { resolveSystemPrompt, createRuntimePromptCopy } from '@/lib/agent-prompt-store';
 import { resolveSkillsForSession } from '@/lib/skill-store';
@@ -925,6 +927,11 @@ async function buildResourcePrompt(
     merged.push({ type: 'project-prompt', id: '_project', priority: 2 });
   }
 
+  // Load context index (hoisted — needed by both auto-inject and code cards)
+  const ctxIndex = projectKey
+    ? await readJsonFile<ContextIndexData>(getContextIndexPath(), { entries: [] })
+    : { entries: [] };
+
   // Auto-inject project-level contexts (skip when agent uses 'exclusive' strategy)
   if (projectKey && agent.contextStrategy !== 'exclusive') {
     const existingCtxIds = new Set([
@@ -932,13 +939,69 @@ async function buildResourcePrompt(
       ...(sessionConfig?.contextIds ?? []),
     ]);
     const agentTags = agent.contextTags;
-    const ctxIndex = await readJsonFile<ContextIndexData>(getContextIndexPath(), { entries: [] });
     for (const entry of ctxIndex.entries) {
       if (entry.projectKey !== projectKey) continue;
       if (entry.status && entry.status !== 'active') continue;
       if (existingCtxIds.has(entry.id)) continue;
       if (agentTags?.length && (!entry.tags?.length || !entry.tags.some(t => agentTags.includes(t)))) continue;
       merged.push({ type: 'context', id: entry.id, priority: 32, injectMode: 'summary' });
+    }
+  }
+
+  // ── Auto-inject Code Cards matching active task scope ──
+  {
+    const allCodeCards = ctxIndex.entries.filter(
+      e => e.coveredPaths?.length &&
+        e.tags?.includes('code-card') &&
+        (!e.status || e.status === 'active'),
+    );
+
+    if (allCodeCards.length > 0) {
+      // Try to find active task scope for this session
+      let scopePaths: string[] = [];
+      if (sessionId) {
+        try {
+          const runningTasks = await listRunningTasks();
+          const myTask = runningTasks.find(t => t.sessionId === sessionId);
+          if (myTask?.scope?.length) {
+            scopePaths = myTask.scope;
+          }
+        } catch { /* active-tasks may not exist yet */ }
+      }
+
+      const matched = scopePaths.length > 0
+        ? matchCodeCards(scopePaths, ctxIndex.entries)
+        : [];
+
+      if (matched.length > 0) {
+        // Scope matched → inject full content at high priority
+        for (const card of matched) {
+          merged.push({ type: 'context', id: card.id, priority: 15, injectMode: 'full' });
+        }
+      } else {
+        // No scope match (cold start or unrelated task) → inject index table
+        const indexTable = buildCodeCardIndex(allCodeCards, getContextDir());
+        if (indexTable) {
+          const indexRef: InlineTextRef = {
+            type: 'inline-text',
+            id: '_code-card-index',
+            priority: 40,
+            label: 'Code Cards 索引',
+            inlineContent: indexTable,
+          };
+          merged.push(indexRef);
+        }
+      }
+
+      // Append update reminder (low priority, always present when code cards exist)
+      const reminderRef: InlineTextRef = {
+        type: 'inline-text',
+        id: '_code-card-update-reminder',
+        priority: 90,
+        label: 'Code Card 维护提醒',
+        inlineContent: '任务完成后，如果你修改了 Code Card 覆盖范围内的文件（新增函数、改变数据流、修复重要 bug），请更新对应的 Code Card 内容，保持代码理解层的准确性。使用 PATCH /api/context/[id] 更新内容。',
+      };
+      merged.push(reminderRef);
     }
   }
 

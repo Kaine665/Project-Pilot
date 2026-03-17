@@ -93,6 +93,13 @@ export const PATCH = apiHandler(async (
       delete entry.tags;
     }
   }
+  if (body.coveredPaths !== undefined) {
+    if (Array.isArray(body.coveredPaths) && body.coveredPaths.length) {
+      entry.coveredPaths = body.coveredPaths.filter((p: unknown) => typeof p === 'string' && (p as string).trim()).map((p: string) => p.trim());
+    } else {
+      delete entry.coveredPaths;
+    }
+  }
   entry.updatedAt = new Date().toISOString();
 
   // Handle fileName rename

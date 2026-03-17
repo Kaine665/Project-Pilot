@@ -434,6 +434,12 @@ export interface ContextEntry {
    * 可选；缺失时 fallback 到 description（>20字符）或文件前 500 字符。
    */
   summary?: string;
+  /**
+   * 此条目覆盖的源码路径前缀（仅 code-card 类型使用）。
+   * 用于与 ActiveTask.scope 做前缀匹配，实现自动注入。
+   * 示例：["src/lib/oauth-", "src/app/api/settings/auth-"]
+   */
+  coveredPaths?: string[];
   createdAt: string;
   updatedAt: string;
 }
