@@ -11,10 +11,12 @@ import { topicCompletionTask } from './tasks/topic-completion';
 import { todoAutoCompleteTask } from './tasks/todo-auto-complete';
 import { activeTaskCleanupTask } from './tasks/active-task-cleanup';
 import { taskCardGenerationTask } from './tasks/task-card-generation';
+import { codeCardRefreshTask } from './tasks/code-card-refresh';
 
 // Register all built-in satellite tasks
 satelliteRegistry.register(activeTaskCleanupTask);
 satelliteRegistry.register(taskCardGenerationTask);
+satelliteRegistry.register(codeCardRefreshTask);
 satelliteRegistry.register(titleGenerationTask);
 satelliteRegistry.register(healthGuardTask);
 satelliteRegistry.register(knowledgeExtractionTask);

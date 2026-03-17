@@ -1,7 +1,7 @@
 'use client';
 
 import { memo } from 'react';
-import { BookMarked, CheckCircle2, FileText, RotateCcw, X } from 'lucide-react';
+import { ArrowDown, BookMarked, CheckCircle2, FileText, RotateCcw, X } from 'lucide-react';
 
 export interface TopicCompletionInfo {
   completed: boolean;
@@ -16,6 +16,8 @@ interface ChatNotificationBannersProps {
   onDismissKnowledge: () => void;
   onDismissDocs: () => void;
   onDismissTopicCompletion: () => void;
+  /** 点击横幅时滚动到对应 ActionCard 的位置 */
+  onScrollToAction?: (actionType: string) => void;
   /** 会话检查点已生成，显示续接按钮 */
   checkpointSaved?: boolean;
   onResumeCheckpoint?: () => void;
@@ -31,6 +33,7 @@ export const ChatNotificationBanners = memo(function ChatNotificationBanners({
   onDismissKnowledge,
   onDismissDocs,
   onDismissTopicCompletion,
+  onScrollToAction,
   checkpointSaved,
   onResumeCheckpoint,
   onDismissCheckpoint,
@@ -78,10 +81,15 @@ export const ChatNotificationBanners = memo(function ChatNotificationBanners({
       )}
       {knowledgeDrafts.length > 0 && (
         <div className={`${className} flex items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs dark:border-amber-800/50 dark:bg-amber-900/15`}>
-          <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
+          <button
+            onClick={() => onScrollToAction?.('save-knowledge')}
+            disabled={!onScrollToAction}
+            className={`flex min-w-0 items-center gap-1.5 text-amber-700 dark:text-amber-400 ${onScrollToAction ? 'cursor-pointer hover:underline' : ''}`}
+          >
             <BookMarked className="h-3 w-3 shrink-0" />
-            <span>Agent 已保存 {knowledgeDrafts.length} 条知识草稿，待确认</span>
-          </div>
+            <span className="truncate">Agent 已保存 {knowledgeDrafts.length} 条知识草稿，待确认</span>
+            {onScrollToAction && <ArrowDown className="h-3 w-3 shrink-0 opacity-50" />}
+          </button>
           <button
             onClick={onDismissKnowledge}
             className="shrink-0 text-amber-400 hover:text-amber-600 dark:text-amber-600 dark:hover:text-amber-400"
@@ -92,10 +100,15 @@ export const ChatNotificationBanners = memo(function ChatNotificationBanners({
       )}
       {docsSaved.length > 0 && (
         <div className={`${className} flex items-center justify-between gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs dark:border-blue-800/50 dark:bg-blue-900/15`}>
-          <div className="flex items-center gap-1.5 text-blue-700 dark:text-blue-400">
+          <button
+            onClick={() => onScrollToAction?.('save-doc')}
+            disabled={!onScrollToAction}
+            className={`flex min-w-0 items-center gap-1.5 text-blue-700 dark:text-blue-400 ${onScrollToAction ? 'cursor-pointer hover:underline' : ''}`}
+          >
             <FileText className="h-3 w-3 shrink-0" />
-            <span>Agent 已保存 {docsSaved.length} 条设计文档</span>
-          </div>
+            <span className="truncate">Agent 已保存 {docsSaved.length} 条设计文档</span>
+            {onScrollToAction && <ArrowDown className="h-3 w-3 shrink-0 opacity-50" />}
+          </button>
           <button
             onClick={onDismissDocs}
             className="shrink-0 text-blue-400 hover:text-blue-600 dark:text-blue-600 dark:hover:text-blue-400"

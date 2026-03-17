@@ -12,6 +12,8 @@ import { SaveKnowledgeDialog } from '@/components/save-knowledge-dialog';
 import { GuestAgentOverlay } from '@/components/guest-agent-overlay';
 import { SessionConfigPanel } from '@/components/session-config-panel';
 import { PlanViewerPanel } from '@/components/plan-viewer-panel';
+import { ActionContentPanel } from '@/components/action-content-panel';
+import type { ParsedActionTag } from '@/lib/action-tag-parser';
 import { SessionCompressDialog } from '@/components/session-compress-dialog';
 import { FilePreviewDialog } from '@/components/file-preview-dialog';
 import { FolderExplorerPanel } from '@/components/folder-explorer-panel';
@@ -110,6 +112,10 @@ export function AgentChatPanel({
   // Plan viewer
   const [planContent, setPlanContent] = useState<string | null>(null);
   const [isPlanOpen, setIsPlanOpen] = useState(false);
+
+  // Action content panel (right-side preview for action tags)
+  const [actionPreviewTag, setActionPreviewTag] = useState<ParsedActionTag | null>(null);
+  const [isActionPanelOpen, setIsActionPanelOpen] = useState(false);
 
   // File preview
   const [previewFilePath, setPreviewFilePath] = useState<string | null>(null);
@@ -1321,12 +1327,36 @@ export function AgentChatPanel({
   // Dismiss callbacks (stable references)
   const handleDismissKnowledge = useCallback(() => setKnowledgeDrafts([]), []);
   const handleDismissDocs = useCallback(() => setDocsSaved([]), []);
+  const handleScrollToAction = useCallback((actionType: string) => {
+    const el = document.querySelector(`[data-action-type="${actionType}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // 短暂高亮闪烁提示
+      el.classList.add('ring-2', 'ring-offset-1', 'ring-yellow-400');
+      setTimeout(() => el.classList.remove('ring-2', 'ring-offset-1', 'ring-yellow-400'), 1500);
+    }
+  }, []);
   const handleDismissTopicCompletion = useCallback(() => setTopicCompletion(null), []);
   const handleSelectGuest = useCallback((a: Agent) => setGuestAgent(a), []);
 
   const handleViewPlan = useCallback((content: string) => {
     setPlanContent(content);
     setIsPlanOpen(true);
+  }, []);
+
+  const handleActionPreview = useCallback((tag: ParsedActionTag) => {
+    setActionPreviewTag(tag);
+    setIsActionPanelOpen(true);
+    // Close plan panel if open to avoid overlap
+    setIsPlanOpen(false);
+  }, []);
+
+  const handleActionReject = useCallback((_tag: ParsedActionTag) => {
+    // For now, just visual — future: call API to undo the action
+  }, []);
+
+  const handleActionRestore = useCallback((_tag: ParsedActionTag) => {
+    // For now, just visual — future: call API to re-execute the action
   }, []);
 
   const handleFileClick = useCallback((filePath: string) => {
@@ -1345,6 +1375,18 @@ export function AgentChatPanel({
     >
       <div className="h-full w-[400px]">
         <PlanViewerPanel content={planContent} onClose={() => setIsPlanOpen(false)} />
+      </div>
+    </div>
+  ) : null;
+
+  const actionPanel = actionPreviewTag ? (
+    <div
+      className={`shrink-0 overflow-hidden border-l border-zinc-200 transition-[width] duration-200 ease-in-out dark:border-zinc-800 ${
+        isActionPanelOpen ? 'w-[400px]' : 'w-0 border-l-0'
+      }`}
+    >
+      <div className="h-full w-[400px]">
+        <ActionContentPanel tag={actionPreviewTag} onClose={() => setIsActionPanelOpen(false)} />
       </div>
     </div>
   ) : null;
@@ -1380,6 +1422,7 @@ export function AgentChatPanel({
       onDismissKnowledge={handleDismissKnowledge}
       onDismissDocs={handleDismissDocs}
       onDismissTopicCompletion={handleDismissTopicCompletion}
+      onScrollToAction={handleScrollToAction}
       checkpointSaved={checkpointSaved}
       onResumeCheckpoint={handleResumeCheckpoint}
       onDismissCheckpoint={handleDismissCheckpoint}
@@ -1453,6 +1496,9 @@ export function AgentChatPanel({
     onFileClick: handleFileClick,
     onCompressOpen: () => setCompressDialogOpen(true),
     onCompressDismiss: () => setCompressDismissed(true),
+    onActionPreview: handleActionPreview,
+    onActionReject: handleActionReject,
+    onActionRestore: handleActionRestore,
   };
 
   // ── Plain mode (agents page, no variant/projectKey) ──
@@ -1515,6 +1561,7 @@ export function AgentChatPanel({
         </div>
       </div>
       {planPanel}
+      {actionPanel}
       </div>
     );
   }
@@ -1606,6 +1653,7 @@ export function AgentChatPanel({
           onDismissKnowledge={handleDismissKnowledge}
           onDismissDocs={handleDismissDocs}
           onDismissTopicCompletion={handleDismissTopicCompletion}
+          onScrollToAction={handleScrollToAction}
           checkpointSaved={checkpointSaved}
           onResumeCheckpoint={handleResumeCheckpoint}
           onDismissCheckpoint={handleDismissCheckpoint}
@@ -1617,6 +1665,7 @@ export function AgentChatPanel({
     </div>
     {configDrawer}
     {planPanel}
+    {actionPanel}
     </div>
   );
 

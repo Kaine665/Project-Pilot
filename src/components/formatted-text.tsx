@@ -2,11 +2,16 @@ import React, { memo, useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PlanRenderer } from '@/components/plan-renderer';
+import { ActionCard, StreamingActionCard } from '@/components/action-card';
+import { parseActionTags, hasActionTags } from '@/lib/action-tag-parser';
+import type { ParsedActionTag } from '@/lib/action-tag-parser';
 
 /**
  * Markdown 文本格式化组件
  * 使用 react-markdown 渲染完整的 GitHub Flavored Markdown
- * 特殊处理：```json:plan 代码块会被渲染为友好的计划展示
+ * 特殊处理：
+ * - ```json:plan 代码块会被渲染为友好的计划展示
+ * - AI action tags (<save-doc>, <save-knowledge>, etc.) 会被渲染为 ActionCard 组件
  */
 
 // Extract plain text from React children (for copy button)
@@ -69,10 +74,70 @@ interface FormattedTextProps {
   text: string;
   className?: string;
   onFileClick?: (filePath: string) => void;
+  /** Whether this text is currently streaming (enables streaming action card state) */
+  isStreaming?: boolean;
+  /** Callback when user clicks an action card to preview its content */
+  onActionPreview?: (tag: ParsedActionTag) => void;
+  /** Callback when user rejects an action */
+  onActionReject?: (tag: ParsedActionTag) => void;
+  /** Callback when user restores a rejected action */
+  onActionRestore?: (tag: ParsedActionTag) => void;
 }
 
-export const FormattedText = memo(function FormattedText({ text, className = '', onFileClick }: FormattedTextProps) {
-  // 检测是否包含 json:plan 代码块
+export const FormattedText = memo(function FormattedText({
+  text,
+  className = '',
+  onFileClick,
+  isStreaming,
+  onActionPreview,
+  onActionReject,
+  onActionRestore,
+}: FormattedTextProps) {
+  // ── Action tags detection — render as ActionCard components ──
+  if (hasActionTags(text) || (isStreaming && /<(?:save-doc|save-knowledge|suspend-task|save-checkpoint|await-sub-agents)\s/.test(text))) {
+    const segments = parseActionTags(text, isStreaming);
+
+    // If we found action segments, render mixed content
+    if (segments.some(s => s.type === 'action' || s.type === 'streaming-action')) {
+      return (
+        <div className={className}>
+          {segments.map((seg, i) => {
+            if (seg.type === 'text') {
+              return (
+                <FormattedText
+                  key={i}
+                  text={seg.content}
+                  className=""
+                  onFileClick={onFileClick}
+                />
+              );
+            }
+            if (seg.type === 'action') {
+              return (
+                <ActionCard
+                  key={`action-${i}`}
+                  tag={seg.tag}
+                  initialState="accepted"
+                  onPreview={onActionPreview}
+                  onReject={onActionReject}
+                  onRestore={onActionRestore}
+                />
+              );
+            }
+            // streaming-action
+            return (
+              <StreamingActionCard
+                key={`streaming-${i}`}
+                tagType={seg.tagType}
+              />
+            );
+          })}
+        </div>
+      );
+    }
+  }
+
+  // ── json:plan code block detection ──
   const planMatch = text.match(/```json:plan\s*\n([\s\S]*?)```/);
 
   if (planMatch) {
@@ -91,6 +156,7 @@ export const FormattedText = memo(function FormattedText({ text, className = '',
     );
   }
 
+  // ── Standard Markdown rendering ──
   return (
     <div className={`${className} formatted-markdown`}>
       <ReactMarkdown
