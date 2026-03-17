@@ -441,6 +441,19 @@ export interface ContextIndexData {
 export type TodoPriority = 'high' | 'medium' | 'low';
 export type TodoStatus = 'pending' | 'in_progress' | 'done';
 
+/**
+ * Backend lifecycle — 比 status 更精细的状态，用于 Agent 决策。
+ * 前端仍然只展示 status（pending/in_progress/done），lifecycle 对用户透明。
+ *
+ * draft    → AI 自动生成，未经人工确认，不可被 Agent 认领
+ * pending  → 已确认，等待认领
+ * active   → 有 Agent 正在执行（绑定了 activeTaskId）
+ * stale    → 内容可能过期（超期未认领 / 关联文件已变更），需重新确认
+ * done     → 已完成
+ * archived → 不再活跃但保留记录
+ */
+export type TodoLifecycle = 'draft' | 'pending' | 'active' | 'stale' | 'done' | 'archived';
+
 export interface TodoSubTask {
   id: string;
   title: string;
@@ -461,6 +474,17 @@ export interface TodoItem {
   subTasks?: TodoSubTask[];
   createdAt: string;
   updatedAt: string;
+
+  // ── Lifecycle 扩展（后端使用，前端透明） ──
+
+  /** 精细生命周期状态，默认跟随 status 映射 */
+  lifecycle?: TodoLifecycle;
+  /** 被哪个 ActiveTask 认领（双向绑定） */
+  activeTaskId?: string;
+  /** 被哪个 git 分支认领 */
+  claimedByBranch?: string;
+  /** 关联的源码文件路径（用于 stale 检测） */
+  subjectFiles?: string[];
 }
 
 export interface TodosData {

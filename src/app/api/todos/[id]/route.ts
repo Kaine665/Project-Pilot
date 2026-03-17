@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTodosPath, modifyJsonFile } from '@/lib/file-store';
-import type { TodoSubTask, TodosData } from '@/types';
+import type { TodoSubTask, TodosData, TodoLifecycle } from '@/types';
 
 const DEFAULT: TodosData = { todos: [] };
 
@@ -19,10 +19,11 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const { title, description, status, priority, agentId, sessionId, projectKey, dueAt, tags, subTasks } = body;
+  const { title, description, status, priority, agentId, sessionId, projectKey, dueAt, tags, subTasks, lifecycle, subjectFiles } = body;
 
   const validStatuses = ['pending', 'in_progress', 'done'];
   const validPriorities = ['high', 'medium', 'low'];
+  const validLifecycles: TodoLifecycle[] = ['draft', 'pending', 'active', 'stale', 'done', 'archived'];
 
   if (title !== undefined && (typeof title !== 'string' || title.length > 500)) {
     return NextResponse.json({ error: 'Invalid title' }, { status: 400 });
@@ -67,6 +68,8 @@ export async function PATCH(
         ...(dueAt !== undefined && { dueAt: dueAt || undefined }),
         ...(tags !== undefined && { tags: (tags as string[]).filter(Boolean) }),
         ...(subTasks !== undefined && { subTasks: subTasks as TodoSubTask[] }),
+        ...(lifecycle !== undefined && validLifecycles.includes(lifecycle) && { lifecycle }),
+        ...(subjectFiles !== undefined && { subjectFiles: Array.isArray(subjectFiles) ? subjectFiles.filter((s: unknown) => typeof s === 'string') : undefined }),
         updatedAt: new Date().toISOString(),
       };
       updated = patched;
