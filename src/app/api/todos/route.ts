@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTodosPath, readJsonFile, modifyJsonFile } from '@/lib/file-store';
-import type { TodosData, TodoItem } from '@/types';
+import type { TodosData, TodoItem, TodoLifecycle } from '@/types';
 
 const DEFAULT: TodosData = { todos: [] };
 
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { title, description, priority, status, agentId, projectKey, dueAt } = body;
+  const { title, description, priority, status, agentId, projectKey, dueAt, lifecycle, subjectFiles } = body;
 
   if (!title || typeof title !== 'string') {
     return NextResponse.json({ error: 'title is required' }, { status: 400 });
@@ -55,9 +55,13 @@ export async function POST(request: NextRequest) {
 
   const validPriorities = ['high', 'medium', 'low'];
   const validStatuses = ['pending', 'in_progress', 'done'];
+  const validLifecycles: TodoLifecycle[] = ['draft', 'pending', 'active', 'stale', 'done', 'archived'];
   const todoPriority = validPriorities.includes(priority) ? priority : 'medium';
   const todoStatus = validStatuses.includes(status) ? status : 'pending';
   const todoDueAt = typeof dueAt === 'string' && dueAt.trim() ? dueAt.trim() : undefined;
+  // lifecycle 默认从 status 推导
+  const defaultLifecycle: TodoLifecycle = todoStatus === 'in_progress' ? 'active' : todoStatus === 'done' ? 'done' : 'pending';
+  const todoLifecycle: TodoLifecycle = validLifecycles.includes(lifecycle) ? lifecycle : defaultLifecycle;
 
   const now = new Date().toISOString();
   const newTodo: TodoItem = {
@@ -69,6 +73,8 @@ export async function POST(request: NextRequest) {
     agentId: (typeof agentId === 'string' && agentId) ? agentId : undefined,
     projectKey: (typeof projectKey === 'string' && projectKey) ? projectKey : undefined,
     dueAt: todoDueAt,
+    lifecycle: todoLifecycle,
+    subjectFiles: Array.isArray(subjectFiles) ? subjectFiles.filter((s: unknown) => typeof s === 'string') : undefined,
     createdAt: now,
     updatedAt: now,
   };

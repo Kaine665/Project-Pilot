@@ -49,12 +49,18 @@ export const todoAutoCompleteTask: SatelliteTask<void> = {
     );
     if (!linked) return;
 
-    // Mark it done
+    // Mark it done (sync both status and lifecycle)
     await modifyJsonFile<TodosData>(getTodosPath(), DEFAULT, (d) => ({
       ...d,
       todos: d.todos.map((t) => {
         if (t.sessionId === ctx.sessionId && t.status === 'in_progress') {
-          return { ...t, status: 'done' as const, updatedAt: new Date().toISOString() };
+          return {
+            ...t,
+            status: 'done' as const,
+            lifecycle: 'done' as const,
+            activeTaskId: undefined,
+            updatedAt: new Date().toISOString(),
+          };
         }
         return t;
       }),
