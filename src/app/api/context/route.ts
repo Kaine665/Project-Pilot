@@ -11,6 +11,8 @@ import {
   readJsonFile,
   writeJsonFile,
 } from '@/lib/file-store';
+import { apiHandler } from '@/lib/api-handler';
+import { badRequest, conflict } from '@/lib/http-error';
 import type { ContextEntry, ContextIndexData } from '@/types';
 
 /** 纯规则摘要生成（不依赖 AI），用于创建/更新时自动回填 summary */
@@ -51,7 +53,7 @@ async function writeIndex(data: ContextIndexData): Promise<void> {
 }
 
 /** GET /api/context — list all context entries (optionally filtered by projectKey) */
-export async function GET(request: NextRequest) {
+export const GET = apiHandler(async (request: NextRequest) => {
   const data = await readIndex();
   const projectKey = request.nextUrl.searchParams.get('projectKey');
   let entries = data.entries;
@@ -59,29 +61,22 @@ export async function GET(request: NextRequest) {
     entries = entries.filter(e => !e.projectKey || e.projectKey === projectKey);
   }
   return NextResponse.json({ entries });
-
-}
+});
 
 /** POST /api/context — create a new context entry + content file */
-export async function POST(request: NextRequest) {
+export const POST = apiHandler(async (request: NextRequest) => {
   const { label, description, fileName, format, content, group, sourcePath, tags, status, sourceAgentSessionId, producedAt, projectKey, summary: manualSummary } = await request.json();
 
-  if (!label?.trim()) {
-    return NextResponse.json({ error: 'label is required' }, { status: 400 });
-  }
-  if (!fileName?.trim()) {
-    return NextResponse.json({ error: 'fileName is required' }, { status: 400 });
-  }
-  if (!['json', 'markdown', 'text'].includes(format)) {
-    return NextResponse.json({ error: 'format must be json, markdown, or text' }, { status: 400 });
-  }
+  if (!label?.trim()) throw badRequest('label is required');
+  if (!fileName?.trim()) throw badRequest('fileName is required');
+  if (!['json', 'markdown', 'text'].includes(format)) throw badRequest('format must be json, markdown, or text');
 
   const trimmedFileName = fileName.trim();
 
   // Check fileName uniqueness
   const data = await readIndex();
   if (data.entries.some(e => e.fileName === trimmedFileName)) {
-    return NextResponse.json({ error: 'fileName already exists' }, { status: 409 });
+    throw conflict('fileName already exists');
   }
 
   const now = new Date().toISOString();
@@ -130,4 +125,4 @@ export async function POST(request: NextRequest) {
   await writeIndex(data);
 
   return NextResponse.json({ ok: true, entry });
-}
+});

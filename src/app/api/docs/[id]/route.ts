@@ -6,7 +6,9 @@ import {
   readJsonFile,
   writeJsonFile,
 } from '@/lib/file-store';
-import type { DocEntry, DocsIndexData } from '@/types';
+import { apiHandler } from '@/lib/api-handler';
+import { badRequest, notFound } from '@/lib/http-error';
+import type { DocsIndexData } from '@/types';
 
 const DEFAULT_INDEX: DocsIndexData = { projects: {} };
 
@@ -19,16 +21,14 @@ function findEntry(data: DocsIndexData, id: string) {
 }
 
 /** GET /api/docs/[id] — 返回元数据 + Markdown 正文 */
-export async function GET(
+export const GET = apiHandler(async (
   _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+  { params },
+) => {
   const { id } = await params;
   const data = await readJsonFile<DocsIndexData>(getDesignDocsIndexPath(), DEFAULT_INDEX);
   const found = findEntry(data, id);
-  if (!found) {
-    return NextResponse.json({ error: 'Doc not found' }, { status: 404 });
-  }
+  if (!found) throw notFound('Doc not found');
 
   let content = '';
   try {
@@ -36,7 +36,7 @@ export async function GET(
   } catch { /* file may not exist yet */ }
 
   return NextResponse.json({ entry: found.entry, content });
-}
+});
 
 /**
  * PATCH /api/docs/[id] — 更新文档
@@ -44,17 +44,15 @@ export async function GET(
  * Body fields (all optional):
  *   title, description, content, category, tags, status, supersedes, supersededBy
  */
-export async function PATCH(
+export const PATCH = apiHandler(async (
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+  { params },
+) => {
   const { id } = await params;
   const body = await request.json();
   const data = await readJsonFile<DocsIndexData>(getDesignDocsIndexPath(), DEFAULT_INDEX);
   const found = findEntry(data, id);
-  if (!found) {
-    return NextResponse.json({ error: 'Doc not found' }, { status: 404 });
-  }
+  if (!found) throw notFound('Doc not found');
 
   const { entry } = found;
   const now = new Date().toISOString();
@@ -65,12 +63,12 @@ export async function PATCH(
     entry.description = body.description?.trim() || undefined;
   }
 
-  // 新增字段：分类
+  // 分类
   if (body.category !== undefined) {
     entry.category = body.category?.trim() || undefined;
   }
 
-  // 新增字段：标签
+  // 标签
   if (body.tags !== undefined) {
     if (body.tags === null || (Array.isArray(body.tags) && body.tags.length === 0)) {
       entry.tags = undefined;
@@ -79,15 +77,15 @@ export async function PATCH(
     }
   }
 
-  // 新增字段：状态
+  // 状态
   if (body.status !== undefined) {
     if (body.status && !['active', 'draft', 'deprecated'].includes(body.status)) {
-      return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
+      throw badRequest('Invalid status');
     }
     entry.status = body.status || undefined;
   }
 
-  // 新增字段：替代关系
+  // 替代关系
   if (body.supersedes !== undefined) {
     const oldSupersedes = entry.supersedes;
 
@@ -131,19 +129,17 @@ export async function PATCH(
 
   await writeJsonFile(getDesignDocsIndexPath(), data);
   return NextResponse.json({ ok: true, entry });
-}
+});
 
 /** DELETE /api/docs/[id] — 硬删除 */
-export async function DELETE(
+export const DELETE = apiHandler(async (
   _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+  { params },
+) => {
   const { id } = await params;
   const data = await readJsonFile<DocsIndexData>(getDesignDocsIndexPath(), DEFAULT_INDEX);
   const found = findEntry(data, id);
-  if (!found) {
-    return NextResponse.json({ error: 'Doc not found' }, { status: 404 });
-  }
+  if (!found) throw notFound('Doc not found');
 
   // 清除双向替代关系
   if (found.entry.supersedes) {
@@ -181,4 +177,4 @@ export async function DELETE(
   await writeJsonFile(getDesignDocsIndexPath(), data);
 
   return NextResponse.json({ ok: true });
-}
+});

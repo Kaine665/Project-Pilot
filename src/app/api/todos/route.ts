@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTodosPath, readJsonFile, modifyJsonFile } from '@/lib/file-store';
+import { apiHandler } from '@/lib/api-handler';
+import { badRequest } from '@/lib/http-error';
 import type { TodosData, TodoItem, TodoLifecycle } from '@/types';
 
 const DEFAULT: TodosData = { todos: [] };
@@ -11,7 +13,7 @@ const DEFAULT: TodosData = { todos: [] };
  * - project=_global → only todos without projectKey
  * - no project param → all todos
  */
-export async function GET(request: NextRequest) {
+export const GET = apiHandler(async (request: NextRequest) => {
   const project = request.nextUrl.searchParams.get('project');
   const data = await readJsonFile<TodosData>(getTodosPath(), DEFAULT);
 
@@ -23,35 +25,23 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({ todos });
-}
+});
 
 /**
  * POST /api/todos
  * Create a new todo item.
  * Body: { title, description?, priority?, status?, agentId?, projectKey?, dueAt? }
  */
-export async function POST(request: NextRequest) {
+export const POST = apiHandler(async (request: NextRequest) => {
   const body = await request.json();
   const { title, description, priority, status, agentId, projectKey, dueAt, lifecycle, subjectFiles, contextRefs } = body;
 
-  if (!title || typeof title !== 'string') {
-    return NextResponse.json({ error: 'title is required' }, { status: 400 });
-  }
-  if (title.length > 500) {
-    return NextResponse.json({ error: 'title too long' }, { status: 400 });
-  }
-  if (description !== undefined && typeof description !== 'string') {
-    return NextResponse.json({ error: 'description must be a string' }, { status: 400 });
-  }
-  if (description && description.length > 5000) {
-    return NextResponse.json({ error: 'description too long' }, { status: 400 });
-  }
-  if (agentId !== undefined && agentId !== null && typeof agentId !== 'string') {
-    return NextResponse.json({ error: 'agentId must be a string' }, { status: 400 });
-  }
-  if (dueAt !== undefined && dueAt !== null && typeof dueAt !== 'string') {
-    return NextResponse.json({ error: 'dueAt must be a string' }, { status: 400 });
-  }
+  if (!title || typeof title !== 'string') throw badRequest('title is required');
+  if (title.length > 500) throw badRequest('title too long');
+  if (description !== undefined && typeof description !== 'string') throw badRequest('description must be a string');
+  if (description && description.length > 5000) throw badRequest('description too long');
+  if (agentId !== undefined && agentId !== null && typeof agentId !== 'string') throw badRequest('agentId must be a string');
+  if (dueAt !== undefined && dueAt !== null && typeof dueAt !== 'string') throw badRequest('dueAt must be a string');
 
   const validPriorities = ['high', 'medium', 'low'];
   const validStatuses = ['pending', 'in_progress', 'done'];
@@ -86,4 +76,4 @@ export async function POST(request: NextRequest) {
   }));
 
   return NextResponse.json(newTodo, { status: 201 });
-}
+});
