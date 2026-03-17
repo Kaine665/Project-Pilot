@@ -19,6 +19,7 @@ import { refreshHealthGuardCache } from './tasks/health-guard';
 import { refreshKnowledgeExtractionCache } from './tasks/knowledge-extraction';
 import { refreshTopicCompletionCache } from './tasks/topic-completion';
 import { refreshTaskCardCache } from './tasks/task-card-generation';
+import { refreshCodeCardRefreshCache } from './tasks/code-card-refresh';
 import type { SatelliteContext, SatelliteTask } from './types';
 
 const LOG_PREFIX = '[Satellite]';
@@ -31,6 +32,7 @@ export async function runSatelliteTasks(ctx: SatelliteContext): Promise<void> {
     refreshKnowledgeExtractionCache(),
     refreshTopicCompletionCache(),
     refreshTaskCardCache(ctx.sessionId),
+    refreshCodeCardRefreshCache(),
   ]);
 
   const tasks = satelliteRegistry.getAllSorted();
