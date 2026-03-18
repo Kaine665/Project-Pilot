@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo, useReducer, startTransition } from 'react';
-import { Bot, Sparkles } from 'lucide-react';
+import { Bot, Sparkles, PanelRight, Settings } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from '@/i18n/routing';
 import { ChatInput } from '@/components/chat-input';
@@ -1608,6 +1608,34 @@ export function AgentChatPanel({
     return (
       <div className="flex h-full">
       <div className="flex h-full flex-1 flex-col min-w-0">
+        {/* Plain mode toolbar */}
+        <div className="flex items-center justify-end gap-0.5 px-3 py-1.5 border-b border-zinc-100 dark:border-zinc-800">
+          <button
+            type="button"
+            onClick={() => setShowConfig(v => !v)}
+            className={`p-1 rounded transition-colors ${
+              showConfig
+                ? 'text-blue-500 dark:text-blue-400'
+                : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+            }`}
+            title="会话配置"
+          >
+            <Settings className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowRuntimePanel(v => !v)}
+            className={`p-1 rounded transition-colors ${
+              showRuntimePanel
+                ? 'text-blue-500 dark:text-blue-400'
+                : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+            }`}
+            title="Runtime 面板"
+          >
+            <PanelRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
         {/* Messages + Queue overlay */}
         <div className="relative flex-1 min-h-0">
           <div
