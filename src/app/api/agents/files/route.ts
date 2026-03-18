@@ -1,15 +1,17 @@
 /**
  * GET /api/agents/files?agentId=xxx
  *
- * 返回指定 Agent 在数据目录中的文件树结构。
- * 用于 RuntimePanel 的「文件夹」区域。
+ * 返回指定 Agent 在数据目录中的文件夹入口列表。
+ * 每个入口是一个实际存在的目录绝对路径 + 标签，前端用 /api/fs/list-dir 懒加载。
  *
  * 返回格式：
  * {
- *   tree: [
- *     { name: "prompt.md", path: "prompts/agents/xxx.md", type: "file", category: "prompt" },
- *     { name: "skills/", path: "skills/_agents/xxx/", type: "dir", category: "skill", children: [...] },
- *     ...
+ *   agentId: "...",
+ *   folders: [
+ *     { label: "提示词", path: "C:/.../prompts/agents", description: "主提示词文件" },
+ *     { label: "提示词片段", path: "C:/.../prompts/agents/xxx.d", description: "分段提示词" },
+ *     { label: "技能", path: "C:/.../skills/_agents/xxx", description: "Agent 专属技能" },
+ *     { label: "数据", path: "C:/.../agent-data/xxx", description: "Agent 数据存储" },
  *   ]
  * }
  */
@@ -18,13 +20,12 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { getDataDir } from '@/lib/file-store';
 
-export interface AgentFileNode {
-  name: string;
-  /** Relative path from data dir */
-  relPath: string;
-  type: 'file' | 'dir';
-  category: 'prompt' | 'prompt-segment' | 'skill' | 'data' | 'block';
-  children?: AgentFileNode[];
+interface AgentFolder {
+  label: string;
+  path: string;
+  description: string;
+  /** The specific file to highlight (for single-file folders like prompt) */
+  highlightFile?: string;
 }
 
 async function exists(p: string): Promise<boolean> {
@@ -36,26 +37,6 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
-async function listDir(dir: string, dataDir: string, category: AgentFileNode['category']): Promise<AgentFileNode[]> {
-  const entries = await fs.readdir(dir, { withFileTypes: true });
-  const nodes: AgentFileNode[] = [];
-  for (const ent of entries) {
-    const fullPath = path.join(dir, ent.name);
-    const relPath = path.relative(dataDir, fullPath).replace(/\\/g, '/');
-    if (ent.isDirectory()) {
-      const children = await listDir(fullPath, dataDir, category);
-      nodes.push({ name: ent.name + '/', relPath: relPath + '/', type: 'dir', category, children });
-    } else {
-      nodes.push({ name: ent.name, relPath, type: 'file', category });
-    }
-  }
-  nodes.sort((a, b) => {
-    if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
-  return nodes;
-}
-
 export async function GET(request: NextRequest) {
   const agentId = request.nextUrl.searchParams.get('agentId');
   if (!agentId) {
@@ -63,26 +44,28 @@ export async function GET(request: NextRequest) {
   }
 
   const dataDir = getDataDir();
-  const tree: AgentFileNode[] = [];
+  const folders: AgentFolder[] = [];
 
-  // 1. Main prompt file: prompts/agents/{agentId}.md
-  const promptPath = path.join(dataDir, 'prompts', 'agents', `${agentId}.md`);
-  if (await exists(promptPath)) {
-    tree.push({
-      name: `${agentId}.md`,
-      relPath: `prompts/agents/${agentId}.md`,
-      type: 'file',
-      category: 'prompt',
+  // 1. Main prompt directory: prompts/agents/
+  const promptDir = path.join(dataDir, 'prompts', 'agents');
+  const promptFile = path.join(promptDir, `${agentId}.md`);
+  if (await exists(promptFile)) {
+    folders.push({
+      label: '提示词',
+      path: promptDir,
+      description: '主提示词文件',
+      highlightFile: `${agentId}.md`,
     });
   } else {
-    // Also check legacy location: prompts/{agentId}.md
-    const legacyPromptPath = path.join(dataDir, 'prompts', `${agentId}.md`);
-    if (await exists(legacyPromptPath)) {
-      tree.push({
-        name: `${agentId}.md`,
-        relPath: `prompts/${agentId}.md`,
-        type: 'file',
-        category: 'prompt',
+    // Legacy location
+    const legacyDir = path.join(dataDir, 'prompts');
+    const legacyFile = path.join(legacyDir, `${agentId}.md`);
+    if (await exists(legacyFile)) {
+      folders.push({
+        label: '提示词',
+        path: legacyDir,
+        description: '主提示词文件（旧位置）',
+        highlightFile: `${agentId}.md`,
       });
     }
   }
@@ -90,44 +73,36 @@ export async function GET(request: NextRequest) {
   // 2. Prompt segments: prompts/agents/{agentId}.d/
   const segmentsDir = path.join(dataDir, 'prompts', 'agents', `${agentId}.d`);
   if (await exists(segmentsDir)) {
-    const children = await listDir(segmentsDir, dataDir, 'prompt-segment');
-    tree.push({
-      name: `${agentId}.d/`,
-      relPath: `prompts/agents/${agentId}.d/`,
-      type: 'dir',
-      category: 'prompt-segment',
-      children,
+    folders.push({
+      label: '提示词片段',
+      path: segmentsDir,
+      description: '分段提示词目录',
     });
   }
 
   // 3. Agent-level skills: skills/_agents/{agentId}/
   const skillsDir = path.join(dataDir, 'skills', '_agents', agentId);
   if (await exists(skillsDir)) {
-    const children = await listDir(skillsDir, dataDir, 'skill');
-    tree.push({
-      name: 'skills/',
-      relPath: `skills/_agents/${agentId}/`,
-      type: 'dir',
-      category: 'skill',
-      children,
+    folders.push({
+      label: '技能',
+      path: skillsDir,
+      description: 'Agent 专属技能',
     });
   }
 
-  // 4. Agent data store: agent-data/{agentId}/ or agent-data/{slug}/
+  // 4. Agent data store: agent-data/{agentId}/
   const dataStoreDir = path.join(dataDir, 'agent-data', agentId);
   if (await exists(dataStoreDir)) {
-    const children = await listDir(dataStoreDir, dataDir, 'data');
-    tree.push({
-      name: 'data/',
-      relPath: `agent-data/${agentId}/`,
-      type: 'dir',
-      category: 'data',
-      children,
+    folders.push({
+      label: '数据',
+      path: dataStoreDir,
+      description: 'Agent 数据存储',
     });
   }
 
-  // 5. Prompt blocks referenced by agent (just list refs, don't scan)
-  // This is handled separately via agent.promptRefs in the frontend
+  // 5. Also check by slug if agent has one
+  // (slug-based data dirs are common for agents with dataStore capability)
+  // We'll let the frontend handle slug lookup from agent.slug
 
-  return NextResponse.json({ agentId, tree });
+  return NextResponse.json({ agentId, folders });
 }

@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   X, ChevronDown, ChevronRight, FileText, FolderOpen, Folder, File, Plus,
   Terminal, Globe, Users, ShieldOff, ListTodo, Eye, HardDrive, Loader2,
+  Copy, ExternalLink,
 } from 'lucide-react';
 import type { Agent, AgentCapabilities, ContextEntry } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
@@ -13,12 +14,26 @@ import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 
 // ── Types ──
 
-interface AgentFileNode {
+interface AgentFolder {
+  label: string;
+  path: string;
+  description: string;
+  highlightFile?: string;
+}
+
+interface DirEntry {
   name: string;
-  relPath: string;
-  type: 'file' | 'dir';
-  category: 'prompt' | 'prompt-segment' | 'skill' | 'data' | 'block';
-  children?: AgentFileNode[];
+  path: string;
+  isDirectory: boolean;
+}
+
+interface TreeNode {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  children?: TreeNode[];
+  expanded?: boolean;
+  loaded?: boolean;
 }
 
 interface RuntimePanelProps {
@@ -154,51 +169,204 @@ function CapChip({
   );
 }
 
-// ── File Tree Node ──
+// ── Mini File Explorer (VS Code-style tree with lazy loading) ──
 
-const CATEGORY_COLORS: Record<string, string> = {
-  prompt: 'text-blue-500 dark:text-blue-400',
-  'prompt-segment': 'text-blue-400 dark:text-blue-300',
-  skill: 'text-purple-500 dark:text-purple-400',
-  data: 'text-amber-500 dark:text-amber-400',
-  block: 'text-teal-500 dark:text-teal-400',
-};
+async function fetchDirEntries(dirPath: string): Promise<DirEntry[]> {
+  const res = await fetch(`/api/fs/list-dir?path=${encodeURIComponent(dirPath)}`, { cache: 'no-store' });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.entries ?? [];
+}
 
-function FileTreeNode({ node, depth = 0 }: { node: AgentFileNode; depth?: number }) {
-  const [open, setOpen] = useState(true);
-  const isDir = node.type === 'dir';
-  const colorClass = CATEGORY_COLORS[node.category] ?? 'text-zinc-400';
+function MiniExplorerNode({
+  node,
+  depth,
+  highlightFile,
+  onCopyPath,
+}: {
+  node: TreeNode;
+  depth: number;
+  highlightFile?: string;
+  onCopyPath: (p: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(node.expanded ?? false);
+  const [children, setChildren] = useState<TreeNode[] | undefined>(node.children);
+  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(node.loaded ?? false);
+  const isDir = node.isDirectory;
+  const isHighlighted = highlightFile && node.name === highlightFile;
+
+  const handleToggle = useCallback(async () => {
+    if (!isDir) return;
+    if (loaded && children) {
+      setExpanded((v) => !v);
+      return;
+    }
+    setLoading(true);
+    try {
+      const entries = await fetchDirEntries(node.path);
+      setChildren(entries.map((e) => ({ name: e.name, path: e.path, isDirectory: e.isDirectory })));
+      setLoaded(true);
+      setExpanded(true);
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, [isDir, loaded, children, node.path]);
+
+  const handleOpenFile = useCallback(async (filePath: string) => {
+    try {
+      await fetch('/api/fs/open-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: filePath }),
+      });
+    } catch { /* ignore */ }
+  }, []);
 
   return (
-    <div>
-      <button
-        type="button"
-        onClick={() => isDir && setOpen((v) => !v)}
-        className={`flex w-full items-center gap-1 py-0.5 rounded hover:bg-zinc-50 dark:hover:bg-zinc-800/60 transition-colors text-left ${
-          isDir ? 'cursor-pointer' : 'cursor-default'
+    <div className="select-none">
+      <div
+        className={`group flex items-center gap-0.5 rounded px-1 py-[2px] text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${
+          isHighlighted ? 'bg-blue-50 dark:bg-blue-900/20' : ''
         }`}
-        style={{ paddingLeft: `${depth * 12 + 4}px` }}
+        style={{ paddingLeft: depth * 14 + 4 }}
       >
-        {isDir ? (
-          <>
-            <ChevronRight className={`h-3 w-3 text-zinc-400 transition-transform duration-150 shrink-0 ${open ? 'rotate-90' : ''}`} />
-            {open ? (
-              <FolderOpen className={`h-3.5 w-3.5 shrink-0 ${colorClass}`} />
-            ) : (
-              <Folder className={`h-3.5 w-3.5 shrink-0 ${colorClass}`} />
+        <button
+          type="button"
+          onClick={() => { if (isDir) handleToggle(); else handleOpenFile(node.path); }}
+          className="flex min-w-0 flex-1 items-center gap-1 text-left"
+        >
+          {isDir ? (
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+              {loading ? (
+                <Loader2 className="h-3 w-3 animate-spin text-zinc-400" />
+              ) : expanded ? (
+                <ChevronDown className="h-3.5 w-3.5 text-zinc-500" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5 text-zinc-500" />
+              )}
+            </span>
+          ) : (
+            <span className="w-4 shrink-0" />
+          )}
+          {isDir ? (
+            expanded ? <FolderOpen className="h-4 w-4 shrink-0 text-amber-500 dark:text-amber-400" /> : <Folder className="h-4 w-4 shrink-0 text-amber-500 dark:text-amber-400" />
+          ) : (
+            <File className={`h-4 w-4 shrink-0 ${isHighlighted ? 'text-blue-500 dark:text-blue-400' : 'text-zinc-400 dark:text-zinc-500'}`} />
+          )}
+          <span className={`truncate ${isHighlighted ? 'text-blue-700 dark:text-blue-300 font-medium' : 'text-zinc-700 dark:text-zinc-300'}`}>
+            {node.name}
+          </span>
+        </button>
+        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+          {!isDir && (
+            <button type="button" onClick={(e) => { e.stopPropagation(); handleOpenFile(node.path); }}
+              className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300" title="用系统默认应用打开">
+              <ExternalLink className="h-3 w-3" />
+            </button>
+          )}
+          <button type="button" onClick={(e) => { e.stopPropagation(); onCopyPath(node.path); }}
+            className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300" title="复制路径">
+            <Copy className="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+      {isDir && expanded && children && (
+        <div>
+          {children.map((child) => (
+            <MiniExplorerNode key={child.path} node={child} depth={depth + 1} onCopyPath={onCopyPath} />
+          ))}
+          {children.length === 0 && (
+            <div className="py-1 text-[11px] italic text-zinc-400 dark:text-zinc-500" style={{ paddingLeft: (depth + 1) * 14 + 24 }}>空目录</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentFolderBrowser({ agentId }: { agentId: string }) {
+  const [folders, setFolders] = useState<AgentFolder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [trees, setTrees] = useState<Record<string, TreeNode[]>>({});
+  const [expandedMap, setExpandedMap] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`/api/agents/files?agentId=${encodeURIComponent(agentId)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const flds: AgentFolder[] = data.folders ?? [];
+        setFolders(flds);
+        const exp: Record<string, boolean> = {};
+        flds.forEach((f) => { exp[f.path] = true; });
+        setExpandedMap(exp);
+        Promise.all(
+          flds.map(async (f) => {
+            try {
+              const entries = await fetchDirEntries(f.path);
+              return { path: f.path, nodes: entries.map((e) => ({ name: e.name, path: e.path, isDirectory: e.isDirectory })) };
+            } catch { return { path: f.path, nodes: [] as TreeNode[] }; }
+          }),
+        ).then((results) => {
+          const tm: Record<string, TreeNode[]> = {};
+          results.forEach((r) => { tm[r.path] = r.nodes; });
+          setTrees(tm);
+        });
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [agentId]);
+
+  const handleCopyPath = useCallback((p: string) => { navigator.clipboard.writeText(p); }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 py-2">
+        <Loader2 className="h-3.5 w-3.5 text-zinc-400 animate-spin" />
+        <span className="text-xs text-zinc-400">加载中…</span>
+      </div>
+    );
+  }
+
+  if (folders.length === 0) {
+    return (
+      <div className="flex items-center gap-2 py-1">
+        <Folder className="h-3.5 w-3.5 text-zinc-300 dark:text-zinc-600 shrink-0" />
+        <span className="text-xs text-zinc-400 dark:text-zinc-500 italic">无关联文件</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="-mx-3 -my-2">
+      {folders.map((folder) => {
+        const isExpanded = expandedMap[folder.path] ?? false;
+        const nodes = trees[folder.path] ?? [];
+        return (
+          <div key={folder.path}>
+            <button type="button"
+              onClick={() => setExpandedMap((prev) => ({ ...prev, [folder.path]: !prev[folder.path] }))}
+              className="flex w-full items-center gap-1 px-3 py-1 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-zinc-500" /> : <ChevronRight className="h-3.5 w-3.5 text-zinc-500" />}
+              </span>
+              {isExpanded ? <FolderOpen className="h-4 w-4 shrink-0 text-amber-500 dark:text-amber-400" /> : <Folder className="h-4 w-4 shrink-0 text-amber-500 dark:text-amber-400" />}
+              <span className="font-medium text-zinc-700 dark:text-zinc-300 truncate">{folder.label}</span>
+              <span className="text-[10px] text-zinc-400 dark:text-zinc-500 ml-auto shrink-0">{folder.description}</span>
+            </button>
+            {isExpanded && (
+              <div>
+                {nodes.map((node) => (
+                  <MiniExplorerNode key={node.path} node={node} depth={1} highlightFile={folder.highlightFile} onCopyPath={handleCopyPath} />
+                ))}
+                {nodes.length === 0 && (
+                  <div className="py-1 pl-10 text-[11px] italic text-zinc-400 dark:text-zinc-500">加载中…</div>
+                )}
+              </div>
             )}
-          </>
-        ) : (
-          <>
-            <span className="w-3 shrink-0" />
-            <File className={`h-3.5 w-3.5 shrink-0 ${colorClass}`} />
-          </>
-        )}
-        <span className="text-xs text-zinc-700 dark:text-zinc-300 truncate">{node.name}</span>
-      </button>
-      {isDir && open && node.children?.map((child) => (
-        <FileTreeNode key={child.relPath} node={child} depth={depth + 1} />
-      ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -225,8 +393,6 @@ export function RuntimePanel({
   // Fetched data
   const [contextEntries, setContextEntries] = useState<ContextEntry[]>([]);
   const [skills, setSkills] = useState<{ name: string; description: string }[]>([]);
-  const [fileTree, setFileTree] = useState<AgentFileNode[]>([]);
-  const [fileTreeLoading, setFileTreeLoading] = useState(true);
 
   // Fetch context entries
   useEffect(() => {
@@ -248,18 +414,6 @@ export function RuntimePanel({
       })
       .catch(() => {});
   }, []);
-
-  // Fetch agent file tree
-  useEffect(() => {
-    setFileTreeLoading(true);
-    fetch(`/api/agents/files?agentId=${encodeURIComponent(agent.id)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        setFileTree(data.tree ?? []);
-      })
-      .catch(() => {})
-      .finally(() => setFileTreeLoading(false));
-  }, [agent.id]);
 
   // Resolve capabilities: agent defaults merged with session overrides
   const resolvedCaps = useMemo<AgentCapabilities>(() => {
@@ -332,25 +486,7 @@ export function RuntimePanel({
           open={folderOpen}
           onToggle={() => setFolderOpen((v) => !v)}
         >
-          {fileTreeLoading ? (
-            <div className="flex items-center gap-2 py-1">
-              <Loader2 className="h-3.5 w-3.5 text-zinc-400 animate-spin" />
-              <span className="text-xs text-zinc-400">加载中…</span>
-            </div>
-          ) : fileTree.length === 0 ? (
-            <div className="flex items-center gap-2">
-              <Folder className="h-3.5 w-3.5 text-zinc-300 dark:text-zinc-600 shrink-0" />
-              <span className="text-xs text-zinc-400 dark:text-zinc-500 italic">
-                无关联文件
-              </span>
-            </div>
-          ) : (
-            <div className="-mx-1">
-              {fileTree.map((node) => (
-                <FileTreeNode key={node.relPath} node={node} />
-              ))}
-            </div>
-          )}
+          <AgentFolderBrowser agentId={agent.id} />
         </AccordionSection>
 
         {/* Section 2: PROMPT PAYLOAD */}
