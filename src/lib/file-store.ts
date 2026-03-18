@@ -77,6 +77,7 @@ async function ensureDataDirInitialized(): Promise<void> {
     path.join(DATA_DIR, 'prompts', 'agents'),
     path.join(DATA_DIR, 'prompts', 'history'),
     path.join(DATA_DIR, 'prompts', 'runtime'),
+    path.join(DATA_DIR, 'prompts', 'blocks'),
     getProjectPromptsDir(),
     // knowledge/
     getContextDir(),
@@ -590,6 +591,43 @@ export function getProjectPromptPath(projectKey: string): string {
     throw new Error(`Invalid project key: ${projectKey}`);
   }
   return path.join(DATA_DIR, 'prompts', 'projects', `${safe}.md`);
+}
+
+// ── Segmented Prompt 路径函数 ──
+// 每个 prompt (global / project) 可拆分为 segments 目录：
+//   {base}.d/_index.json  → 元数据索引
+//   {base}.d/{segmentId}.md  → 各段内容
+// 若 .d/ 目录不存在，则 fallback 到单 .md 文件
+
+import type { PromptSegmentScope } from '@/types';
+
+/** 根据 scope 获取 segments 目录路径 */
+export function getSegmentedPromptDir(scope: PromptSegmentScope): string {
+  switch (scope.type) {
+    case 'global':
+      return path.join(DATA_DIR, 'prompts', 'global.d');
+    case 'project': {
+      const safe = scope.projectKey.replace(/[^a-zA-Z0-9_-]/g, '');
+      if (!safe || safe.length < 1 || safe.length > 100) {
+        throw new Error(`Invalid project key: ${scope.projectKey}`);
+      }
+      return path.join(DATA_DIR, 'prompts', 'projects', `${safe}.d`);
+    }
+  }
+}
+
+/** 获取 segments 目录下的 _index.json 路径 */
+export function getSegmentedPromptIndexPath(scope: PromptSegmentScope): string {
+  return path.join(getSegmentedPromptDir(scope), '_index.json');
+}
+
+/** 获取单个 segment 的 .md 文件路径 */
+export function getSegmentFilePath(scope: PromptSegmentScope, segmentId: string): string {
+  const safe = segmentId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 100) {
+    throw new Error(`Invalid segment id: ${segmentId}`);
+  }
+  return path.join(getSegmentedPromptDir(scope), `${safe}.md`);
 }
 
 // ── Prompt Block 路径函数 ──

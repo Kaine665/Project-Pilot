@@ -746,3 +746,23 @@ export interface ScheduleRunRecord {
 export interface ScheduleRunsData {
   runs: ScheduleRunRecord[];
 }
+
+// ==================== Segmented Prompts ====================
+
+/** Scope for segmented prompts */
+export type PromptSegmentScope =
+  | { type: 'global' }
+  | { type: 'project'; projectKey: string };
+
+/** A single segment within a segmented prompt */
+export interface PromptSegment {
+  id: string;
+  title: string;
+  description?: string;
+  enabled: boolean;
+}
+
+/** Index file stored in {scope}.d/_index.json */
+export interface SegmentedPromptIndex {
+  segments: PromptSegment[];
+}
