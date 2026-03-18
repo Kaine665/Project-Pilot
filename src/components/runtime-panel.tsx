@@ -14,11 +14,11 @@ import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 
 // ── Types ──
 
-interface AgentFolder {
-  label: string;
+interface AgentFileEntry {
+  name: string;
   path: string;
-  description: string;
-  highlightFile?: string;
+  isDirectory: boolean;
+  category: 'prompt' | 'prompt-segment' | 'skill' | 'data';
 }
 
 interface DirEntry {
@@ -196,6 +196,21 @@ function MiniExplorerNode({
   const isDir = node.isDirectory;
   const isHighlighted = highlightFile && node.name === highlightFile;
 
+  // Auto-load children if node starts expanded
+  useEffect(() => {
+    if (isDir && expanded && !loaded && !loading) {
+      setLoading(true);
+      fetchDirEntries(node.path)
+        .then((entries) => {
+          setChildren(entries.map((e) => ({ name: e.name, path: e.path, isDirectory: e.isDirectory })));
+          setLoaded(true);
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleToggle = useCallback(async () => {
     if (!isDir) return;
     if (loaded && children) {
@@ -285,34 +300,14 @@ function MiniExplorerNode({
 }
 
 function AgentFolderBrowser({ agentId }: { agentId: string }) {
-  const [folders, setFolders] = useState<AgentFolder[]>([]);
+  const [entries, setEntries] = useState<AgentFileEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [trees, setTrees] = useState<Record<string, TreeNode[]>>({});
-  const [expandedMap, setExpandedMap] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     setLoading(true);
     fetch(`/api/agents/files?agentId=${encodeURIComponent(agentId)}`)
       .then((r) => r.json())
-      .then((data) => {
-        const flds: AgentFolder[] = data.folders ?? [];
-        setFolders(flds);
-        const exp: Record<string, boolean> = {};
-        flds.forEach((f) => { exp[f.path] = true; });
-        setExpandedMap(exp);
-        Promise.all(
-          flds.map(async (f) => {
-            try {
-              const entries = await fetchDirEntries(f.path);
-              return { path: f.path, nodes: entries.map((e) => ({ name: e.name, path: e.path, isDirectory: e.isDirectory })) };
-            } catch { return { path: f.path, nodes: [] as TreeNode[] }; }
-          }),
-        ).then((results) => {
-          const tm: Record<string, TreeNode[]> = {};
-          results.forEach((r) => { tm[r.path] = r.nodes; });
-          setTrees(tm);
-        });
-      })
+      .then((data) => { setEntries(data.entries ?? []); })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [agentId]);
@@ -328,7 +323,7 @@ function AgentFolderBrowser({ agentId }: { agentId: string }) {
     );
   }
 
-  if (folders.length === 0) {
+  if (entries.length === 0) {
     return (
       <div className="flex items-center gap-2 py-1">
         <Folder className="h-3.5 w-3.5 text-zinc-300 dark:text-zinc-600 shrink-0" />
@@ -337,36 +332,20 @@ function AgentFolderBrowser({ agentId }: { agentId: string }) {
     );
   }
 
+  // Convert entries to TreeNode[] — files are leaf nodes, dirs are expandable
+  const nodes: TreeNode[] = entries.map((e) => ({
+    name: e.name,
+    path: e.path,
+    isDirectory: e.isDirectory,
+    expanded: e.isDirectory, // auto-expand directories
+    loaded: false,
+  }));
+
   return (
     <div className="-mx-3 -my-2">
-      {folders.map((folder) => {
-        const isExpanded = expandedMap[folder.path] ?? false;
-        const nodes = trees[folder.path] ?? [];
-        return (
-          <div key={folder.path}>
-            <button type="button"
-              onClick={() => setExpandedMap((prev) => ({ ...prev, [folder.path]: !prev[folder.path] }))}
-              className="flex w-full items-center gap-1 px-3 py-1 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
-              <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-                {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-zinc-500" /> : <ChevronRight className="h-3.5 w-3.5 text-zinc-500" />}
-              </span>
-              {isExpanded ? <FolderOpen className="h-4 w-4 shrink-0 text-amber-500 dark:text-amber-400" /> : <Folder className="h-4 w-4 shrink-0 text-amber-500 dark:text-amber-400" />}
-              <span className="font-medium text-zinc-700 dark:text-zinc-300 truncate">{folder.label}</span>
-              <span className="text-[10px] text-zinc-400 dark:text-zinc-500 ml-auto shrink-0">{folder.description}</span>
-            </button>
-            {isExpanded && (
-              <div>
-                {nodes.map((node) => (
-                  <MiniExplorerNode key={node.path} node={node} depth={1} highlightFile={folder.highlightFile} onCopyPath={handleCopyPath} />
-                ))}
-                {nodes.length === 0 && (
-                  <div className="py-1 pl-10 text-[11px] italic text-zinc-400 dark:text-zinc-500">加载中…</div>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
+      {nodes.map((node) => (
+        <MiniExplorerNode key={node.path} node={node} depth={0} onCopyPath={handleCopyPath} />
+      ))}
     </div>
   );
 }

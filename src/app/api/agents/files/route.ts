@@ -1,17 +1,17 @@
 /**
  * GET /api/agents/files?agentId=xxx
  *
- * 返回指定 Agent 在数据目录中的文件夹入口列表。
- * 每个入口是一个实际存在的目录绝对路径 + 标签，前端用 /api/fs/list-dir 懒加载。
+ * 返回指定 Agent 自身拥有的文件和目录列表（不暴露父目录）。
+ * 前端用 /api/fs/list-dir 懒加载子目录。
  *
  * 返回格式：
  * {
  *   agentId: "...",
- *   folders: [
- *     { label: "提示词", path: "C:/.../prompts/agents", description: "主提示词文件" },
- *     { label: "提示词片段", path: "C:/.../prompts/agents/xxx.d", description: "分段提示词" },
- *     { label: "技能", path: "C:/.../skills/_agents/xxx", description: "Agent 专属技能" },
- *     { label: "数据", path: "C:/.../agent-data/xxx", description: "Agent 数据存储" },
+ *   entries: [
+ *     { name: "prompt.md", path: "C:/.../xxx.md", isDirectory: false, category: "prompt" },
+ *     { name: "提示词片段", path: "C:/.../xxx.d", isDirectory: true, category: "prompt-segment" },
+ *     { name: "技能", path: "C:/.../skills/_agents/xxx", isDirectory: true, category: "skill" },
+ *     { name: "数据", path: "C:/.../agent-data/xxx", isDirectory: true, category: "data" },
  *   ]
  * }
  */
@@ -20,12 +20,13 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { getDataDir } from '@/lib/file-store';
 
-interface AgentFolder {
-  label: string;
+export interface AgentFileEntry {
+  /** Display name */
+  name: string;
+  /** Absolute path */
   path: string;
-  description: string;
-  /** The specific file to highlight (for single-file folders like prompt) */
-  highlightFile?: string;
+  isDirectory: boolean;
+  category: 'prompt' | 'prompt-segment' | 'skill' | 'data';
 }
 
 async function exists(p: string): Promise<boolean> {
@@ -44,65 +45,62 @@ export async function GET(request: NextRequest) {
   }
 
   const dataDir = getDataDir();
-  const folders: AgentFolder[] = [];
+  const entries: AgentFileEntry[] = [];
 
-  // 1. Main prompt directory: prompts/agents/
-  const promptDir = path.join(dataDir, 'prompts', 'agents');
-  const promptFile = path.join(promptDir, `${agentId}.md`);
+  // 1. Main prompt FILE (not the parent directory!)
+  const promptFile = path.join(dataDir, 'prompts', 'agents', `${agentId}.md`);
   if (await exists(promptFile)) {
-    folders.push({
-      label: '提示词',
-      path: promptDir,
-      description: '主提示词文件',
-      highlightFile: `${agentId}.md`,
+    entries.push({
+      name: `${agentId}.md`,
+      path: promptFile,
+      isDirectory: false,
+      category: 'prompt',
     });
   } else {
     // Legacy location
-    const legacyDir = path.join(dataDir, 'prompts');
-    const legacyFile = path.join(legacyDir, `${agentId}.md`);
+    const legacyFile = path.join(dataDir, 'prompts', `${agentId}.md`);
     if (await exists(legacyFile)) {
-      folders.push({
-        label: '提示词',
-        path: legacyDir,
-        description: '主提示词文件（旧位置）',
-        highlightFile: `${agentId}.md`,
+      entries.push({
+        name: `${agentId}.md`,
+        path: legacyFile,
+        isDirectory: false,
+        category: 'prompt',
       });
     }
   }
 
-  // 2. Prompt segments: prompts/agents/{agentId}.d/
+  // 2. Prompt segments directory: prompts/agents/{agentId}.d/
   const segmentsDir = path.join(dataDir, 'prompts', 'agents', `${agentId}.d`);
   if (await exists(segmentsDir)) {
-    folders.push({
-      label: '提示词片段',
+    entries.push({
+      name: '提示词片段',
       path: segmentsDir,
-      description: '分段提示词目录',
+      isDirectory: true,
+      category: 'prompt-segment',
     });
   }
 
   // 3. Agent-level skills: skills/_agents/{agentId}/
   const skillsDir = path.join(dataDir, 'skills', '_agents', agentId);
   if (await exists(skillsDir)) {
-    folders.push({
-      label: '技能',
+    entries.push({
+      name: '技能',
       path: skillsDir,
-      description: 'Agent 专属技能',
+      isDirectory: true,
+      category: 'skill',
     });
   }
 
   // 4. Agent data store: agent-data/{agentId}/
   const dataStoreDir = path.join(dataDir, 'agent-data', agentId);
   if (await exists(dataStoreDir)) {
-    folders.push({
-      label: '数据',
+    entries.push({
+      name: '数据',
       path: dataStoreDir,
-      description: 'Agent 数据存储',
+      isDirectory: true,
+      category: 'data',
     });
   }
 
-  // 5. Also check by slug if agent has one
-  // (slug-based data dirs are common for agents with dataStore capability)
-  // We'll let the frontend handle slug lookup from agent.slug
-
-  return NextResponse.json({ agentId, folders });
+  return NextResponse.json({ agentId, entries });
 }
