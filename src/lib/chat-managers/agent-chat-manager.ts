@@ -32,6 +32,7 @@ import '@/lib/agent-actions';    // side-effect: registers actions + their loade
 import { actionRegistry } from '@/lib/agent-actions';
 import { estimateTokens } from '@/lib/token-estimate';
 import { migrateAgentToResources } from '@/lib/resource-migration';
+import { updateAgentStatus } from '@/lib/agents-store';
 import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
 import { runSatelliteTasks } from '@/lib/satellite-tasks';
 import '@/lib/satellite-tasks'; // side-effect: registers all satellite tasks
@@ -309,6 +310,13 @@ class AgentChatManager {
     }
 
     this.runs.set(sessionId, run);
+
+    // Update agent status to busy (fire-and-forget)
+    updateAgentStatus(agentId, {
+      state: 'busy',
+      lastActiveAt: new Date().toISOString(),
+      lastSessionId: sessionId,
+    }).catch(() => {});
 
     // ── Launch runner（provider 无关）──
     try {
@@ -670,6 +678,19 @@ class AgentChatManager {
       console.error(`${LOG_PREFIX} persistAfterClose error:`, err);
     }
 
+    // Update agent status (fire-and-forget)
+    {
+      const errorEvent = run.status === 'failed'
+        ? run.events.find((e): e is { type: 'error'; message: string } => e.type === 'error')
+        : undefined;
+      updateAgentStatus(run.agentId, {
+        state: run.status === 'failed' ? 'error' : 'idle',
+        lastActiveAt: new Date().toISOString(),
+        lastSessionId: run.sessionId,
+        ...(errorEvent ? { lastError: errorEvent.message.slice(0, 200) } : {}),
+      }).catch(() => {});
+    }
+
     this.trackAndEmit(run, { type: 'done' });
 
     // Fire-and-forget: run all registered satellite tasks (title, health guard, task card, etc.)
@@ -925,6 +946,13 @@ async function buildResourcePrompt(
 
   if (projectKey) {
     merged.push({ type: 'project-prompt', id: '_project', priority: 2 });
+  }
+
+  // Inject prompt blocks referenced by agent.promptRefs
+  if (agent.promptRefs?.length) {
+    for (const blockId of agent.promptRefs) {
+      merged.push({ type: 'prompt-block', id: blockId, priority: 3 });
+    }
   }
 
   // Load context index (hoisted — needed by both auto-inject and code cards)

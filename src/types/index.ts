@@ -380,10 +380,25 @@ export interface Agent {
   defaultProvider?: ProviderId;
   /** 默认模型 ID（创建新会话时预选）。留空则继承全局设置。 */
   defaultModel?: string;
+  /**
+   * 引用的 prompt 片段 ID 列表，按顺序拼接到主 prompt 之后。
+   * 片段存储在 data/prompts/blocks/{blockId}.md
+   */
+  promptRefs?: string[];
+  /** Persistent agent runtime status */
+  agentStatus?: AgentStatus;
   archived?: boolean;
   archivedAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AgentStatus {
+  state: 'idle' | 'busy' | 'error' | 'disabled';
+  lastActiveAt?: string;
+  lastSessionId?: string;
+  lastError?: string;
+  activeTaskCount?: number;
 }
 
 export interface AgentsData {
