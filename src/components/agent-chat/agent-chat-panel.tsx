@@ -1630,7 +1630,7 @@ export function AgentChatPanel({
                 ? 'text-blue-500 dark:text-blue-400'
                 : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
             }`}
-            title="Runtime 面板"
+            title="运行时面板"
           >
             <PanelRight className="h-3.5 w-3.5" />
           </button>

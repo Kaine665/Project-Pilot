@@ -201,10 +201,10 @@ export function RuntimePanel({
   const providerModelLabel = useMemo(() => {
     const providerId = sessionConfig.provider ?? agent.defaultProvider;
     const modelId = sessionConfig.model ?? agent.defaultModel;
-    if (!providerId && !modelId) return 'Default (global settings)';
+    if (!providerId && !modelId) return '默认（全局设置）';
     const preset = PROVIDER_REGISTRY.find((p) => p.id === providerId);
     const providerName = preset?.nameKey ?? providerId ?? '?';
-    return `${providerName} / ${modelId || 'default'}`;
+    return `${providerName} / ${modelId || '默认'}`;
   }, [sessionConfig.provider, sessionConfig.model, agent.defaultProvider, agent.defaultModel]);
 
   // Folder section content
@@ -250,12 +250,12 @@ export function RuntimePanel({
     <div className="flex h-full flex-col border-l border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
-        <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Runtime</span>
+        <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">运行时</span>
         <button
           type="button"
           onClick={onClose}
           className="p-0.5 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-          aria-label="Close runtime panel"
+          aria-label="关闭运行时面板"
         >
           <X className="h-4 w-4 text-zinc-500" />
         </button>
@@ -265,7 +265,7 @@ export function RuntimePanel({
       <div className="flex-1 overflow-y-auto">
         {/* Section 1: FOLDER */}
         <AccordionSection
-          title="Folder"
+          title="文件夹"
           open={folderOpen}
           onToggle={() => setFolderOpen((v) => !v)}
         >
@@ -280,7 +280,7 @@ export function RuntimePanel({
             <div className="flex items-center gap-2">
               <Folder className="h-3.5 w-3.5 text-zinc-300 dark:text-zinc-600 shrink-0" />
               <span className="text-xs text-zinc-400 dark:text-zinc-500 italic">
-                No folder access
+                无文件夹访问权限
               </span>
             </div>
           )}
@@ -288,30 +288,30 @@ export function RuntimePanel({
 
         {/* Section 2: PROMPT PAYLOAD */}
         <AccordionSection
-          title="Prompt Payload"
+          title="提示词载荷"
           open={promptOpen}
           onToggle={() => setPromptOpen((v) => !v)}
         >
           {/* System Prompts */}
           <SubGroup
-            label="System Prompts"
+            label="系统提示词"
             open={systemPromptsOpen}
             onToggle={() => setSystemPromptsOpen((v) => !v)}
           >
-            <ItemRow icon={FileText} name="Global Prompt" />
-            <ItemRow icon={FileText} name="Project Prompt" />
-            <ItemRow icon={FileText} name="Agent Main Prompt" />
+            <ItemRow icon={FileText} name="全局提示词" />
+            <ItemRow icon={FileText} name="项目提示词" />
+            <ItemRow icon={FileText} name="Agent 主提示词" />
           </SubGroup>
 
           {/* Knowledge & Blocks */}
           <SubGroup
-            label="Knowledge & Blocks"
+            label="知识 & 组块"
             open={knowledgeOpen}
             onToggle={() => setKnowledgeOpen((v) => !v)}
           >
             {activeContextEntries.length === 0 ? (
               <span className="text-[11px] text-zinc-400 dark:text-zinc-500 italic pl-1">
-                No knowledge entries bound
+                暂无绑定的知识条目
               </span>
             ) : (
               activeContextEntries.map((entry) => (
@@ -319,7 +319,7 @@ export function RuntimePanel({
                   key={entry.id}
                   icon={FileText}
                   name={entry.label}
-                  badge="ctx"
+                  badge="知识"
                   badgeColor="bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400"
                 />
               ))
@@ -328,20 +328,20 @@ export function RuntimePanel({
 
           {/* Skills & Tools */}
           <SubGroup
-            label="Skills & Tools"
+            label="技能 & 工具"
             open={skillsOpen}
             onToggle={() => setSkillsOpen((v) => !v)}
           >
             {activeSkills.length === 0 ? (
               <span className="text-[11px] text-zinc-400 dark:text-zinc-500 italic pl-1">
-                No skills bound
+                暂无绑定的技能
               </span>
             ) : (
               activeSkills.map((skill) => (
                 <ItemRow
                   key={skill.name}
                   name={skill.name}
-                  badge="skill"
+                  badge="技能"
                   badgeColor="bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400"
                 />
               ))
@@ -350,7 +350,7 @@ export function RuntimePanel({
 
           {/* Session Additions */}
           <SubGroup
-            label="Session Additions"
+            label="会话追加"
             open={sessionAdditionsOpen}
             onToggle={() => setSessionAdditionsOpen((v) => !v)}
           >
@@ -360,7 +360,7 @@ export function RuntimePanel({
               </div>
             ) : (
               <span className="text-[11px] text-zinc-400 dark:text-zinc-500 italic pl-1">
-                No supplementary prompt
+                无补充提示词
               </span>
             )}
           </SubGroup>
@@ -372,13 +372,13 @@ export function RuntimePanel({
             className="flex items-center gap-1.5 mt-2 px-2 py-1 text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 rounded transition-colors w-full"
           >
             <Plus className="h-3 w-3" />
-            Add Resource
+            添加资源
           </button>
         </AccordionSection>
 
         {/* Section 3: CAPABILITIES */}
         <AccordionSection
-          title="Capabilities"
+          title="能力"
           open={capsOpen}
           onToggle={() => setCapsOpen((v) => !v)}
         >

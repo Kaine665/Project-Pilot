@@ -155,7 +155,7 @@ export function ChatSessionHeader({
                 : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
             }`}
             onClick={onToggleRuntimePanel}
-            title="Runtime 面板"
+            title="运行时面板"
           >
             <PanelRight className="h-3 w-3" />
           </Button>
