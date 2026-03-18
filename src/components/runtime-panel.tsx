@@ -19,6 +19,7 @@ interface AgentFileEntry {
   path: string;
   isDirectory: boolean;
   category: 'prompt' | 'prompt-segment' | 'skill' | 'data';
+  exists: boolean;
 }
 
 interface DirEntry {
@@ -332,8 +333,12 @@ function AgentFolderBrowser({ agentId }: { agentId: string }) {
     );
   }
 
-  // Convert entries to TreeNode[] — files are leaf nodes, dirs are expandable
-  const nodes: TreeNode[] = entries.map((e) => ({
+  // Split into existing and non-existing entries
+  const existingEntries = entries.filter((e) => e.exists);
+  const missingEntries = entries.filter((e) => !e.exists);
+
+  // Convert existing entries to TreeNode[] — files are leaf nodes, dirs are expandable
+  const nodes: TreeNode[] = existingEntries.map((e) => ({
     name: e.name,
     path: e.path,
     isDirectory: e.isDirectory,
@@ -341,11 +346,39 @@ function AgentFolderBrowser({ agentId }: { agentId: string }) {
     loaded: false,
   }));
 
+  const categoryLabels: Record<string, string> = {
+    'prompt': '主提示词',
+    'prompt-segment': '提示词片段',
+    'skill': '技能',
+    'data': '数据',
+  };
+
   return (
     <div className="-mx-3 -my-2">
       {nodes.map((node) => (
         <MiniExplorerNode key={node.path} node={node} depth={0} onCopyPath={handleCopyPath} />
       ))}
+      {missingEntries.length > 0 && (
+        <div className="mt-1 border-t border-zinc-100 dark:border-zinc-800 pt-1">
+          {missingEntries.map((e) => (
+            <div
+              key={e.path}
+              className="flex items-center gap-1 px-1 py-[2px] text-xs text-zinc-300 dark:text-zinc-600"
+              style={{ paddingLeft: 4 }}
+              title={`${categoryLabels[e.category] ?? e.category}（尚未创建）`}
+            >
+              <span className="w-4 shrink-0" />
+              {e.isDirectory ? (
+                <Folder className="h-4 w-4 shrink-0 text-zinc-300 dark:text-zinc-600" />
+              ) : (
+                <File className="h-4 w-4 shrink-0 text-zinc-300 dark:text-zinc-600" />
+              )}
+              <span className="truncate">{categoryLabels[e.category] ?? e.name}</span>
+              <span className="text-[10px] italic ml-auto shrink-0">未创建</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

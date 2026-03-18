@@ -27,9 +27,11 @@ export interface AgentFileEntry {
   path: string;
   isDirectory: boolean;
   category: 'prompt' | 'prompt-segment' | 'skill' | 'data';
+  /** Whether the file/directory actually exists on disk */
+  exists: boolean;
 }
 
-async function exists(p: string): Promise<boolean> {
+async function fileExists(p: string): Promise<boolean> {
   try {
     await fs.access(p);
     return true;
@@ -49,58 +51,57 @@ export async function GET(request: NextRequest) {
 
   // 1. Main prompt FILE (not the parent directory!)
   const promptFile = path.join(dataDir, 'prompts', 'agents', `${agentId}.md`);
-  if (await exists(promptFile)) {
+  const promptExists = await fileExists(promptFile);
+  if (promptExists) {
     entries.push({
       name: `${agentId}.md`,
       path: promptFile,
       isDirectory: false,
       category: 'prompt',
+      exists: true,
     });
   } else {
     // Legacy location
     const legacyFile = path.join(dataDir, 'prompts', `${agentId}.md`);
-    if (await exists(legacyFile)) {
-      entries.push({
-        name: `${agentId}.md`,
-        path: legacyFile,
-        isDirectory: false,
-        category: 'prompt',
-      });
-    }
+    const legacyExists = await fileExists(legacyFile);
+    entries.push({
+      name: `${agentId}.md`,
+      path: legacyExists ? legacyFile : promptFile,
+      isDirectory: false,
+      category: 'prompt',
+      exists: legacyExists,
+    });
   }
 
   // 2. Prompt segments directory: prompts/agents/{agentId}.d/
   const segmentsDir = path.join(dataDir, 'prompts', 'agents', `${agentId}.d`);
-  if (await exists(segmentsDir)) {
-    entries.push({
-      name: '提示词片段',
-      path: segmentsDir,
-      isDirectory: true,
-      category: 'prompt-segment',
-    });
-  }
+  entries.push({
+    name: '提示词片段',
+    path: segmentsDir,
+    isDirectory: true,
+    category: 'prompt-segment',
+    exists: await fileExists(segmentsDir),
+  });
 
   // 3. Agent-level skills: skills/_agents/{agentId}/
   const skillsDir = path.join(dataDir, 'skills', '_agents', agentId);
-  if (await exists(skillsDir)) {
-    entries.push({
-      name: '技能',
-      path: skillsDir,
-      isDirectory: true,
-      category: 'skill',
-    });
-  }
+  entries.push({
+    name: '技能',
+    path: skillsDir,
+    isDirectory: true,
+    category: 'skill',
+    exists: await fileExists(skillsDir),
+  });
 
   // 4. Agent data store: agent-data/{agentId}/
   const dataStoreDir = path.join(dataDir, 'agent-data', agentId);
-  if (await exists(dataStoreDir)) {
-    entries.push({
-      name: '数据',
-      path: dataStoreDir,
-      isDirectory: true,
-      category: 'data',
-    });
-  }
+  entries.push({
+    name: '数据',
+    path: dataStoreDir,
+    isDirectory: true,
+    category: 'data',
+    exists: await fileExists(dataStoreDir),
+  });
 
   return NextResponse.json({ agentId, entries });
 }
