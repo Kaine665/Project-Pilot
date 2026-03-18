@@ -595,6 +595,17 @@ export function AgentChatPanel({
     const abort = new AbortController();
     streamAbortRef.current = abort;
 
+    // Stale connection detection: if no data (including heartbeat) received
+    // within 45s, abort and let the catch handler attempt reconnect.
+    let lastDataTime = Date.now();
+    const staleCheckInterval = setInterval(() => {
+      if (Date.now() - lastDataTime > 45_000) {
+        clearInterval(staleCheckInterval);
+        console.warn(`[SSE] No data for 45s on session ${targetSessionId}, aborting stale connection`);
+        abort.abort();
+      }
+    }, 10_000);
+
     fetch(`/api/agent-chat/stream?sessionId=${targetSessionId}&since=${since}`, {
       signal: abort.signal,
       cache: 'no-store',
@@ -609,6 +620,9 @@ export function AgentChatPanel({
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+
+        // Update stale timer on every chunk (including SSE heartbeat comments)
+        lastDataTime = Date.now();
 
         if (sessionIdRef.current !== targetSessionId) {
           reader.cancel();
@@ -769,15 +783,32 @@ export function AgentChatPanel({
         }
       }
 
+      clearInterval(staleCheckInterval);
       if (rafIdRef.current) {
         cancelAnimationFrame(rafIdRef.current);
         rafIdRef.current = 0;
       }
       finalizeStream();
     }).catch((err) => {
+      clearInterval(staleCheckInterval);
+
       if ((err as Error).name === 'AbortError') {
-        // Abort may come from handleAbort's fallback force-close.
-        // If the stream is still marked active, finalize it so UI state is consistent.
+        // Abort may come from handleAbort's fallback force-close OR stale connection detection.
+        // Check if backend is still running — if so, reconnect instead of giving up.
+        if (isStreamingRef.current && sessionIdRef.current === targetSessionId) {
+          fetch(`/api/agent-chat/status?sessionId=${targetSessionId}`, { cache: 'no-store' })
+            .then(r => r.json())
+            .then(data => {
+              if (data.status === 'running' && sessionIdRef.current === targetSessionId) {
+                console.info(`[SSE] Backend still running for ${targetSessionId}, reconnecting from idx ${lastEventIdxRef.current + 1}`);
+                connectToStream(targetSessionId, lastEventIdxRef.current + 1);
+              } else {
+                finalizeStream();
+              }
+            })
+            .catch(() => finalizeStream());
+          return;
+        }
         if (isStreamingRef.current) finalizeStream();
         return;
       }

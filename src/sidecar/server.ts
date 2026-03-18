@@ -239,6 +239,19 @@ function handleStream(
   // 初始心跳，确认连接建立
   res.write(':ok\n\n');
 
+  // 周期性心跳（30s），防止中间代理层因空闲断开连接
+  const heartbeatInterval = setInterval(() => {
+    try { res.write(':heartbeat\n\n'); } catch { clearInterval(heartbeatInterval); }
+  }, 30_000);
+
+  let ended = false;
+  const endStream = (): void => {
+    if (ended) return;
+    ended = true;
+    clearInterval(heartbeatInterval);
+    try { res.end(); } catch { /* already ended */ }
+  };
+
   const push = (event: ChatSSEEvent, index: number): void => {
     try {
       const payload = JSON.stringify({ ...event, _idx: index });
@@ -246,7 +259,7 @@ function handleStream(
     } catch { /* 连接已关闭 */ }
 
     if (event.type === 'done' || event.type === 'awaiting_sub_agents') {
-      try { res.end(); } catch { /* already ended */ }
+      endStream();
     }
   };
 
@@ -255,12 +268,13 @@ function handleStream(
   if (!unsubscribe) {
     // 无对应 run → 立即发 done
     res.write(`data: ${JSON.stringify({ type: 'done', _idx: -1 })}\n\n`);
-    res.end();
+    endStream();
     return;
   }
 
   // 客户端断开连接时取消订阅
   req.on('close', () => {
+    clearInterval(heartbeatInterval);
     unsubscribe();
   });
 }
