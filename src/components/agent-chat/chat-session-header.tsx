@@ -1,7 +1,7 @@
 'use client';
 
 import { Dispatch } from 'react';
-import { Sparkles, ArrowLeft, Trash2, FileDown, Settings, Maximize2, Minimize2, GitFork } from 'lucide-react';
+import { Sparkles, ArrowLeft, Trash2, FileDown, Settings, Maximize2, Minimize2, GitFork, PanelRight } from 'lucide-react';
 import { useRouter } from '@/i18n/routing';
 import { Button } from '@/components/ui/button';
 import { SessionDropdown } from '@/components/session-dropdown';
@@ -30,6 +30,8 @@ export interface ChatSessionHeaderProps {
   onDelete: () => void;
   onToggleConfig: () => void;
   onCompressOpen: () => void;
+  showRuntimePanel?: boolean;
+  onToggleRuntimePanel?: () => void;
 }
 
 export function ChatSessionHeader({
@@ -51,6 +53,8 @@ export function ChatSessionHeader({
   onDelete,
   onToggleConfig,
   onCompressOpen,
+  showRuntimePanel,
+  onToggleRuntimePanel,
 }: ChatSessionHeaderProps) {
   const router = useRouter();
 
@@ -140,6 +144,22 @@ export function ChatSessionHeader({
         >
           <Settings className="h-3 w-3" />
         </Button>
+        {/* Runtime panel toggle */}
+        {onToggleRuntimePanel && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className={`h-6 px-1.5 text-xs transition-colors ${
+              showRuntimePanel
+                ? 'text-blue-500 dark:text-blue-400'
+                : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+            }`}
+            onClick={onToggleRuntimePanel}
+            title="Runtime 面板"
+          >
+            <PanelRight className="h-3 w-3" />
+          </Button>
+        )}
         {!isFull && sessionId && (
           <Button
             size="sm"
