@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import { Play, Users, Zap, Clock, ChevronRight, FolderPlus, Folder } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useProject } from '@/components/project-context';
@@ -248,7 +248,7 @@ export default function OrchestratorPage() {
 
 // ── Tab 按钮 ──
 
-function TabButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+const TabButton = memo(function TabButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
   return (
     <button
       onClick={onClick}
@@ -262,11 +262,11 @@ function TabButton({ active, onClick, icon, label }: { active: boolean; onClick:
       {label}
     </button>
   );
-}
+});
 
 // ── 阶段图标 ──
 
-function PhaseIcon({ phase }: { phase: string }) {
+const PhaseIcon = memo(function PhaseIcon({ phase }: { phase: string }) {
   const colorMap: Record<string, string> = {
     completed: 'text-green-500',
     failed: 'text-red-500',
@@ -276,4 +276,4 @@ function PhaseIcon({ phase }: { phase: string }) {
   };
   const color = colorMap[phase] ?? 'text-zinc-400';
   return <Zap className={`h-4 w-4 shrink-0 ${color}`} />;
-}
+});

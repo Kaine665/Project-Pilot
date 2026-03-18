@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Trash2, ArchiveRestore, FolderKanban, Bot, Layers } from 'lucide-react';
 
 type RecycleBinCategory = 'project' | 'agent' | 'dimension';
@@ -67,6 +67,14 @@ export default function RecycleBinPage() {
     } catch { /* ignore */ }
   };
 
+  const itemsByCategory = useMemo(() => {
+    const map: Record<RecycleBinCategory, RecycleBinItem[]> = { project: [], agent: [], dimension: [] };
+    for (const item of items) {
+      map[item.category]?.push(item);
+    }
+    return map;
+  }, [items]);
+
   const totalCount = items.length;
 
   return (
@@ -88,7 +96,7 @@ export default function RecycleBinPage() {
           <div className="mx-auto flex h-full max-w-[1100px] flex-col px-6 py-4">
             {CATEGORIES.map(cat => {
               const Icon = cat.icon;
-              const catItems = items.filter(i => i.category === cat.key);
+              const catItems = itemsByCategory[cat.key];
               return (
                 <div key={cat.key} className="flex min-h-0 flex-1 flex-col">
                   {/* Row header */}

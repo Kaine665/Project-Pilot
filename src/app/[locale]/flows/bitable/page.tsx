@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Table2, Plus, Trash2, MoreHorizontal, Grid3X3, Kanban, ChevronDown, Settings, ArrowLeft } from 'lucide-react';
 import type {
   BitableBase,
@@ -207,8 +207,8 @@ export default function BitablePage() {
 
   // ==================== 获取当前 table 和 view ====================
 
-  const activeTable = activeBase?.tables.find(t => t.id === activeTableId);
-  const activeView = activeTable?.views.find(v => v.id === activeViewId);
+  const activeTable = useMemo(() => activeBase?.tables.find(t => t.id === activeTableId), [activeBase, activeTableId]);
+  const activeView = useMemo(() => activeTable?.views.find(v => v.id === activeViewId), [activeTable, activeViewId]);
 
   // ==================== 渲染 ====================
 

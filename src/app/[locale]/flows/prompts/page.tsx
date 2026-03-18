@@ -240,7 +240,7 @@ export default function PromptsPage() {
     agent: { label: 'Agent 提示词', emoji: '🤖' },
   };
 
-  const activeBlockCount = blocks.filter(b => enabledMap[b.id] !== false).length;
+  const activeBlockCount = useMemo(() => blocks.filter(b => enabledMap[b.id] !== false).length, [blocks, enabledMap]);
 
   return (
     <div className="flex h-full overflow-hidden">

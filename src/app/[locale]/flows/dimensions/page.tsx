@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Layers, Plus, Search, Trash2, X } from 'lucide-react';
 import type { Dimension } from '@/types';
 
@@ -38,12 +38,14 @@ export default function DimensionsPage() {
 
   useEffect(() => { fetchDimensions(); }, [fetchDimensions]);
 
-  const selectedDimension = dimensions.find(d => d.id === selectedId) ?? null;
+  const selectedDimension = useMemo(() => dimensions.find(d => d.id === selectedId) ?? null, [dimensions, selectedId]);
 
-  const keyword = search.trim().toLowerCase();
-  const filtered = keyword
-    ? dimensions.filter(d => d.name.toLowerCase().includes(keyword) || (d.description ?? '').toLowerCase().includes(keyword))
-    : dimensions;
+  const filtered = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+    return keyword
+      ? dimensions.filter(d => d.name.toLowerCase().includes(keyword) || (d.description ?? '').toLowerCase().includes(keyword))
+      : dimensions;
+  }, [dimensions, search]);
 
   const handleSelect = (dimension: Dimension) => {
     setCreating(false);
@@ -120,12 +122,12 @@ export default function DimensionsPage() {
   };
 
   const isEditing = creating || selectedId !== null;
-  const hasChanges = creating
+  const hasChanges = useMemo(() => creating
     ? form.name.trim().length > 0
     : selectedDimension
       ? form.name !== selectedDimension.name
         || form.description !== (selectedDimension.description ?? '')
-      : false;
+      : false, [creating, form.name, form.description, selectedDimension]);
 
   return (
     <>
