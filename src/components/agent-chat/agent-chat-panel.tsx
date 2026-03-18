@@ -801,8 +801,13 @@ export function AgentChatPanel({
     const isStale = () => cancelled || initTokenRef.current !== token;
 
     // ── Try restoring from cache first (SPA route-back scenario) ──
+    // Guard: don't trust cache entries with empty messages when we have a real
+    // session to load. This prevents React Strict Mode's double-mount from
+    // poisoning the cache — the first mount's cleanup saves empty state (async
+    // fetch not yet complete), and the second mount would restore that empty cache
+    // and skip the server load entirely.
     const cached = popCachedState(cacheKey);
-    if (cached) {
+    if (cached && (cached.messages.length > 0 || !initialSessionId)) {
       // Instantly restore UI state — no flash, no loading
       chatDispatch({ type: 'SET_MESSAGES', messages: cached.messages });
       setSessionIdSync(cached.sessionId);
