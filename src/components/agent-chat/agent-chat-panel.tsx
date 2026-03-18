@@ -1409,6 +1409,7 @@ export function AgentChatPanel({
     guestAgents,
     showGuestPicker,
     onSelectGuest: handleSelectGuest,
+    sessionId: sessionId ?? undefined,
     draftKey: sessionId ?? undefined,
     enableSlashCommands: true,
     tokenInfo: { promptEstimate, inputTokens: tokenInputs, outputTokens: tokenOutputs, contextWindow: effectiveContextWindow },
