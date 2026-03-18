@@ -416,16 +416,28 @@ export default function SkillsPage() {
   }, [showExportMenu, showBatchExportMenu]);
 
   // ── Ctrl+S ──
+  // Use refs to capture latest state without re-registering the event listener
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
+  const editingFileRef = useRef(editingFile);
+  editingFileRef.current = editingFile;
+  const activeFileRef = useRef(activeFile);
+  activeFileRef.current = activeFile;
+  const handleSaveRef = useRef(handleSave);
+  handleSaveRef.current = handleSave;
+  const handleSaveSubFileRef = useRef(handleSaveSubFile);
+  handleSaveSubFileRef.current = handleSaveSubFile;
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        if (editing && activeFile.type === 'skill.md') { e.preventDefault(); handleSave(); }
-        else if (editingFile && activeFile.type === 'subfile') { e.preventDefault(); handleSaveSubFile(); }
+        if (editingRef.current && activeFileRef.current.type === 'skill.md') { e.preventDefault(); handleSaveRef.current(); }
+        else if (editingFileRef.current && activeFileRef.current.type === 'subfile') { e.preventDefault(); handleSaveSubFileRef.current(); }
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  });
+  }, []);
 
   const isDirty = activeFile.type === 'skill.md' && content !== originalContent;
   const isFileDirty = activeFile.type === 'subfile' && fileContent !== originalFileContent;
