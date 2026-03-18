@@ -17,6 +17,7 @@ import type { ParsedActionTag } from '@/lib/action-tag-parser';
 import { SessionCompressDialog } from '@/components/session-compress-dialog';
 import { FilePreviewDialog } from '@/components/file-preview-dialog';
 import { FolderExplorerPanel } from '@/components/folder-explorer-panel';
+import { RuntimePanel } from '@/components/runtime-panel';
 import type { SessionNavLink } from '@/components/agent-session-utils';
 import { buildSessionUrl } from '@/components/agent-session-utils';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
@@ -115,6 +116,7 @@ export function AgentChatPanel({
   // Session config
   const [showConfig, setShowConfig] = useState(false);
   const [showFolderExplorer, setShowFolderExplorer] = useState(false);
+  const [showRuntimePanel, setShowRuntimePanel] = useState(false);
 
   // Plan viewer
   const [planContent, setPlanContent] = useState<string | null>(null);
@@ -1121,6 +1123,13 @@ export function AgentChatPanel({
     return () => window.removeEventListener('toggle-folder-explorer', handler);
   }, []);
 
+  // Listen for toggle-runtime-panel event
+  useEffect(() => {
+    const handler = () => setShowRuntimePanel(v => !v);
+    window.addEventListener('toggle-runtime-panel', handler);
+    return () => window.removeEventListener('toggle-runtime-panel', handler);
+  }, []);
+
   // Listen for toggle-session-compress event
   useEffect(() => {
     const handler = (e: Event) => {
@@ -1555,6 +1564,23 @@ export function AgentChatPanel({
     </div>
   );
 
+  const runtimeDrawer = (
+    <div
+      className={`shrink-0 overflow-hidden border-l border-zinc-200 transition-[width] duration-200 ease-in-out dark:border-zinc-800 ${
+        showRuntimePanel ? 'w-[300px]' : 'w-0 border-l-0'
+      }`}
+    >
+      <div className="h-full w-[300px]">
+        <RuntimePanel
+          agent={agent}
+          sessionConfig={sessionConfig}
+          onSaveConfig={handleSaveConfig}
+          onClose={() => setShowRuntimePanel(false)}
+        />
+      </div>
+    </div>
+  );
+
   const messageListProps = {
     messages,
     isStreaming,
@@ -1626,16 +1652,7 @@ export function AgentChatPanel({
         {dialogs}
       </div>
       {configDrawer}
-      {/* Right-side folder explorer */}
-      <div
-        className={`shrink-0 overflow-hidden border-l border-zinc-200 transition-[width] duration-200 ease-in-out dark:border-zinc-800 ${
-          showFolderExplorer ? 'w-[280px]' : 'w-0 border-l-0'
-        }`}
-      >
-        <div className="h-full w-[280px]">
-          <FolderExplorerPanel onClose={() => setShowFolderExplorer(false)} />
-        </div>
-      </div>
+      {runtimeDrawer}
       {planPanel}
       {actionPanel}
       </div>
@@ -1674,6 +1691,8 @@ export function AgentChatPanel({
         onDelete={handleDelete}
         onToggleConfig={() => setShowConfig(v => !v)}
         onCompressOpen={() => setCompressDialogOpen(true)}
+        showRuntimePanel={showRuntimePanel}
+        onToggleRuntimePanel={() => setShowRuntimePanel(v => !v)}
       />
 
       {/* Messages + Queue overlay */}
@@ -1740,6 +1759,7 @@ export function AgentChatPanel({
       {dialogs}
     </div>
     {configDrawer}
+    {runtimeDrawer}
     {planPanel}
     {actionPanel}
     </div>
