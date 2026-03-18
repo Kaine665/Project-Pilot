@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Table2, Plus, Trash2, MoreHorizontal, Grid3X3, Kanban, ChevronDown, Settings, ArrowLeft } from 'lucide-react';
 import type {
   BitableBase,
@@ -207,8 +207,8 @@ export default function BitablePage() {
 
   // ==================== 获取当前 table 和 view ====================
 
-  const activeTable = activeBase?.tables.find(t => t.id === activeTableId);
-  const activeView = activeTable?.views.find(v => v.id === activeViewId);
+  const activeTable = useMemo(() => activeBase?.tables.find(t => t.id === activeTableId), [activeBase, activeTableId]);
+  const activeView = useMemo(() => activeTable?.views.find(v => v.id === activeViewId), [activeTable, activeViewId]);
 
   // ==================== 渲染 ====================
 
@@ -480,6 +480,17 @@ function AddFieldDialog({ onAdd, onClose }: {
 
   const colors = ['red', 'orange', 'amber', 'green', 'blue', 'purple', 'pink'];
 
+  // Static color map — Tailwind JIT cannot compile dynamic `bg-${color}-500`
+  const colorDot: Record<string, string> = {
+    red: 'bg-red-500',
+    orange: 'bg-orange-500',
+    amber: 'bg-amber-500',
+    green: 'bg-green-500',
+    blue: 'bg-blue-500',
+    purple: 'bg-purple-500',
+    pink: 'bg-pink-500',
+  };
+
   const handleSubmit = () => {
     if (!name.trim()) return;
 
@@ -534,7 +545,7 @@ function AddFieldDialog({ onAdd, onClose }: {
           <div className="space-y-1.5 mb-2">
             {options.map((opt, i) => (
               <div key={i} className="flex items-center gap-2">
-                <span className={`w-3 h-3 rounded-full bg-${opt.color}-500`} />
+                <span className={`w-3 h-3 rounded-full ${colorDot[opt.color] ?? 'bg-zinc-500'}`} />
                 <span className="text-sm flex-1">{opt.label}</span>
                 <button
                   className="text-xs text-zinc-400 hover:text-red-500"

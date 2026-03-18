@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
 import { BookOpen, Plus, Trash2, X, User, Key, Server, Monitor, FolderTree, Globe, Database, Mail, Clock, FolderOpen, Upload, Check, Bot } from 'lucide-react';
 import type { ContextEntry } from '@/types';
 import type { LucideIcon } from 'lucide-react';
@@ -210,7 +210,7 @@ const FORMAT_OPTIONS: Array<{ value: FormData['format']; label: string }> = [
   { value: 'text', label: 'Text' },
 ];
 
-function EntryCard({ entry, selectedId, onSelect, onDelete, isGlobal }: {
+const EntryCard = memo(function EntryCard({ entry, selectedId, onSelect, onDelete, isGlobal }: {
   entry: ContextEntry;
   selectedId: string | null;
   onSelect: (entry: ContextEntry) => void;
@@ -254,7 +254,7 @@ function EntryCard({ entry, selectedId, onSelect, onDelete, isGlobal }: {
       </div>
     </div>
   );
-}
+});
 
 export default function ContextPage() {
   const { activeKey } = useProject();
@@ -346,8 +346,10 @@ export default function ContextPage() {
     setOriginalContent('');
   };
 
-  const usedFileNames = new Set(entries.map(e => e.fileName));
-  const availableTemplates = CONTEXT_TEMPLATES.filter(t => !usedFileNames.has(t.fileName));
+  const availableTemplates = useMemo(() => {
+    const usedFileNames = new Set(entries.map(e => e.fileName));
+    return CONTEXT_TEMPLATES.filter(t => !usedFileNames.has(t.fileName));
+  }, [entries]);
 
   const handleClose = () => {
     setSelectedId(null);
@@ -358,7 +360,7 @@ export default function ContextPage() {
     setOriginalContent('');
   };
 
-  const hasChanges = creating
+  const hasChanges = useMemo(() => creating
     ? form.label.trim().length > 0
     : form.label !== originalForm.label
       || form.description !== originalForm.description
@@ -366,7 +368,8 @@ export default function ContextPage() {
       || form.format !== originalForm.format
       || form.group !== originalForm.group
       || form.sourcePath !== originalForm.sourcePath
-      || content !== originalContent;
+      || content !== originalContent,
+    [creating, form, originalForm, content, originalContent]);
 
   const handleSave = async () => {
     const label = form.label.trim();

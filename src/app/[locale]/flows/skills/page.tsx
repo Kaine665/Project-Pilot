@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Plus, Trash2, History, RotateCcw, Save, X, Blocks,
   FileText, FileCode, BookOpen, Image, FolderOpen,
@@ -416,27 +416,41 @@ export default function SkillsPage() {
   }, [showExportMenu, showBatchExportMenu]);
 
   // ── Ctrl+S ──
+  // Use refs to capture latest state without re-registering the event listener
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
+  const editingFileRef = useRef(editingFile);
+  editingFileRef.current = editingFile;
+  const activeFileRef = useRef(activeFile);
+  activeFileRef.current = activeFile;
+  const handleSaveRef = useRef(handleSave);
+  handleSaveRef.current = handleSave;
+  const handleSaveSubFileRef = useRef(handleSaveSubFile);
+  handleSaveSubFileRef.current = handleSaveSubFile;
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        if (editing && activeFile.type === 'skill.md') { e.preventDefault(); handleSave(); }
-        else if (editingFile && activeFile.type === 'subfile') { e.preventDefault(); handleSaveSubFile(); }
+        if (editingRef.current && activeFileRef.current.type === 'skill.md') { e.preventDefault(); handleSaveRef.current(); }
+        else if (editingFileRef.current && activeFileRef.current.type === 'subfile') { e.preventDefault(); handleSaveSubFileRef.current(); }
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  });
+  }, []);
 
   const isDirty = activeFile.type === 'skill.md' && content !== originalContent;
   const isFileDirty = activeFile.type === 'subfile' && fileContent !== originalFileContent;
-  const filteredSkills = searchQuery
-    ? skills.filter(s =>
-        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.description.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : skills;
+  const filteredSkills = useMemo(() =>
+    searchQuery
+      ? skills.filter(s =>
+          s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          s.description.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+      : skills,
+    [skills, searchQuery]);
 
-  const filesForDir = (subdir: string) => subFiles.filter(f => f.subdir === subdir);
+  const filesForDir = useCallback((subdir: string) => subFiles.filter(f => f.subdir === subdir), [subFiles]);
 
   // Helper: is this file currently active?
   const isFileActive = (file: ActiveFile) => {

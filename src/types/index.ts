@@ -301,7 +301,9 @@ export type ChatSSEEvent =
   | { type: 'topic_completion'; completed: boolean; confidence: number; summary: string }
   /** 卫星任务：任务卡片已更新 */
   | { type: 'task_card_updated'; card: import('@/lib/task-card-store').TaskCard }
-  | { type: 'done' };
+  | { type: 'done' }
+  /** 所有卫星任务完成，SSE 连接可以关闭。前端收到 'done' 后即可更新 UI，收到此事件后 SSE 才真正结束。 */
+  | { type: 'stream_end' };
 
 // ==================== Agent ====================
 
@@ -380,10 +382,25 @@ export interface Agent {
   defaultProvider?: ProviderId;
   /** 默认模型 ID（创建新会话时预选）。留空则继承全局设置。 */
   defaultModel?: string;
+  /**
+   * 引用的 prompt 片段 ID 列表，按顺序拼接到主 prompt 之后。
+   * 片段存储在 data/prompts/blocks/{blockId}.md
+   */
+  promptRefs?: string[];
+  /** Persistent agent runtime status */
+  agentStatus?: AgentStatus;
   archived?: boolean;
   archivedAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AgentStatus {
+  state: 'idle' | 'busy' | 'error' | 'disabled';
+  lastActiveAt?: string;
+  lastSessionId?: string;
+  lastError?: string;
+  activeTaskCount?: number;
 }
 
 export interface AgentsData {
@@ -730,4 +747,24 @@ export interface ScheduleRunRecord {
 
 export interface ScheduleRunsData {
   runs: ScheduleRunRecord[];
+}
+
+// ==================== Segmented Prompts ====================
+
+/** Scope for segmented prompts */
+export type PromptSegmentScope =
+  | { type: 'global' }
+  | { type: 'project'; projectKey: string };
+
+/** A single segment within a segmented prompt */
+export interface PromptSegment {
+  id: string;
+  title: string;
+  description?: string;
+  enabled: boolean;
+}
+
+/** Index file stored in {scope}.d/_index.json */
+export interface SegmentedPromptIndex {
+  segments: PromptSegment[];
 }

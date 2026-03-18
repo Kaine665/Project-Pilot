@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useProject } from '@/components/project-context';
 import {
   Library, Plus, Search, Save, X, Trash2,
@@ -265,21 +265,31 @@ export default function KnowledgePage() {
 
   // ── Ctrl+S ──
 
+  // Use refs to capture latest state without re-registering the event listener
+  const creatingRef = useRef(creating);
+  creatingRef.current = creating;
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
+  const handleSaveRef = useRef(handleSave);
+  handleSaveRef.current = handleSave;
+  const handleCreateRef = useRef(handleCreate);
+  handleCreateRef.current = handleCreate;
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        if (creating) handleCreate();
-        else if (editing) handleSave();
+        if (creatingRef.current) handleCreateRef.current();
+        else if (editingRef.current) handleSaveRef.current();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  });
+  }, []);
 
   // ── Filter docs ──
 
-  const filteredDocs = docs.filter(d => {
+  const filteredDocs = useMemo(() => docs.filter(d => {
     if (statusFilter !== 'all' && (d.status ?? 'active') !== statusFilter) return false;
     if (!showDeprecated && (d.status === 'deprecated') && statusFilter !== 'deprecated') return false;
     if (searchQuery) {
@@ -287,31 +297,33 @@ export default function KnowledgePage() {
       if (!d.title.toLowerCase().includes(q) && !(d.description ?? '').toLowerCase().includes(q)) return false;
     }
     return true;
-  });
+  }), [docs, statusFilter, showDeprecated, searchQuery]);
 
   // ── Group docs by category ──
 
   const uncategorizedId = '__uncategorized__';
-  const sortedCategories = [...categories].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  const sortedCategories = useMemo(() => [...categories].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)), [categories]);
 
-  const docsByCategory: Record<string, DocEntry[]> = {};
-  for (const cat of sortedCategories) {
-    docsByCategory[cat.id] = [];
-  }
-  docsByCategory[uncategorizedId] = [];
-
-  for (const doc of filteredDocs) {
-    const catId = doc.category ?? uncategorizedId;
-    if (!docsByCategory[catId]) {
-      docsByCategory[uncategorizedId].push(doc);
-    } else {
-      docsByCategory[catId].push(doc);
+  const docsByCategory = useMemo(() => {
+    const result: Record<string, DocEntry[]> = {};
+    for (const cat of sortedCategories) {
+      result[cat.id] = [];
     }
-  }
+    result[uncategorizedId] = [];
+    for (const doc of filteredDocs) {
+      const catId = doc.category ?? uncategorizedId;
+      if (!result[catId]) {
+        result[uncategorizedId].push(doc);
+      } else {
+        result[catId].push(doc);
+      }
+    }
+    return result;
+  }, [filteredDocs, sortedCategories]);
 
-  const deprecatedCount = docs.filter(d => d.status === 'deprecated').length;
+  const deprecatedCount = useMemo(() => docs.filter(d => d.status === 'deprecated').length, [docs]);
   const isDirty = docContent !== originalContent || editing;
-  const selectedDoc = docs.find(d => d.id === selectedId);
+  const selectedDoc = useMemo(() => docs.find(d => d.id === selectedId), [docs, selectedId]);
 
   // ── Render ──
 

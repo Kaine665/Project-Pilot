@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo, useReducer, startTransition } from 'react';
-import { Bot, Sparkles } from 'lucide-react';
+import { Bot, Sparkles, PanelRight, Settings } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from '@/i18n/routing';
 import { ChatInput } from '@/components/chat-input';
@@ -17,6 +17,8 @@ import type { ParsedActionTag } from '@/lib/action-tag-parser';
 import { SessionCompressDialog } from '@/components/session-compress-dialog';
 import { FilePreviewDialog } from '@/components/file-preview-dialog';
 import { FolderExplorerPanel } from '@/components/folder-explorer-panel';
+import { RuntimePanel } from '@/components/runtime-panel';
+import { useProject } from '@/components/project-context';
 import type { SessionNavLink } from '@/components/agent-session-utils';
 import { buildSessionUrl } from '@/components/agent-session-utils';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
@@ -35,6 +37,7 @@ import { ChatQueueOverlay } from './chat-queue-overlay';
 import { ChatSessionHeader } from './chat-session-header';
 import { ChatSessionSidebar } from './chat-session-sidebar';
 import { TaskCardBanner } from './task-card-banner';
+import { buildCacheKey, cachePanelState, popCachedState } from './agent-session-cache';
 
 export function AgentChatPanel({
   agent,
@@ -49,6 +52,25 @@ export function AgentChatPanel({
   const router = useRouter();
   const hasProject = !!variant && !!projectKey;
   const isFull = variant === 'full';
+
+  // Cache key for surviving SPA route changes
+  const cacheKey = useMemo(
+    () => buildCacheKey(agent.id, projectKey, initialSessionId),
+    [agent.id, projectKey, initialSessionId],
+  );
+
+  // Resolve project path for folder explorer
+  const { projects } = useProject();
+  const projectPath = useMemo(() => {
+    if (!projectKey) return undefined;
+    const entry = projects.find(p => p.key === projectKey);
+    return entry?.path ?? undefined;
+  }, [projectKey, projects]);
+
+  // Insert file path reference into chat input via CustomEvent
+  const handleInsertFilePath = useCallback((filePath: string) => {
+    window.dispatchEvent(new CustomEvent('pp:insert-text', { detail: { text: filePath } }));
+  }, []);
 
   // Initialize notification manager
   const { notifyCompletion } = useNotificationManager();
@@ -108,6 +130,7 @@ export function AgentChatPanel({
   // Session config
   const [showConfig, setShowConfig] = useState(false);
   const [showFolderExplorer, setShowFolderExplorer] = useState(false);
+  const [showRuntimePanel, setShowRuntimePanel] = useState(false);
 
   // Plan viewer
   const [planContent, setPlanContent] = useState<string | null>(null);
@@ -208,24 +231,52 @@ export function AgentChatPanel({
     return () => window.clearInterval(timer);
   }, [sessionList]);
 
-  // Stop backend runner + abort SSE stream when the component unmounts
+  // Cache panel state on unmount (SPA navigation) so we can restore instantly on remount.
+  // Backend runner is NOT stopped — the user is still in the app and may come back.
+  // The beforeunload handler below handles actual page/tab close.
+  const cacheKeyRef = useRef(cacheKey);
+  cacheKeyRef.current = cacheKey;
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+
   useEffect(() => {
     return () => {
-      const sid = sessionIdRef.current;
-      if (sid && isStreamingRef.current) {
-        // Fire-and-forget: tell backend to stop the runner.
-        // Without this, navigating away leaves the backend running indefinitely.
-        fetch('/api/agent-chat/stop', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId: sid }),
-          keepalive: true, // ensures the request survives page unload
-        }).catch(() => {});
-      }
+      // Snapshot current state into the module-level cache
+      const s = sessionRef.current;
+      cachePanelState(cacheKeyRef.current, {
+        messages: messagesRef.current,
+        isStreaming: isStreamingRef.current,
+        sessionId: sessionIdRef.current,
+        sessionTitle: s.title,
+        sessionList: s.list,
+        sessionConfig: s.config,
+        parentSession: s.parentSession,
+        childSessions: s.childSessions,
+        cachedAt: Date.now(),
+      });
+
+      // Disconnect SSE (frontend only) — backend keeps running
       streamAbortRef.current?.abort();
       pendingAnswerRef.current = null;
       pendingUserMessagesRef.current = [];
     };
+  }, []);
+
+  // Stop backend runner only when the browser tab/window is actually closing.
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const sid = sessionIdRef.current;
+      if (sid && isStreamingRef.current) {
+        fetch('/api/agent-chat/stop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: sid }),
+          keepalive: true,
+        }).catch(() => {});
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
   const flushQueuedUserMessage = useCallback((targetSessionId: string, delayMs = 200) => {
@@ -544,6 +595,17 @@ export function AgentChatPanel({
     const abort = new AbortController();
     streamAbortRef.current = abort;
 
+    // Stale connection detection: if no data (including heartbeat) received
+    // within 45s, abort and let the catch handler attempt reconnect.
+    let lastDataTime = Date.now();
+    const staleCheckInterval = setInterval(() => {
+      if (Date.now() - lastDataTime > 45_000) {
+        clearInterval(staleCheckInterval);
+        console.warn(`[SSE] No data for 45s on session ${targetSessionId}, aborting stale connection`);
+        abort.abort();
+      }
+    }, 10_000);
+
     fetch(`/api/agent-chat/stream?sessionId=${targetSessionId}&since=${since}`, {
       signal: abort.signal,
       cache: 'no-store',
@@ -558,6 +620,9 @@ export function AgentChatPanel({
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+
+        // Update stale timer on every chunk (including SSE heartbeat comments)
+        lastDataTime = Date.now();
 
         if (sessionIdRef.current !== targetSessionId) {
           reader.cancel();
@@ -704,6 +769,22 @@ export function AgentChatPanel({
               break;
 
             case 'done':
+              // AI response is complete. Finalize the streaming UI immediately so the
+              // user sees the response without waiting for satellite tasks to finish.
+              // The SSE connection stays open until 'stream_end' (emitted after all
+              // satellite tasks complete) — this lets events like 'task_card_updated'
+              // arrive and update the UI in real-time.
+              if (rafIdRef.current) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = 0;
+              }
+              finalizeStream();
+              break;
+
+            case 'stream_end':
+              // All satellite tasks have completed. The sidecar will close the SSE
+              // connection after emitting this event. No UI action needed here —
+              // finalizeStream() was already called on 'done'.
               break;
           }
         }
@@ -718,15 +799,32 @@ export function AgentChatPanel({
         }
       }
 
+      clearInterval(staleCheckInterval);
       if (rafIdRef.current) {
         cancelAnimationFrame(rafIdRef.current);
         rafIdRef.current = 0;
       }
       finalizeStream();
     }).catch((err) => {
+      clearInterval(staleCheckInterval);
+
       if ((err as Error).name === 'AbortError') {
-        // Abort may come from handleAbort's fallback force-close.
-        // If the stream is still marked active, finalize it so UI state is consistent.
+        // Abort may come from handleAbort's fallback force-close OR stale connection detection.
+        // Check if backend is still running — if so, reconnect instead of giving up.
+        if (isStreamingRef.current && sessionIdRef.current === targetSessionId) {
+          fetch(`/api/agent-chat/status?sessionId=${targetSessionId}`, { cache: 'no-store' })
+            .then(r => r.json())
+            .then(data => {
+              if (data.status === 'running' && sessionIdRef.current === targetSessionId) {
+                console.info(`[SSE] Backend still running for ${targetSessionId}, reconnecting from idx ${lastEventIdxRef.current + 1}`);
+                connectToStream(targetSessionId, lastEventIdxRef.current + 1);
+              } else {
+                finalizeStream();
+              }
+            })
+            .catch(() => finalizeStream());
+          return;
+        }
         if (isStreamingRef.current) finalizeStream();
         return;
       }
@@ -759,96 +857,137 @@ export function AgentChatPanel({
     }
   }, [hasProject, t, setSessionIdSync]);
 
-  // Initialize: load sessions and auto-select
+  // Initialize: restore from cache (instant) or load sessions from server
   useEffect(() => {
     let cancelled = false;
     const token = ++initTokenRef.current;
     const isStale = () => cancelled || initTokenRef.current !== token;
 
-    resetState();
+    // ── Try restoring from cache first (SPA route-back scenario) ──
+    // Guard: don't trust cache entries with empty messages when we have a real
+    // session to load. This prevents React Strict Mode's double-mount from
+    // poisoning the cache — the first mount's cleanup saves empty state (async
+    // fetch not yet complete), and the second mount would restore that empty cache
+    // and skip the server load entirely.
+    const cached = popCachedState(cacheKey);
+    if (cached && (cached.messages.length > 0 || !initialSessionId)) {
+      // Instantly restore UI state — no flash, no loading
+      chatDispatch({ type: 'SET_MESSAGES', messages: cached.messages });
+      setSessionIdSync(cached.sessionId);
+      sessionDispatch({ type: 'SET_TITLE', title: cached.sessionTitle });
+      sessionDispatch({ type: 'UPDATE_LIST', updater: () => cached.sessionList });
+      sessionDispatch({ type: 'SET_CONFIG', config: cached.sessionConfig });
+      sessionDispatch({ type: 'SET_NAV', parent: cached.parentSession, children: cached.childSessions });
 
-    if (hasProject && !projectKey) return;
-    if (!hasProject && initialSessionId === null) return;
-
-    const reconnectRunning = (sid: string, statusData: {
-      messages?: Array<{ role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }>;
-      startedAt?: string;
-    }) => {
-      if (Array.isArray(statusData.messages) && statusData.messages.length > 0) {
-        const restored: ChatMessage[] = statusData.messages.map(
-          (m: { role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }, i: number) => ({
-            id: `restored-${i}`,
-            role: m.role,
-            content: m.content,
-            contentBlocks: m.contentBlocks,
-            timestamp: '',
-          }),
-        );
-        chatDispatch({ type: 'SET_MESSAGES', messages: restored });
-      }
-      markSessionRunning(sid, statusData.startedAt);
-      chatDispatch({ type: 'SEND_START' });
-      blocksRef.current = [];
-      fullTextRef.current = '';
-      toolCallsRef.current = [];
-      connectToStream(sid, 0);
-    };
-
-    (async () => {
-      // Fast path: agents page with specific session
-      if (!hasProject && initialSessionId) {
-        setSessionIdSync(initialSessionId);
-        const [, statusRes] = await Promise.all([
-          loadSessionData(initialSessionId, token),
-          fetch(`/api/agent-chat/status?sessionId=${initialSessionId}`, { cache: 'no-store' }),
-        ]);
-        if (isStale()) return;
-        try {
-          const statusData = await statusRes.json();
-          if (statusData.status === 'running') {
-            reconnectRunning(initialSessionId, statusData);
-          }
-        } catch { /* ignore status parse failure */ }
-        return;
-      }
-
-      // Standard path: butler/project mode
-      const sessions = await fetchSessionList(agent.id, projectKey);
-      if (isStale()) return;
-
-      if (sessions.length > 0) {
-        const latest = sessions[0];
-        setSessionIdSync(latest.id);
-        sessionDispatch({ type: 'SET_TITLE', title: latest.title });
-        const [, statusRes] = await Promise.all([
-          loadSessionData(latest.id, token),
-          fetch(`/api/agent-chat/status?sessionId=${latest.id}`, { cache: 'no-store' }),
-        ]);
-        if (isStale()) return;
-        try {
-          const statusData = await statusRes.json();
-          if (statusData.status === 'running') {
-            reconnectRunning(latest.id, statusData);
-            return;
-          }
-        } catch { /* ignore */ }
-
-        for (let i = 1; i < sessions.length; i++) {
-          if (isStale()) return;
-          const sid = sessions[i].id;
-          const res = await fetch(`/api/agent-chat/status?sessionId=${sid}`, { cache: 'no-store' });
-          const data = await res.json();
-          if (!isStale() && data.status === 'running') {
-            setSessionIdSync(sid);
-            sessionDispatch({ type: 'SET_TITLE', title: sessions[i].title });
-            await loadSessionData(sid, token);
+      // If the session was streaming, check backend and reconnect SSE
+      if (cached.isStreaming && cached.sessionId) {
+        const sid = cached.sessionId;
+        (async () => {
+          try {
+            const res = await fetch(`/api/agent-chat/status?sessionId=${sid}`, { cache: 'no-store' });
             if (isStale()) return;
-            reconnectRunning(sid, data);
-            break;
+            const data = await res.json();
+            if (data.status === 'running') {
+              markSessionRunning(sid, data.startedAt);
+              chatDispatch({ type: 'SEND_START' });
+              blocksRef.current = [];
+              fullTextRef.current = '';
+              toolCallsRef.current = [];
+              connectToStream(sid, 0);
+            } else {
+              // Backend finished while we were away — clear running indicator
+              clearSessionRunning(sid);
+            }
+          } catch { /* ignore */ }
+        })();
+      }
+    } else {
+      // ── No cache — full initialization from server ──
+      resetState();
+
+      if (hasProject && !projectKey) return;
+      if (!hasProject && initialSessionId === null) return;
+
+      const reconnectRunning = (sid: string, statusData: {
+        messages?: Array<{ role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }>;
+        startedAt?: string;
+      }) => {
+        if (Array.isArray(statusData.messages) && statusData.messages.length > 0) {
+          const restored: ChatMessage[] = statusData.messages.map(
+            (m: { role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }, i: number) => ({
+              id: `restored-${i}`,
+              role: m.role,
+              content: m.content,
+              contentBlocks: m.contentBlocks,
+              timestamp: '',
+            }),
+          );
+          chatDispatch({ type: 'SET_MESSAGES', messages: restored });
+        }
+        markSessionRunning(sid, statusData.startedAt);
+        chatDispatch({ type: 'SEND_START' });
+        blocksRef.current = [];
+        fullTextRef.current = '';
+        toolCallsRef.current = [];
+        connectToStream(sid, 0);
+      };
+
+      (async () => {
+        // Fast path: agents page with specific session
+        if (!hasProject && initialSessionId) {
+          setSessionIdSync(initialSessionId);
+          const [, statusRes] = await Promise.all([
+            loadSessionData(initialSessionId, token),
+            fetch(`/api/agent-chat/status?sessionId=${initialSessionId}`, { cache: 'no-store' }),
+          ]);
+          if (isStale()) return;
+          try {
+            const statusData = await statusRes.json();
+            if (statusData.status === 'running') {
+              reconnectRunning(initialSessionId, statusData);
+            }
+          } catch { /* ignore status parse failure */ }
+          return;
+        }
+
+        // Standard path: butler/project mode
+        const sessions = await fetchSessionList(agent.id, projectKey);
+        if (isStale()) return;
+
+        if (sessions.length > 0) {
+          const latest = sessions[0];
+          setSessionIdSync(latest.id);
+          sessionDispatch({ type: 'SET_TITLE', title: latest.title });
+          const [, statusRes] = await Promise.all([
+            loadSessionData(latest.id, token),
+            fetch(`/api/agent-chat/status?sessionId=${latest.id}`, { cache: 'no-store' }),
+          ]);
+          if (isStale()) return;
+          try {
+            const statusData = await statusRes.json();
+            if (statusData.status === 'running') {
+              reconnectRunning(latest.id, statusData);
+              return;
+            }
+          } catch { /* ignore */ }
+
+          for (let i = 1; i < sessions.length; i++) {
+            if (isStale()) return;
+            const sid = sessions[i].id;
+            const res = await fetch(`/api/agent-chat/status?sessionId=${sid}`, { cache: 'no-store' });
+            const data = await res.json();
+            if (!isStale() && data.status === 'running') {
+              setSessionIdSync(sid);
+              sessionDispatch({ type: 'SET_TITLE', title: sessions[i].title });
+              await loadSessionData(sid, token);
+              if (isStale()) return;
+              reconnectRunning(sid, data);
+              break;
+            }
           }
         }
-      }
-    })();
+      })();
+    }
 
     return () => {
       cancelled = true;
@@ -1043,6 +1182,13 @@ export function AgentChatPanel({
     const handler = () => setShowFolderExplorer(v => !v);
     window.addEventListener('toggle-folder-explorer', handler);
     return () => window.removeEventListener('toggle-folder-explorer', handler);
+  }, []);
+
+  // Listen for toggle-runtime-panel event
+  useEffect(() => {
+    const handler = () => setShowRuntimePanel(v => !v);
+    window.addEventListener('toggle-runtime-panel', handler);
+    return () => window.removeEventListener('toggle-runtime-panel', handler);
   }, []);
 
   // Listen for toggle-session-compress event
@@ -1479,6 +1625,23 @@ export function AgentChatPanel({
     </div>
   );
 
+  const runtimeDrawer = (
+    <div
+      className={`shrink-0 overflow-hidden border-l border-zinc-200 transition-[width] duration-200 ease-in-out dark:border-zinc-800 ${
+        showRuntimePanel ? 'w-[300px]' : 'w-0 border-l-0'
+      }`}
+    >
+      <div className="h-full w-[300px]">
+        <RuntimePanel
+          agent={agent}
+          sessionConfig={sessionConfig}
+          onSaveConfig={handleSaveConfig}
+          onClose={() => setShowRuntimePanel(false)}
+        />
+      </div>
+    </div>
+  );
+
   const messageListProps = {
     messages,
     isStreaming,
@@ -1506,6 +1669,34 @@ export function AgentChatPanel({
     return (
       <div className="flex h-full">
       <div className="flex h-full flex-1 flex-col min-w-0">
+        {/* Plain mode toolbar */}
+        <div className="flex items-center justify-end gap-0.5 px-3 py-1.5 border-b border-zinc-100 dark:border-zinc-800">
+          <button
+            type="button"
+            onClick={() => setShowConfig(v => !v)}
+            className={`p-1 rounded transition-colors ${
+              showConfig
+                ? 'text-blue-500 dark:text-blue-400'
+                : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+            }`}
+            title="会话配置"
+          >
+            <Settings className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowRuntimePanel(v => !v)}
+            className={`p-1 rounded transition-colors ${
+              showRuntimePanel
+                ? 'text-blue-500 dark:text-blue-400'
+                : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+            }`}
+            title="运行时面板"
+          >
+            <PanelRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
         {/* Messages + Queue overlay */}
         <div className="relative flex-1 min-h-0">
           <div
@@ -1550,6 +1741,7 @@ export function AgentChatPanel({
         {dialogs}
       </div>
       {configDrawer}
+      {runtimeDrawer}
       {/* Right-side folder explorer */}
       <div
         className={`shrink-0 overflow-hidden border-l border-zinc-200 transition-[width] duration-200 ease-in-out dark:border-zinc-800 ${
@@ -1557,7 +1749,11 @@ export function AgentChatPanel({
         }`}
       >
         <div className="h-full w-[280px]">
-          <FolderExplorerPanel onClose={() => setShowFolderExplorer(false)} />
+          <FolderExplorerPanel
+            onClose={() => setShowFolderExplorer(false)}
+            onInsertPath={handleInsertFilePath}
+            initialPath={projectPath}
+          />
         </div>
       </div>
       {planPanel}
@@ -1598,6 +1794,8 @@ export function AgentChatPanel({
         onDelete={handleDelete}
         onToggleConfig={() => setShowConfig(v => !v)}
         onCompressOpen={() => setCompressDialogOpen(true)}
+        showRuntimePanel={showRuntimePanel}
+        onToggleRuntimePanel={() => setShowRuntimePanel(v => !v)}
       />
 
       {/* Messages + Queue overlay */}
@@ -1664,6 +1862,7 @@ export function AgentChatPanel({
       {dialogs}
     </div>
     {configDrawer}
+    {runtimeDrawer}
     {planPanel}
     {actionPanel}
     </div>

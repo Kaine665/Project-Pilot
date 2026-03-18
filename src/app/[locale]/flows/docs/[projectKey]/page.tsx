@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { FileText, Plus, Trash2, X, Clock } from 'lucide-react';
 import { useRouter } from '@/i18n/routing';
@@ -139,9 +139,10 @@ export default function DocsProjectPage() {
     setOriginalContent('');
   };
 
-  const hasChanges = creating
+  const hasChanges = useMemo(() => creating
     ? title.trim().length > 0
-    : title !== originalTitle || description !== originalDescription || content !== originalContent;
+    : title !== originalTitle || description !== originalDescription || content !== originalContent,
+    [creating, title, originalTitle, description, originalDescription, content, originalContent]);
 
   const handleSave = async () => {
     if (!title.trim()) return;
@@ -201,7 +202,7 @@ export default function DocsProjectPage() {
   };
 
   const isEditing = creating || selectedDocId !== null;
-  const selectedDoc = selectedDocId ? docs.find(d => d.id === selectedDocId) : null;
+  const selectedDoc = useMemo(() => selectedDocId ? docs.find(d => d.id === selectedDocId) : null, [docs, selectedDocId]);
 
   return (
     <div className="h-full overflow-y-auto">

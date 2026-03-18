@@ -71,6 +71,11 @@ export async function runSatelliteTasks(ctx: SatelliteContext): Promise<void> {
       console.error(`${LOG_PREFIX} Task "${task.id}" failed:`, err);
     }
   }
+
+  // Signal that all satellite tasks are done — the SSE connection can now be closed.
+  // The frontend uses 'done' to finalize the UI immediately; 'stream_end' is the actual
+  // close signal so that satellite SSE events (e.g. task_card_updated) are not lost.
+  ctx.emit({ type: 'stream_end' });
 }
 
 async function runAITask(task: SatelliteTask, ctx: SatelliteContext): Promise<void> {

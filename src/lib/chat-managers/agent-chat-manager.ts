@@ -32,11 +32,13 @@ import '@/lib/agent-actions';    // side-effect: registers actions + their loade
 import { actionRegistry } from '@/lib/agent-actions';
 import { estimateTokens } from '@/lib/token-estimate';
 import { migrateAgentToResources } from '@/lib/resource-migration';
+import { updateAgentStatus } from '@/lib/agents-store';
 import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
 import { runSatelliteTasks } from '@/lib/satellite-tasks';
 import '@/lib/satellite-tasks'; // side-effect: registers all satellite tasks
 import type { SatelliteContext } from '@/lib/satellite-tasks';
 import type { RunStatus, RunStatusInfo } from './types';
+import { appendUsageRecord } from '@/lib/usage-store';
 
 // Re-export store functions so existing callers don't break during migration
 export { generateSessionId } from './agent-chat-session-store';
@@ -121,6 +123,11 @@ export interface AgentChatRun {
   checkpoint?: import('@/types/agent-chat').SessionCheckpoint;
   /** Throttle timestamp for streaming draft writes (crash recovery) */
   _lastDraftWriteTs?: number;
+
+  // Token usage tracking (accumulated from token_usage events)
+  _tokenInputs: number;
+  _tokenOutputs: number;
+  _contextWindow?: number;
 
   /**
    * Resolves when consumeRunnerStream() (including finalizeRun) has completed.
@@ -298,6 +305,8 @@ class AgentChatManager {
       _images: images,
       _guardRetryCount: existing?._guardRetryCount,
       _ephemeral: ephemeral,
+      _tokenInputs: 0,
+      _tokenOutputs: 0,
     };
 
     // Snapshot danger detector settings
@@ -309,6 +318,13 @@ class AgentChatManager {
     }
 
     this.runs.set(sessionId, run);
+
+    // Update agent status to busy (fire-and-forget)
+    updateAgentStatus(agentId, {
+      state: 'busy',
+      lastActiveAt: new Date().toISOString(),
+      lastSessionId: sessionId,
+    }).catch(() => {});
 
     // ── Launch runner（provider 无关）──
     try {
@@ -405,6 +421,8 @@ class AgentChatManager {
       messages,
       parentSessionId,
       importedTurnIndices: turnIndices,
+      _tokenInputs: 0,
+      _tokenOutputs: 0,
     };
 
     // Snapshot danger detector settings
@@ -670,13 +688,48 @@ class AgentChatManager {
       console.error(`${LOG_PREFIX} persistAfterClose error:`, err);
     }
 
+    // Record token usage to JSONL (fire-and-forget)
+    if (!run._ephemeral && (run._tokenInputs > 0 || run._tokenOutputs > 0)) {
+      appendUsageRecord({
+        ts: new Date().toISOString(),
+        sessionId: run.sessionId,
+        agentId: run.agentId,
+        projectKey: run.projectKey,
+        model: run.config?.model,
+        inputTokens: run._tokenInputs,
+        outputTokens: run._tokenOutputs,
+        contextWindow: run._contextWindow,
+      }).catch((err) => {
+        console.error(`${LOG_PREFIX} Failed to record token usage:`, err);
+      });
+    }
+
+    // Update agent status (fire-and-forget)
+    {
+      const errorEvent = run.status === 'failed'
+        ? run.events.find((e): e is { type: 'error'; message: string } => e.type === 'error')
+        : undefined;
+      updateAgentStatus(run.agentId, {
+        state: run.status === 'failed' ? 'error' : 'idle',
+        lastActiveAt: new Date().toISOString(),
+        lastSessionId: run.sessionId,
+        ...(errorEvent ? { lastError: errorEvent.message.slice(0, 200) } : {}),
+      }).catch(() => {});
+    }
+
     this.trackAndEmit(run, { type: 'done' });
 
     // Fire-and-forget: run all registered satellite tasks (title, health guard, task card, etc.)
+    // The scheduler emits 'stream_end' after all tasks complete, which is the signal that
+    // closes the SSE connection. This allows satellite SSE events (e.g. task_card_updated)
+    // to reach the frontend before the connection closes.
     if (!run._ephemeral) {
       this.runSatelliteTasks(run).catch((err) => {
         console.error(`${LOG_PREFIX} Satellite tasks error:`, err);
       });
+    } else {
+      // Ephemeral runs skip satellite tasks — emit stream_end immediately so the SSE closes.
+      this.trackAndEmit(run, { type: 'stream_end' });
     }
   }
 
@@ -742,6 +795,20 @@ class AgentChatManager {
       if (tc) {
         tc.output = event.output;
         tc.status = event.status;
+      }
+    } else if (event.type === 'token_usage') {
+      // Track token usage on the run object for persistence
+      if (event.final) {
+        // Result event: cumulative total, replace directly
+        if (event.inputTokens > 0) run._tokenInputs = event.inputTokens;
+        if (event.outputTokens > 0) run._tokenOutputs = event.outputTokens;
+      } else {
+        // Streaming incremental: input overwrites, output accumulates
+        if (event.inputTokens > 0) run._tokenInputs = event.inputTokens;
+        if (event.outputTokens > 0) run._tokenOutputs += event.outputTokens;
+      }
+      if (event.contextWindow && event.contextWindow > 0) {
+        run._contextWindow = event.contextWindow;
       }
     }
 
@@ -876,6 +943,8 @@ class AgentChatManager {
       messages: [...diskSession.messages],
       config: diskSession.config,
       _guardRetryCount: diskSession.guardRetryCount,
+      _tokenInputs: 0,
+      _tokenOutputs: 0,
     };
   }
 
@@ -925,6 +994,13 @@ async function buildResourcePrompt(
 
   if (projectKey) {
     merged.push({ type: 'project-prompt', id: '_project', priority: 2 });
+  }
+
+  // Inject prompt blocks referenced by agent.promptRefs
+  if (agent.promptRefs?.length) {
+    for (const blockId of agent.promptRefs) {
+      merged.push({ type: 'prompt-block', id: blockId, priority: 3 });
+    }
   }
 
   // Load context index (hoisted — needed by both auto-inject and code cards)
