@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  X, ChevronDown, FileText, FolderOpen, Folder, Plus,
-  Terminal, Globe, Users, ShieldOff, ListTodo, Eye, HardDrive,
+  X, ChevronDown, ChevronRight, FileText, FolderOpen, Folder, File, Plus,
+  Terminal, Globe, Users, ShieldOff, ListTodo, Eye, HardDrive, Loader2,
 } from 'lucide-react';
 import type { Agent, AgentCapabilities, ContextEntry } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
@@ -12,6 +12,14 @@ import { CAPABILITY_ITEMS } from '@/components/agent-form';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 
 // ── Types ──
+
+interface AgentFileNode {
+  name: string;
+  relPath: string;
+  type: 'file' | 'dir';
+  category: 'prompt' | 'prompt-segment' | 'skill' | 'data' | 'block';
+  children?: AgentFileNode[];
+}
 
 interface RuntimePanelProps {
   agent: Agent;
@@ -146,6 +154,55 @@ function CapChip({
   );
 }
 
+// ── File Tree Node ──
+
+const CATEGORY_COLORS: Record<string, string> = {
+  prompt: 'text-blue-500 dark:text-blue-400',
+  'prompt-segment': 'text-blue-400 dark:text-blue-300',
+  skill: 'text-purple-500 dark:text-purple-400',
+  data: 'text-amber-500 dark:text-amber-400',
+  block: 'text-teal-500 dark:text-teal-400',
+};
+
+function FileTreeNode({ node, depth = 0 }: { node: AgentFileNode; depth?: number }) {
+  const [open, setOpen] = useState(true);
+  const isDir = node.type === 'dir';
+  const colorClass = CATEGORY_COLORS[node.category] ?? 'text-zinc-400';
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => isDir && setOpen((v) => !v)}
+        className={`flex w-full items-center gap-1 py-0.5 rounded hover:bg-zinc-50 dark:hover:bg-zinc-800/60 transition-colors text-left ${
+          isDir ? 'cursor-pointer' : 'cursor-default'
+        }`}
+        style={{ paddingLeft: `${depth * 12 + 4}px` }}
+      >
+        {isDir ? (
+          <>
+            <ChevronRight className={`h-3 w-3 text-zinc-400 transition-transform duration-150 shrink-0 ${open ? 'rotate-90' : ''}`} />
+            {open ? (
+              <FolderOpen className={`h-3.5 w-3.5 shrink-0 ${colorClass}`} />
+            ) : (
+              <Folder className={`h-3.5 w-3.5 shrink-0 ${colorClass}`} />
+            )}
+          </>
+        ) : (
+          <>
+            <span className="w-3 shrink-0" />
+            <File className={`h-3.5 w-3.5 shrink-0 ${colorClass}`} />
+          </>
+        )}
+        <span className="text-xs text-zinc-700 dark:text-zinc-300 truncate">{node.name}</span>
+      </button>
+      {isDir && open && node.children?.map((child) => (
+        <FileTreeNode key={child.relPath} node={child} depth={depth + 1} />
+      ))}
+    </div>
+  );
+}
+
 // ── Main Component ──
 
 export function RuntimePanel({
@@ -168,6 +225,8 @@ export function RuntimePanel({
   // Fetched data
   const [contextEntries, setContextEntries] = useState<ContextEntry[]>([]);
   const [skills, setSkills] = useState<{ name: string; description: string }[]>([]);
+  const [fileTree, setFileTree] = useState<AgentFileNode[]>([]);
+  const [fileTreeLoading, setFileTreeLoading] = useState(true);
 
   // Fetch context entries
   useEffect(() => {
@@ -190,6 +249,18 @@ export function RuntimePanel({
       .catch(() => {});
   }, []);
 
+  // Fetch agent file tree
+  useEffect(() => {
+    setFileTreeLoading(true);
+    fetch(`/api/agents/files?agentId=${encodeURIComponent(agent.id)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        setFileTree(data.tree ?? []);
+      })
+      .catch(() => {})
+      .finally(() => setFileTreeLoading(false));
+  }, [agent.id]);
+
   // Resolve capabilities: agent defaults merged with session overrides
   const resolvedCaps = useMemo<AgentCapabilities>(() => {
     const base = agent.capabilities ?? { ...DEFAULT_AGENT_CAPABILITIES };
@@ -206,14 +277,6 @@ export function RuntimePanel({
     const providerName = preset?.nameKey ?? providerId ?? '?';
     return `${providerName} / ${modelId || '默认'}`;
   }, [sessionConfig.provider, sessionConfig.model, agent.defaultProvider, agent.defaultModel]);
-
-  // Folder section content
-  const folderContent = useMemo(() => {
-    if (resolvedCaps.exposePromptPath) {
-      return `~/.project-pilot/data/agents/${agent.id}/prompt.md`;
-    }
-    return null;
-  }, [resolvedCaps.exposePromptPath, agent.id]);
 
   // Handle "Add Resource" — dispatch event to open session config panel
   const handleAddResource = useCallback(() => {
@@ -263,25 +326,29 @@ export function RuntimePanel({
 
       {/* Body — scrollable */}
       <div className="flex-1 overflow-y-auto">
-        {/* Section 1: FOLDER */}
+        {/* Section 1: 文件夹 */}
         <AccordionSection
           title="文件夹"
           open={folderOpen}
           onToggle={() => setFolderOpen((v) => !v)}
         >
-          {folderContent ? (
-            <div className="flex items-start gap-2">
-              <FolderOpen className="h-3.5 w-3.5 text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
-              <span className="text-xs text-zinc-600 dark:text-zinc-400 break-all font-mono">
-                {folderContent}
-              </span>
+          {fileTreeLoading ? (
+            <div className="flex items-center gap-2 py-1">
+              <Loader2 className="h-3.5 w-3.5 text-zinc-400 animate-spin" />
+              <span className="text-xs text-zinc-400">加载中…</span>
             </div>
-          ) : (
+          ) : fileTree.length === 0 ? (
             <div className="flex items-center gap-2">
               <Folder className="h-3.5 w-3.5 text-zinc-300 dark:text-zinc-600 shrink-0" />
               <span className="text-xs text-zinc-400 dark:text-zinc-500 italic">
-                无文件夹访问权限
+                无关联文件
               </span>
+            </div>
+          ) : (
+            <div className="-mx-1">
+              {fileTree.map((node) => (
+                <FileTreeNode key={node.relPath} node={node} />
+              ))}
             </div>
           )}
         </AccordionSection>
