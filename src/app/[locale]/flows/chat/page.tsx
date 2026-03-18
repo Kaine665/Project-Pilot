@@ -16,7 +16,7 @@
  * - 在线状态显示
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, memo } from 'react';
 import {
   MessageSquare, LogIn, UserPlus, Check, X, Search,
   Send, Users, Bell, ChevronRight, Loader2, Sparkles,
@@ -126,7 +126,7 @@ function getOtherMember(chat: Chat9090, myId: string): ChatFriend | undefined {
 
 const AVATAR_COLORS = ['bg-blue-500', 'bg-emerald-500', 'bg-violet-500', 'bg-orange-500', 'bg-pink-500', 'bg-teal-500'];
 
-function Avatar({ name, online, size = 36 }: { name: string; online?: boolean; size?: number }) {
+const Avatar = memo(function Avatar({ name, online, size = 36 }: { name: string; online?: boolean; size?: number }) {
   const bg = AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length];
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
@@ -141,7 +141,7 @@ function Avatar({ name, online, size = 36 }: { name: string; online?: boolean; s
       )}
     </div>
   );
-}
+});
 
 // ── 登录/注册表单 ──────────────────────────────────────────────────────────
 
@@ -326,7 +326,8 @@ function ChatMain({ user, token, onLogout }: {
 
   useEffect(() => {
     fetchChats(); fetchFriends(); fetchRequests();
-    const timer = setInterval(() => { fetchChats(); fetchRequests(); }, 8000);
+    // Socket.IO handles real-time messages; polling is only a fallback for missed events
+    const timer = setInterval(() => { fetchChats(); fetchRequests(); }, 30000);
     return () => clearInterval(timer);
   }, [fetchChats, fetchFriends, fetchRequests]);
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -160,7 +160,7 @@ interface DraggableCardProps {
   dispatchingId?: string | null;
 }
 
-function DraggableCard({ task, agentMap, onClick, overlay, batchMode, selected, onToggleSelect, onDispatch, dispatchingId }: DraggableCardProps) {
+const DraggableCard = memo(function DraggableCard({ task, agentMap, onClick, overlay, batchMode, selected, onToggleSelect, onDispatch, dispatchingId }: DraggableCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task.id });
   const style = transform ? { transform: CSS.Translate.toString(transform) } : undefined;
   const overdue = isOverdue(task.dueAt) && task.status !== 'done';
@@ -264,7 +264,7 @@ function DraggableCard({ task, agentMap, onClick, overlay, batchMode, selected, 
       </div>
     </div>
   );
-}
+});
 
 // ─── DroppableColumn ─────────────────────────────────────────────────────────
 
@@ -281,7 +281,7 @@ interface DroppableColumnProps {
   dispatchingId?: string | null;
 }
 
-function DroppableColumn({ status, tasks, agentMap, onCardClick, onAddClick, batchMode, selectedIds, onToggleSelect, onDispatch, dispatchingId }: DroppableColumnProps) {
+const DroppableColumn = memo(function DroppableColumn({ status, tasks, agentMap, onCardClick, onAddClick, batchMode, selectedIds, onToggleSelect, onDispatch, dispatchingId }: DroppableColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   const meta = statusMeta[status];
 
@@ -323,7 +323,7 @@ function DroppableColumn({ status, tasks, agentMap, onCardClick, onAddClick, bat
       </div>
     </section>
   );
-}
+});
 
 // ─── TaskCard (flat list view) ────────────────────────────────────────────────
 
@@ -338,7 +338,7 @@ interface FlatTaskCardProps {
   dispatchingId?: string | null;
 }
 
-function FlatTaskCard({ task, agentMap, onClick, batchMode, selected, onToggleSelect, onDispatch, dispatchingId }: FlatTaskCardProps) {
+const FlatTaskCard = memo(function FlatTaskCard({ task, agentMap, onClick, batchMode, selected, onToggleSelect, onDispatch, dispatchingId }: FlatTaskCardProps) {
   const overdue = isOverdue(task.dueAt) && task.status !== 'done';
   const agent = task.agentId ? agentMap.get(task.agentId) : undefined;
   const canLaunch = !!task.agentId && !task.sessionId && task.status !== 'done';
@@ -432,7 +432,7 @@ function FlatTaskCard({ task, agentMap, onClick, batchMode, selected, onToggleSe
       </div>
     </div>
   );
-}
+});
 
 // ─── TaskDrawer ───────────────────────────────────────────────────────────────
 
@@ -1207,6 +1207,15 @@ export default function TodosPage() {
     todos.filter(t => t.agentId && !t.sessionId && t.status !== 'done').length,
     [todos]);
 
+  // Pre-compute per-status task lists for kanban view (avoid repeated .filter in render)
+  const tasksByStatus = useMemo(() => {
+    const map: Record<TodoStatus, TodoItem[]> = { pending: [], in_progress: [], done: [] };
+    for (const t of filteredTodos) {
+      map[t.status]?.push(t);
+    }
+    return map;
+  }, [filteredTodos]);
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
@@ -1375,7 +1384,7 @@ export default function TodosPage() {
                   <DroppableColumn
                     key={status}
                     status={status}
-                    tasks={filteredTodos.filter(t => t.status === status)}
+                    tasks={tasksByStatus[status]}
                     agentMap={agentMap}
                     onCardClick={openEdit}
                     onAddClick={() => openCreate(status)}

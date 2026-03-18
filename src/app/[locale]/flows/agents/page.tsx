@@ -630,7 +630,7 @@ export default function AgentsPage() {
   };
 
   // ── Derived state ──
-  const selectedAgent = agents.find(a => a.id === selectedAgentId) ?? null;
+  const selectedAgent = useMemo(() => agents.find(a => a.id === selectedAgentId) ?? null, [agents, selectedAgentId]);
   const agentViewMode = activePanel?.type === 'agent' ? activePanel.mode : 'chat';
 
   const hasChanges = useMemo(() => {
@@ -658,15 +658,17 @@ export default function AgentsPage() {
   }, [activePanel, openedSessions]);
 
   // ── Active session info (for header display) ──
-  const activeOpened = activePanel?.type === 'session'
-    ? openedSessions.find(o => o.key === activePanel.key)
-    : null;
-  const activeSessionAgent = activeOpened
-    ? agents.find(a => a.id === activeOpened.agentId) ?? null
-    : null;
-  const activeSessionInfo = activeOpened?.sessionId
-    ? allSessions.find(s => s.id === activeOpened.sessionId)
-    : null;
+  const activeOpened = useMemo(() =>
+    activePanel?.type === 'session'
+      ? openedSessions.find(o => o.key === activePanel.key) ?? null
+      : null,
+    [activePanel, openedSessions]);
+  const activeSessionAgent = useMemo(() =>
+    activeOpened ? agents.find(a => a.id === activeOpened.agentId) ?? null : null,
+    [activeOpened, agents]);
+  const activeSessionInfo = useMemo(() =>
+    activeOpened?.sessionId ? allSessions.find(s => s.id === activeOpened.sessionId) ?? null : null,
+    [activeOpened, allSessions]);
 
   return (
     <div className="flex h-full">

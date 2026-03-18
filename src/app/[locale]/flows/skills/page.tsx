@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Plus, Trash2, History, RotateCcw, Save, X, Blocks,
   FileText, FileCode, BookOpen, Image, FolderOpen,
@@ -429,14 +429,16 @@ export default function SkillsPage() {
 
   const isDirty = activeFile.type === 'skill.md' && content !== originalContent;
   const isFileDirty = activeFile.type === 'subfile' && fileContent !== originalFileContent;
-  const filteredSkills = searchQuery
-    ? skills.filter(s =>
-        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.description.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : skills;
+  const filteredSkills = useMemo(() =>
+    searchQuery
+      ? skills.filter(s =>
+          s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          s.description.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+      : skills,
+    [skills, searchQuery]);
 
-  const filesForDir = (subdir: string) => subFiles.filter(f => f.subdir === subdir);
+  const filesForDir = useCallback((subdir: string) => subFiles.filter(f => f.subdir === subdir), [subFiles]);
 
   // Helper: is this file currently active?
   const isFileActive = (file: ActiveFile) => {
