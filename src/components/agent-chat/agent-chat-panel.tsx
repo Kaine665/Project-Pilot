@@ -208,20 +208,26 @@ export function AgentChatPanel({
     return () => window.clearInterval(timer);
   }, [sessionList]);
 
-  // Stop backend runner + abort SSE stream when the component unmounts
+  // Stop backend runner when the browser tab/window is actually closing (not SPA navigation).
+  // We use beforeunload instead of unmount because SPA route changes unmount the component
+  // but the user is still in the app and expects sessions to keep running.
   useEffect(() => {
-    return () => {
+    const handleBeforeUnload = () => {
       const sid = sessionIdRef.current;
       if (sid && isStreamingRef.current) {
-        // Fire-and-forget: tell backend to stop the runner.
-        // Without this, navigating away leaves the backend running indefinitely.
         fetch('/api/agent-chat/stop', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ sessionId: sid }),
-          keepalive: true, // ensures the request survives page unload
+          keepalive: true,
         }).catch(() => {});
       }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      // On unmount (SPA navigation): only disconnect SSE, do NOT stop backend runner.
+      // The backend runner continues; user can reconnect when navigating back.
       streamAbortRef.current?.abort();
       pendingAnswerRef.current = null;
       pendingUserMessagesRef.current = [];
