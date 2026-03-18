@@ -22,6 +22,8 @@ const AgentChatPanel = dynamic(
   }
 );
 import { AgentIcon, SettingsForm, type FormData, emptyForm, agentToForm } from '@/components/agent-form';
+import { AgentPickerDropdown } from '@/components/agent-picker-dropdown';
+import { AgentPickerModal } from '@/components/agent-picker-modal';
 import { type AllSessionItem, type OpenedSession, groupSessionsByDay, syncUrlParams } from '@/components/agent-session-utils';
 import { useProject } from '@/components/project-context';
 import { getProviderPreset } from '@/lib/provider-registry';
@@ -133,9 +135,9 @@ export default function AgentsPage() {
   // ── Session archive filter ──
   const [sessionFilter, setSessionFilter] = useState<'active' | 'archived' | 'all'>('active');
 
-  // ── New session agent picker ──
-  const [showAgentPicker, setShowAgentPicker] = useState(false);
-  const agentPickerRef = useRef<HTMLDivElement>(null);
+  // ── New session agent picker (dropdown + modal) ──
+  const [showAgentDropdown, setShowAgentDropdown] = useState(false);
+  const [showAgentModal, setShowAgentModal] = useState(false);
 
   // ── Cached settings for child panels (fetched once, shared to all AgentChatPanel instances) ──
   type CachedSettings = { provider: ProviderId; model: string; modelOptions: Array<{ value: string; label: string }>; effort: OpenAIReasoningEffort };
@@ -356,17 +358,20 @@ export default function AgentsPage() {
       });
   }, [agents, activeKey]);
 
-  // ── Close agent picker when clicking outside ──
-  useEffect(() => {
-    if (!showAgentPicker) return;
-    const handleClick = (e: MouseEvent) => {
-      if (agentPickerRef.current && !agentPickerRef.current.contains(e.target as Node)) {
-        setShowAgentPicker(false);
+  // ── Recent agent IDs (derived from sessions) ──
+  const recentAgentIds = useMemo(() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    // allSessions are already sorted by most recent first
+    for (const s of allSessions) {
+      if (!seen.has(s.agentId)) {
+        seen.add(s.agentId);
+        result.push(s.agentId);
       }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [showAgentPicker]);
+      if (result.length >= 5) break;
+    }
+    return result;
+  }, [allSessions]);
 
   // ── Handlers: Conversations tab ──
 
@@ -400,7 +405,7 @@ export default function AgentsPage() {
     const key = nextKeyRef.current++;
     setOpenedSessions(prev => [...prev, { sessionId: null, agentId: agent.id, key }]);
     setActivePanel({ type: 'session', key });
-    setShowAgentPicker(false);
+    setShowAgentDropdown(false);
     syncUrlParams({ agent: agent.id, session: null });
   };
 
@@ -718,33 +723,31 @@ export default function AgentsPage() {
                 ))}
               </div>
               <button
-                onClick={() => setShowAgentPicker(v => !v)}
+                onClick={() => setShowAgentDropdown(v => !v)}
                 className="flex h-7 w-7 items-center justify-center rounded-full bg-zinc-50 text-zinc-500 transition-all hover:bg-zinc-900 hover:text-white dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-100 dark:hover:text-zinc-900"
                 title="新建对话"
               >
                 <Plus className="h-3.5 w-3.5" />
               </button>
-              {/* Agent picker dropdown */}
-              {showAgentPicker && (
-                <div
-                  ref={agentPickerRef}
-                  className="absolute right-4 top-full z-20 mt-1 w-56 rounded-xl border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
-                >
-                  <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400">
-                    选择 Agent 开始对话
-                  </div>
-                  {filteredAgents.map(a => (
-                    <button
-                      key={a.id}
-                      onClick={() => handleNewSession(a)}
-                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-zinc-50 transition-colors dark:hover:bg-zinc-800"
-                    >
-                      <AgentIcon iconKey={a.icon} className="h-4 w-4 shrink-0 text-zinc-400" />
-                      <span className="truncate text-zinc-900 dark:text-zinc-100">{a.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+              {/* Agent picker dropdown (compact, default) */}
+              <AgentPickerDropdown
+                open={showAgentDropdown}
+                onClose={() => setShowAgentDropdown(false)}
+                onSelect={handleNewSession}
+                onExpand={() => { setShowAgentDropdown(false); setShowAgentModal(true); }}
+                agents={filteredAgents}
+                activeProjectKey={activeKey ?? undefined}
+                recentAgentIds={recentAgentIds}
+              />
+              {/* Agent picker modal (expanded, triggered from dropdown) */}
+              <AgentPickerModal
+                open={showAgentModal}
+                onClose={() => setShowAgentModal(false)}
+                onSelect={handleNewSession}
+                agents={filteredAgents}
+                activeProjectKey={activeKey ?? undefined}
+                recentAgentIds={recentAgentIds}
+              />
             </div>
             {/* Session list */}
             <div className="flex-1 overflow-y-auto px-2 pb-4">
@@ -1175,7 +1178,7 @@ export default function AgentsPage() {
                 选择左侧的一个对话继续，或者通过新建对话来让 AI 协助你完成项目任务。
               </p>
               <button
-                onClick={() => { setSidebarTab('conversations'); setShowAgentPicker(true); }}
+                onClick={() => { setSidebarTab('conversations'); setShowAgentDropdown(true); }}
                 className="mt-8 flex items-center gap-2 rounded-xl bg-zinc-900 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-zinc-200 transition-all hover:-translate-y-0.5 hover:shadow-zinc-300 dark:bg-zinc-100 dark:text-zinc-900 dark:shadow-zinc-800 dark:hover:bg-zinc-200"
               >
                 <Plus className="h-4 w-4" />
