@@ -324,6 +324,10 @@ export default function AgentsPage() {
       prevProjectKeyRef.current = effectiveProjectKey;
       setOpenedSessions([]);
       setActivePanel(null);
+      setSelectedAgentId(null);
+      setCreating(false);
+      setForm(emptyForm);
+      setExpandedPrompt(false);
     }
   }, [effectiveProjectKey]);
 
@@ -468,6 +472,9 @@ export default function AgentsPage() {
           contextIds: source.contextIds,
           defaultResources: source.defaultResources,
           projectKey: source.projectKey,
+          defaultProvider: source.defaultProvider,
+          defaultModel: source.defaultModel,
+          contextStrategy: source.contextStrategy,
         }),
       });
       if (res.ok) {
@@ -515,7 +522,7 @@ export default function AgentsPage() {
             projectKey: form.projectKey || undefined,
             defaultProvider: form.defaultProvider || undefined,
             defaultModel: form.defaultModel || undefined,
-            contextStrategy: form.contextStrategy !== 'additive' ? form.contextStrategy : undefined,
+            contextStrategy: form.contextStrategy || undefined,
           }),
         });
         if (res.ok) {
@@ -548,7 +555,7 @@ export default function AgentsPage() {
             projectKey: form.projectKey || undefined,
             defaultProvider: form.defaultProvider || undefined,
             defaultModel: form.defaultModel || undefined,
-            contextStrategy: form.contextStrategy !== 'additive' ? form.contextStrategy : undefined,
+            contextStrategy: form.contextStrategy || undefined,
           }),
         });
         if (res.ok) await fetchAgents();
@@ -591,7 +598,7 @@ export default function AgentsPage() {
       a.href = url;
       a.download = `${safeName}.ppagent`;
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch { /* ignore */ }
   };
 
@@ -648,7 +655,8 @@ export default function AgentsPage() {
         )
       || form.projectKey !== (selectedAgent.projectKey ?? '')
       || form.defaultProvider !== (selectedAgent.defaultProvider ?? '')
-      || form.defaultModel !== (selectedAgent.defaultModel ?? '');
+      || form.defaultModel !== (selectedAgent.defaultModel ?? '')
+      || form.contextStrategy !== (selectedAgent.contextStrategy ?? 'additive');
   }, [creating, form, selectedAgent]);
 
   // ── Pre-computed active session ID for sidebar highlight ──
