@@ -35,6 +35,7 @@ import { ChatQueueOverlay } from './chat-queue-overlay';
 import { ChatSessionHeader } from './chat-session-header';
 import { ChatSessionSidebar } from './chat-session-sidebar';
 import { TaskCardBanner } from './task-card-banner';
+import { buildCacheKey, cachePanelState, popCachedState } from './agent-session-cache';
 
 export function AgentChatPanel({
   agent,
@@ -49,6 +50,12 @@ export function AgentChatPanel({
   const router = useRouter();
   const hasProject = !!variant && !!projectKey;
   const isFull = variant === 'full';
+
+  // Cache key for surviving SPA route changes
+  const cacheKey = useMemo(
+    () => buildCacheKey(agent.id, projectKey, initialSessionId),
+    [agent.id, projectKey, initialSessionId],
+  );
 
   // Initialize notification manager
   const { notifyCompletion } = useNotificationManager();
@@ -208,9 +215,38 @@ export function AgentChatPanel({
     return () => window.clearInterval(timer);
   }, [sessionList]);
 
-  // Stop backend runner when the browser tab/window is actually closing (not SPA navigation).
-  // We use beforeunload instead of unmount because SPA route changes unmount the component
-  // but the user is still in the app and expects sessions to keep running.
+  // Cache panel state on unmount (SPA navigation) so we can restore instantly on remount.
+  // Backend runner is NOT stopped — the user is still in the app and may come back.
+  // The beforeunload handler below handles actual page/tab close.
+  const cacheKeyRef = useRef(cacheKey);
+  cacheKeyRef.current = cacheKey;
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+
+  useEffect(() => {
+    return () => {
+      // Snapshot current state into the module-level cache
+      const s = sessionRef.current;
+      cachePanelState(cacheKeyRef.current, {
+        messages: messagesRef.current,
+        isStreaming: isStreamingRef.current,
+        sessionId: sessionIdRef.current,
+        sessionTitle: s.title,
+        sessionList: s.list,
+        sessionConfig: s.config,
+        parentSession: s.parentSession,
+        childSessions: s.childSessions,
+        cachedAt: Date.now(),
+      });
+
+      // Disconnect SSE (frontend only) — backend keeps running
+      streamAbortRef.current?.abort();
+      pendingAnswerRef.current = null;
+      pendingUserMessagesRef.current = [];
+    };
+  }, []);
+
+  // Stop backend runner only when the browser tab/window is actually closing.
   useEffect(() => {
     const handleBeforeUnload = () => {
       const sid = sessionIdRef.current;
@@ -224,14 +260,7 @@ export function AgentChatPanel({
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      // On unmount (SPA navigation): only disconnect SSE, do NOT stop backend runner.
-      // The backend runner continues; user can reconnect when navigating back.
-      streamAbortRef.current?.abort();
-      pendingAnswerRef.current = null;
-      pendingUserMessagesRef.current = [];
-    };
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
   const flushQueuedUserMessage = useCallback((targetSessionId: string, delayMs = 200) => {
@@ -765,96 +794,132 @@ export function AgentChatPanel({
     }
   }, [hasProject, t, setSessionIdSync]);
 
-  // Initialize: load sessions and auto-select
+  // Initialize: restore from cache (instant) or load sessions from server
   useEffect(() => {
     let cancelled = false;
     const token = ++initTokenRef.current;
     const isStale = () => cancelled || initTokenRef.current !== token;
 
-    resetState();
+    // ── Try restoring from cache first (SPA route-back scenario) ──
+    const cached = popCachedState(cacheKey);
+    if (cached) {
+      // Instantly restore UI state — no flash, no loading
+      chatDispatch({ type: 'SET_MESSAGES', messages: cached.messages });
+      setSessionIdSync(cached.sessionId);
+      sessionDispatch({ type: 'SET_TITLE', title: cached.sessionTitle });
+      sessionDispatch({ type: 'UPDATE_LIST', updater: () => cached.sessionList });
+      sessionDispatch({ type: 'SET_CONFIG', config: cached.sessionConfig });
+      sessionDispatch({ type: 'SET_NAV', parent: cached.parentSession, children: cached.childSessions });
 
-    if (hasProject && !projectKey) return;
-    if (!hasProject && initialSessionId === null) return;
-
-    const reconnectRunning = (sid: string, statusData: {
-      messages?: Array<{ role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }>;
-      startedAt?: string;
-    }) => {
-      if (Array.isArray(statusData.messages) && statusData.messages.length > 0) {
-        const restored: ChatMessage[] = statusData.messages.map(
-          (m: { role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }, i: number) => ({
-            id: `restored-${i}`,
-            role: m.role,
-            content: m.content,
-            contentBlocks: m.contentBlocks,
-            timestamp: '',
-          }),
-        );
-        chatDispatch({ type: 'SET_MESSAGES', messages: restored });
-      }
-      markSessionRunning(sid, statusData.startedAt);
-      chatDispatch({ type: 'SEND_START' });
-      blocksRef.current = [];
-      fullTextRef.current = '';
-      toolCallsRef.current = [];
-      connectToStream(sid, 0);
-    };
-
-    (async () => {
-      // Fast path: agents page with specific session
-      if (!hasProject && initialSessionId) {
-        setSessionIdSync(initialSessionId);
-        const [, statusRes] = await Promise.all([
-          loadSessionData(initialSessionId, token),
-          fetch(`/api/agent-chat/status?sessionId=${initialSessionId}`, { cache: 'no-store' }),
-        ]);
-        if (isStale()) return;
-        try {
-          const statusData = await statusRes.json();
-          if (statusData.status === 'running') {
-            reconnectRunning(initialSessionId, statusData);
-          }
-        } catch { /* ignore status parse failure */ }
-        return;
-      }
-
-      // Standard path: butler/project mode
-      const sessions = await fetchSessionList(agent.id, projectKey);
-      if (isStale()) return;
-
-      if (sessions.length > 0) {
-        const latest = sessions[0];
-        setSessionIdSync(latest.id);
-        sessionDispatch({ type: 'SET_TITLE', title: latest.title });
-        const [, statusRes] = await Promise.all([
-          loadSessionData(latest.id, token),
-          fetch(`/api/agent-chat/status?sessionId=${latest.id}`, { cache: 'no-store' }),
-        ]);
-        if (isStale()) return;
-        try {
-          const statusData = await statusRes.json();
-          if (statusData.status === 'running') {
-            reconnectRunning(latest.id, statusData);
-            return;
-          }
-        } catch { /* ignore */ }
-
-        for (let i = 1; i < sessions.length; i++) {
-          if (isStale()) return;
-          const sid = sessions[i].id;
-          const res = await fetch(`/api/agent-chat/status?sessionId=${sid}`, { cache: 'no-store' });
-          const data = await res.json();
-          if (!isStale() && data.status === 'running') {
-            setSessionIdSync(sid);
-            sessionDispatch({ type: 'SET_TITLE', title: sessions[i].title });
-            await loadSessionData(sid, token);
+      // If the session was streaming, check backend and reconnect SSE
+      if (cached.isStreaming && cached.sessionId) {
+        const sid = cached.sessionId;
+        (async () => {
+          try {
+            const res = await fetch(`/api/agent-chat/status?sessionId=${sid}`, { cache: 'no-store' });
             if (isStale()) return;
-            reconnectRunning(sid, data);
-            break;
+            const data = await res.json();
+            if (data.status === 'running') {
+              markSessionRunning(sid, data.startedAt);
+              chatDispatch({ type: 'SEND_START' });
+              blocksRef.current = [];
+              fullTextRef.current = '';
+              toolCallsRef.current = [];
+              connectToStream(sid, 0);
+            } else {
+              // Backend finished while we were away — clear running indicator
+              clearSessionRunning(sid);
+            }
+          } catch { /* ignore */ }
+        })();
+      }
+    } else {
+      // ── No cache — full initialization from server ──
+      resetState();
+
+      if (hasProject && !projectKey) return;
+      if (!hasProject && initialSessionId === null) return;
+
+      const reconnectRunning = (sid: string, statusData: {
+        messages?: Array<{ role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }>;
+        startedAt?: string;
+      }) => {
+        if (Array.isArray(statusData.messages) && statusData.messages.length > 0) {
+          const restored: ChatMessage[] = statusData.messages.map(
+            (m: { role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }, i: number) => ({
+              id: `restored-${i}`,
+              role: m.role,
+              content: m.content,
+              contentBlocks: m.contentBlocks,
+              timestamp: '',
+            }),
+          );
+          chatDispatch({ type: 'SET_MESSAGES', messages: restored });
+        }
+        markSessionRunning(sid, statusData.startedAt);
+        chatDispatch({ type: 'SEND_START' });
+        blocksRef.current = [];
+        fullTextRef.current = '';
+        toolCallsRef.current = [];
+        connectToStream(sid, 0);
+      };
+
+      (async () => {
+        // Fast path: agents page with specific session
+        if (!hasProject && initialSessionId) {
+          setSessionIdSync(initialSessionId);
+          const [, statusRes] = await Promise.all([
+            loadSessionData(initialSessionId, token),
+            fetch(`/api/agent-chat/status?sessionId=${initialSessionId}`, { cache: 'no-store' }),
+          ]);
+          if (isStale()) return;
+          try {
+            const statusData = await statusRes.json();
+            if (statusData.status === 'running') {
+              reconnectRunning(initialSessionId, statusData);
+            }
+          } catch { /* ignore status parse failure */ }
+          return;
+        }
+
+        // Standard path: butler/project mode
+        const sessions = await fetchSessionList(agent.id, projectKey);
+        if (isStale()) return;
+
+        if (sessions.length > 0) {
+          const latest = sessions[0];
+          setSessionIdSync(latest.id);
+          sessionDispatch({ type: 'SET_TITLE', title: latest.title });
+          const [, statusRes] = await Promise.all([
+            loadSessionData(latest.id, token),
+            fetch(`/api/agent-chat/status?sessionId=${latest.id}`, { cache: 'no-store' }),
+          ]);
+          if (isStale()) return;
+          try {
+            const statusData = await statusRes.json();
+            if (statusData.status === 'running') {
+              reconnectRunning(latest.id, statusData);
+              return;
+            }
+          } catch { /* ignore */ }
+
+          for (let i = 1; i < sessions.length; i++) {
+            if (isStale()) return;
+            const sid = sessions[i].id;
+            const res = await fetch(`/api/agent-chat/status?sessionId=${sid}`, { cache: 'no-store' });
+            const data = await res.json();
+            if (!isStale() && data.status === 'running') {
+              setSessionIdSync(sid);
+              sessionDispatch({ type: 'SET_TITLE', title: sessions[i].title });
+              await loadSessionData(sid, token);
+              if (isStale()) return;
+              reconnectRunning(sid, data);
+              break;
+            }
           }
         }
-      }
-    })();
+      })();
+    }
 
     return () => {
       cancelled = true;
