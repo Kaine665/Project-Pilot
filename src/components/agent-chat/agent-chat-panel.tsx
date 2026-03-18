@@ -18,6 +18,7 @@ import { SessionCompressDialog } from '@/components/session-compress-dialog';
 import { FilePreviewDialog } from '@/components/file-preview-dialog';
 import { FolderExplorerPanel } from '@/components/folder-explorer-panel';
 import { RuntimePanel } from '@/components/runtime-panel';
+import { useProject } from '@/components/project-context';
 import type { SessionNavLink } from '@/components/agent-session-utils';
 import { buildSessionUrl } from '@/components/agent-session-utils';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
@@ -57,6 +58,19 @@ export function AgentChatPanel({
     () => buildCacheKey(agent.id, projectKey, initialSessionId),
     [agent.id, projectKey, initialSessionId],
   );
+
+  // Resolve project path for folder explorer
+  const { projects } = useProject();
+  const projectPath = useMemo(() => {
+    if (!projectKey) return undefined;
+    const entry = projects.find(p => p.key === projectKey);
+    return entry?.path ?? undefined;
+  }, [projectKey, projects]);
+
+  // Insert file path reference into chat input via CustomEvent
+  const handleInsertFilePath = useCallback((filePath: string) => {
+    window.dispatchEvent(new CustomEvent('pp:insert-text', { detail: { text: filePath } }));
+  }, []);
 
   // Initialize notification manager
   const { notifyCompletion } = useNotificationManager();
@@ -1681,6 +1695,20 @@ export function AgentChatPanel({
       </div>
       {configDrawer}
       {runtimeDrawer}
+      {/* Right-side folder explorer */}
+      <div
+        className={`shrink-0 overflow-hidden border-l border-zinc-200 transition-[width] duration-200 ease-in-out dark:border-zinc-800 ${
+          showFolderExplorer ? 'w-[280px]' : 'w-0 border-l-0'
+        }`}
+      >
+        <div className="h-full w-[280px]">
+          <FolderExplorerPanel
+            onClose={() => setShowFolderExplorer(false)}
+            onInsertPath={handleInsertFilePath}
+            initialPath={projectPath}
+          />
+        </div>
+      </div>
       {planPanel}
       {actionPanel}
       </div>
