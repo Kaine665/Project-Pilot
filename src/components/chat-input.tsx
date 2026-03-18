@@ -130,6 +130,21 @@ export const ChatInput = memo(function ChatInput({
   const skillsCacheRef = useRef<SkillItem[] | null>(null);
   const [skillsLoaded, setSkillsLoaded] = useState(false);
 
+  // Listen for external text insertion (e.g. from folder explorer @reference)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ text: string }>).detail;
+      if (!detail?.text) return;
+      setInput((prev) => {
+        const prefix = prev && !prev.endsWith(' ') && !prev.endsWith('\n') ? prev + ' ' : prev;
+        return prefix + detail.text;
+      });
+      textareaRef.current?.focus();
+    };
+    window.addEventListener('pp:insert-text', handler);
+    return () => window.removeEventListener('pp:insert-text', handler);
+  }, []);
+
   // Persist draft text to localStorage (debounced)
   useEffect(() => {
     if (!draftStorageKey) return;
