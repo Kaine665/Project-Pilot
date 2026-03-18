@@ -81,21 +81,37 @@ export function AgentPickerDropdown({
     return result;
   }, [agents, activeProjectKey, recentAgentIds]);
 
-  // ── Filtered flat list (for search + keyboard nav) ──
-  const filtered = useMemo(() => {
-    if (!query.trim()) return agents;
+  const isSearching = query.trim().length > 0;
+
+  // Build flat list for grouped view (each occurrence gets its own index)
+  const groupedFlat = useMemo(() => {
+    const result: { agent: Agent; group: string }[] = [];
+    for (const g of groups) {
+      for (const a of g.items) {
+        result.push({ agent: a, group: g.label });
+      }
+    }
+    return result;
+  }, [groups]);
+
+  // ── Filtered flat list (only for search mode) ──
+  const searchResults = useMemo(() => {
+    if (!isSearching) return [];
     const q = query.toLowerCase();
     return agents.filter(a =>
       a.name.toLowerCase().includes(q) ||
       (a.description ?? '').toLowerCase().includes(q) ||
       a.id.toLowerCase().includes(q)
     );
-  }, [agents, query]);
+  }, [agents, query, isSearching]);
+
+  // Total items for keyboard nav
+  const totalItems = isSearching ? searchResults.length : groupedFlat.length;
 
   // Clamp highlight index
   useEffect(() => {
-    setHighlightIdx(i => Math.min(i, Math.max(0, filtered.length - 1)));
-  }, [filtered.length]);
+    setHighlightIdx(i => Math.min(i, Math.max(0, totalItems - 1)));
+  }, [totalItems]);
 
   // Scroll highlighted into view
   useEffect(() => {
@@ -104,22 +120,27 @@ export function AgentPickerDropdown({
     el?.scrollIntoView({ block: 'nearest' });
   }, [highlightIdx]);
 
+  // Get agent at highlight index
+  const getAgentAt = useCallback((idx: number): Agent | undefined => {
+    if (isSearching) return searchResults[idx];
+    return groupedFlat[idx]?.agent;
+  }, [isSearching, searchResults, groupedFlat]);
+
   // ── Keyboard navigation ──
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        setHighlightIdx(i => (i + 1) % Math.max(1, filtered.length));
+        setHighlightIdx(i => (i + 1) % Math.max(1, totalItems));
         break;
       case 'ArrowUp':
         e.preventDefault();
-        setHighlightIdx(i => (i - 1 + filtered.length) % Math.max(1, filtered.length));
+        setHighlightIdx(i => (i - 1 + totalItems) % Math.max(1, totalItems));
         break;
       case 'Enter':
         e.preventDefault();
-        if (filtered[highlightIdx]) {
-          onSelect(filtered[highlightIdx]);
-          onClose();
+        { const a = getAgentAt(highlightIdx);
+          if (a) { onSelect(a); onClose(); }
         }
         break;
       case 'Escape':
@@ -127,27 +148,13 @@ export function AgentPickerDropdown({
         onClose();
         break;
     }
-  }, [filtered, highlightIdx, onSelect, onClose]);
+  }, [totalItems, highlightIdx, getAgentAt, onSelect, onClose]);
 
   if (!open) return null;
 
-  const isSearching = query.trim().length > 0;
-
-  // Build flat index map for highlighting during grouped view
-  const agentIndexMap = new Map<string, number>();
-  if (!isSearching) {
-    let idx = 0;
-    for (const g of groups) {
-      for (const a of g.items) {
-        // Only map first occurrence
-        if (!agentIndexMap.has(a.id)) agentIndexMap.set(a.id, idx++);
-      }
-    }
-  }
-
-  const renderItem = (a: Agent, flatIdx: number) => (
+  const renderItem = (a: Agent, flatIdx: number, keyPrefix: string) => (
     <button
-      key={a.id + '-' + flatIdx}
+      key={keyPrefix + '-' + a.id}
       data-agent-item
       onClick={() => { onSelect(a); onClose(); }}
       onMouseEnter={() => setHighlightIdx(flatIdx)}
@@ -199,28 +206,34 @@ export function AgentPickerDropdown({
       <div ref={listRef} className="max-h-[320px] overflow-y-auto py-1 px-1">
         {isSearching ? (
           // Flat search results
-          filtered.length === 0 ? (
+          searchResults.length === 0 ? (
             <div className="px-3 py-6 text-center text-xs text-zinc-400 dark:text-zinc-500">
               没有匹配的 Agent
             </div>
           ) : (
-            filtered.map((a, i) => renderItem(a, i))
+            searchResults.map((a, i) => renderItem(a, i, 'search'))
           )
         ) : (
-          // Grouped view
+          // Grouped view — each item gets a unique flat index
           groups.length === 0 ? (
             <div className="px-3 py-6 text-center text-xs text-zinc-400 dark:text-zinc-500">
               暂无 Agent
             </div>
           ) : (
-            groups.map(g => (
-              <div key={g.label}>
-                <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                  {g.label}
+            (() => {
+              let flatIdx = 0;
+              return groups.map(g => (
+                <div key={g.label}>
+                  <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                    {g.label}
+                  </div>
+                  {g.items.map(a => {
+                    const idx = flatIdx++;
+                    return renderItem(a, idx, g.label);
+                  })}
                 </div>
-                {g.items.map(a => renderItem(a, agentIndexMap.get(a.id) ?? 0))}
-              </div>
-            ))
+              ));
+            })()
           )
         )}
       </div>
