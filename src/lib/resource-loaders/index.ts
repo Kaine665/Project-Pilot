@@ -25,6 +25,7 @@ import { GlobalPromptLoader } from './global-prompt-loader';
 import { ProjectPromptLoader } from './project-prompt-loader';
 import { SkillResourceLoader } from './skill-loader';
 import { AgentDataInfoLoader } from './agent-data-info-loader';
+import { PromptBlockLoader } from './prompt-block-loader';
 
 resourceRegistry.register(new ContextResourceLoader());
 resourceRegistry.register(new ContextIndexLoader());
@@ -42,3 +43,4 @@ resourceRegistry.register(new GlobalPromptLoader());
 resourceRegistry.register(new ProjectPromptLoader());
 resourceRegistry.register(new SkillResourceLoader());
 resourceRegistry.register(new AgentDataInfoLoader());
+resourceRegistry.register(new PromptBlockLoader());

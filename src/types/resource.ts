@@ -29,7 +29,8 @@ export type ResourceType =
   | 'global-prompt'                // Global prompt injected into every agent
   | 'project-prompt'               // Project-level prompt injected when projectKey is set
   | 'skill'                        // Skill bound to agent (name + description summary)
-  | 'agent-data-info';              // Agent private data store directory listing
+  | 'agent-data-info'              // Agent private data store directory listing
+  | 'prompt-block';                 // Reusable prompt fragment (from prompts/blocks/)
 
 // ── ResourceRef ──
 
@@ -53,6 +54,7 @@ export interface ResourceRef {
    * - suspended-tasks: '_suspended'
    * - global-prompt: '_global'
    * - project-prompt: '_project'
+   * - prompt-block: blockId (maps to prompts/blocks/{blockId}.md)
    */
   id: string;
   /** Sort priority — lower values appear earlier in prompt. Default: 50 */

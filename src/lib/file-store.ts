@@ -592,6 +592,20 @@ export function getProjectPromptPath(projectKey: string): string {
   return path.join(DATA_DIR, 'prompts', 'projects', `${safe}.md`);
 }
 
+// ── Prompt Block 路径函数 ──
+
+export function getPromptBlocksDir(): string {
+  return path.join(DATA_DIR, 'prompts', 'blocks');
+}
+
+export function getPromptBlockPath(blockId: string): string {
+  const safe = blockId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 100) {
+    throw new Error(`Invalid prompt block id: ${blockId}`);
+  }
+  return path.join(DATA_DIR, 'prompts', 'blocks', `${safe}.md`);
+}
+
 // ── Context 路径函数 ──
 // 索引 + 内容文件分离设计（详见 docs/context-system.md）：
 //   index.json  → 元数据，注入 agent prompt（buildContextSection）
