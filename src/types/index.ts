@@ -301,7 +301,9 @@ export type ChatSSEEvent =
   | { type: 'topic_completion'; completed: boolean; confidence: number; summary: string }
   /** 卫星任务：任务卡片已更新 */
   | { type: 'task_card_updated'; card: import('@/lib/task-card-store').TaskCard }
-  | { type: 'done' };
+  | { type: 'done' }
+  /** 所有卫星任务完成，SSE 连接可以关闭。前端收到 'done' 后即可更新 UI，收到此事件后 SSE 才真正结束。 */
+  | { type: 'stream_end' };
 
 // ==================== Agent ====================
 

@@ -720,10 +720,16 @@ class AgentChatManager {
     this.trackAndEmit(run, { type: 'done' });
 
     // Fire-and-forget: run all registered satellite tasks (title, health guard, task card, etc.)
+    // The scheduler emits 'stream_end' after all tasks complete, which is the signal that
+    // closes the SSE connection. This allows satellite SSE events (e.g. task_card_updated)
+    // to reach the frontend before the connection closes.
     if (!run._ephemeral) {
       this.runSatelliteTasks(run).catch((err) => {
         console.error(`${LOG_PREFIX} Satellite tasks error:`, err);
       });
+    } else {
+      // Ephemeral runs skip satellite tasks — emit stream_end immediately so the SSE closes.
+      this.trackAndEmit(run, { type: 'stream_end' });
     }
   }
 

@@ -769,6 +769,22 @@ export function AgentChatPanel({
               break;
 
             case 'done':
+              // AI response is complete. Finalize the streaming UI immediately so the
+              // user sees the response without waiting for satellite tasks to finish.
+              // The SSE connection stays open until 'stream_end' (emitted after all
+              // satellite tasks complete) — this lets events like 'task_card_updated'
+              // arrive and update the UI in real-time.
+              if (rafIdRef.current) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = 0;
+              }
+              finalizeStream();
+              break;
+
+            case 'stream_end':
+              // All satellite tasks have completed. The sidecar will close the SSE
+              // connection after emitting this event. No UI action needed here —
+              // finalizeStream() was already called on 'done'.
               break;
           }
         }

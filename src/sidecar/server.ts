@@ -258,7 +258,10 @@ function handleStream(
       res.write(`data: ${payload}\n\n`);
     } catch { /* 连接已关闭 */ }
 
-    if (event.type === 'done' || event.type === 'awaiting_sub_agents') {
+    // Close SSE on 'stream_end' (all satellite tasks complete) or 'awaiting_sub_agents'.
+    // We intentionally do NOT close on 'done' — satellite tasks run after 'done' is emitted
+    // and need the stream to still be open so events like 'task_card_updated' reach the client.
+    if (event.type === 'stream_end' || event.type === 'awaiting_sub_agents') {
       endStream();
     }
   };
