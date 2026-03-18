@@ -87,6 +87,8 @@ async function ensureDataDirInitialized(): Promise<void> {
     path.join(DATA_DIR, 'workflows', 'orchestrations'),
     // storage/
     getSkillsDir(),
+    // usage/
+    path.join(DATA_DIR, 'usage'),
     // top-level
     path.join(DATA_DIR, '_snapshots'),
   ];

@@ -38,6 +38,7 @@ import { runSatelliteTasks } from '@/lib/satellite-tasks';
 import '@/lib/satellite-tasks'; // side-effect: registers all satellite tasks
 import type { SatelliteContext } from '@/lib/satellite-tasks';
 import type { RunStatus, RunStatusInfo } from './types';
+import { appendUsageRecord } from '@/lib/usage-store';
 
 // Re-export store functions so existing callers don't break during migration
 export { generateSessionId } from './agent-chat-session-store';
@@ -122,6 +123,11 @@ export interface AgentChatRun {
   checkpoint?: import('@/types/agent-chat').SessionCheckpoint;
   /** Throttle timestamp for streaming draft writes (crash recovery) */
   _lastDraftWriteTs?: number;
+
+  // Token usage tracking (accumulated from token_usage events)
+  _tokenInputs: number;
+  _tokenOutputs: number;
+  _contextWindow?: number;
 
   /**
    * Resolves when consumeRunnerStream() (including finalizeRun) has completed.
@@ -299,6 +305,8 @@ class AgentChatManager {
       _images: images,
       _guardRetryCount: existing?._guardRetryCount,
       _ephemeral: ephemeral,
+      _tokenInputs: 0,
+      _tokenOutputs: 0,
     };
 
     // Snapshot danger detector settings
@@ -413,6 +421,8 @@ class AgentChatManager {
       messages,
       parentSessionId,
       importedTurnIndices: turnIndices,
+      _tokenInputs: 0,
+      _tokenOutputs: 0,
     };
 
     // Snapshot danger detector settings
@@ -678,6 +688,22 @@ class AgentChatManager {
       console.error(`${LOG_PREFIX} persistAfterClose error:`, err);
     }
 
+    // Record token usage to JSONL (fire-and-forget)
+    if (!run._ephemeral && (run._tokenInputs > 0 || run._tokenOutputs > 0)) {
+      appendUsageRecord({
+        ts: new Date().toISOString(),
+        sessionId: run.sessionId,
+        agentId: run.agentId,
+        projectKey: run.projectKey,
+        model: run.config?.model,
+        inputTokens: run._tokenInputs,
+        outputTokens: run._tokenOutputs,
+        contextWindow: run._contextWindow,
+      }).catch((err) => {
+        console.error(`${LOG_PREFIX} Failed to record token usage:`, err);
+      });
+    }
+
     // Update agent status (fire-and-forget)
     {
       const errorEvent = run.status === 'failed'
@@ -763,6 +789,20 @@ class AgentChatManager {
       if (tc) {
         tc.output = event.output;
         tc.status = event.status;
+      }
+    } else if (event.type === 'token_usage') {
+      // Track token usage on the run object for persistence
+      if (event.final) {
+        // Result event: cumulative total, replace directly
+        if (event.inputTokens > 0) run._tokenInputs = event.inputTokens;
+        if (event.outputTokens > 0) run._tokenOutputs = event.outputTokens;
+      } else {
+        // Streaming incremental: input overwrites, output accumulates
+        if (event.inputTokens > 0) run._tokenInputs = event.inputTokens;
+        if (event.outputTokens > 0) run._tokenOutputs += event.outputTokens;
+      }
+      if (event.contextWindow && event.contextWindow > 0) {
+        run._contextWindow = event.contextWindow;
       }
     }
 
@@ -897,6 +937,8 @@ class AgentChatManager {
       messages: [...diskSession.messages],
       config: diskSession.config,
       _guardRetryCount: diskSession.guardRetryCount,
+      _tokenInputs: 0,
+      _tokenOutputs: 0,
     };
   }
 
