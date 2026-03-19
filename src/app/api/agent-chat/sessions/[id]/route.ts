@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { loadSession, markAsRead, setArchived, updatePendingUserQueueOnDisk } from '@/lib/agent-chat-manager';
+import {
+  loadSession,
+  markAsRead,
+  setArchived,
+  updatePendingUserQueueOnDisk,
+  updateUserMessageContentOnDisk,
+} from '@/lib/agent-chat-manager';
 import { sidecarFetch } from '@/lib/sidecar-bridge';
 
 /**
@@ -30,6 +36,7 @@ export async function GET(
  *   { action: 'unarchive' }
  *   { action: 'updateConfig', config: SessionConfig }
  *   { action: 'updatePendingUserQueue', queue: PendingUserQueueState }
+ *   { action: 'updateUserMessage', messageIndex: number, content: string, frontendMessageCount?: number }
  */
 export async function PATCH(
   request: NextRequest,
@@ -104,6 +111,37 @@ export async function PATCH(
     if (!found) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
+    return NextResponse.json({ ok: true });
+  }
+
+  if (body.action === 'updateUserMessage') {
+    if (typeof body.messageIndex !== 'number' || body.messageIndex < 0) {
+      return NextResponse.json({ error: 'messageIndex must be a non-negative number' }, { status: 400 });
+    }
+    if (typeof body.content !== 'string') {
+      return NextResponse.json({ error: 'content must be a string' }, { status: 400 });
+    }
+
+    const result = await updateUserMessageContentOnDisk(
+      id,
+      body.messageIndex,
+      body.content,
+      typeof body.frontendMessageCount === 'number' ? body.frontendMessageCount : undefined,
+    );
+
+    if (result === 'not_found') {
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    }
+    if (result === 'out_of_range') {
+      return NextResponse.json({ error: 'Message index out of range' }, { status: 400 });
+    }
+    if (result === 'not_user') {
+      return NextResponse.json({ error: 'Only user messages can be edited' }, { status: 400 });
+    }
+    if (result === 'empty') {
+      return NextResponse.json({ error: 'Message content cannot be empty' }, { status: 400 });
+    }
+
     return NextResponse.json({ ok: true });
   }
 

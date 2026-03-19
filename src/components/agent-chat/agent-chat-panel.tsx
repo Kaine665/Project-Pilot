@@ -441,7 +441,12 @@ export function AgentChatPanel({
       if (!res.ok) return;
       if (token !== undefined && initTokenRef.current !== token) return;
       const data = await res.json();
-      let messages: Array<{ role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }> = data.messages ?? [];
+      let messages: Array<{
+        role: 'user' | 'assistant';
+        content: string;
+        images?: string[];
+        contentBlocks?: ContentBlock[];
+      }> = data.messages ?? [];
 
       // Defensive: if disk data ends with a user message, check in-memory status
       if (messages.length > 0 && messages[messages.length - 1].role === 'user') {
@@ -457,10 +462,11 @@ export function AgentChatPanel({
       }
 
       const restored: ChatMessage[] = messages.map(
-        (m: { role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }, i: number) => ({
+        (m: { role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }, i: number) => ({
           id: `restored-${i}`,
           role: m.role,
           content: m.content,
+          images: m.images,
           contentBlocks: m.contentBlocks,
           timestamp: '',
         }),
@@ -909,15 +915,21 @@ export function AgentChatPanel({
       if (!hasProject && initialSessionId === null) return;
 
       const reconnectRunning = (sid: string, statusData: {
-        messages?: Array<{ role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }>;
+        messages?: Array<{
+          role: 'user' | 'assistant';
+          content: string;
+          images?: string[];
+          contentBlocks?: ContentBlock[];
+        }>;
         startedAt?: string;
       }) => {
         if (Array.isArray(statusData.messages) && statusData.messages.length > 0) {
           const restored: ChatMessage[] = statusData.messages.map(
-            (m: { role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }, i: number) => ({
+            (m: { role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }, i: number) => ({
               id: `restored-${i}`,
               role: m.role,
               content: m.content,
+              images: m.images,
               contentBlocks: m.contentBlocks,
               timestamp: '',
             }),
@@ -1393,6 +1405,60 @@ export function AgentChatPanel({
     chatDispatch({ type: 'UPDATE_MESSAGES', updater: prev => prev.filter(m => m.id !== messageId) });
   }, []);
 
+  const handleEditMessage = useCallback(async (messageId: string, nextContent: string) => {
+    const currentMessages = messagesRef.current;
+    const messageIndex = currentMessages.findIndex((message) => message.id === messageId);
+    if (messageIndex < 0) return false;
+
+    const targetMessage = currentMessages[messageIndex];
+    if (!targetMessage || targetMessage.role !== 'user') return false;
+
+    const normalizedContent = nextContent.trim();
+    if (!normalizedContent && (!targetMessage.images || targetMessage.images.length === 0)) {
+      return false;
+    }
+
+    const applyLocalUpdate = () => {
+      chatDispatch({
+        type: 'UPDATE_MESSAGES',
+        updater: (prev) => prev.map((message) => {
+          if (message.id !== messageId) return message;
+          return {
+            ...message,
+            content: normalizedContent,
+            contentBlocks: message.contentBlocks?.some((block) => block.type === 'text')
+              ? [{ type: 'text', text: normalizedContent }]
+              : message.contentBlocks,
+          };
+        }),
+      });
+    };
+
+    const currentSessionId = sessionIdRef.current;
+    if (!currentSessionId) {
+      applyLocalUpdate();
+      return true;
+    }
+
+    try {
+      const response = await fetch(`/api/agent-chat/sessions/${currentSessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'updateUserMessage',
+          messageIndex,
+          frontendMessageCount: currentMessages.length,
+          content: normalizedContent,
+        }),
+      });
+      if (!response.ok) return false;
+      applyLocalUpdate();
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const handleBranch = useCallback(async (messageId: string) => {
     const currentSessionId = sessionIdRef.current;
     if (!currentSessionId) return;
@@ -1654,11 +1720,14 @@ export function AgentChatPanel({
     onDelete: handleDeleteMessage,
     onRegenerate: handleRegenerate,
     onBranch: handleBranch,
+    onEdit: handleEditMessage,
     onRetry: handleRetry,
     onViewPlan: handleViewPlan,
     onFileClick: handleFileClick,
     onCompressOpen: () => setCompressDialogOpen(true),
     onCompressDismiss: () => setCompressDismissed(true),
+    enableUserMessageEdit: !hasProject,
+    showUserMessageBranch: hasProject,
     onActionPreview: handleActionPreview,
     onActionReject: handleActionReject,
     onActionRestore: handleActionRestore,

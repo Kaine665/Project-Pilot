@@ -31,6 +31,7 @@ export {
   setArchived,
   updateConfigOnDisk,
   updatePendingUserQueueOnDisk,
+  updateUserMessageContentOnDisk,
   deleteSessionFromDisk,
   branchSession,
   loadAgent,

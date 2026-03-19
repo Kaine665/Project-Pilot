@@ -21,11 +21,14 @@ export interface ChatMessageListProps {
   onDelete: (messageId: string) => void;
   onRegenerate: () => void;
   onBranch: (messageId: string) => void;
+  onEdit?: (messageId: string, content: string) => Promise<boolean> | boolean;
   onRetry: () => void;
   onViewPlan: (content: string) => void;
   onFileClick: (filePath: string) => void;
   onCompressOpen: () => void;
   onCompressDismiss: () => void;
+  enableUserMessageEdit?: boolean;
+  showUserMessageBranch?: boolean;
   onActionPreview?: (tag: ParsedActionTag) => void;
   onActionReject?: (tag: ParsedActionTag) => void;
   onActionRestore?: (tag: ParsedActionTag) => void;
@@ -44,11 +47,14 @@ export function ChatMessageList({
   onDelete,
   onRegenerate,
   onBranch,
+  onEdit,
   onRetry,
   onViewPlan,
   onFileClick,
   onCompressOpen,
   onCompressDismiss,
+  enableUserMessageEdit = false,
+  showUserMessageBranch = true,
   onActionPreview,
   onActionReject,
   onActionRestore,
@@ -93,7 +99,8 @@ export function ChatMessageList({
           onSaveAsKnowledge={onSaveAsKnowledge}
           onDelete={onDelete}
           onRegenerate={onRegenerate}
-          onBranch={onBranch}
+          onBranch={msg.role === 'user' && !showUserMessageBranch ? undefined : onBranch}
+          onEdit={msg.role === 'user' && enableUserMessageEdit ? onEdit : undefined}
           isLastAssistant={msg.id === lastAssistantId}
           onRetry={onRetry}
           hasSendError={!!errorMsg && msg.role === 'user' && msg.id === messages[messages.length - 1]?.id}

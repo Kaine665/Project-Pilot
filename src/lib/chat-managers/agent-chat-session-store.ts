@@ -431,6 +431,66 @@ export async function updatePendingUserQueueOnDisk(
   return found;
 }
 
+function resolveMessageIndex(
+  messageIndex: number,
+  diskLen: number,
+  frontendMessageCount?: number,
+): number {
+  let effectiveIndex = messageIndex;
+  if (frontendMessageCount !== undefined && frontendMessageCount !== diskLen) {
+    const fromEnd = frontendMessageCount - 1 - messageIndex;
+    effectiveIndex = Math.max(0, diskLen - 1 - fromEnd);
+  }
+  return Math.min(effectiveIndex, diskLen - 1);
+}
+
+export async function updateUserMessageContentOnDisk(
+  sessionId: string,
+  messageIndex: number,
+  content: string,
+  frontendMessageCount?: number,
+): Promise<'ok' | 'not_found' | 'out_of_range' | 'not_user' | 'empty'> {
+  const data = await getIndexData();
+  if (!data.sessions.some((session) => session.id === sessionId)) {
+    return 'not_found';
+  }
+
+  const messages = await readMessages(sessionId);
+  if (messages.length === 0) return 'out_of_range';
+
+  const effectiveIndex = resolveMessageIndex(messageIndex, messages.length, frontendMessageCount);
+  const target = messages[effectiveIndex];
+  if (!target) return 'out_of_range';
+  if (target.role !== 'user') return 'not_user';
+
+  const nextContent = content.trim();
+  if (!nextContent && (!target.images || target.images.length === 0)) {
+    return 'empty';
+  }
+
+  target.content = nextContent;
+  if (target.contentBlocks?.some((block) => block.type === 'text')) {
+    target.contentBlocks = [{ type: 'text', text: nextContent }];
+  }
+
+  await writeAllMessages(sessionId, messages);
+
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (indexData) => {
+      const session = indexData.sessions.find((entry) => entry.id === sessionId);
+      if (session) {
+        session.updatedAt = new Date().toISOString();
+      }
+      return indexData;
+    },
+  );
+  invalidateIndexCache();
+
+  return 'ok';
+}
+
 export async function deleteSessionFromDisk(sessionId: string): Promise<boolean> {
   let found = false;
   let deletedAgentId: string | undefined;
@@ -471,13 +531,8 @@ export async function branchSession(
     throw new Error('Message index out of range');
   }
 
-  let effectiveIndex = branchAtIndex;
   const diskLen = source.messages.length;
-  if (frontendMessageCount !== undefined && frontendMessageCount !== diskLen) {
-    const fromEnd = frontendMessageCount - 1 - branchAtIndex;
-    effectiveIndex = Math.max(0, diskLen - 1 - fromEnd);
-  }
-  effectiveIndex = Math.min(effectiveIndex, diskLen - 1);
+  const effectiveIndex = resolveMessageIndex(branchAtIndex, diskLen, frontendMessageCount);
 
   if (diskLen === 0) {
     throw new Error('Source session has no messages');
