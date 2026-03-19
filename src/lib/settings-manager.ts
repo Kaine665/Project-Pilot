@@ -208,13 +208,18 @@ export function getProviderScopedApiKey(claude: ClaudeSettings, provider?: Provi
 
 /**
  * 获取指定供应商的模型 ID。
- * 优先级：providerModels[provider] > 旧的 flat model
+ * 优先级：providerModels[provider] > 当前全局 provider 的旧 flat model > provider preset 第一个模型
  */
 export function getProviderScopedModel(claude: ClaudeSettings, provider?: ProviderId): string {
   const p = provider ?? claude.provider ?? 'anthropic';
-  const scoped = claude.providerModels?.[p];
+  const scoped = claude.providerModels?.[p]?.trim();
   if (scoped) return scoped;
-  return claude.model;
+
+  const legacy = claude.model?.trim();
+  if (legacy && p === (claude.provider ?? 'anthropic')) return legacy;
+
+  const preset = getProviderPreset(p, claude.customProviders);
+  return preset.models[0]?.id ?? '';
 }
 
 /**

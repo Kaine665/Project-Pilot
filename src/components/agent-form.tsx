@@ -592,16 +592,30 @@ export function SettingsForm({
                 ))}
               </select>
               {form.defaultProvider ? (
+                <div className="flex-1 space-y-2">
+                  <input
+                    list="agent-default-model-options"
+                    value={form.defaultModel}
+                    onChange={e => setForm(f => ({ ...f, defaultModel: e.target.value }))}
+                    placeholder="鐣欑┖缁ф壙鍏ㄥ眬锛屾垨鐩存帴杈撳叆妯″瀷 ID"
+                    className="h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+                  />
+                  <datalist id="agent-default-model-options">
+                    {getProviderPreset(form.defaultProvider as ProviderId).models.map(m => (
+                      <option key={m.id} value={m.id}>{m.label || m.id}</option>
+                    ))}
+                  </datalist>
                 <select
                   value={form.defaultModel}
                   onChange={e => setForm(f => ({ ...f, defaultModel: e.target.value }))}
-                  className="h-11 flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+                  className="h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
                 >
                   <option value="">继承全局</option>
                   {getProviderPreset(form.defaultProvider as ProviderId).models.map(m => (
                     <option key={m.id} value={m.id}>{m.label || m.id}</option>
                   ))}
                 </select>
+                </div>
               ) : (
                 <input
                   disabled
@@ -610,9 +624,9 @@ export function SettingsForm({
                 />
               )}
             </div>
-            {form.defaultProvider && form.defaultModel && (
+            {form.defaultProvider && (
               <p className="mt-1.5 text-xs text-zinc-500">
-                {form.defaultProvider} / {form.defaultModel}
+                {form.defaultProvider} / {form.defaultModel || '继承全局默认'}
               </p>
             )}
           </div>

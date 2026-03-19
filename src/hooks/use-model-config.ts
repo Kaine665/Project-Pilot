@@ -5,6 +5,11 @@ import type { SessionConfig } from '@/types/agent-chat';
 
 type ModelSelectOption = { value: string; label: string };
 
+const INITIAL_PROVIDER: ProviderId = 'anthropic';
+const INITIAL_PRESET = getProviderPreset(INITIAL_PROVIDER);
+const INITIAL_OPTIONS = INITIAL_PRESET.models.map((m) => ({ value: m.id, label: m.label || m.id }));
+const INITIAL_MODEL = INITIAL_OPTIONS[0]?.value || '';
+
 interface CachedSettings {
   provider: ProviderId;
   model: string;
@@ -43,13 +48,11 @@ export function useModelConfig(
   projectKey: string | null | undefined,
   cachedSettings?: CachedSettings,
 ): UseModelConfigReturn {
-  const [provider, setProvider] = useState<ProviderId>('anthropic');
-  const [model, setModel] = useState('claude-sonnet-4-5-20250929');
-  const [options, setOptions] = useState<ModelSelectOption[]>([
-    { value: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5' },
-  ]);
+  const [provider, setProvider] = useState<ProviderId>(INITIAL_PROVIDER);
+  const [model, setModel] = useState(INITIAL_MODEL);
+  const [options, setOptions] = useState<ModelSelectOption[]>(INITIAL_OPTIONS);
   const [effort, setEffort] = useState<OpenAIReasoningEffort>('xhigh');
-  const [contextWindow, setContextWindow] = useState(200000);
+  const [contextWindow, setContextWindow] = useState(getModelContextWindow(INITIAL_MODEL));
   const [promptEstimate, setPromptEstimate] = useState(0);
 
   // OpenAI model list cache (5min TTL)
@@ -79,6 +82,12 @@ export function useModelConfig(
         const providerModelLib = (claude.providerModelLibrary && typeof claude.providerModelLibrary === 'object')
           ? claude.providerModelLibrary as Partial<Record<ProviderId, string[]>>
           : {};
+        const resolveConfiguredModel = (providerId: ProviderId): string => {
+          const scoped = (providerModelsMap[providerId] || '').trim();
+          if (scoped) return scoped;
+          if (providerId === loadedProvider) return (claude.model || '').trim();
+          return '';
+        };
         // Build model options for loaded provider
         const preset = getProviderPreset(loadedProvider);
         const optionMap = new Map<string, string>();
@@ -88,7 +97,7 @@ export function useModelConfig(
           const id = typeof raw === 'string' ? raw.trim() : '';
           if (id && !optionMap.has(id)) optionMap.set(id, id);
         }
-        const fallbackModel = (providerModelsMap[loadedProvider] || claude.model || '').trim();
+        const fallbackModel = resolveConfiguredModel(loadedProvider);
         if (fallbackModel && !optionMap.has(fallbackModel)) optionMap.set(fallbackModel, fallbackModel);
         const builtOptions = Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
         const selected = builtOptions.some((o) => o.value === fallbackModel) ? fallbackModel : (builtOptions[0]?.value || '');
@@ -98,7 +107,7 @@ export function useModelConfig(
           const agentPreset = getProviderPreset(agent.defaultProvider);
           const agentOptionMap = new Map<string, string>();
           for (const m of agentPreset.models) agentOptionMap.set(m.id, m.label || m.id);
-          const agentDefaultModel = agent.defaultModel ?? '';
+          const agentDefaultModel = (agent.defaultModel || resolveConfiguredModel(agent.defaultProvider)).trim();
           if (agentDefaultModel && !agentOptionMap.has(agentDefaultModel)) agentOptionMap.set(agentDefaultModel, agentDefaultModel);
           const agentOptions = Array.from(agentOptionMap.entries()).map(([value, label]) => ({ value, label }));
           const agentSelected = agentOptions.some(o => o.value === agentDefaultModel)
@@ -129,7 +138,10 @@ export function useModelConfig(
   useEffect(() => {
     let cancelled = false;
     const preset = getProviderPreset(provider);
-    const staticOptions = preset.models.map((m) => ({ value: m.id, label: m.label || m.id }));
+    const optionMap = new Map<string, string>();
+    for (const m of preset.models) optionMap.set(m.id, m.label || m.id);
+    if (model && !optionMap.has(model)) optionMap.set(model, model);
+    const staticOptions = Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
 
     if (provider === 'openai') {
       setOptions(staticOptions);
@@ -174,7 +186,7 @@ export function useModelConfig(
     } else {
       if (staticOptions.length > 0) {
         setOptions(staticOptions);
-        if (!staticOptions.some((o) => o.value === model)) {
+        if (!model) {
           setModel(staticOptions[0].value);
         }
       }
@@ -184,7 +196,7 @@ export function useModelConfig(
 
   // Effect 3: Update contextWindow when model changes
   useEffect(() => {
-    setContextWindow(getModelContextWindow(model || 'claude-sonnet-4-6'));
+    setContextWindow(getModelContextWindow(model));
   }, [model]);
 
   // Effect 4: Fetch prompt estimate when agent/project changes
@@ -227,7 +239,10 @@ export function useModelConfig(
     if (!a.defaultProvider) return;
     setProvider(a.defaultProvider);
     const agentPreset = getProviderPreset(a.defaultProvider);
-    const agentOptions = agentPreset.models.map(m => ({ value: m.id, label: m.label || m.id }));
+    const agentOptionMap = new Map<string, string>();
+    for (const m of agentPreset.models) agentOptionMap.set(m.id, m.label || m.id);
+    if (a.defaultModel && !agentOptionMap.has(a.defaultModel)) agentOptionMap.set(a.defaultModel, a.defaultModel);
+    const agentOptions = Array.from(agentOptionMap.entries()).map(([value, label]) => ({ value, label }));
     if (agentOptions.length > 0) setOptions(agentOptions);
     if (a.defaultModel) {
       setModel(a.defaultModel);

@@ -21,7 +21,7 @@ import { SdkEventAdapter } from '@/lib/sdk-event-adapter';
 import { adaptCodexEvent } from '@/lib/codex-sdk-adapter';
 import { resolveCodexBinaryPath } from '@/lib/codex-cli';
 import { getAppWorkingDir } from '@/lib/app-paths';
-import { buildSdkQueryOptions, buildCodexExecEnv, getSettings } from '@/lib/settings-manager';
+import { buildSdkQueryOptions, buildCodexExecEnv, getProviderScopedModel, getSettings } from '@/lib/settings-manager';
 import type { ChatSSEEvent, AgentCapabilities, ProviderId } from '@/types';
 export type AgentRunnerInput = string | AsyncIterable<SDKUserMessage> | CodexInput;
 
@@ -76,9 +76,7 @@ export async function createAgentRunner(opts: AgentRunnerCreateOptions): Promise
     const settings = await getSettings();
     const model =
       opts.model
-      ?? settings.claude.providerModels?.openai
-      ?? settings.claude.model
-      ?? 'gpt-5.4';
+      ?? getProviderScopedModel(settings.claude, 'openai');
 
     const env = await buildCodexExecEnv();
     const envRecord: Record<string, string> = {};

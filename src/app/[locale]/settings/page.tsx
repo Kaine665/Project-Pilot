@@ -23,6 +23,8 @@ import type { CustomProviderConfig, ProviderId, ClaudeAuthMode, EffortLevel, Ope
 import { DEFAULT_DANGER_SETTINGS, DEFAULT_TITLE_GENERATION } from '@/types';
 
 const OPENAI_REASONING_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
+const INITIAL_PROVIDER: ProviderId = 'anthropic';
+const INITIAL_MODEL = getProviderPreset(INITIAL_PROVIDER).models[0]?.id ?? '';
 
 /** 根据加载的数据应用模型选择状态，供 fetchSettings 使用，避免闭包依赖 */
 function applyProviderModelStateFromData(
@@ -68,12 +70,12 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
 
   // Form state — per-provider maps
-  const [provider, setProvider] = useState<ProviderId>('anthropic');
+  const [provider, setProvider] = useState<ProviderId>(INITIAL_PROVIDER);
   const [authMode, setAuthMode] = useState<ClaudeAuthMode>('api_key');
   const [providerApiKeys, setProviderApiKeys] = useState<Partial<Record<ProviderId, string>>>({});
   const [providerModels, setProviderModels] = useState<Partial<Record<ProviderId, string>>>({});
   const [providerModelLibrary, setProviderModelLibrary] = useState<Partial<Record<ProviderId, string[]>>>({});
-  const [model, setModel] = useState('claude-sonnet-4-5-20250929');
+  const [model, setModel] = useState(INITIAL_MODEL);
   const [customModel, setCustomModel] = useState('');
   const [skipPermissions, setSkipPermissions] = useState(true);
   const [effortLevel, setEffortLevel] = useState<EffortLevel>('high');

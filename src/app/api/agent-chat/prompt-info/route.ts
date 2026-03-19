@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { buildPromptPreview } from '@/lib/agent-chat-manager';
 import { getModelContextWindow } from '@/lib/provider-registry';
 import { isValidProjectKey, isValidSessionId } from '@/lib/security';
+import { getAgentById } from '@/lib/agents-store';
+import { loadSession } from '@/lib/chat-managers/agent-chat-session-store';
+import { getProviderScopedModel, getSettings } from '@/lib/settings-manager';
 
 /**
  * GET /api/agent-chat/prompt-info?agentId=...&sessionId=...&projectKey=...&model=...
@@ -34,7 +37,22 @@ export async function GET(request: NextRequest) {
 
   try {
     const { charCount, estimatedTokens } = await buildPromptPreview(agentId, sessionId, projectKey);
-    const contextWindow = getModelContextWindow(model || 'claude-sonnet-4-6');
+    const settings = await getSettings();
+    const [agent, session] = await Promise.all([
+      getAgentById(agentId),
+      sessionId ? loadSession(sessionId) : Promise.resolve(null),
+    ]);
+    const resolvedProvider =
+      session?.config?.provider
+      || agent?.defaultProvider
+      || settings.claude.provider
+      || 'anthropic';
+    const resolvedModel =
+      model.trim()
+      || session?.config?.model
+      || agent?.defaultModel
+      || getProviderScopedModel(settings.claude, resolvedProvider);
+    const contextWindow = getModelContextWindow(resolvedModel);
 
     return NextResponse.json({ charCount, estimatedTokens, contextWindow });
   } catch (err) {
