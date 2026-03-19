@@ -749,6 +749,49 @@ export interface ScheduleRunsData {
   runs: ScheduleRunRecord[];
 }
 
+// ==================== Agent Dialogue（轮流对话） ====================
+
+export type DialogueStatus = 'pending' | 'running' | 'completed' | 'stopped' | 'error';
+export type DialogueTerminationMode = 'max_rounds' | 'consensus' | 'manual';
+
+/**
+ * Agent 轮流对话记录。
+ * 两个 Agent 围绕主题交替发言，共享完整对话历史。
+ */
+export interface AgentDialogue {
+  id: string;                    // dialogue-{timestamp}
+  title: string;                 // 对话主题
+  description?: string;          // 对话背景/目标描述
+  agentA: { id: string; name: string };
+  agentB: { id: string; name: string };
+  status: DialogueStatus;
+  maxRounds: number;             // 最大轮数，默认 10
+  currentRound: number;          // 当前轮次
+  terminationMode: DialogueTerminationMode;
+  messages: DialogueMessage[];
+  projectKey?: string;
+  createdAt: string;
+  completedAt?: string;
+  error?: string;                // 出错时的错误信息
+}
+
+export interface DialogueMessage {
+  round: number;                 // 第几轮（A+B 算一轮）
+  speaker: 'agentA' | 'agentB';
+  agentId: string;
+  content: string;               // Agent 的回复内容
+  sessionId: string;             // 对应的 PP 会话 ID
+  timestamp: string;
+  tokenUsage?: number;           // 本轮 token 消耗（可选）
+}
+
+/** 列表用的轻量摘要（不含 messages） */
+export type AgentDialogueSummary = Omit<AgentDialogue, 'messages'>;
+
+export interface DialoguesIndexData {
+  dialogues: AgentDialogueSummary[];
+}
+
 // ==================== Segmented Prompts ====================
 
 /** Scope for segmented prompts */

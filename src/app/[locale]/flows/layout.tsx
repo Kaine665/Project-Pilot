@@ -8,7 +8,7 @@ const AgentChatPanel = dynamic(
   { ssr: false },
 );
 import { useProject } from '@/components/project-context';
-import { FolderKanban, Plus, Network, Bot, BookOpen, FileText, ListTodo, Table2, Timer, Satellite, MessageSquare, Blocks, Library, ScrollText } from 'lucide-react';
+import { FolderKanban, Plus, Network, Bot, BookOpen, FileText, ListTodo, Table2, Timer, Satellite, MessageSquare, Blocks, Library, ScrollText, MessagesSquare } from 'lucide-react';
 import { SidebarIconButton } from '@/components/sidebar-icon-button';
 import { BUTLER_AGENT_ID } from '@/lib/default-agents';
 import type { Agent } from '@/types';
@@ -56,10 +56,11 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   const isSchedulesPage = pathname.startsWith('/flows/schedules');
   const isSatelliteTasksPage = pathname.startsWith('/flows/satellite-tasks');
   const isChatPage = pathname.startsWith('/flows/chat');
+  const isDialoguesPage = pathname.startsWith('/flows/dialogues');
   const isSkillsPage = pathname.startsWith('/flows/skills');
   const isKnowledgePage = pathname.startsWith('/flows/knowledge');
   const isPromptsPage = pathname.startsWith('/flows/prompts');
-  const isSubRoute = isAgentsPage || isContextPage || isDocsPage || isButlerPage || isTodosPage || isOrchestratorPage || isBitablePage || isSchedulesPage || isSatelliteTasksPage || isChatPage || isSkillsPage || isKnowledgePage || isPromptsPage;
+  const isSubRoute = isAgentsPage || isContextPage || isDocsPage || isButlerPage || isTodosPage || isOrchestratorPage || isBitablePage || isSchedulesPage || isSatelliteTasksPage || isChatPage || isDialoguesPage || isSkillsPage || isKnowledgePage || isPromptsPage;
 
   // Auto-close expandable panel when on sub-route pages
   useEffect(() => {
@@ -208,6 +209,7 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
               <div className="w-6 border-t border-zinc-200 dark:border-zinc-700" />
 
               {/* Group: Communication */}
+              <SidebarIconButton icon={MessagesSquare} tooltip="Agent 对话" isActive={isDialoguesPage} onClick={() => router.push('/flows/dialogues')} />
               <SidebarIconButton icon={MessageSquare} tooltip="P2P 聊天" isActive={isChatPage} onClick={() => router.push('/flows/chat')} />
             </div>
             </TooltipProvider>

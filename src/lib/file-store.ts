@@ -82,6 +82,8 @@ async function ensureDataDirInitialized(): Promise<void> {
     // knowledge/
     getContextDir(),
     getDesignDocsDir(),
+    // dialogues/
+    getDialoguesDir(),
     // workflows/
     getFlowsDir(),
     path.join(DATA_DIR, 'workflows', 'orchestrations'),
@@ -1021,6 +1023,24 @@ export async function readInbox(projectKey: string): Promise<import('@/types').P
 /** 写入项目收件箱数据（原子写入） */
 export async function writeInbox(projectKey: string, data: import('@/types').ProjectInbox): Promise<void> {
   await writeJsonFile(getInboxPath(projectKey), data);
+}
+
+// ── Agent Dialogues 路径函数 ──
+
+export function getDialoguesDir(): string {
+  return path.join(DATA_DIR, 'dialogues');
+}
+
+export function getDialoguesIndexPath(): string {
+  return path.join(DATA_DIR, 'dialogues', '_index.json');
+}
+
+export function getDialoguePath(dialogueId: string): string {
+  const safe = dialogueId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length > 100) {
+    throw new Error(`Invalid dialogue ID: ${dialogueId}`);
+  }
+  return path.join(DATA_DIR, 'dialogues', `${safe}.json`);
 }
 
 // ── Agent Schedules 路径函数 ──
