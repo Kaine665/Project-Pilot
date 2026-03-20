@@ -46,7 +46,8 @@
     "restore": "Restore",
     "permanentDelete": "Delete Permanently",
     "archive": "Archive",
-    "unarchive": "Unarchive"
+    "unarchive": "Unarchive",
+    "copy": "Copy"
   },
   "todos": {
     "title": "AI Todos",
@@ -363,6 +364,17 @@
     "createBranch": "Create Branch",
     "createBranchFrom": "Create Conversation Branch from Here",
     "branch": "Branch",
+    "copied": "Copied",
+    "saveAsKnowledge": "Save as Knowledge",
+    "regenerate": "Regenerate",
+    "retry": "Retry",
+    "sendFailed": "Send failed",
+    "confirmDelete": "Confirm Delete",
+    "viewPlan": "View Plan",
+    "planning": "AI is planning...",
+    "compressHint": "Session is getting long ({count} messages). Compress history to keep context available.",
+    "compressAction": "Compress",
+    "dismissCompressHint": "Dismiss",
     "interrupted": "(Interrupted)",
     "planExtracted": "Plan extracted → Check \"Plans\" tab",
     "phases": {

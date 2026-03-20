@@ -1,7 +1,8 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Loader2, FileDown, ClipboardList } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { ClipboardList, FileDown, Loader2 } from 'lucide-react';
 import { ChatBubble } from '@/components/chat-bubble';
 import type { ParsedActionTag } from '@/lib/action-tag-parser';
 import type { ChatMessage, ContentBlock } from '@/types';
@@ -59,6 +60,7 @@ export function ChatMessageList({
   onActionReject,
   onActionRestore,
 }: ChatMessageListProps) {
+  const t = useTranslations('chat');
   const lastAssistantId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i].role === 'assistant') return messages[i].id;
@@ -73,19 +75,19 @@ export function ChatMessageList({
         <div className="mb-2 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs dark:border-amber-800 dark:bg-amber-950/30">
           <FileDown className="h-3.5 w-3.5 shrink-0 text-amber-500" />
           <span className="flex-1 text-amber-700 dark:text-amber-400">
-            Session is getting long ({messages.length} messages). Compress history to keep context available.
+            {t('compressHint', { count: messages.length })}
           </span>
           <button
             onClick={onCompressOpen}
             className="rounded px-2 py-0.5 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/50"
           >
-            压缩
+            {t('compressAction')}
           </button>
           <button
             onClick={onCompressDismiss}
             className="rounded px-2 py-0.5 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
           >
-            忽略
+            {t('dismissCompressHint')}
           </button>
         </div>
       )}
@@ -133,7 +135,7 @@ export function ChatMessageList({
       {inPlanMode && isStreaming && (
         <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs text-blue-600 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400">
           <ClipboardList className="h-3.5 w-3.5" />
-          <span>AI is planning...</span>
+          <span>{t('planning')}</span>
         </div>
       )}
 

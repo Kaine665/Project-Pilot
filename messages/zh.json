@@ -46,7 +46,8 @@
     "restore": "恢复",
     "permanentDelete": "永久删除",
     "archive": "归档",
-    "unarchive": "取消归档"
+    "unarchive": "取消归档",
+    "copy": "复制"
   },
   "todos": {
     "title": "AI 待办",
@@ -364,6 +365,17 @@
     "createBranch": "创建分支",
     "createBranchFrom": "从此处创建对话分支",
     "branch": "分支",
+    "copied": "已复制",
+    "saveAsKnowledge": "保存为知识",
+    "regenerate": "重新生成",
+    "retry": "重试",
+    "sendFailed": "发送失败",
+    "confirmDelete": "确认删除",
+    "viewPlan": "查看计划",
+    "planning": "AI 正在规划...",
+    "compressHint": "会话已经较长（{count} 条消息）。压缩历史以保留更多上下文。",
+    "compressAction": "压缩",
+    "dismissCompressHint": "忽略",
     "interrupted": "(已中断)",
     "planExtracted": "计划已提取 → 查看「计划」标签页",
     "phases": {
