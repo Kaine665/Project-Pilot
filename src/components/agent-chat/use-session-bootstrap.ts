@@ -8,6 +8,10 @@ import { popCachedState } from './agent-session-cache';
 type RuntimeStatusData = {
   status?: string;
   startedAt?: string;
+};
+
+type RuntimeSnapshotData = {
+  available?: boolean;
   messages?: Array<{
     role: 'user' | 'assistant';
     content: string;
@@ -54,7 +58,10 @@ export function useSessionBootstrap(params: UseSessionBootstrapParams): void {
 
   // 始终指向最新回调，避免 connectToStream / loadSessionData / finalizeStream 链因父级 onSessionChange 等每帧变引用导致 effect 死循环
   const paramsRef = useRef(params);
-  paramsRef.current = params;
+
+  useEffect(() => {
+    paramsRef.current = params;
+  }, [params]);
 
   useEffect(() => {
     const {
@@ -98,18 +105,30 @@ export function useSessionBootstrap(params: UseSessionBootstrapParams): void {
     if (hasProject && !projectKey) return;
     if (!hasProject && initialSessionId === null && !cachedSessionId) return;
 
-    const reconnectRunning = (sid: string, statusData: RuntimeStatusData) => {
-      if (Array.isArray(statusData.messages) && statusData.messages.length > 0) {
-        const restored: ChatMessage[] = statusData.messages.map((m, i) => ({
-          id: `restored-${i}`,
-          role: m.role,
-          content: m.content,
-          images: m.images,
-          contentBlocks: m.contentBlocks,
-          timestamp: '',
-        }));
-        chatDispatch({ type: 'SET_MESSAGES', messages: restored });
+    const reconnectRunning = async (sid: string, statusData: RuntimeStatusData) => {
+      try {
+        const snapshotRes = await fetch(
+          `/api/agent-chat/runtime-snapshot?sessionId=${sid}`,
+          { cache: 'no-store' },
+        );
+        const snapshotData = (await snapshotRes.json()) as RuntimeSnapshotData;
+        if (isStale()) return;
+        if (snapshotData.available && Array.isArray(snapshotData.messages) && snapshotData.messages.length > 0) {
+          const restored: ChatMessage[] = snapshotData.messages.map((m, i) => ({
+            id: `restored-${i}`,
+            role: m.role,
+            content: m.content,
+            images: m.images,
+            contentBlocks: m.contentBlocks,
+            timestamp: '',
+          }));
+          chatDispatch({ type: 'SET_MESSAGES', messages: restored });
+        }
+      } catch {
+        // Ignore transient runtime snapshot failures and reconnect the live stream anyway.
       }
+
+      if (isStale()) return;
       markSessionRunning(sid, statusData.startedAt);
       chatDispatch({ type: 'SEND_START' });
       blocksRef.current = [];
@@ -133,7 +152,7 @@ export function useSessionBootstrap(params: UseSessionBootstrapParams): void {
           const statusData = (await statusRes.json()) as RuntimeStatusData;
           if (statusData.status === 'running') {
             if (cachedWasStreaming || preferredSessionId === initialSessionId) {
-              reconnectRunning(preferredSessionId, statusData);
+              await reconnectRunning(preferredSessionId, statusData);
             } else {
               markSessionRunning(preferredSessionId, statusData.startedAt);
             }
@@ -158,7 +177,7 @@ export function useSessionBootstrap(params: UseSessionBootstrapParams): void {
       try {
         const statusData = (await statusRes.json()) as RuntimeStatusData;
         if (statusData.status === 'running') {
-          reconnectRunning(latest.id, statusData);
+          await reconnectRunning(latest.id, statusData);
           return;
         }
       } catch {
@@ -175,7 +194,7 @@ export function useSessionBootstrap(params: UseSessionBootstrapParams): void {
           sessionDispatch({ type: 'SET_TITLE', title: sessions[i].title });
           await loadSessionData(sid, token);
           if (isStale()) return;
-          reconnectRunning(sid, data);
+          await reconnectRunning(sid, data);
           break;
         }
       }

@@ -301,7 +301,6 @@ async function waitForSessionComplete(sessionId: string): Promise<string> {
 
     const data = await res.json() as {
       status: string;
-      messages?: Array<{ role: string; content: string }>;
     };
 
     if (data.status === 'running' || data.status === 'awaiting') {
@@ -314,10 +313,19 @@ async function waitForSessionComplete(sessionId: string): Promise<string> {
 
     if (data.status === 'completed' || data.status === 'none') {
       // 尝试从内存消息中提取
-      const messages = data.messages ?? [];
-      const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
-      if (lastAssistant?.content) {
-        return lastAssistant.content;
+      const snapshotRes = await sidecarFetch(
+        `/agent-chat/runtime-snapshot?sessionId=${encodeURIComponent(sessionId)}`,
+      );
+      if (snapshotRes.ok) {
+        const snapshot = await snapshotRes.json() as {
+          available?: boolean;
+          messages?: Array<{ role: string; content: string }>;
+        };
+        const runtimeMessages = snapshot.available ? (snapshot.messages ?? []) : [];
+        const lastAssistant = [...runtimeMessages].reverse().find(m => m.role === 'assistant');
+        if (lastAssistant?.content) {
+          return lastAssistant.content;
+        }
       }
 
       // 回退到磁盘读取（直接调用 store 函数，不走 HTTP）
@@ -332,7 +340,7 @@ async function waitForSessionComplete(sessionId: string): Promise<string> {
       }
 
       // 如果 status 是 none 且没有消息，可能还没开始，继续等
-      if (data.status === 'none' && messages.length === 0) {
+      if (data.status === 'none') {
         continue;
       }
 
