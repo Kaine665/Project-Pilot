@@ -244,9 +244,16 @@ async function pollSession(sessionId: string, port: number): Promise<{ status: '
   const messages: Array<{ role: string; content: string }> = session.messages || [];
 
   // Check execution record (unified state source)
-  const execution = session.execution as { status?: string; result?: { error?: { message: string } } } | undefined;
+  const execution = session.execution as {
+    status?: string;
+    errorMessage?: string;
+    result?: { error?: { message: string } };
+  } | undefined;
+  if (execution?.status === 'awaiting') {
+    return { status: 'running' };
+  }
   if (execution?.status === 'failed' || execution?.status === 'stopped') {
-    return { status: 'failed', error: execution.result?.error?.message ?? `Session ${execution.status}` };
+    return { status: 'failed', error: execution.errorMessage ?? execution.result?.error?.message ?? `Session ${execution.status}` };
   }
 
   const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');

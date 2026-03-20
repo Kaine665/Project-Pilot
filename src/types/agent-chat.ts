@@ -63,15 +63,18 @@ export interface ChatMessage {
   contentBlocks?: import('./index').ContentBlock[];
 }
 
-export interface PendingUserQueueItem {
+export interface DeferredInputBufferItem {
   text: string;
   images?: string[];
 }
 
-export interface PendingUserQueueState {
-  items: PendingUserQueueItem[];
+export interface DeferredInputBufferState {
+  items: DeferredInputBufferItem[];
   expanded?: boolean;
 }
+
+export type PendingUserQueueItem = DeferredInputBufferItem;
+export type PendingUserQueueState = DeferredInputBufferState;
 
 export interface AgentChatSession {
   id: string;                    // "agent-chat-{timestamp}-{random}"
@@ -103,10 +106,8 @@ export interface AgentChatSession {
   importedTurnIndices?: number[];
 
   /** Sub Agent 调用深度（0=顶层，服务端自动追踪，用于递归保护） */
-  depth?: number;
 
   /** 助手回复期间用户继续提交的待发送消息队列 */
-  pendingUserQueue?: PendingUserQueueState;
 
   /** 会话检查点（context window 接近上限时由 AI 生成，用于续接新会话） */
   checkpoint?: SessionCheckpoint;
@@ -125,7 +126,6 @@ export type SessionMeta = Omit<AgentChatSession, 'messages'> & {
   execution?: SessionExecution;
 
   /** 后台创建的会话（不触发前端跳转，侧边栏显示但不自动切换） */
-  background?: boolean;
 };
 
 /**

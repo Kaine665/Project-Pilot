@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   loadSession,
+  loadDeferredInputBuffer,
   markAsRead,
   setArchived,
-  updatePendingUserQueueOnDisk,
+  updateDeferredInputBufferOnDisk,
   updateUserMessageContentOnDisk,
 } from '@/lib/agent-chat-manager';
 import { sidecarFetch } from '@/lib/sidecar-bridge';
@@ -23,7 +24,9 @@ export async function GET(
     return NextResponse.json({ error: 'Session not found' }, { status: 404 });
   }
 
-  return NextResponse.json(session, {
+  const deferredInputBuffer = await loadDeferredInputBuffer(id);
+
+  return NextResponse.json({ ...session, deferredInputBuffer }, {
     headers: { 'Cache-Control': 'no-store' },
   });
 }
@@ -35,7 +38,7 @@ export async function GET(
  *   { action: 'archive' }
  *   { action: 'unarchive' }
  *   { action: 'updateConfig', config: SessionConfig }
- *   { action: 'updatePendingUserQueue', queue: PendingUserQueueState }
+ *   { action: 'updateDeferredInputBuffer', queue: PendingUserQueueState }
  *   { action: 'updateUserMessage', messageIndex: number, content: string, frontendMessageCount?: number }
  */
 export async function PATCH(
@@ -83,7 +86,7 @@ export async function PATCH(
     return NextResponse.json({ ok: true });
   }
 
-  if (body.action === 'updatePendingUserQueue') {
+  if (body.action === 'updateDeferredInputBuffer' || body.action === 'updatePendingUserQueue') {
     const queue = body.queue;
     const items = Array.isArray(queue?.items) ? queue.items : null;
     if (!items) {
@@ -104,7 +107,7 @@ export async function PATCH(
       })
       .filter((item: { text: string; images?: string[] } | null): item is { text: string; images?: string[] } => item !== null);
 
-    const found = await updatePendingUserQueueOnDisk(id, {
+    const found = await updateDeferredInputBufferOnDisk(id, {
       items: normalizedItems,
       expanded: queue?.expanded === false ? false : undefined,
     });

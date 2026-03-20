@@ -554,13 +554,13 @@ async function restoreAwaitingWatchers(): Promise<void> {
   const entries: WatchEntry[] = [];
 
   for (const session of sessions) {
-    if (session.execution?.status === 'awaiting' && session.execution.awaitingSubAgents) {
-      const aw = session.execution.awaitingSubAgents;
+    if (session.execution?.status === 'awaiting' && session.execution.awaiting?.waiting) {
+      const aw = session.execution.awaiting;
       entries.push({
         parentSessionId: session.id,
         parentAgentId: session.agentId,
         parentProjectKey: session.projectKey,
-        targetSessionIds: aw.sessionIds,
+        targetSessionIds: aw.subAgentSessionIds,
         registeredAt: aw.registeredAt,
         timeoutMs: aw.timeoutMs,
       });

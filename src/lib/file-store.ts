@@ -70,7 +70,9 @@ async function ensureDataDirInitialized(): Promise<void> {
     path.join(DATA_DIR, 'agents'),
     getAgentDataDir(),
     // chat/
+    path.join(DATA_DIR, 'chat'),
     getAgentChatMessagesDir(),
+    getAgentChatSessionAdjunctsDir(),
     // tasks/
     path.join(DATA_DIR, 'tasks'),
     // prompts/
@@ -182,8 +184,6 @@ export async function ensureProjectsMigrated(): Promise<void> {
     await writeJsonFile(indexPath, { ...index, _migrated_projects_v2: true });
     return;
   }
-
-  const existingKeys = new Set(index.projects.map(p => p.key));
 
   for (const [key, config] of Object.entries(oldProjects)) {
     const existing = index.projects.find(p => p.key === key);
@@ -495,6 +495,14 @@ export function getAgentChatSessionsPath(): string {
   return path.join(DATA_DIR, 'chat', 'sessions.json');
 }
 
+export function getAgentChatSessionAdjunctsDir(): string {
+  return path.join(DATA_DIR, 'chat', 'adjuncts');
+}
+
+export function getAgentChatSessionAdjunctsPath(): string {
+  return path.join(getAgentChatSessionAdjunctsDir(), 'sessions.json');
+}
+
 /** 每个会话的消息 JSONL 文件目录 */
 export function getAgentChatMessagesDir(): string {
   return path.join(DATA_DIR, 'chat', 'messages');
@@ -738,6 +746,7 @@ function getSnapshotTargets(): Map<string, string> {
   return new Map([
     [getAgentsPath(), 'agents-registry'],
     [getAgentChatSessionsPath(), 'chat-sessions'],
+    [getAgentChatSessionAdjunctsPath(), 'chat-session-adjuncts'],
   ]);
 }
 
