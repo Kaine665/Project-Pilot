@@ -8,6 +8,19 @@ import type { SessionConfig } from '@/types/agent-chat';
 import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
 import { CAPABILITY_ITEMS } from '@/components/agent-form';
 
+/** 仅用于 useEffect 依赖：避免父组件每次渲染传入新 config 引用导致无限同步循环 */
+function sessionConfigSyncKey(config: SessionConfig): string {
+  return JSON.stringify({
+    contextIds: config.contextIds ?? [],
+    skillNames: config.skillNames ?? [],
+    supplementaryPrompt: config.supplementaryPrompt ?? '',
+    provider: config.provider ?? '',
+    model: config.model ?? '',
+    systemPrompt: config.systemPrompt ?? '',
+    capabilities: config.capabilities ?? {},
+  });
+}
+
 interface SessionConfigPanelProps {
   sessionId: string;
   config: SessionConfig;
@@ -82,7 +95,8 @@ export function SessionConfigPanel({
     })();
   }, []);
 
-  // Reset form when config changes (session switch)
+  // Reset form when config changes (session switch). 依赖内容快照而非 config 引用，避免父组件每帧新对象导致死循环。
+  const configKey = sessionConfigSyncKey(config);
   useEffect(() => {
     setContextIds(config.contextIds ?? []);
     setSkillNames(config.skillNames ?? []);
@@ -91,7 +105,8 @@ export function SessionConfigPanel({
     setSessionModel(config.model ?? '');
     setSystemPromptOverride(config.systemPrompt ?? '');
     setCapsOverride(config.capabilities ?? {});
-  }, [config, sessionId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- 用 configKey 代替 config 引用，避免父组件每帧新对象导致死循环
+  }, [sessionId, configKey]);
 
   // Auto-resize on content change
   useEffect(() => { autoResize(); }, [supplementaryPrompt, autoResize]);

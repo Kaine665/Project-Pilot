@@ -1,4 +1,4 @@
-import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import type { ChatMessage, ChatToolCall, ContentBlock } from '@/types';
 import type { ChatAction } from './chat-reducer';
 import type { SessionAction } from './session-reducer';
@@ -41,31 +41,40 @@ type UseSessionBootstrapParams = {
   connectToStream: (targetSessionId: string, since: number) => void;
 };
 
-export function useSessionBootstrap({
-  agentId,
-  projectKey,
-  initialSessionId,
-  hasProject,
-  cacheKey,
-  initTokenRef,
-  streamAbortRef,
-  setShowConfig,
-  setShowFolderExplorer,
-  setShowRuntimePanel,
-  setQueueExpanded,
-  resetState,
-  fetchSessionList,
-  setSessionIdSync,
-  loadSessionData,
-  sessionDispatch,
-  markSessionRunning,
-  chatDispatch,
-  blocksRef,
-  fullTextRef,
-  toolCallsRef,
-  connectToStream,
-}: UseSessionBootstrapParams): void {
+export function useSessionBootstrap(params: UseSessionBootstrapParams): void {
+  const {
+    agentId,
+    projectKey,
+    initialSessionId,
+    hasProject,
+    cacheKey,
+    initTokenRef,
+    streamAbortRef,
+  } = params;
+
+  // 始终指向最新回调，避免 connectToStream / loadSessionData / finalizeStream 链因父级 onSessionChange 等每帧变引用导致 effect 死循环
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
   useEffect(() => {
+    const {
+      setShowConfig,
+      setShowFolderExplorer,
+      setShowRuntimePanel,
+      setQueueExpanded,
+      resetState,
+      fetchSessionList,
+      setSessionIdSync,
+      loadSessionData,
+      sessionDispatch,
+      markSessionRunning,
+      chatDispatch,
+      blocksRef,
+      fullTextRef,
+      toolCallsRef,
+      connectToStream,
+    } = paramsRef.current;
+
     let cancelled = false;
     const token = ++initTokenRef.current;
     const isStale = () => cancelled || initTokenRef.current !== token;
@@ -182,28 +191,6 @@ export function useSessionBootstrap({
         streamAbortRef.current = null;
       }
     };
-  }, [
-    agentId,
-    blocksRef,
-    cacheKey,
-    chatDispatch,
-    connectToStream,
-    fetchSessionList,
-    fullTextRef,
-    hasProject,
-    initTokenRef,
-    initialSessionId,
-    loadSessionData,
-    markSessionRunning,
-    projectKey,
-    resetState,
-    sessionDispatch,
-    setQueueExpanded,
-    setSessionIdSync,
-    setShowConfig,
-    setShowFolderExplorer,
-    setShowRuntimePanel,
-    streamAbortRef,
-    toolCallsRef,
-  ]);
+    // 仅依赖「应重新 bootstrap」的结构输入；回调经 paramsRef 取最新，避免 Maximum update depth
+  }, [agentId, cacheKey, hasProject, initialSessionId, initTokenRef, projectKey, streamAbortRef]);
 }
