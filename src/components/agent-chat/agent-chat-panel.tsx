@@ -34,6 +34,7 @@ import { sessionReducer, upsertSessionListItem, patchSessionListItem } from './s
 import type { SessionState } from './session-reducer';
 import { ChatMessageList } from './chat-message-list';
 import { ChatQueueOverlay } from './chat-queue-overlay';
+import { ChatScrollTimeline } from './chat-scroll-timeline';
 import { ChatSessionHeader } from './chat-session-header';
 import { ChatSessionSidebar } from './chat-session-sidebar';
 import { TaskCardBanner } from './task-card-banner';
@@ -131,6 +132,7 @@ export function AgentChatPanel({
   const [showConfig, setShowConfig] = useState(false);
   const [showFolderExplorer, setShowFolderExplorer] = useState(false);
   const [showRuntimePanel, setShowRuntimePanel] = useState(false);
+  const [currentMessageId, setCurrentMessageId] = useState<string | null>(null);
 
   // Plan viewer
   const [planContent, setPlanContent] = useState<string | null>(null);
@@ -1027,13 +1029,44 @@ export function AgentChatPanel({
   // Smart auto-scroll
   const [autoScroll, setAutoScroll] = useState(true);
   const scrollRafRef = useRef<number>(0);
+  const updateActiveMessageId = useCallback(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const nodes = Array.from(container.querySelectorAll<HTMLElement>('[data-chat-message-id]'));
+    if (nodes.length === 0) {
+      setCurrentMessageId(null);
+      return;
+    }
+
+    const anchorY = container.getBoundingClientRect().top + Math.min(96, container.clientHeight * 0.25);
+    let nextMessageId = nodes[nodes.length - 1]?.dataset.chatMessageId ?? null;
+    let bestAbove = -Infinity;
+    let bestBelow = Infinity;
+
+    for (const node of nodes) {
+      const messageId = node.dataset.chatMessageId;
+      if (!messageId) continue;
+      const offset = node.getBoundingClientRect().top - anchorY;
+      if (offset <= 0 && offset > bestAbove) {
+        bestAbove = offset;
+        nextMessageId = messageId;
+      } else if (bestAbove === -Infinity && offset > 0 && offset < bestBelow) {
+        bestBelow = offset;
+        nextMessageId = messageId;
+      }
+    }
+
+    setCurrentMessageId((prev) => (prev === nextMessageId ? prev : nextMessageId));
+  }, []);
 
   const handleChatScroll = useCallback(() => {
     if (!scrollRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
     const isNearBottom = scrollHeight - scrollTop - clientHeight < 40;
     setAutoScroll(isNearBottom);
-  }, []);
+    updateActiveMessageId();
+  }, [updateActiveMessageId]);
 
   useEffect(() => {
     if (!autoScroll) return;
@@ -1043,8 +1076,35 @@ export function AgentChatPanel({
       if (scrollRef.current) {
         scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
       }
+      updateActiveMessageId();
     });
-  }, [messages, streamingBlocks, autoScroll]);
+  }, [messages, streamingBlocks, autoScroll, updateActiveMessageId]);
+
+  useEffect(() => {
+    const rafId = requestAnimationFrame(() => {
+      updateActiveMessageId();
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [messages, streamingBlocks, isStreaming, updateActiveMessageId]);
+
+  const handleSelectTimelineMessage = useCallback((messageId: string) => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const target = Array.from(container.querySelectorAll<HTMLElement>('[data-chat-message-id]'))
+      .find((node) => node.dataset.chatMessageId === messageId);
+
+    if (!target) return;
+
+    setAutoScroll(false);
+    setCurrentMessageId(messageId);
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    target.classList.add('ring-2', 'ring-blue-400', 'ring-offset-2', 'ring-offset-white', 'dark:ring-offset-zinc-950');
+    window.setTimeout(() => {
+      target.classList.remove('ring-2', 'ring-blue-400', 'ring-offset-2', 'ring-offset-white', 'dark:ring-offset-zinc-950');
+    }, 1400);
+  }, []);
 
   // Send message
   const doSend = useCallback(async (text: string, images?: string[]) => {
@@ -1575,6 +1635,10 @@ export function AgentChatPanel({
     setPreviewFilePath(filePath);
   }, []);
 
+  const handleToggleRuntimeDrawer = useCallback(() => {
+    setShowRuntimePanel((v) => !v);
+  }, []);
+
   // ── Shared UI pieces ──
 
   const thinkingText = hasProject ? t('chat.thinking') : '思考中...';
@@ -1754,7 +1818,7 @@ export function AgentChatPanel({
           </button>
           <button
             type="button"
-            onClick={() => setShowRuntimePanel(v => !v)}
+            onClick={handleToggleRuntimeDrawer}
             className={`p-1 rounded transition-colors ${
               showRuntimePanel
                 ? 'text-blue-500 dark:text-blue-400'
@@ -1771,7 +1835,7 @@ export function AgentChatPanel({
           <div
             ref={scrollRef}
             onScroll={handleChatScroll}
-            className={`h-full space-y-3 overflow-y-auto p-4 ${isStreaming && pendingUserMessages.length > 0 ? 'pb-44' : ''}`}
+            className={`h-full space-y-3 overflow-y-auto px-4 py-4 pr-24 ${isStreaming && pendingUserMessages.length > 0 ? 'pb-44' : ''}`}
           >
             {messages.length === 0 && !isStreaming ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
@@ -1785,6 +1849,14 @@ export function AgentChatPanel({
               />
             )}
           </div>
+
+          <ChatScrollTimeline
+            messages={messages}
+            isStreaming={isStreaming}
+            streamingBlocks={streamingBlocks}
+            currentMessageId={currentMessageId}
+            onSelectMessage={handleSelectTimelineMessage}
+          />
 
           {isStreaming && pendingUserMessages.length > 0 && (
             <ChatQueueOverlay
@@ -1864,7 +1936,7 @@ export function AgentChatPanel({
         onToggleConfig={() => setShowConfig(v => !v)}
         onCompressOpen={() => setCompressDialogOpen(true)}
         showRuntimePanel={showRuntimePanel}
-        onToggleRuntimePanel={() => setShowRuntimePanel(v => !v)}
+        onToggleRuntimePanel={handleToggleRuntimeDrawer}
       />
 
       {/* Messages + Queue overlay */}
@@ -1872,7 +1944,7 @@ export function AgentChatPanel({
         <div
           ref={scrollRef}
           onScroll={handleChatScroll}
-          className={`h-full space-y-3 overflow-y-auto p-3 ${isStreaming && pendingUserMessages.length > 0 ? 'pb-44' : ''}`}
+          className={`h-full space-y-3 overflow-y-auto px-3 py-3 pr-22 ${isStreaming && pendingUserMessages.length > 0 ? 'pb-44' : ''}`}
         >
         {/* Task Card Banner */}
         {taskCard && <TaskCardBanner card={taskCard} />}
@@ -1889,6 +1961,14 @@ export function AgentChatPanel({
           />
         )}
         </div>
+
+        <ChatScrollTimeline
+          messages={messages}
+          isStreaming={isStreaming}
+          streamingBlocks={streamingBlocks}
+          currentMessageId={currentMessageId}
+          onSelectMessage={handleSelectTimelineMessage}
+        />
 
         {isStreaming && pendingUserMessages.length > 0 && (
           <ChatQueueOverlay

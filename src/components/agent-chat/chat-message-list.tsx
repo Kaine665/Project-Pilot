@@ -93,36 +93,39 @@ export function ChatMessageList({
       )}
 
       {messages.map((msg) => (
-        <ChatBubble
-          key={msg.id}
-          message={msg}
-          showActions
-          isStreaming={isStreaming}
-          onSaveAsKnowledge={onSaveAsKnowledge}
-          onDelete={onDelete}
-          onRegenerate={onRegenerate}
-          onBranch={msg.role === 'user' && !showUserMessageBranch ? undefined : onBranch}
-          onEdit={msg.role === 'user' && enableUserMessageEdit ? onEdit : undefined}
-          isLastAssistant={msg.id === lastAssistantId}
-          onRetry={onRetry}
-          hasSendError={!!errorMsg && msg.role === 'user' && msg.id === messages[messages.length - 1]?.id}
-          onViewPlan={onViewPlan}
-          onFileClick={onFileClick}
-          onActionPreview={onActionPreview}
-          onActionReject={onActionReject}
-          onActionRestore={onActionRestore}
-        />
+        <div key={msg.id} data-chat-message-id={msg.id} className="scroll-mt-24 rounded-2xl">
+          <ChatBubble
+            message={msg}
+            showActions
+            isStreaming={isStreaming}
+            onSaveAsKnowledge={onSaveAsKnowledge}
+            onDelete={onDelete}
+            onRegenerate={onRegenerate}
+            onBranch={msg.role === 'user' && !showUserMessageBranch ? undefined : onBranch}
+            onEdit={msg.role === 'user' && enableUserMessageEdit ? onEdit : undefined}
+            isLastAssistant={msg.id === lastAssistantId}
+            onRetry={onRetry}
+            hasSendError={!!errorMsg && msg.role === 'user' && msg.id === messages[messages.length - 1]?.id}
+            onViewPlan={onViewPlan}
+            onFileClick={onFileClick}
+            onActionPreview={onActionPreview}
+            onActionReject={onActionReject}
+            onActionRestore={onActionRestore}
+          />
+        </div>
       ))}
 
       {isStreaming && streamingBlocks.length > 0 && (
-        <ChatBubble
-          message={streamingMessage}
-          streamingBlocks={streamingBlocks}
-          isStreaming
-          onActionPreview={onActionPreview}
-          onActionReject={onActionReject}
-          onActionRestore={onActionRestore}
-        />
+        <div data-chat-message-id={streamingMessage.id} className="scroll-mt-24 rounded-2xl">
+          <ChatBubble
+            message={streamingMessage}
+            streamingBlocks={streamingBlocks}
+            isStreaming
+            onActionPreview={onActionPreview}
+            onActionReject={onActionReject}
+            onActionRestore={onActionRestore}
+          />
+        </div>
       )}
 
       {isStreaming && streamingBlocks.length === 0 && (
