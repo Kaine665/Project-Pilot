@@ -73,7 +73,9 @@ export interface DeferredInputBufferState {
   expanded?: boolean;
 }
 
+/** @deprecated Use DeferredInputBufferItem instead. */
 export type PendingUserQueueItem = DeferredInputBufferItem;
+/** @deprecated Use DeferredInputBufferState instead. */
 export type PendingUserQueueState = DeferredInputBufferState;
 
 export interface AgentChatSession {

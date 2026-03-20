@@ -5,13 +5,10 @@ import type { SessionAction } from './session-reducer';
 import type { SessionListItem } from './types';
 import { popCachedState } from './agent-session-cache';
 
-type RuntimeStatusData = {
-  status?: string;
-  startedAt?: string;
-};
-
 type RuntimeSnapshotData = {
   available?: boolean;
+  status?: string;
+  startedAt?: string;
   messages?: Array<{
     role: 'user' | 'assistant';
     content: string;
@@ -88,7 +85,7 @@ export function useSessionBootstrap(params: UseSessionBootstrapParams): void {
 
     const cached = popCachedState(cacheKey);
     const cachedSessionId = cached?.sessionId ?? null;
-    const cachedWasStreaming = cached?.isStreaming === true;
+    const cachedShouldReconnect = cached?.shouldReconnect === true;
 
     if (cached) {
       setShowConfig(cached.showConfig);
@@ -105,13 +102,19 @@ export function useSessionBootstrap(params: UseSessionBootstrapParams): void {
     if (hasProject && !projectKey) return;
     if (!hasProject && initialSessionId === null && !cachedSessionId) return;
 
-    const reconnectRunning = async (sid: string, statusData: RuntimeStatusData) => {
+    const fetchRuntimeSnapshot = async (sid: string): Promise<RuntimeSnapshotData> => {
+      const res = await fetch(
+        `/api/agent-chat/runtime-snapshot?sessionId=${sid}`,
+        { cache: 'no-store' },
+      );
+      return (await res.json()) as RuntimeSnapshotData;
+    };
+
+    const reconnectRunning = async (sid: string, snapshotData: RuntimeSnapshotData) => {
       try {
-        const snapshotRes = await fetch(
-          `/api/agent-chat/runtime-snapshot?sessionId=${sid}`,
-          { cache: 'no-store' },
-        );
-        const snapshotData = (await snapshotRes.json()) as RuntimeSnapshotData;
+        if (!snapshotData.available) {
+          snapshotData = await fetchRuntimeSnapshot(sid);
+        }
         if (isStale()) return;
         if (snapshotData.available && Array.isArray(snapshotData.messages) && snapshotData.messages.length > 0) {
           const restored: ChatMessage[] = snapshotData.messages.map((m, i) => ({
@@ -129,7 +132,7 @@ export function useSessionBootstrap(params: UseSessionBootstrapParams): void {
       }
 
       if (isStale()) return;
-      markSessionRunning(sid, statusData.startedAt);
+      markSessionRunning(sid, snapshotData.startedAt);
       chatDispatch({ type: 'SEND_START' });
       blocksRef.current = [];
       fullTextRef.current = '';
@@ -143,22 +146,21 @@ export function useSessionBootstrap(params: UseSessionBootstrapParams): void {
       if (preferredSessionId) {
         fetchSessionList(agentId, projectKey).catch(() => []);
         setSessionIdSync(preferredSessionId);
-        const [, statusRes] = await Promise.all([
+        const [, runtimeSnapshot] = await Promise.all([
           loadSessionData(preferredSessionId, token),
-          fetch(`/api/agent-chat/status?sessionId=${preferredSessionId}`, { cache: 'no-store' }),
+          fetchRuntimeSnapshot(preferredSessionId),
         ]);
         if (isStale()) return;
         try {
-          const statusData = (await statusRes.json()) as RuntimeStatusData;
-          if (statusData.status === 'running') {
-            if (cachedWasStreaming || preferredSessionId === initialSessionId) {
-              await reconnectRunning(preferredSessionId, statusData);
+          if (runtimeSnapshot.status === 'running' || runtimeSnapshot.status === 'awaiting') {
+            if (cachedShouldReconnect || preferredSessionId === initialSessionId) {
+              await reconnectRunning(preferredSessionId, runtimeSnapshot);
             } else {
-              markSessionRunning(preferredSessionId, statusData.startedAt);
+              markSessionRunning(preferredSessionId, runtimeSnapshot.startedAt);
             }
           }
         } catch {
-          // Ignore transient bootstrap status failures.
+          // Ignore transient bootstrap runtime failures.
         }
         return;
       }
@@ -169,32 +171,30 @@ export function useSessionBootstrap(params: UseSessionBootstrapParams): void {
       const latest = sessions[0];
       setSessionIdSync(latest.id);
       sessionDispatch({ type: 'SET_TITLE', title: latest.title });
-      const [, statusRes] = await Promise.all([
+      const [, runtimeSnapshot] = await Promise.all([
         loadSessionData(latest.id, token),
-        fetch(`/api/agent-chat/status?sessionId=${latest.id}`, { cache: 'no-store' }),
+        fetchRuntimeSnapshot(latest.id),
       ]);
       if (isStale()) return;
       try {
-        const statusData = (await statusRes.json()) as RuntimeStatusData;
-        if (statusData.status === 'running') {
-          await reconnectRunning(latest.id, statusData);
+        if (runtimeSnapshot.status === 'running' || runtimeSnapshot.status === 'awaiting') {
+          await reconnectRunning(latest.id, runtimeSnapshot);
           return;
         }
       } catch {
-        // Ignore transient bootstrap status failures.
+        // Ignore transient bootstrap runtime failures.
       }
 
       for (let i = 1; i < sessions.length; i += 1) {
         if (isStale()) return;
         const sid = sessions[i].id;
-        const res = await fetch(`/api/agent-chat/status?sessionId=${sid}`, { cache: 'no-store' });
-        const data = (await res.json()) as RuntimeStatusData;
-        if (!isStale() && data.status === 'running') {
+        const runtimeSnapshot = await fetchRuntimeSnapshot(sid);
+        if (!isStale() && (runtimeSnapshot.status === 'running' || runtimeSnapshot.status === 'awaiting')) {
           setSessionIdSync(sid);
           sessionDispatch({ type: 'SET_TITLE', title: sessions[i].title });
           await loadSessionData(sid, token);
           if (isStale()) return;
-          await reconnectRunning(sid, data);
+          await reconnectRunning(sid, runtimeSnapshot);
           break;
         }
       }

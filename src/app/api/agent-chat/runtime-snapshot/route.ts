@@ -3,7 +3,8 @@ import { sidecarFetch } from '@/lib/sidecar-bridge';
 
 /**
  * GET /api/agent-chat/runtime-snapshot?sessionId=xxx
- * Read the current in-memory runtime snapshot for a live or recently completed run.
+ * Read the current runtime read model for a session.
+ * Returns runtime status plus any in-memory messages available for reconnect.
  */
 export async function GET(request: NextRequest) {
   const sessionId = request.nextUrl.searchParams.get('sessionId');
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
     });
   } catch {
     return NextResponse.json(
-      { available: false, messages: [] },
+      { available: false, status: 'none', eventCount: 0, messages: [] },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   }

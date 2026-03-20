@@ -24,11 +24,11 @@ import { buildSessionUrl } from '@/components/agent-session-utils';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import { imageAttachmentFromDataUrl } from '@/lib/image-assets';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
-import type { PendingUserQueueItem, PendingUserQueueState, SessionConfig } from '@/types/agent-chat';
+import type { DeferredInputBufferItem, DeferredInputBufferState, SessionConfig } from '@/types/agent-chat';
 import type { ChatMessage, ChatToolCall, ContentBlock } from '@/types';
 
 import type { AgentChatPanelProps, IndexedSSEEvent } from './types';
-import { PROVIDER_LABELS, stripSessionTitleTag, clonePendingQueueItems } from './types';
+import { PROVIDER_LABELS, stripSessionTitleTag, cloneDeferredInputBufferItems } from './types';
 import { chatReducer, chatInitialState } from './chat-reducer';
 import { sessionReducer, upsertSessionListItem, patchSessionListItem } from './session-reducer';
 import type { SessionState } from './session-reducer';
@@ -168,9 +168,9 @@ export function AgentChatPanel({
   const isStreamingRef = useRef(false);
   const messagesRef = useRef<ChatMessage[]>([]);
   const pendingAnswerRef = useRef<{ answer: string; targetSessionId: string } | null>(null);
-  const pendingUserMessagesRef = useRef<PendingUserQueueItem[]>([]);
+  const pendingUserMessagesRef = useRef<DeferredInputBufferItem[]>([]);
   const [pendingUserQueueCount, setPendingUserQueueCount] = useState(0);
-  const [pendingUserMessages, setPendingUserMessages] = useState<PendingUserQueueItem[]>([]);
+  const [pendingUserMessages, setPendingUserMessages] = useState<DeferredInputBufferItem[]>([]);
   const [queueExpanded, setQueueExpanded] = useState(true);
 
   // Sync sessionId to both reducer state and ref atomically
@@ -194,27 +194,27 @@ export function AgentChatPanel({
 
   const persistPendingUserQueue = useCallback((
     targetSessionId: string,
-    items: PendingUserQueueItem[],
+    items: DeferredInputBufferItem[],
     expanded: boolean = queueExpanded,
   ) => {
     fetch(`/api/agent-chat/sessions/${targetSessionId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        action: 'updatePendingUserQueue',
+        action: 'updateDeferredInputBuffer',
         queue: {
-          items: clonePendingQueueItems(items),
+          items: cloneDeferredInputBufferItems(items),
           expanded: expanded ? undefined : false,
-        } satisfies PendingUserQueueState,
+        } satisfies DeferredInputBufferState,
       }),
     }).catch(() => {});
   }, [queueExpanded]);
 
   const replacePendingUserQueue = useCallback((
-    items: PendingUserQueueItem[],
+    items: DeferredInputBufferItem[],
     options?: { persist?: boolean; sessionId?: string | null; expanded?: boolean },
   ) => {
-    const nextItems = clonePendingQueueItems(items);
+    const nextItems = cloneDeferredInputBufferItems(items);
     pendingUserMessagesRef.current = nextItems;
     setPendingUserMessages(nextItems);
     setPendingUserQueueCount(nextItems.length);
@@ -486,10 +486,10 @@ export function AgentChatPanel({
       const loadedConfig = data.config ?? {};
       sessionDispatch({ type: 'SET_CONFIG', config: loadedConfig });
       const loadedQueueState = (
-        data.deferredInputBuffer ?? data.pendingUserQueue
-      ) as PendingUserQueueState | undefined;
+        data.adjuncts?.deferredInputBuffer
+      ) as DeferredInputBufferState | undefined;
       const loadedQueue = Array.isArray(loadedQueueState?.items)
-        ? clonePendingQueueItems(loadedQueueState.items)
+        ? cloneDeferredInputBufferItems(loadedQueueState.items)
         : [];
       replacePendingUserQueue(loadedQueue);
       setQueueExpanded(loadedQueueState?.expanded !== false);
@@ -507,7 +507,7 @@ export function AgentChatPanel({
     } catch {
       // ignore
     }
-  }, [loadSessionNavLinks, replacePendingUserQueue]);
+  }, [loadSessionNavLinks, replacePendingUserQueue, modelConfig]);
 
   // Finalize streaming -> commit assistant message
   const finalizeStream = useCallback(() => {
@@ -607,7 +607,7 @@ export function AgentChatPanel({
       }).catch(err => console.error('通知发送失败:', err));
     }
     streamStartedAtRef.current = null;
-  }, [agent.id, agent.name, projectKey, fetchSessionList, onSessionChange, flushQueuedUserMessage, router, notifyCompletion]);
+  }, [agent.id, agent.name, projectKey, fetchSessionList, onSessionChange, flushQueuedUserMessage, router, notifyCompletion, clearSessionRunning]);
 
   // Connect to SSE stream
   const connectToStream = useCallback((targetSessionId: string, since: number) => {
@@ -837,10 +837,13 @@ export function AgentChatPanel({
         // Abort may come from handleAbort's fallback force-close OR stale connection detection.
         // Check if backend is still running — if so, reconnect instead of giving up.
         if (isStreamingRef.current && sessionIdRef.current === targetSessionId) {
-          fetch(`/api/agent-chat/status?sessionId=${targetSessionId}`, { cache: 'no-store' })
+          fetch(`/api/agent-chat/runtime-snapshot?sessionId=${targetSessionId}`, { cache: 'no-store' })
             .then(r => r.json())
             .then(data => {
-              if (data.status === 'running' && sessionIdRef.current === targetSessionId) {
+              if (
+                (data.status === 'running' || data.status === 'awaiting')
+                && sessionIdRef.current === targetSessionId
+              ) {
                 console.info(`[SSE] Backend still running for ${targetSessionId}, reconnecting from idx ${lastEventIdxRef.current + 1}`);
                 connectToStream(targetSessionId, lastEventIdxRef.current + 1);
               } else {
@@ -857,7 +860,7 @@ export function AgentChatPanel({
       chatDispatch({ type: 'STREAM_ERROR', message: `Stream connection failed: ${(err as Error).message}` });
       finalizeStream();
     });
-  }, [finalizeStream]);
+  }, [finalizeStream, onSessionChange]);
 
   // Reset state helper
   const resetState = useCallback(() => {
@@ -1169,7 +1172,7 @@ export function AgentChatPanel({
   }, [messages.length, isStreaming]);
 
   // ChatInput submit handler
-  const handleChatInputSubmit = useCallback((text: string, images: string[], _files: Array<{ name: string; content: string }>) => {
+  const handleChatInputSubmit = useCallback((text: string, images: string[]) => {
     const hasPayload = !!text.trim() || images.length > 0;
     if (!hasPayload) return;
 
@@ -1277,7 +1280,7 @@ export function AgentChatPanel({
         // ignore
       }
     }
-  }, [sessionId]);
+  }, [sessionId, modelConfig]);
 
   const handleNewSession = useCallback(() => {
     if (isStreaming) return;
@@ -1298,7 +1301,7 @@ export function AgentChatPanel({
     fullTextRef.current = '';
     toolCallsRef.current = [];
     modelConfig.resetToAgentDefaults(agent);
-  }, [isStreaming, hasProject, t, setSessionIdSync, agent, replacePendingUserQueue]);
+  }, [isStreaming, hasProject, t, agent, replacePendingUserQueue, modelConfig]);
 
   const handleResumeCheckpoint = useCallback(() => {
     const checkpoint = checkpointRef.current;
@@ -1343,7 +1346,7 @@ export function AgentChatPanel({
       }).catch(() => {});
     }
     await loadSessionData(target.id, token);
-  }, [isStreaming, loadSessionData, setSessionIdSync, replacePendingUserQueue]);
+  }, [isStreaming, loadSessionData, replacePendingUserQueue]);
 
   const handleSaveAsKnowledge = useCallback((_messageId: string, content: string) => {
     setSaveDialogContent(content);
@@ -1462,7 +1465,7 @@ export function AgentChatPanel({
     } catch {
       // ignore
     }
-  }, [loadSessionData, setSessionIdSync, onSessionChange]);
+  }, [loadSessionData, onSessionChange]);
 
   const handleRegenerate = useCallback(() => {
     if (isStreamingRef.current) return;
@@ -1516,11 +1519,11 @@ export function AgentChatPanel({
     setIsPlanOpen(false);
   }, []);
 
-  const handleActionReject = useCallback((_tag: ParsedActionTag) => {
+  const handleActionReject = useCallback(() => {
     // For now, just visual — future: call API to undo the action
   }, []);
 
-  const handleActionRestore = useCallback((_tag: ParsedActionTag) => {
+  const handleActionRestore = useCallback(() => {
     // For now, just visual — future: call API to re-execute the action
   }, []);
 

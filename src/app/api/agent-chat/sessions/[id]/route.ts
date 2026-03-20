@@ -11,7 +11,7 @@ import { sidecarFetch } from '@/lib/sidecar-bridge';
 
 /**
  * GET /api/agent-chat/sessions/[id]
- * Get full session data including messages.
+ * Get full session data including messages and adjunct data needed for resume.
  */
 export async function GET(
   _request: NextRequest,
@@ -26,7 +26,10 @@ export async function GET(
 
   const deferredInputBuffer = await loadDeferredInputBuffer(id);
 
-  return NextResponse.json({ ...session, deferredInputBuffer }, {
+  return NextResponse.json({
+    ...session,
+    adjuncts: { deferredInputBuffer },
+  }, {
     headers: { 'Cache-Control': 'no-store' },
   });
 }
@@ -38,7 +41,7 @@ export async function GET(
  *   { action: 'archive' }
  *   { action: 'unarchive' }
  *   { action: 'updateConfig', config: SessionConfig }
- *   { action: 'updateDeferredInputBuffer', queue: PendingUserQueueState }
+ *   { action: 'updateDeferredInputBuffer', queue: DeferredInputBufferState }
  *   { action: 'updateUserMessage', messageIndex: number, content: string, frontendMessageCount?: number }
  */
 export async function PATCH(

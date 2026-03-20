@@ -228,20 +228,26 @@ const POLL_EXIT_RUNNING = 2;
  */
 async function pollSession(sessionId: string, port: number): Promise<void> {
   // Step 1: 查询内存中的运行状态
-  const statusResult = await httpRequest({
+  const runtimeResult = await httpRequest({
     method: 'GET',
     hostname: '127.0.0.1',
     port,
-    path: `/api/agent-chat/status?sessionId=${encodeURIComponent(sessionId)}`,
+    path: `/api/agent-chat/runtime-snapshot?sessionId=${encodeURIComponent(sessionId)}`,
     timeoutMs: POST_TIMEOUT_MS,
   });
 
-  if (statusResult.statusCode !== 200) {
-    throw new Error(`GET /api/agent-chat/status failed: HTTP ${statusResult.statusCode} — ${statusResult.body}`);
+  if (runtimeResult.statusCode !== 200) {
+    throw new Error(
+      `GET /api/agent-chat/runtime-snapshot failed: HTTP ${runtimeResult.statusCode} — ${runtimeResult.body}`,
+    );
   }
 
-  const statusData = JSON.parse(statusResult.body);
-  const status: string = statusData.status;
+  const runtimeData = JSON.parse(runtimeResult.body) as {
+    status?: string;
+    available?: boolean;
+    messages?: Array<{ role: string; content: string }>;
+  };
+  const status: string = runtimeData.status ?? 'none';
 
   if (status === 'running' || status === 'awaiting') {
     writeResult({ status: 'running', sessionId });
@@ -257,24 +263,11 @@ async function pollSession(sessionId: string, port: number): Promise<void> {
   // status === 'completed': data is guaranteed on disk (finalizing→completed is atomic).
   // Try in-memory messages first (faster), then disk.
   if (status === 'completed') {
-    const snapshotResult = await httpRequest({
-      method: 'GET',
-      hostname: '127.0.0.1',
-      port,
-      path: `/api/agent-chat/runtime-snapshot?sessionId=${encodeURIComponent(sessionId)}`,
-      timeoutMs: POST_TIMEOUT_MS,
-    });
-    if (snapshotResult.statusCode === 200) {
-      const snapshotData = JSON.parse(snapshotResult.body) as {
-        available?: boolean;
-        messages?: Array<{ role: string; content: string }>;
-      };
-      const snapshotMessages = snapshotData.available ? (snapshotData.messages || []) : [];
-      const inMemoryAssistant = [...snapshotMessages].reverse().find(m => m.role === 'assistant');
-      if (inMemoryAssistant) {
-        writeResult({ status: 'completed', sessionId, content: inMemoryAssistant.content });
-        return;
-      }
+    const snapshotMessages = runtimeData.available ? (runtimeData.messages || []) : [];
+    const inMemoryAssistant = [...snapshotMessages].reverse().find(m => m.role === 'assistant');
+    if (inMemoryAssistant) {
+      writeResult({ status: 'completed', sessionId, content: inMemoryAssistant.content });
+      return;
     }
   }
 

@@ -534,7 +534,10 @@ class AgentChatManager {
 
   getRuntimeSnapshot(sessionId: string): {
     status: RunStatus;
+    runId: string;
     startedAt: string;
+    eventCount: number;
+    errorMessage?: string;
     messages: Array<{
       role: 'user' | 'assistant';
       content: string;
@@ -544,9 +547,15 @@ class AgentChatManager {
   } | null {
     const run = this.runs.get(sessionId);
     if (!run) return null;
+    const lastError = run.events.filter((e): e is { type: 'error'; message: string } =>
+      e.type === 'error' && 'message' in e
+    ).pop();
     return {
       status: run.status,
+      runId: run.runId,
       startedAt: new Date(run.startedAt).toISOString(),
+      eventCount: run.events.length,
+      errorMessage: lastError?.message,
       messages: run.messages.map(message => ({ ...message })),
     };
   }

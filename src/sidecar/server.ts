@@ -293,7 +293,7 @@ function handleRuntimeSnapshot(res: http.ServerResponse, url: URL): void {
   const sessionId = url.searchParams.get('sessionId') ?? '';
   const snapshot = agentChatManager.getRuntimeSnapshot(sessionId);
   if (!snapshot) {
-    jsonResponse(res, { available: false, messages: [] });
+    jsonResponse(res, { available: false, ...agentChatManager.getStatus(sessionId), messages: [] });
     return;
   }
   jsonResponse(res, { available: true, ...snapshot });
