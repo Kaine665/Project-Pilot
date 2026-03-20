@@ -273,6 +273,17 @@ function MiniExplorerNode({
             {node.name}
           </span>
         </button>
+        {isDir && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handleOpenFile(node.path); }}
+            className="shrink-0 rounded p-0.5 text-zinc-400 opacity-0 transition-all group-hover:opacity-100 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
+            title="打开真实文件夹"
+            aria-label={`打开文件夹 ${node.name}`}
+          >
+            <ExternalLink className="h-3 w-3" />
+          </button>
+        )}
         <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
           {!isDir && (
             <button type="button" onClick={(e) => { e.stopPropagation(); handleOpenFile(node.path); }}
@@ -306,7 +317,7 @@ function AgentFolderBrowser({ agentId }: { agentId: string }) {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/agents/files?agentId=${encodeURIComponent(agentId)}`)
+    fetch(`/api/agents/files?agentId=${encodeURIComponent(agentId)}`, { cache: 'no-store' })
       .then((r) => r.json())
       .then((data) => { setEntries(data.entries ?? []); })
       .catch(() => {})
@@ -335,7 +346,7 @@ function AgentFolderBrowser({ agentId }: { agentId: string }) {
 
   // Split into existing and non-existing entries
   const existingEntries = entries.filter((e) => e.exists);
-  const missingEntries = entries.filter((e) => !e.exists);
+  const missingEntries: AgentFileEntry[] = [];
 
   // Convert existing entries to TreeNode[] — files are leaf nodes, dirs are expandable
   const nodes: TreeNode[] = existingEntries.map((e) => ({

@@ -18,7 +18,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { promises as fs } from 'fs';
 import path from 'path';
-import { getDataDir } from '@/lib/file-store';
+import { getAgentById } from '@/lib/agents-store';
+import { getAgentDataPath, getDataDir } from '@/lib/file-store';
 
 export interface AgentFileEntry {
   /** Display name */
@@ -38,6 +39,32 @@ async function fileExists(p: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function extractLegacyDataDirName(systemPrompt?: string): string | null {
+  if (!systemPrompt) return null;
+  const match = systemPrompt.match(/agent-data[\\/]+([a-zA-Z0-9_-]+)/);
+  return match?.[1] ?? null;
+}
+
+async function resolveAgentDataStoreDir(agentId: string): Promise<string> {
+  const agent = await getAgentById(agentId, { includeArchived: true, includePrompt: true });
+  const legacyDataDirName = extractLegacyDataDirName(agent?.systemPrompt);
+  const candidates = [
+    agent?.slug ? getAgentDataPath(agent.slug) : null,
+    legacyDataDirName ? getAgentDataPath(legacyDataDirName) : null,
+    getAgentDataPath(agentId),
+  ].filter((value): value is string => !!value);
+
+  for (const candidate of candidates) {
+    if (await fileExists(candidate)) return candidate;
+  }
+
+  return candidates[0];
+}
+
+async function ensureAgentDataStoreDir(dirPath: string): Promise<void> {
+  await fs.mkdir(path.join(dirPath, 'data'), { recursive: true });
 }
 
 export async function GET(request: NextRequest) {
@@ -93,8 +120,9 @@ export async function GET(request: NextRequest) {
     exists: await fileExists(skillsDir),
   });
 
-  // 4. Agent data store: agent-data/{agentId}/
-  const dataStoreDir = path.join(dataDir, 'agent-data', agentId);
+  // 4. Agent data store: agents/data/{agentId}/
+  const dataStoreDir = await resolveAgentDataStoreDir(agentId);
+  await ensureAgentDataStoreDir(dataStoreDir);
   entries.push({
     name: '数据',
     path: dataStoreDir,
@@ -103,5 +131,8 @@ export async function GET(request: NextRequest) {
     exists: await fileExists(dataStoreDir),
   });
 
-  return NextResponse.json({ agentId, entries });
+  return NextResponse.json(
+    { agentId, entries },
+    { headers: { 'Cache-Control': 'no-store, max-age=0' } },
+  );
 }
