@@ -15,6 +15,7 @@
  *   POST /agent-chat/guest
  *   GET  /agent-chat/stream?sessionId=xxx     (SSE)
  *   GET  /agent-chat/status?sessionId=xxx
+ *   GET  /agent-chat/runtime-snapshot?sessionId=xxx
  *   POST /agent-chat/clear
  *   POST /agent-chat/update-config
  *   GET  /schedules
@@ -285,8 +286,17 @@ function handleStream(
 function handleStatus(res: http.ServerResponse, url: URL): void {
   const sessionId = url.searchParams.get('sessionId') ?? '';
   const info = agentChatManager.getStatus(sessionId);
-  const messages = agentChatManager.getMessages(sessionId);
-  jsonResponse(res, { ...info, messages });
+  jsonResponse(res, info);
+}
+
+function handleRuntimeSnapshot(res: http.ServerResponse, url: URL): void {
+  const sessionId = url.searchParams.get('sessionId') ?? '';
+  const snapshot = agentChatManager.getRuntimeSnapshot(sessionId);
+  if (!snapshot) {
+    jsonResponse(res, { available: false, messages: [] });
+    return;
+  }
+  jsonResponse(res, { available: true, ...snapshot });
 }
 
 async function handleClear(
@@ -475,6 +485,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === '/agent-chat/status' && method === 'GET') {
       handleStatus(res, url);
+      return;
+    }
+    if (pathname === '/agent-chat/runtime-snapshot' && method === 'GET') {
+      handleRuntimeSnapshot(res, url);
       return;
     }
     if (pathname === '/agent-chat/clear' && method === 'POST') {

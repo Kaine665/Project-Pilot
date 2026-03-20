@@ -527,6 +527,25 @@ class AgentChatManager {
     return run.messages;
   }
 
+  getRuntimeSnapshot(sessionId: string): {
+    status: RunStatus;
+    startedAt: string;
+    messages: Array<{
+      role: 'user' | 'assistant';
+      content: string;
+      images?: string[];
+      contentBlocks?: ContentBlock[];
+    }>;
+  } | null {
+    const run = this.runs.get(sessionId);
+    if (!run) return null;
+    return {
+      status: run.status,
+      startedAt: new Date(run.startedAt).toISOString(),
+      messages: run.messages.map(message => ({ ...message })),
+    };
+  }
+
   getRunningForAgent(agentId: string): string | null {
     for (const [, run] of this.runs) {
       if (run.agentId === agentId && run.status === 'running') {

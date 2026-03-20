@@ -189,7 +189,6 @@ async function pollSession(sessionId: string, port: number): Promise<{ status: '
 
   const statusData = JSON.parse(statusResult.body);
   const status: string = statusData.status;
-  const statusMessages: Array<{ role: string; content: string }> = statusData.messages || [];
 
   if (status === 'running') {
     return { status: 'running' };
@@ -201,9 +200,23 @@ async function pollSession(sessionId: string, port: number): Promise<{ status: '
 
   // status === 'completed': data guaranteed on disk. Try in-memory messages first.
   if (status === 'completed') {
-    const inMemoryAssistant = [...statusMessages].reverse().find(m => m.role === 'assistant');
-    if (inMemoryAssistant) {
-      return { status: 'completed', result: inMemoryAssistant.content };
+    const snapshotResult = await httpRequest({
+      method: 'GET',
+      hostname: '127.0.0.1',
+      port,
+      path: `/api/agent-chat/runtime-snapshot?sessionId=${encodeURIComponent(sessionId)}`,
+      timeoutMs: POST_TIMEOUT_MS,
+    });
+    if (snapshotResult.statusCode === 200) {
+      const snapshotData = JSON.parse(snapshotResult.body) as {
+        available?: boolean;
+        messages?: Array<{ role: string; content: string }>;
+      };
+      const snapshotMessages = snapshotData.available ? (snapshotData.messages || []) : [];
+      const inMemoryAssistant = [...snapshotMessages].reverse().find(m => m.role === 'assistant');
+      if (inMemoryAssistant) {
+        return { status: 'completed', result: inMemoryAssistant.content };
+      }
     }
   }
 

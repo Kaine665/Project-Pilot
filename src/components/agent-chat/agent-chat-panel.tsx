@@ -453,11 +453,18 @@ export function AgentChatPanel({
       // Defensive: if disk data ends with a user message, check in-memory status
       if (messages.length > 0 && messages[messages.length - 1].role === 'user') {
         try {
-          const statusRes = await fetch(`/api/agent-chat/status?sessionId=${sid}`, { cache: 'no-store' });
-          if (statusRes.ok) {
-            const statusData = await statusRes.json();
-            if (Array.isArray(statusData.messages) && statusData.messages.length > messages.length) {
-              messages = statusData.messages;
+          const snapshotRes = await fetch(
+            `/api/agent-chat/runtime-snapshot?sessionId=${sid}`,
+            { cache: 'no-store' },
+          );
+          if (snapshotRes.ok) {
+            const snapshotData = await snapshotRes.json();
+            if (
+              snapshotData.available
+              && Array.isArray(snapshotData.messages)
+              && snapshotData.messages.length > messages.length
+            ) {
+              messages = snapshotData.messages;
             }
           }
         } catch { /* ignore fallback failure */ }
