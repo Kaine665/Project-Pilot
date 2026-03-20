@@ -38,7 +38,10 @@ import { ChatScrollTimeline } from './chat-scroll-timeline';
 import { ChatSessionHeader } from './chat-session-header';
 import { ChatSessionSidebar } from './chat-session-sidebar';
 import { TaskCardBanner } from './task-card-banner';
-import { buildCacheKey, cachePanelState, popCachedState } from './agent-session-cache';
+import { AgentChatPanelView } from './agent-chat-panel-view';
+import { buildCacheKey } from './agent-session-cache';
+import { usePanelCacheSnapshot } from './use-panel-cache-snapshot';
+import { useSessionBootstrap } from './use-session-bootstrap';
 
 export function AgentChatPanel({
   agent,
@@ -236,28 +239,19 @@ export function AgentChatPanel({
   // Cache panel state on unmount (SPA navigation) so we can restore instantly on remount.
   // Backend runner is NOT stopped — the user is still in the app and may come back.
   // The beforeunload handler below handles actual page/tab close.
-  const cacheKeyRef = useRef(cacheKey);
-  cacheKeyRef.current = cacheKey;
-  const sessionRef = useRef(session);
-  sessionRef.current = session;
+  usePanelCacheSnapshot({
+    cacheKey,
+    sessionIdRef,
+    isStreamingRef,
+    showConfig,
+    showFolderExplorer,
+    showRuntimePanel,
+    queueExpanded,
+  });
 
   useEffect(() => {
     return () => {
-      // Snapshot current state into the module-level cache
-      const s = sessionRef.current;
-      cachePanelState(cacheKeyRef.current, {
-        messages: messagesRef.current,
-        isStreaming: isStreamingRef.current,
-        sessionId: sessionIdRef.current,
-        sessionTitle: s.title,
-        sessionList: s.list,
-        sessionConfig: s.config,
-        parentSession: s.parentSession,
-        childSessions: s.childSessions,
-        cachedAt: Date.now(),
-      });
-
-      // Disconnect SSE (frontend only) — backend keeps running
+      // Disconnect SSE (frontend only) - backend keeps running
       streamAbortRef.current?.abort();
       pendingAnswerRef.current = null;
       pendingUserMessagesRef.current = [];
@@ -865,156 +859,30 @@ export function AgentChatPanel({
     }
   }, [hasProject, t, setSessionIdSync]);
 
-  // Initialize: restore from cache (instant) or load sessions from server
-  useEffect(() => {
-    let cancelled = false;
-    const token = ++initTokenRef.current;
-    const isStale = () => cancelled || initTokenRef.current !== token;
-
-    // ── Try restoring from cache first (SPA route-back scenario) ──
-    // Guard: don't trust cache entries with empty messages when we have a real
-    // session to load. This prevents React Strict Mode's double-mount from
-    // poisoning the cache — the first mount's cleanup saves empty state (async
-    // fetch not yet complete), and the second mount would restore that empty cache
-    // and skip the server load entirely.
-    const cached = popCachedState(cacheKey);
-    if (cached && (cached.messages.length > 0 || !initialSessionId)) {
-      // Instantly restore UI state — no flash, no loading
-      chatDispatch({ type: 'SET_MESSAGES', messages: cached.messages });
-      setSessionIdSync(cached.sessionId);
-      sessionDispatch({ type: 'SET_TITLE', title: cached.sessionTitle });
-      sessionDispatch({ type: 'UPDATE_LIST', updater: () => cached.sessionList });
-      sessionDispatch({ type: 'SET_CONFIG', config: cached.sessionConfig });
-      sessionDispatch({ type: 'SET_NAV', parent: cached.parentSession, children: cached.childSessions });
-
-      // If the session was streaming, check backend and reconnect SSE
-      if (cached.isStreaming && cached.sessionId) {
-        const sid = cached.sessionId;
-        (async () => {
-          try {
-            const res = await fetch(`/api/agent-chat/status?sessionId=${sid}`, { cache: 'no-store' });
-            if (isStale()) return;
-            const data = await res.json();
-            if (data.status === 'running') {
-              markSessionRunning(sid, data.startedAt);
-              chatDispatch({ type: 'SEND_START' });
-              blocksRef.current = [];
-              fullTextRef.current = '';
-              toolCallsRef.current = [];
-              connectToStream(sid, 0);
-            } else {
-              // Backend finished while we were away — clear running indicator
-              clearSessionRunning(sid);
-            }
-          } catch { /* ignore */ }
-        })();
-      }
-    } else {
-      // ── No cache — full initialization from server ──
-      resetState();
-
-      if (hasProject && !projectKey) return;
-      if (!hasProject && initialSessionId === null) return;
-
-      const reconnectRunning = (sid: string, statusData: {
-        messages?: Array<{
-          role: 'user' | 'assistant';
-          content: string;
-          images?: string[];
-          contentBlocks?: ContentBlock[];
-        }>;
-        startedAt?: string;
-      }) => {
-        if (Array.isArray(statusData.messages) && statusData.messages.length > 0) {
-          const restored: ChatMessage[] = statusData.messages.map(
-            (m: { role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }, i: number) => ({
-              id: `restored-${i}`,
-              role: m.role,
-              content: m.content,
-              images: m.images,
-              contentBlocks: m.contentBlocks,
-              timestamp: '',
-            }),
-          );
-          chatDispatch({ type: 'SET_MESSAGES', messages: restored });
-        }
-        markSessionRunning(sid, statusData.startedAt);
-        chatDispatch({ type: 'SEND_START' });
-        blocksRef.current = [];
-        fullTextRef.current = '';
-        toolCallsRef.current = [];
-        connectToStream(sid, 0);
-      };
-
-      (async () => {
-        // Fast path: agents page with specific session
-        if (!hasProject && initialSessionId) {
-          setSessionIdSync(initialSessionId);
-          const [, statusRes] = await Promise.all([
-            loadSessionData(initialSessionId, token),
-            fetch(`/api/agent-chat/status?sessionId=${initialSessionId}`, { cache: 'no-store' }),
-          ]);
-          if (isStale()) return;
-          try {
-            const statusData = await statusRes.json();
-            if (statusData.status === 'running') {
-              reconnectRunning(initialSessionId, statusData);
-            }
-          } catch { /* ignore status parse failure */ }
-          return;
-        }
-
-        // Standard path: butler/project mode
-        const sessions = await fetchSessionList(agent.id, projectKey);
-        if (isStale()) return;
-
-        if (sessions.length > 0) {
-          const latest = sessions[0];
-          setSessionIdSync(latest.id);
-          sessionDispatch({ type: 'SET_TITLE', title: latest.title });
-          const [, statusRes] = await Promise.all([
-            loadSessionData(latest.id, token),
-            fetch(`/api/agent-chat/status?sessionId=${latest.id}`, { cache: 'no-store' }),
-          ]);
-          if (isStale()) return;
-          try {
-            const statusData = await statusRes.json();
-            if (statusData.status === 'running') {
-              reconnectRunning(latest.id, statusData);
-              return;
-            }
-          } catch { /* ignore */ }
-
-          for (let i = 1; i < sessions.length; i++) {
-            if (isStale()) return;
-            const sid = sessions[i].id;
-            const res = await fetch(`/api/agent-chat/status?sessionId=${sid}`, { cache: 'no-store' });
-            const data = await res.json();
-            if (!isStale() && data.status === 'running') {
-              setSessionIdSync(sid);
-              sessionDispatch({ type: 'SET_TITLE', title: sessions[i].title });
-              await loadSessionData(sid, token);
-              if (isStale()) return;
-              reconnectRunning(sid, data);
-              break;
-            }
-          }
-        }
-      })();
-    }
-
-    return () => {
-      cancelled = true;
-      if (initTokenRef.current === token) {
-        initTokenRef.current += 1;
-      }
-      if (streamAbortRef.current) {
-        streamAbortRef.current.abort();
-        streamAbortRef.current = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agent.id, projectKey]);
+  useSessionBootstrap({
+    agentId: agent.id,
+    projectKey,
+    initialSessionId,
+    hasProject,
+    cacheKey,
+    initTokenRef,
+    streamAbortRef,
+    setShowConfig,
+    setShowFolderExplorer,
+    setShowRuntimePanel,
+    setQueueExpanded,
+    resetState,
+    fetchSessionList,
+    setSessionIdSync,
+    loadSessionData,
+    sessionDispatch,
+    markSessionRunning,
+    chatDispatch,
+    blocksRef,
+    fullTextRef,
+    toolCallsRef,
+    connectToStream,
+  });
 
   useEffect(() => {
     if (!sessionId || isStreaming || pendingUserQueueCount === 0) return;
@@ -1635,10 +1503,6 @@ export function AgentChatPanel({
     setPreviewFilePath(filePath);
   }, []);
 
-  const handleToggleRuntimeDrawer = useCallback(() => {
-    setShowRuntimePanel((v) => !v);
-  }, []);
-
   // ── Shared UI pieces ──
 
   const thinkingText = hasProject ? t('chat.thinking') : '思考中...';
@@ -1797,245 +1661,187 @@ export function AgentChatPanel({
     onActionRestore: handleActionRestore,
   };
 
-  // ── Plain mode (agents page, no variant/projectKey) ──
-  if (!hasProject) {
-    return (
-      <div className="flex h-full">
-      <div className="flex h-full flex-1 flex-col min-w-0">
-        {/* Plain mode toolbar */}
-        <div className="flex items-center justify-end gap-0.5 px-3 py-1.5 border-b border-zinc-100 dark:border-zinc-800">
-          <button
-            type="button"
-            onClick={() => setShowConfig(v => !v)}
-            className={`p-1 rounded transition-colors ${
-              showConfig
-                ? 'text-blue-500 dark:text-blue-400'
-                : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
-            }`}
-            title="会话配置"
-          >
-            <Settings className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={handleToggleRuntimeDrawer}
-            className={`p-1 rounded transition-colors ${
-              showRuntimePanel
-                ? 'text-blue-500 dark:text-blue-400'
-                : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
-            }`}
-            title="运行时面板"
-          >
-            <PanelRight className="h-3.5 w-3.5" />
-          </button>
-        </div>
-
-        {/* Messages + Queue overlay */}
-        <div className="relative flex-1 min-h-0">
-          <div
-            ref={scrollRef}
-            onScroll={handleChatScroll}
-            className={`h-full space-y-3 overflow-y-auto px-4 py-4 pr-24 ${isStreaming && pendingUserMessages.length > 0 ? 'pb-44' : ''}`}
-          >
-            {messages.length === 0 && !isStreaming ? (
-              <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
-                <Bot className="h-10 w-10 stroke-1" />
-                <p className="text-sm">Send a message to {agent.name} to start chatting.</p>
-              </div>
-            ) : (
-              <ChatMessageList
-                {...messageListProps}
-                showCompressHint={messages.length > 20 && !compressDismissed && !isStreaming}
-              />
-            )}
-          </div>
-
-          <ChatScrollTimeline
-            messages={messages}
-            isStreaming={isStreaming}
-            streamingBlocks={streamingBlocks}
-            currentMessageId={currentMessageId}
-            onSelectMessage={handleSelectTimelineMessage}
-          />
-
-          {isStreaming && pendingUserMessages.length > 0 && (
-            <ChatQueueOverlay
-              pendingMessages={pendingUserMessages}
-              expanded={queueExpanded}
-              onToggleExpanded={updateQueueExpanded}
-              onSendNow={handleSendNow}
-              onRemove={handleRemoveFromQueue}
-            />
-          )}
-        </div>
-
-        {notificationBanners}
-
-        {/* Input area */}
-        <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
-          <ChatInput
-            {...chatInputProps}
-            placeholder={`Send a message to ${agent.name}...`}
-          />
-        </div>
-
-        {dialogs}
-      </div>
-      {configDrawer}
-      {runtimeDrawer}
-      {/* Right-side folder explorer */}
-      <div
-        className={`shrink-0 overflow-hidden border-l border-zinc-200 transition-[width] duration-200 ease-in-out dark:border-zinc-800 ${
-          showFolderExplorer ? 'w-[280px]' : 'w-0 border-l-0'
+  const plainToolbar = (
+    <div className="flex items-center justify-end gap-0.5 border-b border-zinc-100 px-3 py-1.5 dark:border-zinc-800">
+      <button
+        type="button"
+        onClick={() => setShowConfig(v => !v)}
+        className={`p-1 rounded transition-colors ${
+          showConfig
+            ? 'text-blue-500 dark:text-blue-400'
+            : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
         }`}
       >
-        <div className="h-full w-[280px]">
-          <FolderExplorerPanel
-            onClose={() => setShowFolderExplorer(false)}
-            onInsertPath={handleInsertFilePath}
-            initialPath={projectPath}
-          />
-        </div>
-      </div>
-      {planPanel}
-      {actionPanel}
-      </div>
-    );
-  }
-
-  // ── Project/Butler mode ──
-
-  if (!projectKey) {
-    return (
-      <div className="flex h-full items-center justify-center p-4 text-center">
-        <p className="text-xs text-zinc-400">{t('projects.selectFirst')}</p>
-      </div>
-    );
-  }
-
-  const chatArea = (
-    <div className="flex h-full">
-    <div className="relative flex h-full flex-1 flex-col min-w-0">
-      <ChatSessionHeader
-        isFull={isFull}
-        sessionId={sessionId}
-        sessionTitle={sessionTitle}
-        sessionList={sessionList}
-        sessionClockNow={sessionClockNow}
-        sessionConfig={sessionConfig}
-        isStreaming={isStreaming}
-        showConfig={showConfig}
-        parentSession={parentSession}
-        childSessions={childSessions}
-        showChildList={showChildList}
-        messages={messages}
-        sessionDispatch={sessionDispatch}
-        onSwitchSession={handleSwitchSession}
-        onNewSession={handleNewSession}
-        onDelete={handleDelete}
-        onToggleConfig={() => setShowConfig(v => !v)}
-        onCompressOpen={() => setCompressDialogOpen(true)}
-        showRuntimePanel={showRuntimePanel}
-        onToggleRuntimePanel={handleToggleRuntimeDrawer}
-      />
-
-      {/* Messages + Queue overlay */}
-      <div className="relative flex-1 min-h-0">
-        <div
-          ref={scrollRef}
-          onScroll={handleChatScroll}
-          className={`h-full space-y-3 overflow-y-auto px-3 py-3 pr-22 ${isStreaming && pendingUserMessages.length > 0 ? 'pb-44' : ''}`}
-        >
-        {/* Task Card Banner */}
-        {taskCard && <TaskCardBanner card={taskCard} />}
-
-        {messages.length === 0 && !isStreaming ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
-            <Sparkles className="h-8 w-8 stroke-1" />
-            <p className="text-xs">{t('chat.plannerHint')}</p>
-          </div>
-        ) : (
-          <ChatMessageList
-            {...messageListProps}
-            showCompressHint={messages.length >= 20 && !compressDismissed && !isStreaming}
-          />
-        )}
-        </div>
-
-        <ChatScrollTimeline
-          messages={messages}
-          isStreaming={isStreaming}
-          streamingBlocks={streamingBlocks}
-          currentMessageId={currentMessageId}
-          onSelectMessage={handleSelectTimelineMessage}
-        />
-
-        {isStreaming && pendingUserMessages.length > 0 && (
-          <ChatQueueOverlay
-            pendingMessages={pendingUserMessages}
-            expanded={queueExpanded}
-            onToggleExpanded={updateQueueExpanded}
-            onSendNow={handleSendNow}
-            onRemove={handleRemoveFromQueue}
-          />
-        )}
-      </div>
-
-      {/* Input area */}
-      <div className="border-t border-zinc-100 p-2 dark:border-zinc-800">
-        <ChatInput
-          {...chatInputProps}
-          placeholder={t('chat.plannerPlaceholder')}
-          minHeight={isFull ? '120px' : '200px'}
-          fullWidth
-        />
-      </div>
-
-      {/* Notifications */}
-      {!isStreaming && (
-        <ChatNotificationBanners
-          knowledgeDrafts={knowledgeDrafts}
-          docsSaved={docsSaved}
-          topicCompletion={topicCompletion}
-          onDismissKnowledge={handleDismissKnowledge}
-          onDismissDocs={handleDismissDocs}
-          onDismissTopicCompletion={handleDismissTopicCompletion}
-          onScrollToAction={handleScrollToAction}
-          checkpointSaved={checkpointSaved}
-          onResumeCheckpoint={handleResumeCheckpoint}
-          onDismissCheckpoint={handleDismissCheckpoint}
-          className="mx-2 mb-1"
-        />
-      )}
-
-      {dialogs}
-    </div>
-    {configDrawer}
-    {runtimeDrawer}
-    {planPanel}
-    {actionPanel}
+        <Settings className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={() => setShowRuntimePanel(v => !v)}
+        className={`p-1 rounded transition-colors ${
+          showRuntimePanel
+            ? 'text-blue-500 dark:text-blue-400'
+            : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+        }`}
+      >
+        <PanelRight className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 
-  // Full mode: session sidebar + chat area
-  if (isFull) {
-    return (
-      <div className="flex h-full w-full">
-        <ChatSessionSidebar
-          sessionList={sessionList}
-          currentSessionId={sessionId}
-          sessionClockNow={sessionClockNow}
-          isStreaming={isStreaming}
-          onSwitchSession={handleSwitchSession}
-          onNewSession={handleNewSession}
-        />
-        <div className="flex-1 min-w-0">
-          {chatArea}
-        </div>
-      </div>
-    );
-  }
+  const plainEmptyState = (
+    <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
+      <Bot className="h-10 w-10 stroke-1" />
+      <p className="text-sm">Send a message to {agent.name} to start chatting.</p>
+    </div>
+  );
 
-  // Sidebar mode
-  return chatArea;
+  const plainMessageList = (
+    <ChatMessageList
+      {...messageListProps}
+      showCompressHint={messages.length > 20 && !compressDismissed && !isStreaming}
+    />
+  );
+
+  const plainInput = (
+    <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
+      <ChatInput
+        {...chatInputProps}
+        placeholder={`Send a message to ${agent.name}...`}
+      />
+    </div>
+  );
+
+  const projectHeader = (
+    <ChatSessionHeader
+      isFull={isFull}
+      sessionId={sessionId}
+      sessionTitle={sessionTitle}
+      sessionList={sessionList}
+      sessionClockNow={sessionClockNow}
+      sessionConfig={sessionConfig}
+      isStreaming={isStreaming}
+      showConfig={showConfig}
+      parentSession={parentSession}
+      childSessions={childSessions}
+      showChildList={showChildList}
+      messages={messages}
+      sessionDispatch={sessionDispatch}
+      onSwitchSession={handleSwitchSession}
+      onNewSession={handleNewSession}
+      onDelete={handleDelete}
+      onToggleConfig={() => setShowConfig(v => !v)}
+      onCompressOpen={() => setCompressDialogOpen(true)}
+      showRuntimePanel={showRuntimePanel}
+      onToggleRuntimePanel={() => setShowRuntimePanel(v => !v)}
+    />
+  );
+
+  const projectTaskBanner = taskCard ? <TaskCardBanner card={taskCard} /> : null;
+
+  const projectEmptyState = (
+    <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
+      <Sparkles className="h-8 w-8 stroke-1" />
+      <p className="text-xs">{t('chat.plannerHint')}</p>
+    </div>
+  );
+
+  const projectMessageList = (
+    <ChatMessageList
+      {...messageListProps}
+      showCompressHint={messages.length >= 20 && !compressDismissed && !isStreaming}
+    />
+  );
+
+  const projectInput = (
+    <div className="border-t border-zinc-100 p-2 dark:border-zinc-800">
+      <ChatInput
+        {...chatInputProps}
+        placeholder={t('chat.plannerPlaceholder')}
+        minHeight={isFull ? '120px' : '200px'}
+        fullWidth
+      />
+    </div>
+  );
+
+  const queueOverlay = (
+    <ChatQueueOverlay
+      pendingMessages={pendingUserMessages}
+      expanded={queueExpanded}
+      onToggleExpanded={updateQueueExpanded}
+      onSendNow={handleSendNow}
+      onRemove={handleRemoveFromQueue}
+    />
+  );
+
+  const timeline = (
+    <ChatScrollTimeline
+      messages={messages}
+      isStreaming={isStreaming}
+      streamingBlocks={streamingBlocks}
+      currentMessageId={currentMessageId}
+      onSelectMessage={handleSelectTimelineMessage}
+    />
+  );
+
+  const folderExplorer = (
+    <div
+      className={`shrink-0 overflow-hidden border-l border-zinc-200 transition-[width] duration-200 ease-in-out dark:border-zinc-800 ${
+        showFolderExplorer ? 'w-[280px]' : 'w-0 border-l-0'
+      }`}
+    >
+      <div className="h-full w-[280px]">
+        <FolderExplorerPanel
+          onClose={() => setShowFolderExplorer(false)}
+          onInsertPath={handleInsertFilePath}
+          initialPath={projectPath}
+        />
+      </div>
+    </div>
+  );
+
+  const sidebar = (
+    <ChatSessionSidebar
+      sessionList={sessionList}
+      currentSessionId={sessionId}
+      sessionClockNow={sessionClockNow}
+      isStreaming={isStreaming}
+      onSwitchSession={handleSwitchSession}
+      onNewSession={handleNewSession}
+    />
+  );
+
+  return (
+    <AgentChatPanelView
+      hasProject={hasProject}
+      isFull={isFull}
+      projectKey={projectKey}
+      selectProjectHint={t('projects.selectFirst')}
+      scrollRef={scrollRef}
+      onChatScroll={handleChatScroll}
+      hasPendingQueue={isStreaming && pendingUserMessages.length > 0}
+      plainScrollClassName="px-4 py-4 pr-24"
+      projectScrollClassName="px-3 py-3 pr-22"
+      plainToolbar={plainToolbar}
+      showPlainEmptyState={messages.length === 0 && !isStreaming}
+      plainEmptyState={plainEmptyState}
+      plainMessageList={plainMessageList}
+      plainInput={plainInput}
+      projectHeader={projectHeader}
+      projectTaskBanner={projectTaskBanner}
+      showProjectEmptyState={messages.length === 0 && !isStreaming}
+      projectEmptyState={projectEmptyState}
+      projectMessageList={projectMessageList}
+      projectInput={projectInput}
+      timeline={timeline}
+      queueOverlay={queueOverlay}
+      notificationBanners={notificationBanners}
+      dialogs={dialogs}
+      configDrawer={configDrawer}
+      runtimeDrawer={runtimeDrawer}
+      folderExplorer={folderExplorer}
+      planPanel={planPanel}
+      actionPanel={actionPanel}
+      sidebar={sidebar}
+    />
+  );
 }
