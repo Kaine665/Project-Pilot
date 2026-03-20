@@ -1,6 +1,5 @@
 import type { Agent, ProviderId, OpenAIReasoningEffort, ChatSSEEvent } from '@/types';
-import type { PendingUserQueueItem, SessionConfig } from '@/types/agent-chat';
-import type { SessionNavLink } from '@/components/agent-session-utils';
+import type { DeferredInputBufferItem } from '@/types/agent-chat';
 
 // ── Exported types ──
 
@@ -59,7 +58,9 @@ export function stripSessionTitleTag(text: string): string {
   return text.replace(/<session-title>[\s\S]*?<\/session-title>\s*/, '');
 }
 
-export function clonePendingQueueItems(items: PendingUserQueueItem[]): PendingUserQueueItem[] {
+export function cloneDeferredInputBufferItems(
+  items: DeferredInputBufferItem[],
+): DeferredInputBufferItem[] {
   return items.map((item) => ({
     text: item.text,
     images: item.images?.length ? [...item.images] : undefined,

@@ -12,7 +12,7 @@
 export interface CachedPanelState {
   // Session selection anchor
   sessionId: string | null;
-  isStreaming: boolean;
+  shouldReconnect: boolean;
 
   // Pure panel-local view state
   showConfig: boolean;
