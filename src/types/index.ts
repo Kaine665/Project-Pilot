@@ -182,6 +182,18 @@ export const DEFAULT_TITLE_GENERATION: TitleGenerationSettings = {
   chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }],
 };
 
+export const BUILT_IN_NOTIFICATION_SOUND_IDS = [
+  'classic',
+  'glass',
+  'soft',
+  'pulse',
+] as const;
+
+export type BuiltInNotificationSoundId =
+  (typeof BUILT_IN_NOTIFICATION_SOUND_IDS)[number];
+
+export type NotificationSoundSource = 'builtin' | 'custom';
+
 /** 通知和音频设置 */
 export interface NotificationSettings {
   /** 是否启用桌面通知（默认 true） */
@@ -192,6 +204,14 @@ export interface NotificationSettings {
   soundVolume?: number;
   /** 仅在窗口失焦时通知（默认 false，始终通知） */
   onlyWhenUnfocused?: boolean;
+  /** 通知音频来源 */
+  soundSource?: NotificationSoundSource;
+  /** 内置音色 ID */
+  builtinSound?: BuiltInNotificationSoundId;
+  /** 自定义音频文件的 Data URL */
+  customSoundDataUrl?: string;
+  /** 自定义音频文件名，仅用于 UI 展示 */
+  customSoundName?: string;
 }
 
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
@@ -199,6 +219,8 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   soundEnabled: true,
   soundVolume: 0.5,
   onlyWhenUnfocused: false,
+  soundSource: 'builtin',
+  builtinSound: 'classic',
 };
 
 /** 全局应用设置 */

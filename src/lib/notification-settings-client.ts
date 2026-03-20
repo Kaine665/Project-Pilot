@@ -9,6 +9,7 @@
 
 import type { NotificationSettings } from '@/types';
 import { DEFAULT_NOTIFICATION_SETTINGS } from '@/types';
+import { normalizeNotificationSettings } from './notification/notification-sound-presets';
 
 /**
  * 从 API 获取通知设置（客户端专用）
@@ -16,10 +17,10 @@ import { DEFAULT_NOTIFICATION_SETTINGS } from '@/types';
 export async function getNotificationSettings(): Promise<NotificationSettings> {
   const res = await fetch('/api/settings', { cache: 'no-store' });
   if (!res.ok) {
-    return DEFAULT_NOTIFICATION_SETTINGS;
+    return normalizeNotificationSettings(DEFAULT_NOTIFICATION_SETTINGS);
   }
   const data = await res.json();
-  return data.notifications ?? DEFAULT_NOTIFICATION_SETTINGS;
+  return normalizeNotificationSettings(data.notifications ?? DEFAULT_NOTIFICATION_SETTINGS);
 }
 
 /**
@@ -30,15 +31,21 @@ export async function updateNotificationSettings(
   updates: Partial<NotificationSettings>,
 ): Promise<void> {
   const current = await getNotificationSettings();
-  const merged: NotificationSettings = {
+  const merged: NotificationSettings = normalizeNotificationSettings({
     ...current,
     ...updates,
-  };
+  });
 
   const res = await fetch('/api/settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ notifications: merged }),
+    body: JSON.stringify({
+      notifications: {
+        ...merged,
+        ...(merged.customSoundDataUrl === undefined ? { customSoundDataUrl: null } : {}),
+        ...(merged.customSoundName === undefined ? { customSoundName: null } : {}),
+      },
+    }),
   });
 
   if (!res.ok) {

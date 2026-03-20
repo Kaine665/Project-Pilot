@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSettings, saveSettings } from '@/lib/settings-manager';
-import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
+import {
+  isValidBuiltInSoundId,
+  isValidSoundSource,
+  MAX_CUSTOM_SOUND_DATA_URL_LENGTH,
+  normalizeNotificationSettings,
+} from '@/lib/notification/notification-sound-presets';
 import type { ClaudeAuthMode, ProviderId, EffortLevel, OpenAIReasoningEffort, AppSettings, DangerCategory, DangerActionLevel, CustomProviderConfig } from '@/types';
 import { DEFAULT_DANGER_SETTINGS, DEFAULT_NOTIFICATION_SETTINGS, BUILT_IN_PROVIDER_IDS } from '@/types';
 
@@ -254,7 +259,7 @@ export async function POST(request: NextRequest) {
     if (typeof body.notifications !== 'object' || body.notifications === null) {
       return NextResponse.json({ error: 'notifications must be an object' }, { status: 400 });
     }
-    const n = body.notifications;
+    const n = body.notifications as Record<string, unknown>;
     if (n.enabled !== undefined && typeof n.enabled !== 'boolean') {
       return NextResponse.json({ error: 'notifications.enabled must be a boolean' }, { status: 400 });
     }
@@ -269,6 +274,34 @@ export async function POST(request: NextRequest) {
     }
     if (n.onlyWhenUnfocused !== undefined && typeof n.onlyWhenUnfocused !== 'boolean') {
       return NextResponse.json({ error: 'notifications.onlyWhenUnfocused must be a boolean' }, { status: 400 });
+    }
+    if (n.soundSource !== undefined && !isValidSoundSource(n.soundSource)) {
+      return NextResponse.json({ error: 'notifications.soundSource must be builtin or custom' }, { status: 400 });
+    }
+    if (n.builtinSound !== undefined && !isValidBuiltInSoundId(n.builtinSound)) {
+      return NextResponse.json({ error: 'notifications.builtinSound is invalid' }, { status: 400 });
+    }
+    if (n.customSoundDataUrl !== undefined) {
+      if (n.customSoundDataUrl !== null && typeof n.customSoundDataUrl !== 'string') {
+        return NextResponse.json({ error: 'notifications.customSoundDataUrl must be a string' }, { status: 400 });
+      }
+      if (
+        typeof n.customSoundDataUrl === 'string'
+        && (
+          !n.customSoundDataUrl.startsWith('data:audio/')
+          || n.customSoundDataUrl.length > MAX_CUSTOM_SOUND_DATA_URL_LENGTH
+        )
+      ) {
+        return NextResponse.json({ error: 'notifications.customSoundDataUrl must be a short audio data URL' }, { status: 400 });
+      }
+    }
+    if (n.customSoundName !== undefined) {
+      if (n.customSoundName !== null && typeof n.customSoundName !== 'string') {
+        return NextResponse.json({ error: 'notifications.customSoundName must be a string' }, { status: 400 });
+      }
+      if (typeof n.customSoundName === 'string' && n.customSoundName.length > 120) {
+        return NextResponse.json({ error: 'notifications.customSoundName too long' }, { status: 400 });
+      }
     }
   }
 
@@ -303,10 +336,10 @@ export async function POST(request: NextRequest) {
       },
     }),
     ...(body.notifications !== undefined && {
-      notifications: {
+      notifications: normalizeNotificationSettings({
         ...(current.notifications ?? DEFAULT_NOTIFICATION_SETTINGS),
         ...body.notifications,
-      },
+      }),
     }),
     version: current.version,
   };
