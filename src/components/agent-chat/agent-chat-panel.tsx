@@ -161,6 +161,7 @@ export function AgentChatPanel({
   const finalizingRef = useRef(false);
   const streamTargetSessionRef = useRef<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const sessionTitleRef = useRef<string>(defaultSessionTitle);
   const initTokenRef = useRef(0);
   const doSendRef = useRef<(text: string, images?: string[]) => void>(() => {});
   const isStreamingRef = useRef(false);
@@ -184,6 +185,11 @@ export function AgentChatPanel({
   useEffect(() => {
     messagesRef.current = chat.messages;
   }, [chat.messages]);
+
+  // Keep sessionTitleRef in sync so finalizeStream can read it without being a dep (avoids useSessionBootstrap loop)
+  useEffect(() => {
+    sessionTitleRef.current = sessionTitle;
+  }, [sessionTitle]);
 
   const persistPendingUserQueue = useCallback((
     targetSessionId: string,
@@ -577,14 +583,14 @@ export function AgentChatPanel({
       notifyCompletion({
         agentName: agent.name || agent.id,
         sessionId: completedSid,
-        sessionTitle: sessionTitle || 'Untitled Session',
+        sessionTitle: sessionTitleRef.current || 'Untitled Session',
         navigateToSession: () => {
           const sessionUrl = buildSessionUrl(agent.id, completedSid);
           router.push(sessionUrl);
         },
       }).catch(err => console.error('通知发送失败:', err));
     }
-  }, [agent.id, agent.name, projectKey, fetchSessionList, onSessionChange, flushQueuedUserMessage, router, sessionTitle, notifyCompletion]);
+  }, [agent.id, agent.name, projectKey, fetchSessionList, onSessionChange, flushQueuedUserMessage, router, notifyCompletion]);
 
   // Connect to SSE stream
   const connectToStream = useCallback((targetSessionId: string, since: number) => {
