@@ -37,7 +37,7 @@ import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-pr
 import { runSatelliteTasks } from '@/lib/satellite-tasks';
 import '@/lib/satellite-tasks'; // side-effect: registers all satellite tasks
 import type { SatelliteContext } from '@/lib/satellite-tasks';
-import type { RunStatus, RunStatusInfo } from './types';
+import type { RunStatus, RunStatusInfo, SessionExecution } from './types';
 import { appendUsageRecord } from '@/lib/usage-store';
 
 // Re-export store functions so existing callers don't break during migration
@@ -53,7 +53,6 @@ import {
   deleteSessionFromDisk,
   updateConfigOnDisk,
   writeStreamingDraft,
-  deleteStreamingDraft,
 } from './agent-chat-session-store';
 
 // ── Types ──
@@ -128,6 +127,7 @@ export interface AgentChatRun {
   _tokenInputs: number;
   _tokenOutputs: number;
   _contextWindow?: number;
+  _awaitingSubAgents?: SessionExecution['awaiting'];
 
   /**
    * Resolves when consumeRunnerStream() (including finalizeRun) has completed.
@@ -175,30 +175,31 @@ class AgentChatManager {
     effortOverride?: string,
     ephemeral?: boolean,
     _depth?: number,
-    background?: boolean,
+    _background?: boolean,
   ): Promise<string> {
     const agent = await loadAgent(agentId);
+    void _depth;
+    void _background;
 
-    let existing = this.runs.get(sessionId);
+    const existingRun = this.runs.get(sessionId);
+    const diskSession = existingRun ? null : await loadSession(sessionId);
 
-    // Hydrate from disk if not in memory
-    if (!existing) {
-      const diskSession = await loadSession(sessionId);
-      if (diskSession) {
-        existing = this.hydrateFromDisk(diskSession);
-        this.runs.set(sessionId, existing);
-      }
-    }
-
-    if (existing?.status === 'running') {
+    if (existingRun?.status === 'running') {
       throw new Error('This session is already running');
     }
 
-    const messages = existing?.messages ? [...existing.messages] : [];
+    const existingMessages = existingRun?.messages ?? diskSession?.messages ?? [];
+    const messages = [...existingMessages];
     const dataUrls = images?.map(img => `data:${img.mediaType};base64,${img.data}`);
     messages.push({ role: 'user', content: message, images: dataUrls?.length ? dataUrls : undefined });
 
-    const sessionConfig = initialConfig ?? existing?.config;
+    const sessionConfig = initialConfig ?? existingRun?.config ?? diskSession?.config;
+    const existingProjectKey = existingRun?.projectKey ?? diskSession?.projectKey;
+    const existingSessionTitle = existingRun?.sessionTitle ?? diskSession?.title;
+    const existingParentSessionId = existingRun?.parentSessionId ?? diskSession?.parentSessionId;
+    const existingClaudeSessionId = existingRun?.claudeSessionId ?? diskSession?.claudeSessionId;
+    const existingCheckpoint = existingRun?.checkpoint ?? diskSession?.checkpoint;
+    const existingGuardRetryCount = existingRun?._guardRetryCount ?? diskSession?.guardRetryCount;
 
     // ── Resolve provider / model with priority chain ──
     const resolvedProvider = providerOverride
@@ -212,17 +213,17 @@ class AgentChatManager {
 
     // 切换 provider/model 后，旧的 resume session 可能不兼容（常见于同会话切换渠道）。
     // 这种情况下必须放弃 resume，避免 Claude SDK 直接 error_during_execution / code 1。
-    const prevProvider = existing?.config?.provider;
-    const prevModel = existing?.config?.model;
-    const hasResumeId = !!existing?.claudeSessionId;
-    const lastRole = existing?.messages?.[existing.messages.length - 1]?.role;
+    const prevProvider = existingRun?.config?.provider ?? diskSession?.config?.provider;
+    const prevModel = existingRun?.config?.model ?? diskSession?.config?.model;
+    const hasResumeId = !!existingClaudeSessionId;
+    const lastRole = existingMessages[existingMessages.length - 1]?.role;
     const previousTurnIncomplete = lastRole === 'user';
     const providerChanged =
       hasResumeId && !!prevProvider && !!resolvedProvider && prevProvider !== resolvedProvider;
     const modelChanged =
       hasResumeId && !!prevModel && !!resolvedModel && prevModel !== resolvedModel;
     const isResume = hasResumeId && !providerChanged && !modelChanged && !previousTurnIncomplete;
-    const resumeSessionId = isResume ? existing?.claudeSessionId : undefined;
+    const resumeSessionId = isResume ? existingClaudeSessionId : undefined;
 
     // Persist resolved provider/model into session config
     const persistedConfig: SessionConfig = {
@@ -243,13 +244,12 @@ class AgentChatManager {
     }
 
     // Build prompt
-    const sessionProjectKey = flowContext?.projectKey ?? existing?.projectKey;
+    const sessionProjectKey = flowContext?.projectKey ?? existingProjectKey;
 
     // 当 resume 不可用但存在历史消息时，将历史对话注入 prompt
     // 这样即使 SDK 会话是全新的，AI 也能知道之前聊过什么
-    const existingMessages = existing?.messages ?? [];
     const conversationHistory = (!resumeSessionId && existingMessages.length > 0)
-      ? formatConversationHistory(existingMessages, existing?.checkpoint ?? undefined)
+      ? formatConversationHistory(existingMessages, existingCheckpoint ?? undefined)
       : undefined;
 
     if (conversationHistory && !resumeSessionId && existingMessages.length > 0) {
@@ -271,14 +271,13 @@ class AgentChatManager {
       await eagerlySaveUserTurn({
         sessionId,
         agentId,
-        projectKey: flowContext?.projectKey ?? existing?.projectKey,
-        sessionTitle: existing?.sessionTitle ?? initialTitle,
+        projectKey: flowContext?.projectKey ?? existingProjectKey,
+        sessionTitle: existingSessionTitle ?? initialTitle,
         messages,
         claudeSessionId: resumeSessionId,
         config: persistedConfig,
-        parentSessionId: parentSessionId ?? existing?.parentSessionId,
+        parentSessionId: parentSessionId ?? existingParentSessionId,
         importedTurnIndices: undefined,
-        background: background || undefined,
       });
     }
 
@@ -288,8 +287,8 @@ class AgentChatManager {
       runId,
       sessionId,
       agentId,
-      projectKey: flowContext?.projectKey ?? existing?.projectKey,
-      sessionTitle: existing?.sessionTitle ?? initialTitle,
+      projectKey: flowContext?.projectKey ?? existingProjectKey,
+      sessionTitle: existingSessionTitle ?? initialTitle,
       runner: null,
       status: 'running',
       startedAt: Date.now(),
@@ -301,9 +300,9 @@ class AgentChatManager {
       claudeSessionId: resumeSessionId,
       messages,
       config: persistedConfig,
-      parentSessionId: parentSessionId ?? existing?.parentSessionId,
+      parentSessionId: parentSessionId ?? existingParentSessionId,
       _images: images,
-      _guardRetryCount: existing?._guardRetryCount,
+      _guardRetryCount: existingGuardRetryCount,
       _ephemeral: ephemeral,
       _tokenInputs: 0,
       _tokenOutputs: 0,
@@ -385,13 +384,15 @@ class AgentChatManager {
 
     const agent = await loadAgent(agentId);
 
-    const existing = this.runs.get(guestSessionId);
-    if (existing?.status === 'running') {
+    const existingRun = this.runs.get(guestSessionId);
+    const diskSession = existingRun ? null : await loadSession(guestSessionId);
+    if (existingRun?.status === 'running') {
       throw new Error('This guest session is already running');
     }
 
-    const isResume = !!existing?.claudeSessionId;
-    const messages = existing?.messages ? [...existing.messages] : [];
+    const existingMessages = existingRun?.messages ?? diskSession?.messages ?? [];
+    const isResume = !!(existingRun?.claudeSessionId ?? diskSession?.claudeSessionId);
+    const messages = [...existingMessages];
     messages.push({ role: 'user', content: message });
 
     const promptContent = await buildGuestAgentPrompt(agent, message, selectedTurns);
@@ -408,7 +409,8 @@ class AgentChatManager {
       runId,
       sessionId: guestSessionId,
       agentId,
-      sessionTitle: existing?.sessionTitle,
+      projectKey: diskSession?.projectKey ?? hostSession.projectKey,
+      sessionTitle: existingRun?.sessionTitle ?? diskSession?.title,
       runner: null,
       status: 'running',
       startedAt: Date.now(),
@@ -417,10 +419,13 @@ class AgentChatManager {
       assistantText: '',
       contentBlocks: [],
       toolCalls: [],
-      claudeSessionId: existing?.claudeSessionId,
+      claudeSessionId: existingRun?.claudeSessionId ?? diskSession?.claudeSessionId,
       messages,
       parentSessionId,
       importedTurnIndices: turnIndices,
+      checkpoint: diskSession?.checkpoint,
+      config: diskSession?.config,
+      _guardRetryCount: diskSession?.guardRetryCount,
       _tokenInputs: 0,
       _tokenOutputs: 0,
     };
@@ -441,7 +446,7 @@ class AgentChatManager {
         provider: resolvedProvider,
         capabilities: agent.capabilities,
         model: agent.defaultModel,
-        resumeSessionId: isResume ? existing?.claudeSessionId : undefined,
+        resumeSessionId: isResume ? (existingRun?.claudeSessionId ?? diskSession?.claudeSessionId) : undefined,
         cwd: getAppWorkingDir(),
       });
       run.runner = runner;
@@ -640,7 +645,15 @@ class AgentChatManager {
 
     // Process all agent actions: parse tags, execute side-effects, strip tags
     if (run.assistantText) {
-      const actionCtx = {
+      const actionCtx: {
+        sessionId: string;
+        agentId: string;
+        projectKey?: string;
+        emit: (event: ChatSSEEvent) => void;
+        setSessionTitle: (title: string) => void;
+        setCheckpoint: (checkpoint: SessionCheckpoint) => void;
+        _awaitingSubAgents?: SessionExecution['awaiting'];
+      } = {
         sessionId: run.sessionId,
         agentId: run.agentId,
         projectKey: run.projectKey,
@@ -672,6 +685,11 @@ class AgentChatManager {
       }
 
       this.trackAndEmit(run, { type: 'session_title_set', title: run.sessionTitle });
+
+      if (actionCtx._awaitingSubAgents) {
+        run._awaitingSubAgents = actionCtx._awaitingSubAgents;
+        run.status = 'awaiting';
+      }
     }
 
     if (run.status === 'running') {
@@ -734,6 +752,11 @@ class AgentChatManager {
         lastSessionId: run.sessionId,
         ...(errorEvent ? { lastError: errorEvent.message.slice(0, 200) } : {}),
       }).catch(() => {});
+    }
+
+    if (run.status === 'awaiting') {
+      this.trackAndEmit(run, { type: 'awaiting_sub_agents' });
+      return;
     }
 
     this.trackAndEmit(run, { type: 'done' });
@@ -848,6 +871,7 @@ class AgentChatManager {
 
   private async persistAfterClose(run: AgentChatRun, _aborted: boolean): Promise<void> {
     if (run._ephemeral) return;
+    void _aborted;
 
     const now = new Date().toISOString();
     const session: AgentChatSession = {
@@ -865,7 +889,7 @@ class AgentChatManager {
       importedTurnIndices: run.importedTurnIndices,
       checkpoint: run.checkpoint,
     };
-    await persistSessionToDisk(session);
+    await persistSessionToDisk(session, this.buildExecutionSummary(run));
   }
 
   /**
@@ -943,27 +967,37 @@ class AgentChatManager {
   // Private helpers
   // ═══════════════════════════════════════════════════════════════════════
 
-  private hydrateFromDisk(diskSession: AgentChatSession): AgentChatRun {
+  private buildExecutionSummary(run: AgentChatRun): SessionExecution {
+    const lastError = [...run.events]
+      .reverse()
+      .find((event): event is Extract<ChatSSEEvent, { type: 'error' }> => event.type === 'error');
+
+    const tokenUsage = (run._tokenInputs > 0 || run._tokenOutputs > 0 || run._contextWindow)
+      ? {
+          inputTokens: run._tokenInputs,
+          outputTokens: run._tokenOutputs,
+          contextWindow: run._contextWindow,
+        }
+      : undefined;
+
+    const executionStatus: SessionExecution['status'] = run.status === 'awaiting'
+      ? 'awaiting'
+      : run.status === 'failed'
+        ? 'failed'
+        : run.status === 'stopped'
+          ? 'stopped'
+          : 'completed';
+
     return {
-      runId: '',
-      sessionId: diskSession.id,
-      agentId: diskSession.agentId,
-      projectKey: diskSession.projectKey,
-      runner: null,
-      status: 'completed',
-      events: [],
-      listeners: new Set(),
-      startedAt: new Date(diskSession.createdAt).getTime(),
-      assistantText: '',
-      contentBlocks: [],
-      toolCalls: [],
-      claudeSessionId: diskSession.claudeSessionId,
-      sessionTitle: diskSession.title,
-      messages: [...diskSession.messages],
-      config: diskSession.config,
-      _guardRetryCount: diskSession.guardRetryCount,
-      _tokenInputs: 0,
-      _tokenOutputs: 0,
+      runId: run.runId,
+      status: executionStatus,
+      startedAt: new Date(run.startedAt).toISOString(),
+      completedAt: new Date(run.completedAt ?? Date.now()).toISOString(),
+      errorMessage: lastError?.message,
+      stopReason: executionStatus === 'stopped' ? 'aborted' : undefined,
+      tokenUsage,
+      eventCount: run.events.length,
+      awaiting: executionStatus === 'awaiting' ? run._awaitingSubAgents : undefined,
     };
   }
 

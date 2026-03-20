@@ -484,7 +484,9 @@ export function AgentChatPanel({
       sessionDispatch({ type: 'SET_TITLE', title: data.title ?? 'New Session' });
       const loadedConfig = data.config ?? {};
       sessionDispatch({ type: 'SET_CONFIG', config: loadedConfig });
-      const loadedQueueState = data.pendingUserQueue as PendingUserQueueState | undefined;
+      const loadedQueueState = (
+        data.deferredInputBuffer ?? data.pendingUserQueue
+      ) as PendingUserQueueState | undefined;
       const loadedQueue = Array.isArray(loadedQueueState?.items)
         ? clonePendingQueueItems(loadedQueueState.items)
         : [];

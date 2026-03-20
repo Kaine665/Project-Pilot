@@ -197,9 +197,13 @@ async function readSessionFromDisk(sessionId: string, port: number): Promise<str
   const messages: Array<{ role: string; content: string }> = session.messages || [];
 
   // Check execution record for failure
-  const execution = session.execution as { status?: string; result?: { error?: { message: string } } } | undefined;
+  const execution = session.execution as {
+    status?: string;
+    errorMessage?: string;
+    result?: { error?: { message: string } };
+  } | undefined;
   if (execution?.status === 'failed' || execution?.status === 'stopped') {
-    throw new Error(execution.result?.error?.message ?? `Session ${execution.status}`);
+    throw new Error(execution.errorMessage ?? execution.result?.error?.message ?? `Session ${execution.status}`);
   }
 
   const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
@@ -298,9 +302,17 @@ async function pollSession(sessionId: string, port: number): Promise<void> {
   const messages: Array<{ role: string; content: string }> = session.messages || [];
 
   // Check execution record for terminal status (unified state source)
-  const execution = session.execution as { status?: string; result?: { status: string; summary: string; error?: { message: string } } } | undefined;
+  const execution = session.execution as {
+    status?: string;
+    errorMessage?: string;
+    result?: { status: string; summary: string; error?: { message: string } };
+  } | undefined;
+  if (execution?.status === 'awaiting') {
+    writeResult({ status: 'running', sessionId });
+    process.exit(POLL_EXIT_RUNNING);
+  }
   if (execution?.status === 'failed' || execution?.status === 'stopped') {
-    const errMsg = execution.result?.error?.message ?? `Session ${execution.status}`;
+    const errMsg = execution.errorMessage ?? execution.result?.error?.message ?? `Session ${execution.status}`;
     process.stderr.write(`[call-agent] Session ${execution.status}: ${errMsg}\n`);
     writeResult({ status: 'failed', sessionId, error: errMsg });
     process.exit(1);
