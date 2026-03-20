@@ -106,7 +106,7 @@ export const ChatBubble = memo(function ChatBubble({
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const text = message.content || '';
+    const text = editableText || message.content || '';
     if (onCopy) {
       onCopy(text);
     } else {
@@ -364,7 +364,7 @@ export const ChatBubble = memo(function ChatBubble({
               className="mt-2 flex h-[60px] w-[200px] items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/40"
             >
               <ClipboardList className="h-5 w-5 shrink-0" />
-              <span>View Plan</span>
+              <span>{t('chat.viewPlan')}</span>
             </button>
           )}
         </div>
@@ -379,7 +379,7 @@ export const ChatBubble = memo(function ChatBubble({
 
         {hasSendError && isUser && onRetry && showActions && (
           <div className={`mt-1 flex items-center gap-1.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
-            <span className="text-xs text-red-400 dark:text-red-500">Send failed</span>
+            <span className="text-xs text-red-400 dark:text-red-500">{t('chat.sendFailed')}</span>
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -389,7 +389,7 @@ export const ChatBubble = memo(function ChatBubble({
               className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-red-500 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:text-red-300 disabled:pointer-events-none disabled:opacity-40"
             >
               <RefreshCw className="h-3 w-3" />
-              <span>Retry</span>
+              <span>{t('chat.retry')}</span>
             </button>
           </div>
         )}
@@ -427,23 +427,23 @@ export const ChatBubble = memo(function ChatBubble({
                 <button
                   onClick={handleCopy}
                   className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
-                  title="Copy"
+                  title={tActions('copy')}
                 >
                   {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                  <span>{copied ? 'Copied' : 'Copy'}</span>
+                  <span>{copied ? t('chat.copied') : tActions('copy')}</span>
                 </button>
 
                 {!isUser && onSaveAsKnowledge && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      onSaveAsKnowledge(message.id, message.content || '');
+                      onSaveAsKnowledge(message.id, editableText || message.content || '');
                     }}
                     className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
-                    title="Save as knowledge"
+                    title={t('chat.saveAsKnowledge')}
                   >
                     <BookMarked className="h-3 w-3" />
-                    <span>Save</span>
+                    <span>{t('chat.saveAsKnowledge')}</span>
                   </button>
                 )}
 
@@ -481,10 +481,10 @@ export const ChatBubble = memo(function ChatBubble({
                     }}
                     disabled={isStreaming}
                     className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400 disabled:pointer-events-none disabled:opacity-40"
-                    title="Regenerate"
+                    title={t('chat.regenerate')}
                   >
                     <RefreshCw className="h-3 w-3" />
-                    <span>Regenerate</span>
+                    <span>{t('chat.regenerate')}</span>
                   </button>
                 )}
 
@@ -496,10 +496,10 @@ export const ChatBubble = memo(function ChatBubble({
                     }}
                     disabled={isStreaming}
                     className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-red-50 hover:text-red-500 dark:text-zinc-600 dark:hover:bg-red-950/30 dark:hover:text-red-400 disabled:pointer-events-none disabled:opacity-40"
-                    title="Delete"
+                    title={tActions('delete')}
                   >
                     <Trash2 className="h-3 w-3" />
-                    <span>Delete</span>
+                    <span>{tActions('delete')}</span>
                   </button>
                 )}
 
@@ -512,9 +512,10 @@ export const ChatBubble = memo(function ChatBubble({
                         setConfirmDelete(false);
                       }}
                       className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-red-500 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                      title={t('chat.confirmDelete')}
                     >
                       <Trash2 className="h-3 w-3" />
-                      <span>Confirm Delete</span>
+                      <span>{t('chat.confirmDelete')}</span>
                     </button>
                     <button
                       onClick={(e) => {
