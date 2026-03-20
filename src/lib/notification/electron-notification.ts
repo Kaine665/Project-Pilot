@@ -10,6 +10,8 @@ export interface NotificationOptions {
   icon?: string;
   tag?: string;
   sessionId?: string;
+  requireInteraction?: boolean;
+  focusAppOnClick?: boolean;
   onClick?: () => void;
 }
 
@@ -22,26 +24,45 @@ declare global {
         icon?: string;
         tag?: string;
         sessionId?: string;
+        requireInteraction?: boolean;
+        focusAppOnClick?: boolean;
       }) => Promise<boolean>;
       /**
        * Phase 3: 监听通知点击事件
        */
       onNotificationClicked?: (
         callback: (data: { sessionId?: string; timestamp: number }) => void
-      ) => void;
+      ) => (() => void);
     };
   }
 }
 
 export class ElectronNotifier {
+  private clickHandlers = new Map<string, () => void>();
+  private removeClickListener: (() => void) | null = null;
+
   /**
    * 检查 Electron IPC 是否可用
    */
   static isAvailable(): boolean {
     return (
       typeof window !== 'undefined' &&
-      !!(window as any).electronAPI?.showNotification
+      !!window.electronAPI?.showNotification
     );
+  }
+
+  private ensureClickListener(): void {
+    if (this.removeClickListener || !window.electronAPI?.onNotificationClicked) {
+      return;
+    }
+
+    this.removeClickListener = window.electronAPI.onNotificationClicked((data) => {
+      if (!data.sessionId) return;
+      const handler = this.clickHandlers.get(data.sessionId);
+      if (!handler) return;
+      this.clickHandlers.delete(data.sessionId);
+      handler();
+    });
   }
 
   /**
@@ -55,26 +76,37 @@ export class ElectronNotifier {
     }
 
     try {
+      if (options.sessionId && options.onClick && window.electronAPI?.onNotificationClicked) {
+        this.ensureClickListener();
+        this.clickHandlers.set(options.sessionId, options.onClick);
+      }
+
       const result = await window.electronAPI!.showNotification({
         title: options.title,
         body: options.body,
         icon: options.icon,
         tag: options.tag,
         sessionId: options.sessionId,
+        requireInteraction: options.requireInteraction,
+        focusAppOnClick: options.focusAppOnClick,
       });
-
-      // Phase 3: 设置通知点击监听
-      if (result && options.onClick && window.electronAPI?.onNotificationClicked) {
-        window.electronAPI.onNotificationClicked((data) => {
-          console.debug('[ElectronNotifier] 用户点击了通知:', data);
-          options.onClick?.();
-        });
+      if (!result && options.sessionId) {
+        this.clickHandlers.delete(options.sessionId);
       }
 
       return result;
     } catch (error) {
+      if (options.sessionId) {
+        this.clickHandlers.delete(options.sessionId);
+      }
       console.error('[ElectronNotifier] 发送通知失败:', error);
       return false;
     }
+  }
+
+  cleanup(): void {
+    this.clickHandlers.clear();
+    this.removeClickListener?.();
+    this.removeClickListener = null;
   }
 }

@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSettings, saveSettings } from '@/lib/settings-manager';
-import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
-import type { ClaudeAuthMode, ProviderId, EffortLevel, OpenAIReasoningEffort, AppSettings, DangerCategory, DangerActionLevel, CustomProviderConfig } from '@/types';
+import type { ClaudeAuthMode, ProviderId, EffortLevel, OpenAIReasoningEffort, AppSettings, DangerCategory, DangerActionLevel, CustomProviderConfig, NotificationClickAction } from '@/types';
 import { DEFAULT_DANGER_SETTINGS, DEFAULT_NOTIFICATION_SETTINGS, BUILT_IN_PROVIDER_IDS } from '@/types';
 
 const VALID_AUTH_MODES: ClaudeAuthMode[] = ['api_key', 'oauth'];
 const VALID_EFFORT_LEVELS: EffortLevel[] = ['low', 'medium', 'high'];
 const VALID_OPENAI_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
+const VALID_NOTIFICATION_CLICK_ACTIONS: NotificationClickAction[] = ['open_session', 'focus_app', 'none'];
 
 function isValidProvider(id: string, customProviders?: CustomProviderConfig[]): id is ProviderId {
   if (BUILT_IN_PROVIDER_IDS.includes(id as (typeof BUILT_IN_PROVIDER_IDS)[number])) return true;
@@ -269,6 +269,34 @@ export async function POST(request: NextRequest) {
     }
     if (n.onlyWhenUnfocused !== undefined && typeof n.onlyWhenUnfocused !== 'boolean') {
       return NextResponse.json({ error: 'notifications.onlyWhenUnfocused must be a boolean' }, { status: 400 });
+    }
+    if (n.titleTemplate !== undefined) {
+      if (typeof n.titleTemplate !== 'string' || n.titleTemplate.trim().length === 0 || n.titleTemplate.length > 200) {
+        return NextResponse.json({ error: 'notifications.titleTemplate must be a non-empty string up to 200 chars' }, { status: 400 });
+      }
+    }
+    if (n.bodyTemplate !== undefined) {
+      if (typeof n.bodyTemplate !== 'string' || n.bodyTemplate.trim().length === 0 || n.bodyTemplate.length > 500) {
+        return NextResponse.json({ error: 'notifications.bodyTemplate must be a non-empty string up to 500 chars' }, { status: 400 });
+      }
+    }
+    if (n.minDurationMs !== undefined) {
+      const v = Number(n.minDurationMs);
+      if (!Number.isInteger(v) || v < 0 || v > 86_400_000) {
+        return NextResponse.json({ error: 'notifications.minDurationMs must be an integer between 0 and 86400000' }, { status: 400 });
+      }
+    }
+    if (n.dedupeWindowMs !== undefined) {
+      const v = Number(n.dedupeWindowMs);
+      if (!Number.isInteger(v) || v < 0 || v > 600_000) {
+        return NextResponse.json({ error: 'notifications.dedupeWindowMs must be an integer between 0 and 600000' }, { status: 400 });
+      }
+    }
+    if (n.clickAction !== undefined && !VALID_NOTIFICATION_CLICK_ACTIONS.includes(n.clickAction)) {
+      return NextResponse.json({ error: 'notifications.clickAction is invalid' }, { status: 400 });
+    }
+    if (n.requireInteraction !== undefined && typeof n.requireInteraction !== 'boolean') {
+      return NextResponse.json({ error: 'notifications.requireInteraction must be a boolean' }, { status: 400 });
     }
   }
 

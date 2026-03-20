@@ -160,6 +160,7 @@ export function AgentChatPanel({
   const lastEventIdxRef = useRef<number>(-1);
   const finalizingRef = useRef(false);
   const streamTargetSessionRef = useRef<string | null>(null);
+  const streamStartedAtRef = useRef<number | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const sessionTitleRef = useRef<string>(defaultSessionTitle);
   const initTokenRef = useRef(0);
@@ -525,8 +526,9 @@ export function AgentChatPanel({
 
     chatDispatch({ type: 'STREAM_END' });
 
+    const cleanedText = stripSessionTitleTag(fullText);
+
     if (!isStaleStream && (fullText || toolCalls.length > 0)) {
-      const cleanedText = stripSessionTitleTag(fullText);
       const assistantMsg: ChatMessage = {
         id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         role: 'assistant',
@@ -587,16 +589,22 @@ export function AgentChatPanel({
     // Send completion notification
     const completedSid = isStaleStream ? streamTarget : currentSid;
     if (completedSid && (fullText || toolCalls.length > 0)) {
+      const durationMs = streamStartedAtRef.current
+        ? Math.max(0, Date.now() - streamStartedAtRef.current)
+        : undefined;
       notifyCompletion({
         agentName: agent.name || agent.id,
         sessionId: completedSid,
         sessionTitle: sessionTitleRef.current || 'Untitled Session',
+        messagePreview: cleanedText,
+        durationMs,
         navigateToSession: () => {
           const sessionUrl = buildSessionUrl(agent.id, completedSid);
           router.push(sessionUrl);
         },
       }).catch(err => console.error('通知发送失败:', err));
     }
+    streamStartedAtRef.current = null;
   }, [agent.id, agent.name, projectKey, fetchSessionList, onSessionChange, flushQueuedUserMessage, router, notifyCompletion]);
 
   // Connect to SSE stream
@@ -1035,9 +1043,11 @@ export function AgentChatPanel({
       onSessionChange?.(newItem);
     }
 
+    const runStartedAt = new Date().toISOString();
+    streamStartedAtRef.current = Date.parse(runStartedAt);
     markSessionRunning(
       targetSessionId,
-      new Date().toISOString(),
+      runStartedAt,
       text.trim().slice(0, 10) || sessionTitle,
     );
 

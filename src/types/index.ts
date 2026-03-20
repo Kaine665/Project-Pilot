@@ -192,13 +192,33 @@ export interface NotificationSettings {
   soundVolume?: number;
   /** 仅在窗口失焦时通知（默认 false，始终通知） */
   onlyWhenUnfocused?: boolean;
+  /** 通知标题模板 */
+  titleTemplate?: string;
+  /** 通知正文模板 */
+  bodyTemplate?: string;
+  /** 任务至少运行多久才发送通知 */
+  minDurationMs?: number;
+  /** 同一会话的通知去重窗口 */
+  dedupeWindowMs?: number;
+  /** 点击系统通知后的行为 */
+  clickAction?: NotificationClickAction;
+  /** 是否要求通知在系统通知中心保留，直到用户手动关闭 */
+  requireInteraction?: boolean;
 }
+
+export type NotificationClickAction = 'open_session' | 'focus_app' | 'none';
 
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   enabled: true,
   soundEnabled: true,
   soundVolume: 0.5,
   onlyWhenUnfocused: false,
+  titleTemplate: '{agentName} 已完成',
+  bodyTemplate: '会话“{sessionTitle}”已收到新回复',
+  minDurationMs: 0,
+  dedupeWindowMs: 500,
+  clickAction: 'open_session',
+  requireInteraction: true,
 };
 
 /** 全局应用设置 */
