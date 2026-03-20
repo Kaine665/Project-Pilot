@@ -1,6 +1,6 @@
 /**
  * Agent completion notification coordinator.
- * Combines native/browser notifications with local audio playback.
+ * Combines native/browser notifications with configurable local audio playback.
  */
 
 import type { NotificationClickAction, NotificationSettings } from '@/types';
@@ -9,6 +9,7 @@ import { ElectronNotifier } from './notification/electron-notification';
 import { AudioPlayer } from './audio/audio-player';
 import { NOTIFICATION_CONFIG, AUDIO_CONFIG } from './notification/notification-config';
 import { getNotificationSettings } from './notification-settings-client';
+import { normalizeNotificationSettings } from './notification/notification-sound-presets';
 
 export interface CompletionNotifyParams {
   agentName: string;
@@ -82,7 +83,7 @@ export class CompletionNotifier {
 
   async notifyCompletion(params: CompletionNotifyParams): Promise<void> {
     try {
-      const settings = await getNotificationSettings();
+      const settings = normalizeNotificationSettings(await getNotificationSettings());
       if (!settings.enabled) {
         return;
       }
@@ -112,9 +113,8 @@ export class CompletionNotifier {
       const notificationTag = `${NOTIFICATION_CONFIG.TAG_PREFIX}-${params.sessionId}`;
       const clickBehavior = getClickBehavior(settings, params);
 
-      let notified = false;
       if (ElectronNotifier.isAvailable()) {
-        notified = await this.electronNotifier.sendNotification({
+        await this.electronNotifier.sendNotification({
           title: notificationTitle,
           body: notificationBody,
           icon: NOTIFICATION_CONFIG.DEFAULT_ICON,
@@ -125,7 +125,7 @@ export class CompletionNotifier {
           onClick: clickBehavior.onClick,
         });
       } else {
-        notified = await this.browserNotifier.sendNotification({
+        await this.browserNotifier.sendNotification({
           title: notificationTitle,
           body: notificationBody,
           icon: NOTIFICATION_CONFIG.DEFAULT_ICON,
@@ -136,11 +136,22 @@ export class CompletionNotifier {
         });
       }
 
-      if (settings.soundEnabled && notified) {
-        await this.audioPlayer.playSound(AUDIO_CONFIG.DEFAULT_SOUND_PATH, {
-          volume: settings.soundVolume ?? AUDIO_CONFIG.DEFAULT_VOLUME,
-          maxRetries: AUDIO_CONFIG.MAX_RETRIES,
-        });
+      if (settings.soundEnabled) {
+        try {
+          await this.audioPlayer.playSound(
+            {
+              soundSource: settings.soundSource,
+              builtinSound: settings.builtinSound,
+              customSoundDataUrl: settings.customSoundDataUrl,
+            },
+            {
+              volume: settings.soundVolume || AUDIO_CONFIG.DEFAULT_VOLUME,
+              maxRetries: AUDIO_CONFIG.MAX_RETRIES,
+            },
+          );
+        } catch (audioErr) {
+          console.warn('[CompletionNotifier] Failed to play notification sound:', audioErr);
+        }
       }
     } catch (error) {
       console.error('[CompletionNotifier] Notification flow failed:', error);
@@ -149,7 +160,12 @@ export class CompletionNotifier {
 
   async preloadSound(): Promise<void> {
     try {
-      await this.audioPlayer.preload(AUDIO_CONFIG.DEFAULT_SOUND_PATH);
+      const settings = normalizeNotificationSettings(await getNotificationSettings());
+      await this.audioPlayer.preload({
+        soundSource: settings.soundSource,
+        builtinSound: settings.builtinSound,
+        customSoundDataUrl: settings.customSoundDataUrl,
+      });
     } catch (error) {
       console.warn('[CompletionNotifier] Failed to preload sound:', error);
     }

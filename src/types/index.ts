@@ -182,6 +182,19 @@ export const DEFAULT_TITLE_GENERATION: TitleGenerationSettings = {
   chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }],
 };
 
+export const BUILT_IN_NOTIFICATION_SOUND_IDS = [
+  'classic',
+  'glass',
+  'soft',
+  'pulse',
+] as const;
+
+export type BuiltInNotificationSoundId =
+  (typeof BUILT_IN_NOTIFICATION_SOUND_IDS)[number];
+
+export type NotificationSoundSource = 'builtin' | 'custom';
+export type NotificationClickAction = 'open_session' | 'focus_app' | 'none';
+
 /** 通知和音频设置 */
 export interface NotificationSettings {
   /** 是否启用桌面通知（默认 true） */
@@ -192,6 +205,14 @@ export interface NotificationSettings {
   soundVolume?: number;
   /** 仅在窗口失焦时通知（默认 false，始终通知） */
   onlyWhenUnfocused?: boolean;
+  /** 通知音频来源 */
+  soundSource?: NotificationSoundSource;
+  /** 内置音色 ID */
+  builtinSound?: BuiltInNotificationSoundId;
+  /** 自定义音频文件的 Data URL */
+  customSoundDataUrl?: string;
+  /** 自定义音频文件名，仅用于 UI 展示 */
+  customSoundName?: string;
   /** 通知标题模板 */
   titleTemplate?: string;
   /** 通知正文模板 */
@@ -206,13 +227,13 @@ export interface NotificationSettings {
   requireInteraction?: boolean;
 }
 
-export type NotificationClickAction = 'open_session' | 'focus_app' | 'none';
-
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   enabled: true,
   soundEnabled: true,
   soundVolume: 0.5,
   onlyWhenUnfocused: false,
+  soundSource: 'builtin',
+  builtinSound: 'classic',
   titleTemplate: '{agentName} 已完成',
   bodyTemplate: '会话“{sessionTitle}”已收到新回复',
   minDurationMs: 0,

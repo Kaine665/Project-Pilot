@@ -1,36 +1,21 @@
-# Agent 通知音频文件
+# Agent 通知声音说明
 
-此目录应包含 `agent-complete.mp3` 文件。
+当前通知声音默认不依赖 `public/sounds/agent-complete.mp3`。
 
-## 音频规格
+## 当前策略
 
-- **文件名**：`agent-complete.mp3`
-- **格式**：MP3
-- **时长**：1-2 秒（避免过长干扰）
-- **音量**：-3dB（适中，不刺耳）
-- **采样率**：44.1kHz
-- **文件大小**：< 50KB
+- 默认使用浏览器内置合成音色
+- 内置音色预设：`classic`、`glass`、`soft`、`pulse`
+- 用户也可以在设置页上传一段短音频文件，作为自定义提示音
 
-## 生成方式
+## 自定义音频文件建议
 
-你可以使用以下方式生成或获取通知音频：
+- 格式：任意浏览器可播放的音频格式
+- 时长：1-2 秒
+- 体积：建议不超过 512KB
+- 场景：短提示音，避免使用长语音或音乐
 
-1. **使用 ffmpeg**：
-   ```bash
-   # 生成一个简单的 1 秒钟的 DTMF 音调
-   ffmpeg -f lavfi -i sine=f=800:d=0.5 -c:a libmp3lame -q:a 4 agent-complete.mp3
-   ```
+## 兼容说明
 
-2. **使用在线音频编辑器**：
-   - [Audacity](https://www.audacityteam.org/) - 免费开源
-   - [AudioTrim](https://audiotrim.com/) - 在线编辑
-
-3. **购买或下载免费音效**：
-   - [Zapsplat](https://www.zapsplat.com/)
-   - [Freesound](https://freesound.org/)
-
-## 注意事项
-
-- 音频文件应该清晰、简洁，避免过于刺耳
-- 确保文件格式为 MP3（浏览器和 Electron 兼容性最好）
-- 文件位置务必是 `public/sounds/agent-complete.mp3`
+- 旧的固定文件方案已不再是必需项
+- 如果后续需要恢复静态文件默认音频，可以在通知播放器中增加文件型 preset
