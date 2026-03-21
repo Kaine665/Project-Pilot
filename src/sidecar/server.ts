@@ -46,12 +46,14 @@ import type { SessionConfig, SessionMeta } from '@/types/agent-chat';
 import type { ProviderId } from '@/types';
 import type { ImageAttachment } from '@/lib/image-assets';
 import { HttpError } from '@/lib/http-error';
+import { resolveSidecarConfigSync } from '@/lib/sidecar-config';
 
 // ── 配置 ─────────────────────────────────────────────────────────────────────
 
-const PORT = parseInt(process.env.SIDECAR_PORT ?? '4500', 10);
+const SIDECAR_CONFIG = resolveSidecarConfigSync();
+const PORT = parseInt(process.env.SIDECAR_PORT ?? String(SIDECAR_CONFIG.port), 10);
 const LOCK_DIR = path.join(os.homedir(), '.project-pilot');
-const LOCK_PATH = path.join(LOCK_DIR, 'sidecar.lock');
+const LOCK_PATH = process.env.SIDECAR_LOCK_PATH ?? SIDECAR_CONFIG.lockPath;
 
 // ── Lock file ────────────────────────────────────────────────────────────────
 

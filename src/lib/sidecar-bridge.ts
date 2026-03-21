@@ -7,7 +7,7 @@
  *   proxySidecarSSE() — 将 sidecar 的 SSE 流代理给浏览器客户端
  *
  * 工作流：
- *   1. 读取 ~/.project-pilot/sidecar.lock 获取 {pid, port}
+ *   1. 读取当前 worktree 对应的 sidecar lock 获取 {pid, port}
  *   2. 用 GET /health 验证 sidecar 存活
  *   3. 若不存在/不存活 → spawn detached 进程 → 等待健康检查通过
  *   4. 缓存 port，后续请求直接使用
@@ -17,12 +17,14 @@ import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { resolveSidecarConfigSync } from './sidecar-config';
 
 // ── 常量 ─────────────────────────────────────────────────────────────────────
 
 const LOCK_DIR = path.join(os.homedir(), '.project-pilot');
-const LOCK_PATH = path.join(LOCK_DIR, 'sidecar.lock');
-const DEFAULT_PORT = 4500;
+const SIDECAR_CONFIG = resolveSidecarConfigSync();
+const LOCK_PATH = SIDECAR_CONFIG.lockPath;
+const DEFAULT_PORT = SIDECAR_CONFIG.port;
 const HEALTH_TIMEOUT_MS = 10_000;   // 等待新 sidecar 启动最长 10 秒
 const HEALTH_POLL_MS = 200;          // 每 200ms 轮询一次 /health
 
@@ -127,7 +129,7 @@ function spawnSidecar(port: number): Promise<number> {
     const useShell = !isProd && executable.endsWith('.cmd');
 
     // 将 sidecar 的 stdout/stderr 写入日志文件，方便排查启动失败
-    const logDir = path.join(os.homedir(), '.project-pilot');
+    const logDir = LOCK_DIR;
     fs.mkdirSync(logDir, { recursive: true });
     const logFd = fs.openSync(path.join(logDir, 'sidecar.log'), 'a');
 
@@ -144,6 +146,7 @@ function spawnSidecar(port: number): Promise<number> {
       env: {
         ...process.env,
         SIDECAR_PORT: String(port),
+        SIDECAR_LOCK_PATH: LOCK_PATH,
         NODE_ENV: process.env.NODE_ENV ?? 'development',
       },
       cwd: process.cwd(),
