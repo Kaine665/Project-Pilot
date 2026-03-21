@@ -544,6 +544,7 @@
     "modelHint": "选择 AI 任务使用的默认模型",
     "modelRequired": "请先选择一个模型",
     "openaiReasoningMode": "推理档位",
+    "openaiReasoningMinimal": "Fast",
     "openaiReasoningLow": "低",
     "openaiReasoningMedium": "中",
     "openaiReasoningHigh": "高",

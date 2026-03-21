@@ -171,7 +171,7 @@ export default function AgentsPage() {
         if (fallbackModel && !optionMap.has(fallbackModel)) optionMap.set(fallbackModel, fallbackModel);
         const modelOptions = Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
         const model = modelOptions.some((o) => o.value === fallbackModel) ? fallbackModel : (modelOptions[0]?.value || '');
-        const VALID_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
+        const VALID_EFFORTS: OpenAIReasoningEffort[] = ['minimal', 'low', 'medium', 'high', 'xhigh'];
         const effort: OpenAIReasoningEffort = (typeof claude.openaiReasoningEffort === 'string' && VALID_EFFORTS.includes(claude.openaiReasoningEffort)) ? claude.openaiReasoningEffort : 'xhigh';
         setCachedSettings({ provider: loadedProvider, model, modelOptions, effort });
       } catch { /* ignore */ }
@@ -522,6 +522,9 @@ export default function AgentsPage() {
             projectKey: form.projectKey || undefined,
             defaultProvider: form.defaultProvider || undefined,
             defaultModel: form.defaultModel || undefined,
+            defaultOpenAIReasoningEffort: form.defaultProvider === 'openai'
+              ? (form.defaultOpenAIReasoningEffort || null)
+              : null,
             contextStrategy: form.contextStrategy || undefined,
           }),
         });
@@ -555,6 +558,9 @@ export default function AgentsPage() {
             projectKey: form.projectKey || undefined,
             defaultProvider: form.defaultProvider || undefined,
             defaultModel: form.defaultModel || undefined,
+            defaultOpenAIReasoningEffort: form.defaultProvider === 'openai'
+              ? (form.defaultOpenAIReasoningEffort || null)
+              : null,
             contextStrategy: form.contextStrategy || undefined,
           }),
         });
@@ -656,6 +662,7 @@ export default function AgentsPage() {
       || form.projectKey !== (selectedAgent.projectKey ?? '')
       || form.defaultProvider !== (selectedAgent.defaultProvider ?? '')
       || form.defaultModel !== (selectedAgent.defaultModel ?? '')
+      || form.defaultOpenAIReasoningEffort !== (selectedAgent.defaultOpenAIReasoningEffort ?? '')
       || form.contextStrategy !== (selectedAgent.contextStrategy ?? 'additive');
   }, [creating, form, selectedAgent]);
 

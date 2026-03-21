@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import type { Agent, AgentCapabilities } from '@/types';
+import type { Agent, AgentCapabilities, OpenAIReasoningEffort } from '@/types';
 import type { ResourceRef } from '@/types/resource';
 import {
   archiveAgent,
@@ -28,6 +28,7 @@ interface OfficialAgentPayload {
   triggerHints?: string[];
   defaultProvider?: Agent['defaultProvider'];
   defaultModel?: string;
+  defaultOpenAIReasoningEffort?: OpenAIReasoningEffort | null;
   contextStrategy?: 'additive' | 'exclusive';
 }
 

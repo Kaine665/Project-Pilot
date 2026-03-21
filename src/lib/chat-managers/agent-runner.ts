@@ -20,6 +20,7 @@ import { randomBytes } from 'crypto';
 import { SdkEventAdapter } from '@/lib/sdk-event-adapter';
 import { adaptCodexEvent } from '@/lib/codex-sdk-adapter';
 import { resolveCodexBinaryPath } from '@/lib/codex-cli';
+import { DEFAULT_OPENAI_REASONING_EFFORT, normalizeOpenAIReasoningEffort } from '@/lib/openai-reasoning-effort';
 import { getAppWorkingDir } from '@/lib/app-paths';
 import { buildSdkQueryOptions, buildCodexExecEnv, getProviderScopedModel, getSettings } from '@/lib/settings-manager';
 import type { ChatSSEEvent, AgentCapabilities, ProviderId } from '@/types';
@@ -77,6 +78,9 @@ export async function createAgentRunner(opts: AgentRunnerCreateOptions): Promise
     const model =
       opts.model
       ?? getProviderScopedModel(settings.claude, 'openai');
+    const modelReasoningEffort = normalizeOpenAIReasoningEffort(
+      opts.effortOverride ?? settings.claude.openaiReasoningEffort ?? DEFAULT_OPENAI_REASONING_EFFORT,
+    );
 
     const env = await buildCodexExecEnv();
     const envRecord: Record<string, string> = {};
@@ -96,6 +100,7 @@ export async function createAgentRunner(opts: AgentRunnerCreateOptions): Promise
 
     const threadOptions = {
       model,
+      ...(modelReasoningEffort ? { modelReasoningEffort } : {}),
       workingDirectory: cwd,
       skipGitRepoCheck: true,
       approvalPolicy: 'never' as const,

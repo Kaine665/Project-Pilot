@@ -543,6 +543,7 @@
     "modelHint": "Select the default model for AI tasks",
     "modelRequired": "Please select a model first",
     "openaiReasoningMode": "Reasoning Effort",
+    "openaiReasoningMinimal": "Fast",
     "openaiReasoningLow": "Low",
     "openaiReasoningMedium": "Medium",
     "openaiReasoningHigh": "High",

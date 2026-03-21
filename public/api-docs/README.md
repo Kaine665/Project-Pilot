@@ -93,7 +93,8 @@ Create or update an agent.
     "projectKey": "project-pilot",
     "triggerHints": ["when to call this agent"],
     "defaultProvider": "anthropic",
-    "defaultModel": "claude-sonnet-4-20250514"
+    "defaultModel": "claude-sonnet-4-20250514",
+    "defaultOpenAIReasoningEffort": "low"
   }
 }
 ```
@@ -178,6 +179,7 @@ Key fields on the `Agent` object:
 | `projectKey` | string? | Owning project (undefined = global) |
 | `defaultProvider` | string? | Default AI provider (`anthropic`, `openai`, `gemini`, `deepseek`, `openrouter`) |
 | `defaultModel` | string? | Default model ID |
+| `defaultOpenAIReasoningEffort` | string? | Default OpenAI reasoning tier (`minimal`, `low`, `medium`, `high`, `xhigh`), or `null` to clear |
 | `archived` | boolean? | Soft-deleted flag |
 | `createdAt` | string | ISO 8601 timestamp |
 

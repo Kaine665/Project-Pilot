@@ -6,7 +6,7 @@ const LIST_LIMIT = 100;
 const CACHE_TTL_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 12_000;
 
-const SUPPORTED_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
+const SUPPORTED_EFFORTS: OpenAIReasoningEffort[] = ['minimal', 'low', 'medium', 'high', 'xhigh'];
 const OPENAI_FALLBACK_MODELS: OpenAIModelSummary[] = getProviderPreset('openai').models.map((model, index) => ({
   id: model.id,
   model: model.id,

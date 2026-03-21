@@ -7,7 +7,9 @@ import {
   Database, Brain, Code, Zap, Search, Shield, Wrench, BookOpen, HardDrive,
   type LucideIcon,
 } from 'lucide-react';
-import type { Agent, AgentCapabilities, ContextEntry, ProviderId } from '@/types';
+import type {
+  Agent, AgentCapabilities, ContextEntry, OpenAIReasoningEffort, ProviderId,
+} from '@/types';
 import type { ProjectEntry } from '@/components/project-context';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
@@ -72,6 +74,7 @@ export type FormData = {
   projectKey: string; // '' = 全局
   defaultProvider: ProviderId | ''; // '' = 继承全局设置
   defaultModel: string;             // '' = 继承全局设置
+  defaultOpenAIReasoningEffort: OpenAIReasoningEffort | '';
   contextStrategy: 'additive' | 'exclusive';
 };
 
@@ -84,6 +87,7 @@ export const emptyForm: FormData = {
   projectKey: '',
   defaultProvider: '',
   defaultModel: '',
+  defaultOpenAIReasoningEffort: '',
   contextStrategy: 'additive',
 };
 
@@ -102,6 +106,7 @@ export function agentToForm(a: Agent): FormData {
     projectKey: a.projectKey ?? '',
     defaultProvider: a.defaultProvider ?? '',
     defaultModel: a.defaultModel ?? '',
+    defaultOpenAIReasoningEffort: a.defaultOpenAIReasoningEffort ?? '',
     contextStrategy: a.contextStrategy ?? 'additive',
   };
 }
@@ -583,6 +588,7 @@ export function SettingsForm({
                   ...f,
                   defaultProvider: e.target.value as ProviderId | '',
                   defaultModel: '',
+                  defaultOpenAIReasoningEffort: '',
                 }))}
                 className="h-11 w-36 shrink-0 rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
               >
@@ -628,6 +634,41 @@ export function SettingsForm({
               <p className="mt-1.5 text-xs text-zinc-500">
                 {form.defaultProvider} / {form.defaultModel || '继承全局默认'}
               </p>
+            )}
+            {form.defaultProvider === 'openai' && (
+              <div className="mt-3">
+                <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  OpenAI Fast / Reasoning
+                </label>
+                <div className="grid grid-cols-5 gap-2">
+                  {([
+                    { value: 'minimal' as OpenAIReasoningEffort, label: 'Fast' },
+                    { value: 'low' as OpenAIReasoningEffort, label: 'Low' },
+                    { value: 'medium' as OpenAIReasoningEffort, label: 'Medium' },
+                    { value: 'high' as OpenAIReasoningEffort, label: 'High' },
+                    { value: 'xhigh' as OpenAIReasoningEffort, label: 'XHigh' },
+                  ]).map((opt) => {
+                    const active = form.defaultOpenAIReasoningEffort === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setForm(f => ({
+                          ...f,
+                          defaultOpenAIReasoningEffort: f.defaultOpenAIReasoningEffort === opt.value ? '' : opt.value,
+                        }))}
+                        className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                          active
+                            ? 'border-zinc-900 bg-zinc-100 text-zinc-900 dark:border-zinc-100 dark:bg-zinc-800 dark:text-zinc-100'
+                            : 'border-zinc-200 text-zinc-500 hover:border-zinc-400 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-zinc-500'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             )}
           </div>
 

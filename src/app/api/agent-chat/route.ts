@@ -3,6 +3,7 @@ import { generateSessionId } from '@/lib/agent-chat-manager';
 import type { FlowContext } from '@/lib/agent-chat-manager';
 import type { SessionConfig } from '@/types/agent-chat';
 import { getFlowDataPath, getFlowIndexPath, readJsonFile, ensureDataDirV2Migrated } from '@/lib/file-store';
+import { OPENAI_REASONING_EFFORTS, normalizeOpenAIReasoningEffort } from '@/lib/openai-reasoning-effort';
 import { isValidProjectKey, isValidSessionId } from '@/lib/security';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import type { OpenAIReasoningEffort, ProviderId } from '@/types';
@@ -14,7 +15,7 @@ interface ProjectIndex {
 }
 
 const ALLOWED_PROVIDERS: ProviderId[] = PROVIDER_REGISTRY.map((p) => p.id);
-const ALLOWED_OPENAI_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
+const ALLOWED_OPENAI_EFFORTS: OpenAIReasoningEffort[] = [...OPENAI_REASONING_EFFORTS];
 
 /**
  * POST /api/agent-chat
@@ -91,9 +92,11 @@ export async function POST(request: NextRequest) {
   if (modelOverride !== undefined && (!normalizedModel || normalizedModel.length > 200)) {
     return NextResponse.json({ error: 'Invalid modelOverride (1-200 chars)' }, { status: 400 });
   }
-  const normalizedEffort = typeof effortOverride === 'string' ? effortOverride.trim() as OpenAIReasoningEffort : undefined;
+  const normalizedEffort = normalizeOpenAIReasoningEffort(
+    typeof effortOverride === 'string' ? effortOverride.trim() : undefined,
+  );
   if (effortOverride !== undefined && !ALLOWED_OPENAI_EFFORTS.includes(normalizedEffort!)) {
-    return NextResponse.json({ error: 'Invalid effortOverride (low|medium|high|xhigh)' }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid effortOverride (minimal|low|medium|high|xhigh)' }, { status: 400 });
   }
 
   const sessionId = requestedSessionId || generateSessionId();

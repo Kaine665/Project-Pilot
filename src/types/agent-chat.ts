@@ -43,6 +43,8 @@ export interface SessionConfig {
   provider?: import('./index').ProviderId;
   /** 会话使用的模型 ID（覆盖 Agent 默认值和全局设置） */
   model?: string;
+  /** 浼氳瘽绾у埆 OpenAI 鎺ㄧ悊妗ｄ綅锛堣鐩?Agent 榛樿鍊煎拰鍏ㄥ眬璁剧疆锛?*/
+  openaiReasoningEffort?: import('./index').OpenAIReasoningEffort;
   /** 会话级别的系统提示词覆盖（替换 Agent 的 systemPrompt，不影响 supplementaryPrompt） */
   systemPrompt?: string;
   /** 会话级别的能力覆盖（与 Agent 默认值合并，只能收紧不能放宽） */

@@ -6,12 +6,13 @@ import {
   MAX_CUSTOM_SOUND_DATA_URL_LENGTH,
   normalizeNotificationSettings,
 } from '@/lib/notification/notification-sound-presets';
+import { OPENAI_REASONING_EFFORTS } from '@/lib/openai-reasoning-effort';
 import type { ClaudeAuthMode, ProviderId, EffortLevel, OpenAIReasoningEffort, AppSettings, DangerCategory, DangerActionLevel, CustomProviderConfig, NotificationClickAction } from '@/types';
 import { DEFAULT_DANGER_SETTINGS, DEFAULT_NOTIFICATION_SETTINGS, BUILT_IN_PROVIDER_IDS } from '@/types';
 
 const VALID_AUTH_MODES: ClaudeAuthMode[] = ['api_key', 'oauth'];
 const VALID_EFFORT_LEVELS: EffortLevel[] = ['low', 'medium', 'high'];
-const VALID_OPENAI_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
+const VALID_OPENAI_EFFORTS: OpenAIReasoningEffort[] = [...OPENAI_REASONING_EFFORTS];
 const VALID_NOTIFICATION_CLICK_ACTIONS: NotificationClickAction[] = ['open_session', 'focus_app', 'none'];
 
 function isValidProvider(id: string, customProviders?: CustomProviderConfig[]): id is ProviderId {

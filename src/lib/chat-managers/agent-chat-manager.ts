@@ -39,6 +39,7 @@ import '@/lib/satellite-tasks'; // side-effect: registers all satellite tasks
 import type { SatelliteContext } from '@/lib/satellite-tasks';
 import type { RunStatus, RunStatusInfo, SessionExecution } from './types';
 import { appendUsageRecord } from '@/lib/usage-store';
+import { normalizeOpenAIReasoningEffort } from '@/lib/openai-reasoning-effort';
 
 // Re-export store functions so existing callers don't break during migration
 export { generateSessionId } from './agent-chat-session-store';
@@ -210,6 +211,11 @@ class AgentChatManager {
       || sessionConfig?.model
       || agent.defaultModel
       || undefined;
+    const resolvedOpenAIEffort = normalizeOpenAIReasoningEffort(
+      effortOverride
+      || sessionConfig?.openaiReasoningEffort
+      || agent.defaultOpenAIReasoningEffort,
+    );
 
     // 切换 provider/model 后，旧的 resume session 可能不兼容（常见于同会话切换渠道）。
     // 这种情况下必须放弃 resume，避免 Claude SDK 直接 error_during_execution / code 1。
@@ -230,6 +236,9 @@ class AgentChatManager {
       ...sessionConfig,
       ...(resolvedProvider ? { provider: resolvedProvider } : {}),
       ...(resolvedModel ? { model: resolvedModel } : {}),
+      ...(resolvedProvider === 'openai' && resolvedOpenAIEffort
+        ? { openaiReasoningEffort: resolvedOpenAIEffort }
+        : {}),
     };
 
     // OpenAI 协议的自定义供应商暂不支持 Agent Chat（仅内置 openai 支持 Codex CLI）
@@ -331,7 +340,7 @@ class AgentChatManager {
         provider: resolvedProvider ?? 'anthropic',
         capabilities: effectiveCaps,
         model: resolvedModel,
-        effortOverride,
+        effortOverride: resolvedOpenAIEffort,
         resumeSessionId,
         cwd: getAppWorkingDir(),
       });

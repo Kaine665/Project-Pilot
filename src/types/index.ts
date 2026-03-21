@@ -121,7 +121,7 @@ export interface ProviderCredential {
 export type EffortLevel = 'low' | 'medium' | 'high';
 
 /** OpenAI 推理努力等级（Codex 支持 xhigh） */
-export type OpenAIReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
+export type OpenAIReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
 /** Claude Code 配置 */
 export interface ClaudeSettings {
@@ -423,6 +423,8 @@ export interface Agent {
   defaultProvider?: ProviderId;
   /** 默认模型 ID（创建新会话时预选）。留空则继承全局设置。 */
   defaultModel?: string;
+  /** OpenAI 榛樿鎺ㄧ悊妗ｄ綅锛屼粎鍦?provider=openai 鏃剁敓鏁堛€?*/
+  defaultOpenAIReasoningEffort?: OpenAIReasoningEffort;
   /**
    * 引用的 prompt 片段 ID 列表，按顺序拼接到主 prompt 之后。
    * 片段存储在 data/prompts/blocks/{blockId}.md

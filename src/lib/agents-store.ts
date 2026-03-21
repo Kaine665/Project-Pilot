@@ -8,7 +8,9 @@ import {
   writePromptFile,
 } from '@/lib/agent-prompt-store';
 import { getSettings } from '@/lib/settings-manager';
-import type { Agent, AgentCapabilities, AgentStatus, AgentsData } from '@/types';
+import type {
+  Agent, AgentCapabilities, AgentStatus, AgentsData, OpenAIReasoningEffort,
+} from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import type { ResourceRef } from '@/types/resource';
 
@@ -33,6 +35,7 @@ export interface AgentMutationInput {
   triggerHints?: string[];
   defaultProvider?: Agent['defaultProvider'];
   defaultModel?: string;
+  defaultOpenAIReasoningEffort?: OpenAIReasoningEffort | null;
   contextStrategy?: 'additive' | 'exclusive';
 }
 
@@ -49,6 +52,7 @@ export interface CreateAgentInput extends Required<Pick<AgentMutationInput, 'nam
   triggerHints?: string[];
   defaultProvider?: Agent['defaultProvider'];
   defaultModel?: string;
+  defaultOpenAIReasoningEffort?: OpenAIReasoningEffort | null;
   contextStrategy?: 'additive' | 'exclusive';
 }
 
@@ -211,6 +215,7 @@ export async function createAgent(input: CreateAgentInput): Promise<Agent> {
     projectKey: normalizeOptionalString(input.projectKey),
     defaultProvider: input.defaultProvider || undefined,
     defaultModel: normalizeOptionalString(input.defaultModel),
+    defaultOpenAIReasoningEffort: input.defaultOpenAIReasoningEffort ?? undefined,
     contextStrategy: input.contextStrategy || undefined,
     createdAt: now,
     updatedAt: now,
@@ -249,6 +254,16 @@ export async function updateAgent(id: string, input: AgentMutationInput): Promis
   if (input.projectKey !== undefined) agent.projectKey = normalizeOptionalString(input.projectKey);
   if (input.defaultProvider !== undefined) agent.defaultProvider = input.defaultProvider || undefined;
   if (input.defaultModel !== undefined) agent.defaultModel = normalizeOptionalString(input.defaultModel);
+  if (input.defaultProvider !== undefined && input.defaultProvider !== 'openai') {
+    delete agent.defaultOpenAIReasoningEffort;
+  }
+  if (input.defaultOpenAIReasoningEffort !== undefined) {
+    if (input.defaultOpenAIReasoningEffort === null) {
+      delete agent.defaultOpenAIReasoningEffort;
+    } else {
+      agent.defaultOpenAIReasoningEffort = input.defaultOpenAIReasoningEffort;
+    }
+  }
   if (input.contextStrategy !== undefined) agent.contextStrategy = input.contextStrategy || undefined;
 
   if (input.systemPrompt !== undefined) {

@@ -19,10 +19,12 @@ import {
   SettingsTitleGenerationSection,
 } from '@/components/settings-sections';
 import type { ModelHealthData } from '@/components/settings-sections';
+import {
+  DEFAULT_OPENAI_REASONING_EFFORT,
+  isOpenAIReasoningEffort,
+} from '@/lib/openai-reasoning-effort';
 import type { CustomProviderConfig, ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort, DangerCategory, DangerActionLevel, DangerDetectorSettings, TitleGenerationChainEntry } from '@/types';
 import { DEFAULT_DANGER_SETTINGS, DEFAULT_TITLE_GENERATION } from '@/types';
-
-const OPENAI_REASONING_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
 const INITIAL_PROVIDER: ProviderId = 'anthropic';
 const INITIAL_MODEL = getProviderPreset(INITIAL_PROVIDER).models[0]?.id ?? '';
 
@@ -57,10 +59,6 @@ function applyProviderModelStateFromData(
   setCustomModel('');
 }
 
-function isOpenAIReasoningEffort(value: unknown): value is OpenAIReasoningEffort {
-  return typeof value === 'string' && OPENAI_REASONING_EFFORTS.includes(value as OpenAIReasoningEffort);
-}
-
 export default function SettingsPage() {
   const t = useTranslations('settings');
   const tActions = useTranslations('actions');
@@ -79,7 +77,7 @@ export default function SettingsPage() {
   const [customModel, setCustomModel] = useState('');
   const [skipPermissions, setSkipPermissions] = useState(true);
   const [effortLevel, setEffortLevel] = useState<EffortLevel>('high');
-  const [openaiReasoningEffort, setOpenaiReasoningEffort] = useState<OpenAIReasoningEffort>('xhigh');
+  const [openaiReasoningEffort, setOpenaiReasoningEffort] = useState<OpenAIReasoningEffort>(DEFAULT_OPENAI_REASONING_EFFORT);
   const [openaiModels, setOpenaiModels] = useState<Array<{ id: string; displayName: string }>>([]);
   const [openaiModelsLoading, setOpenaiModelsLoading] = useState(false);
   const [maxTurns, setMaxTurns] = useState(0);
@@ -208,6 +206,7 @@ export default function SettingsPage() {
 
   const openaiReasoningOptions = useMemo(
     () => [
+      { value: 'minimal' as OpenAIReasoningEffort, label: t('openaiReasoningMinimal') },
       { value: 'low' as OpenAIReasoningEffort, label: t('openaiReasoningLow') },
       { value: 'medium' as OpenAIReasoningEffort, label: t('openaiReasoningMedium') },
       { value: 'high' as OpenAIReasoningEffort, label: t('openaiReasoningHigh') },
@@ -231,7 +230,7 @@ export default function SettingsPage() {
         setOpenaiReasoningEffort(
           isOpenAIReasoningEffort(data.claude.openaiReasoningEffort)
             ? data.claude.openaiReasoningEffort
-            : 'xhigh'
+            : DEFAULT_OPENAI_REASONING_EFFORT
         );
         setMaxTurns(data.claude.maxTurns || 0);
         setDefaultExposePromptPath(data.claude.defaultExposePromptPath !== false);

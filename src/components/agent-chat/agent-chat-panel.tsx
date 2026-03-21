@@ -330,6 +330,7 @@ export function AgentChatPanel({
   );
   const effortOptions = useMemo(
     () => [
+      { value: 'minimal', label: 'Fast' },
       { value: 'low', label: 'Low' },
       { value: 'medium', label: 'Medium' },
       { value: 'high', label: 'High' },
@@ -1092,8 +1093,13 @@ export function AgentChatPanel({
               ...sessionConfig,
               provider: chatProvider,
               model: chatModel || undefined,
+              openaiReasoningEffort: chatProvider === 'openai' ? chatEffort : undefined,
             };
-            const hasAny = configWithModel.contextIds?.length || configWithModel.supplementaryPrompt?.trim() || configWithModel.provider || configWithModel.model;
+            const hasAny = configWithModel.contextIds?.length
+              || configWithModel.supplementaryPrompt?.trim()
+              || configWithModel.provider
+              || configWithModel.model
+              || configWithModel.openaiReasoningEffort;
             return hasAny ? configWithModel : undefined;
           })(),
         }),
