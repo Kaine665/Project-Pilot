@@ -3,6 +3,7 @@ import { generateSessionId } from '@/lib/agent-chat-manager';
 import type { FlowContext } from '@/lib/agent-chat-manager';
 import type { SessionConfig } from '@/types/agent-chat';
 import { getFlowDataPath, getFlowIndexPath, readJsonFile, ensureDataDirV2Migrated } from '@/lib/file-store';
+import { normalizeOpenAIFastMode } from '@/lib/openai-fast-mode';
 import { OPENAI_REASONING_EFFORTS, normalizeOpenAIReasoningEffort } from '@/lib/openai-reasoning-effort';
 import { isValidProjectKey, isValidSessionId } from '@/lib/security';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
@@ -20,13 +21,13 @@ const ALLOWED_OPENAI_EFFORTS: OpenAIReasoningEffort[] = [...OPENAI_REASONING_EFF
 /**
  * POST /api/agent-chat
  * Start an agent chat conversation.
- * Body: { agentId, message, sessionId?, projectKey?, providerOverride?, modelOverride?, effortOverride?, images?: [{mediaType, data}], config?: SessionConfig, parentSessionId? }
+ * Body: { agentId, message, sessionId?, projectKey?, providerOverride?, modelOverride?, effortOverride?, fastModeOverride?, images?: [{mediaType, data}], config?: SessionConfig, parentSessionId? }
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const {
     agentId, message, sessionId: requestedSessionId, projectKey,
-    providerOverride, modelOverride, effortOverride,
+    providerOverride, modelOverride, effortOverride, fastModeOverride,
     images, initialTitle, config, parentSessionId, depth, background,
   } = body as {
     agentId: string;
@@ -36,6 +37,7 @@ export async function POST(request: NextRequest) {
     providerOverride?: ProviderId;
     modelOverride?: string;
     effortOverride?: OpenAIReasoningEffort;
+    fastModeOverride?: boolean;
     images?: Array<{ mediaType: string; data: string }>;
     initialTitle?: string;
     config?: SessionConfig;
@@ -98,6 +100,10 @@ export async function POST(request: NextRequest) {
   if (effortOverride !== undefined && !ALLOWED_OPENAI_EFFORTS.includes(normalizedEffort!)) {
     return NextResponse.json({ error: 'Invalid effortOverride (minimal|low|medium|high|xhigh)' }, { status: 400 });
   }
+  const normalizedFastMode = normalizeOpenAIFastMode(fastModeOverride);
+  if (fastModeOverride !== undefined && normalizedFastMode === undefined) {
+    return NextResponse.json({ error: 'Invalid fastModeOverride (boolean)' }, { status: 400 });
+  }
 
   const sessionId = requestedSessionId || generateSessionId();
 
@@ -138,6 +144,7 @@ export async function POST(request: NextRequest) {
         providerOverride: normalizedProvider || undefined,
         modelOverride: normalizedModel || undefined,
         effortOverride: normalizedEffort || undefined,
+        fastModeOverride: normalizedFastMode,
         depth: typeof depth === 'number' ? depth : undefined,
         background: background || undefined,
       }),

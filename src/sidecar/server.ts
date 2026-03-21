@@ -137,6 +137,7 @@ async function handleStart(
     providerOverride?: ProviderId;
     modelOverride?: string;
     effortOverride?: string;
+    fastModeOverride?: boolean;
     depth?: number;
     background?: boolean;
   };
@@ -173,6 +174,7 @@ async function handleStart(
       body.providerOverride,
       body.modelOverride,
       body.effortOverride,
+      body.fastModeOverride,
       undefined, // ephemeral
       effectiveDepth,
       body.background,

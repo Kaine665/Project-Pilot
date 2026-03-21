@@ -122,6 +122,7 @@ export type EffortLevel = 'low' | 'medium' | 'high';
 
 /** OpenAI 推理努力等级（Codex 支持 xhigh） */
 export type OpenAIReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+export type OpenAIServiceTier = 'fast';
 
 /** Claude Code 配置 */
 export interface ClaudeSettings {
@@ -154,6 +155,8 @@ export interface ClaudeSettings {
   providerBaseUrls?: Partial<Record<ProviderId, string>>;
   /** OpenAI 推理努力等级 */
   openaiReasoningEffort?: OpenAIReasoningEffort;
+  /** OpenAI Codex Fast Mode（仅 ChatGPT 登录 + GPT-5.4 生效） */
+  openaiFastMode?: boolean;
   /** 用户添加的自定义供应商列表（规范 schema） */
   customProviders?: CustomProviderConfig[];
 }

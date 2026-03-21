@@ -31,6 +31,7 @@ export interface AgentChatPanelProps {
     model: string;
     modelOptions: ModelSelectOption[];
     effort: OpenAIReasoningEffort;
+    fastMode: boolean;
   };
 }
 

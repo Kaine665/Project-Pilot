@@ -140,7 +140,13 @@ export default function AgentsPage() {
   const [showAgentModal, setShowAgentModal] = useState(false);
 
   // ── Cached settings for child panels (fetched once, shared to all AgentChatPanel instances) ──
-  type CachedSettings = { provider: ProviderId; model: string; modelOptions: Array<{ value: string; label: string }>; effort: OpenAIReasoningEffort };
+  type CachedSettings = {
+    provider: ProviderId;
+    model: string;
+    modelOptions: Array<{ value: string; label: string }>;
+    effort: OpenAIReasoningEffort;
+    fastMode: boolean;
+  };
   const [cachedSettings, setCachedSettings] = useState<CachedSettings | undefined>(undefined);
 
   useEffect(() => {
@@ -173,7 +179,8 @@ export default function AgentsPage() {
         const model = modelOptions.some((o) => o.value === fallbackModel) ? fallbackModel : (modelOptions[0]?.value || '');
         const VALID_EFFORTS: OpenAIReasoningEffort[] = ['minimal', 'low', 'medium', 'high', 'xhigh'];
         const effort: OpenAIReasoningEffort = (typeof claude.openaiReasoningEffort === 'string' && VALID_EFFORTS.includes(claude.openaiReasoningEffort)) ? claude.openaiReasoningEffort : 'xhigh';
-        setCachedSettings({ provider: loadedProvider, model, modelOptions, effort });
+        const fastMode = claude.openaiFastMode === true;
+        setCachedSettings({ provider: loadedProvider, model, modelOptions, effort, fastMode });
       } catch { /* ignore */ }
     })();
     return () => { cancelled = true; };

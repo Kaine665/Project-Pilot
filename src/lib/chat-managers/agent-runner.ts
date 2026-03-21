@@ -20,9 +20,10 @@ import { randomBytes } from 'crypto';
 import { SdkEventAdapter } from '@/lib/sdk-event-adapter';
 import { adaptCodexEvent } from '@/lib/codex-sdk-adapter';
 import { resolveCodexBinaryPath } from '@/lib/codex-cli';
+import { shouldApplyOpenAIFastMode } from '@/lib/openai-fast-mode';
 import { DEFAULT_OPENAI_REASONING_EFFORT, normalizeOpenAIReasoningEffort } from '@/lib/openai-reasoning-effort';
 import { getAppWorkingDir } from '@/lib/app-paths';
-import { buildSdkQueryOptions, buildCodexExecEnv, getProviderScopedModel, getSettings } from '@/lib/settings-manager';
+import { buildSdkQueryOptions, buildCodexExecEnv, getEffectiveAuthMode, getProviderScopedModel, getSettings } from '@/lib/settings-manager';
 import type { ChatSSEEvent, AgentCapabilities, ProviderId } from '@/types';
 export type AgentRunnerInput = string | AsyncIterable<SDKUserMessage> | CodexInput;
 
@@ -60,6 +61,7 @@ export interface AgentRunnerCreateOptions {
   capabilities?: AgentCapabilities;
   model?: string;
   effortOverride?: string;
+  fastModeOverride?: boolean;
   resumeSessionId?: string;
   cwd?: string;
 }
@@ -81,6 +83,12 @@ export async function createAgentRunner(opts: AgentRunnerCreateOptions): Promise
     const modelReasoningEffort = normalizeOpenAIReasoningEffort(
       opts.effortOverride ?? settings.claude.openaiReasoningEffort ?? DEFAULT_OPENAI_REASONING_EFFORT,
     );
+    const authMode = getEffectiveAuthMode(settings.claude, 'openai');
+    const fastModeEnabled = shouldApplyOpenAIFastMode({
+      enabled: opts.fastModeOverride ?? settings.claude.openaiFastMode ?? false,
+      model,
+      authMode,
+    });
 
     const env = await buildCodexExecEnv();
     const envRecord: Record<string, string> = {};
@@ -95,6 +103,7 @@ export async function createAgentRunner(opts: AgentRunnerCreateOptions): Promise
     const { Codex } = await import('@openai/codex-sdk');
     const codex = new Codex({
       env: envRecord,
+      ...(fastModeEnabled ? { config: { service_tier: 'fast', features: { fast_mode: true } } } : {}),
       ...(codexPathOverride ? { codexPathOverride } : {}),
     });
 

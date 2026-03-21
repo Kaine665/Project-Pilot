@@ -99,7 +99,15 @@ export function AgentChatPanel({
 
   // Provider / model routing (extracted to useModelConfig hook)
   const modelConfig = useModelConfig(agent, projectKey, cachedSettings);
-  const { provider: chatProvider, model: chatModel, options: chatModelOptions, effort: chatEffort, contextWindow, promptEstimate } = modelConfig;
+  const {
+    provider: chatProvider,
+    model: chatModel,
+    options: chatModelOptions,
+    effort: chatEffort,
+    fastMode: chatFastMode,
+    contextWindow,
+    promptEstimate,
+  } = modelConfig;
   const setChatProvider = modelConfig.setProvider;
   const setChatModel = modelConfig.setModel;
   const setChatEffort = modelConfig.setEffort;
@@ -330,7 +338,7 @@ export function AgentChatPanel({
   );
   const effortOptions = useMemo(
     () => [
-      { value: 'minimal', label: 'Fast' },
+      { value: 'minimal', label: 'Minimal' },
       { value: 'low', label: 'Low' },
       { value: 'medium', label: 'Medium' },
       { value: 'high', label: 'High' },
@@ -1086,6 +1094,7 @@ export function AgentChatPanel({
           providerOverride: chatProvider,
           modelOverride: chatModel || undefined,
           effortOverride: chatProvider === 'openai' ? chatEffort : undefined,
+          fastModeOverride: chatProvider === 'openai' ? chatFastMode : undefined,
           images: imageAttachments.length > 0 ? imageAttachments : undefined,
           initialTitle: text.trim().slice(0, 10) || undefined,
           config: (() => {
@@ -1094,12 +1103,14 @@ export function AgentChatPanel({
               provider: chatProvider,
               model: chatModel || undefined,
               openaiReasoningEffort: chatProvider === 'openai' ? chatEffort : undefined,
+              openaiFastMode: chatProvider === 'openai' ? chatFastMode : undefined,
             };
             const hasAny = configWithModel.contextIds?.length
               || configWithModel.supplementaryPrompt?.trim()
               || configWithModel.provider
               || configWithModel.model
-              || configWithModel.openaiReasoningEffort;
+              || configWithModel.openaiReasoningEffort
+              || configWithModel.openaiFastMode;
             return hasAny ? configWithModel : undefined;
           })(),
         }),
@@ -1122,7 +1133,7 @@ export function AgentChatPanel({
       chatDispatch({ type: 'STREAM_END' });
       clearSessionRunning(targetSessionId);
     }
-  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, chatProvider, chatModel, chatEffort, connectToStream, onSessionChange, t, sessionConfig, setSessionIdSync, persistPendingUserQueue, sessionTitle, markSessionRunning, clearSessionRunning]);
+  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, chatProvider, chatModel, chatEffort, chatFastMode, connectToStream, onSessionChange, t, sessionConfig, setSessionIdSync, persistPendingUserQueue, sessionTitle, markSessionRunning, clearSessionRunning]);
 
   useEffect(() => {
     doSendRef.current = doSend;
