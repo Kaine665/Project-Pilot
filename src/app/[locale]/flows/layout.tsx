@@ -8,7 +8,7 @@ const AgentChatPanel = dynamic(
   { ssr: false },
 );
 import { useProject } from '@/components/project-context';
-import { FolderKanban, Plus, Network, Bot, BookOpen, FileText, ListTodo, Table2, Timer, Satellite, MessageSquare, Blocks, Library, ScrollText, MessagesSquare } from 'lucide-react';
+import { FolderKanban, Plus, Bot, BookOpen, FileText, ListTodo, Timer, Satellite, MessageSquare, Blocks, Library, ScrollText, MessagesSquare } from 'lucide-react';
 import { SidebarIconButton } from '@/components/sidebar-icon-button';
 import { BUTLER_AGENT_ID } from '@/lib/default-agents';
 import type { Agent } from '@/types';
@@ -51,8 +51,6 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   const isButlerPage = pathname.startsWith('/flows/butler');
   const isDocsPage = pathname.startsWith('/flows/docs');
   const isTodosPage = pathname.startsWith('/flows/todos');
-  const isOrchestratorPage = pathname.startsWith('/flows/orchestrator');
-  const isBitablePage = pathname.startsWith('/flows/bitable');
   const isSchedulesPage = pathname.startsWith('/flows/schedules');
   const isSatelliteTasksPage = pathname.startsWith('/flows/satellite-tasks');
   const isChatPage = pathname.startsWith('/flows/chat');
@@ -60,7 +58,7 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   const isSkillsPage = pathname.startsWith('/flows/skills');
   const isKnowledgePage = pathname.startsWith('/flows/knowledge');
   const isPromptsPage = pathname.startsWith('/flows/prompts');
-  const isSubRoute = isAgentsPage || isContextPage || isDocsPage || isButlerPage || isTodosPage || isOrchestratorPage || isBitablePage || isSchedulesPage || isSatelliteTasksPage || isChatPage || isDialoguesPage || isSkillsPage || isKnowledgePage || isPromptsPage;
+  const isSubRoute = isAgentsPage || isContextPage || isDocsPage || isButlerPage || isTodosPage || isSchedulesPage || isSatelliteTasksPage || isChatPage || isDialoguesPage || isSkillsPage || isKnowledgePage || isPromptsPage;
 
   // Auto-close expandable panel when on sub-route pages
   useEffect(() => {
@@ -197,12 +195,10 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
 
               {/* Group: Tasks & Data */}
               <SidebarIconButton icon={ListTodo} tooltip="AI 待办" isActive={isTodosPage} onClick={handleNavigateTodos} />
-              <SidebarIconButton icon={Table2} tooltip="多维表格" isActive={isBitablePage} onClick={() => router.push('/flows/bitable')} />
 
               <div className="w-6 border-t border-zinc-200 dark:border-zinc-700" />
 
               {/* Group: Automation */}
-              <SidebarIconButton icon={Network} tooltip="Agent 编排" isActive={isOrchestratorPage} onClick={() => router.push('/flows/orchestrator')} />
               <SidebarIconButton icon={Timer} tooltip="定时运行" isActive={isSchedulesPage} onClick={() => router.push('/flows/schedules')} />
               <SidebarIconButton icon={Satellite} tooltip="卫星任务" isActive={isSatelliteTasksPage} onClick={() => router.push('/flows/satellite-tasks')} />
 

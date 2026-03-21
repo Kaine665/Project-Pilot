@@ -718,13 +718,6 @@ export interface DocsIndexData {
   categories?: CategoryDef[];
 }
 
-// ==================== Orchestrator ====================
-
-export type {
-  OrchestratorPhase, SplitPlan, WorkerTask, WorkerResult,
-  OrchestratorSession, OrchestratorSessionsData, OrchestratorSSEEvent,
-} from './orchestrator';
-
 // ==================== Inbox（收件箱） ====================
 
 /** 收件箱条目 —— 未结构化的快速记录 */

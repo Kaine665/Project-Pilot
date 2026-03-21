@@ -3,7 +3,7 @@
 ## Product Context
 
 - **Product**: ProjectPilot — AI-powered project management and execution pilot
-- **Key pages**: Projects, Agents, Dimensions, Context, Docs, Todos, Bitable, Orchestrator, Schedules, Recycle Bin, Butler
+- **Key pages**: Projects, Agents, Dimensions, Context, Docs, Todos, Schedules, Recycle Bin, Butler
 - **Target page for redesign**: Agents (`/flows/agents`) — Agent management + chat interface
 
 ## Key Features (Agents Page)
