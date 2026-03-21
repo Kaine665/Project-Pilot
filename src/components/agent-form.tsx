@@ -638,11 +638,11 @@ export function SettingsForm({
             {form.defaultProvider === 'openai' && (
               <div className="mt-3">
                 <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  OpenAI Fast / Reasoning
+                  OpenAI Reasoning
                 </label>
                 <div className="grid grid-cols-5 gap-2">
                   {([
-                    { value: 'minimal' as OpenAIReasoningEffort, label: 'Fast' },
+                    { value: 'minimal' as OpenAIReasoningEffort, label: 'Minimal' },
                     { value: 'low' as OpenAIReasoningEffort, label: 'Low' },
                     { value: 'medium' as OpenAIReasoningEffort, label: 'Medium' },
                     { value: 'high' as OpenAIReasoningEffort, label: 'High' },

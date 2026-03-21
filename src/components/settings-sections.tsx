@@ -86,6 +86,8 @@ interface AIConfigSectionProps extends TranslationProps {
   customModel: string;
   baseUrl: string;
   openaiReasoningEffort: OpenAIReasoningEffort;
+  openaiFastMode: boolean;
+  openaiFastModeEligible: boolean;
   openaiReasoningOptions: Array<{ value: OpenAIReasoningEffort; label: string }>;
   oauthStatus: 'unknown' | 'checking' | 'authenticated' | 'not_authenticated';
   loginPending: boolean;
@@ -107,6 +109,7 @@ interface AIConfigSectionProps extends TranslationProps {
   onCustomModelChange: (m: string) => void;
   onBaseUrlChange: (u: string) => void;
   onOpenAIReasoningEffortChange: (effort: OpenAIReasoningEffort) => void;
+  onOpenAIFastModeChange: (enabled: boolean) => void;
   onCheckOAuthStatus: () => void;
   onTriggerOAuthLogin: () => void;
   onOauthCodeChange: (v: string) => void;
@@ -124,13 +127,13 @@ interface AIConfigSectionProps extends TranslationProps {
 export function SettingsAISection({
   t, tActions, btnActive, btnInactive,
   provider, authMode, apiKey, model, customModel, baseUrl,
-  openaiReasoningEffort, openaiReasoningOptions,
+  openaiReasoningEffort, openaiFastMode, openaiFastModeEligible, openaiReasoningOptions,
   oauthStatus, loginPending, loginUrl, loginCode, loginFlowActive, oauthCode, codeSubmitting, oauthSubmitError,
   testState, testMessage,
   preset, isPresetModel, modelSelectOptions,
   onProviderChange, onAuthModeChange, onApiKeyChange,
   onModelChange, onCustomModelChange, onBaseUrlChange,
-  onOpenAIReasoningEffortChange,
+  onOpenAIReasoningEffortChange, onOpenAIFastModeChange,
   onCheckOAuthStatus, onTriggerOAuthLogin, onOauthCodeChange, onCodeSubmit, onCancelLoginFlow,
   onTestConnection,
   customProviders = [],
@@ -434,6 +437,32 @@ export function SettingsAISection({
           {/* OpenAI Reasoning Effort (only for openai provider) */}
           {provider === 'openai' && (
             <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                {t('openaiFastMode')}
+              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => onOpenAIFastModeChange(false)}
+                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    !openaiFastMode ? btnActive : btnInactive
+                  }`}
+                >
+                  {t('openaiFastModeOff')}
+                </button>
+                <button
+                  onClick={() => onOpenAIFastModeChange(true)}
+                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    openaiFastMode ? btnActive : btnInactive
+                  }`}
+                >
+                  {t('openaiFastModeOn')}
+                </button>
+              </div>
+              <p className="text-xs text-zinc-500">
+                {openaiFastModeEligible
+                  ? t('openaiFastModeEligibleHint')
+                  : t('openaiFastModeHint')}
+              </p>
               <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                 {t('openaiReasoningMode')}
               </label>

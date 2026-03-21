@@ -39,6 +39,7 @@ import '@/lib/satellite-tasks'; // side-effect: registers all satellite tasks
 import type { SatelliteContext } from '@/lib/satellite-tasks';
 import type { RunStatus, RunStatusInfo, SessionExecution } from './types';
 import { appendUsageRecord } from '@/lib/usage-store';
+import { normalizeOpenAIFastMode } from '@/lib/openai-fast-mode';
 import { normalizeOpenAIReasoningEffort } from '@/lib/openai-reasoning-effort';
 
 // Re-export store functions so existing callers don't break during migration
@@ -174,6 +175,7 @@ class AgentChatManager {
     providerOverride?: ProviderId,
     modelOverride?: string,
     effortOverride?: string,
+    fastModeOverride?: boolean,
     ephemeral?: boolean,
     _depth?: number,
     _background?: boolean,
@@ -216,6 +218,15 @@ class AgentChatManager {
       || sessionConfig?.openaiReasoningEffort
       || agent.defaultOpenAIReasoningEffort,
     );
+    const settings = await getSettings();
+    const hasExplicitOpenAIFastMode =
+      fastModeOverride !== undefined || sessionConfig?.openaiFastMode !== undefined;
+    const resolvedOpenAIFastMode = normalizeOpenAIFastMode(
+      fastModeOverride
+      ?? sessionConfig?.openaiFastMode
+      ?? settings.claude.openaiFastMode
+      ?? false,
+    ) ?? false;
 
     // 切换 provider/model 后，旧的 resume session 可能不兼容（常见于同会话切换渠道）。
     // 这种情况下必须放弃 resume，避免 Claude SDK 直接 error_during_execution / code 1。
@@ -239,11 +250,13 @@ class AgentChatManager {
       ...(resolvedProvider === 'openai' && resolvedOpenAIEffort
         ? { openaiReasoningEffort: resolvedOpenAIEffort }
         : {}),
+      ...(resolvedProvider === 'openai' && (hasExplicitOpenAIFastMode || resolvedOpenAIFastMode)
+        ? { openaiFastMode: resolvedOpenAIFastMode }
+        : {}),
     };
 
     // OpenAI 协议的自定义供应商暂不支持 Agent Chat（仅内置 openai 支持 Codex CLI）
     if (resolvedProvider?.startsWith('custom-')) {
-      const settings = await getSettings();
       const cp = settings.claude.customProviders?.find((c) => c.id === resolvedProvider);
       if (cp?.apiProtocol === 'openai') {
         throw new Error(
@@ -341,6 +354,7 @@ class AgentChatManager {
         capabilities: effectiveCaps,
         model: resolvedModel,
         effortOverride: resolvedOpenAIEffort,
+        fastModeOverride: resolvedOpenAIFastMode,
         resumeSessionId,
         cwd: getAppWorkingDir(),
       });

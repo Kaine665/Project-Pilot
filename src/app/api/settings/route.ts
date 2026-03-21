@@ -6,6 +6,7 @@ import {
   MAX_CUSTOM_SOUND_DATA_URL_LENGTH,
   normalizeNotificationSettings,
 } from '@/lib/notification/notification-sound-presets';
+import { normalizeOpenAIFastMode } from '@/lib/openai-fast-mode';
 import { OPENAI_REASONING_EFFORTS } from '@/lib/openai-reasoning-effort';
 import type { ClaudeAuthMode, ProviderId, EffortLevel, OpenAIReasoningEffort, AppSettings, DangerCategory, DangerActionLevel, CustomProviderConfig, NotificationClickAction } from '@/types';
 import { DEFAULT_DANGER_SETTINGS, DEFAULT_NOTIFICATION_SETTINGS, BUILT_IN_PROVIDER_IDS } from '@/types';
@@ -120,6 +121,9 @@ export async function POST(request: NextRequest) {
   if (body.claude?.openaiReasoningEffort !== undefined
     && !VALID_OPENAI_EFFORTS.includes(body.claude.openaiReasoningEffort)) {
     return NextResponse.json({ error: 'Invalid openaiReasoningEffort' }, { status: 400 });
+  }
+  if (body.claude?.openaiFastMode !== undefined && normalizeOpenAIFastMode(body.claude.openaiFastMode) === undefined) {
+    return NextResponse.json({ error: 'Invalid openaiFastMode' }, { status: 400 });
   }
   // providerApiKeys: Record<ProviderId, string>
   if (body.claude?.providerApiKeys !== undefined) {
@@ -463,6 +467,9 @@ export async function POST(request: NextRequest) {
   // OpenAI reasoning effort
   if (body.claude?.openaiReasoningEffort !== undefined) {
     updated.claude.openaiReasoningEffort = body.claude.openaiReasoningEffort;
+  }
+  if (body.claude?.openaiFastMode !== undefined) {
+    updated.claude.openaiFastMode = body.claude.openaiFastMode;
   }
 
   // Custom providers（apiKey 掩码回传时保留原值）

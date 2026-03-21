@@ -17,6 +17,7 @@ function sessionConfigSyncKey(config: SessionConfig): string {
     provider: config.provider ?? '',
     model: config.model ?? '',
     openaiReasoningEffort: config.openaiReasoningEffort ?? '',
+    openaiFastMode: config.openaiFastMode ?? '',
     systemPrompt: config.systemPrompt ?? '',
     capabilities: config.capabilities ?? {},
   });
@@ -50,6 +51,7 @@ export function SessionConfigPanel({
   const [sessionProvider, setSessionProvider] = useState<ProviderId | ''>(config.provider ?? '');
   const [sessionModel, setSessionModel] = useState(config.model ?? '');
   const [sessionOpenAIEffort, setSessionOpenAIEffort] = useState<OpenAIReasoningEffort | ''>(config.openaiReasoningEffort ?? '');
+  const [sessionOpenAIFastMode, setSessionOpenAIFastMode] = useState<boolean | ''>(config.openaiFastMode ?? '');
   const [systemPromptOverride, setSystemPromptOverride] = useState(config.systemPrompt ?? '');
   const [capsOverride, setCapsOverride] = useState<Partial<AgentCapabilities>>(config.capabilities ?? {});
   const [contextEntries, setContextEntries] = useState<ContextEntry[]>([]);
@@ -107,6 +109,7 @@ export function SessionConfigPanel({
     setSessionProvider(config.provider ?? '');
     setSessionModel(config.model ?? '');
     setSessionOpenAIEffort(config.openaiReasoningEffort ?? '');
+    setSessionOpenAIFastMode(config.openaiFastMode ?? '');
     setSystemPromptOverride(config.systemPrompt ?? '');
     setCapsOverride(config.capabilities ?? {});
   // eslint-disable-next-line react-hooks/exhaustive-deps -- 用 configKey 代替 config 引用，避免父组件每帧新对象导致死循环
@@ -164,10 +167,11 @@ export function SessionConfigPanel({
     const providerChanged = sessionProvider !== (config.provider ?? '');
     const modelChanged = sessionModel !== (config.model ?? '');
     const effortChanged = sessionOpenAIEffort !== (config.openaiReasoningEffort ?? '');
+    const fastModeChanged = sessionOpenAIFastMode !== (config.openaiFastMode ?? '');
     const sysPromptChanged = systemPromptOverride !== (config.systemPrompt ?? '');
     const capsChanged = JSON.stringify(capsOverride) !== JSON.stringify(config.capabilities ?? {});
-    return idsChanged || skillsChanged || promptChanged || providerChanged || modelChanged || effortChanged || sysPromptChanged || capsChanged;
-  }, [contextIds, skillNames, supplementaryPrompt, sessionProvider, sessionModel, sessionOpenAIEffort, systemPromptOverride, capsOverride, config]);
+    return idsChanged || skillsChanged || promptChanged || providerChanged || modelChanged || effortChanged || fastModeChanged || sysPromptChanged || capsChanged;
+  }, [contextIds, skillNames, supplementaryPrompt, sessionProvider, sessionModel, sessionOpenAIEffort, sessionOpenAIFastMode, systemPromptOverride, capsOverride, config]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -179,6 +183,9 @@ export function SessionConfigPanel({
     if (sessionModel.trim()) newConfig.model = sessionModel.trim();
     if (effectiveSessionProvider === 'openai' && sessionOpenAIEffort) {
       newConfig.openaiReasoningEffort = sessionOpenAIEffort;
+    }
+    if (effectiveSessionProvider === 'openai' && sessionOpenAIFastMode !== '') {
+      newConfig.openaiFastMode = sessionOpenAIFastMode;
     }
     if (systemPromptOverride.trim()) newConfig.systemPrompt = systemPromptOverride.trim();
     if (Object.keys(capsOverride).length > 0) newConfig.capabilities = capsOverride;
@@ -238,6 +245,7 @@ export function SessionConfigPanel({
                 setSessionModel('');
                 if (nextProvider && nextProvider !== 'openai') {
                   setSessionOpenAIEffort('');
+                  setSessionOpenAIFastMode('');
                 }
               }}
               className="h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500"
@@ -266,30 +274,58 @@ export function SessionConfigPanel({
               />
             )}
             {effectiveSessionProvider === 'openai' && (
-              <div className="grid grid-cols-5 gap-2">
-                {([
-                  { value: 'minimal' as OpenAIReasoningEffort, label: 'Fast' },
-                  { value: 'low' as OpenAIReasoningEffort, label: 'Low' },
-                  { value: 'medium' as OpenAIReasoningEffort, label: 'Medium' },
-                  { value: 'high' as OpenAIReasoningEffort, label: 'High' },
-                  { value: 'xhigh' as OpenAIReasoningEffort, label: 'XHigh' },
-                ]).map((opt) => {
-                  const active = sessionOpenAIEffort === opt.value;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setSessionOpenAIEffort(prev => (prev === opt.value ? '' : opt.value))}
-                      className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
-                        active
-                          ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-300'
-                          : 'border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  );
-                })}
+              <div className="space-y-3">
+                <div>
+                  <div className="mb-2 text-xs font-medium text-zinc-500">Codex Fast Mode</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      { value: '' as const, label: '继承' },
+                      { value: false, label: '关闭' },
+                      { value: true, label: '开启' },
+                    ]).map((opt) => (
+                      <button
+                        key={String(opt.value)}
+                        type="button"
+                        onClick={() => setSessionOpenAIFastMode(opt.value)}
+                        className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                          sessionOpenAIFastMode === opt.value
+                            ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-300'
+                            : 'border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs text-zinc-400">
+                    仅在 OpenAI OAuth + GPT-5.4 生效。开启后使用官方 Fast mode，而不是推理档位。
+                  </p>
+                </div>
+                <div className="grid grid-cols-5 gap-2">
+                  {([
+                    { value: 'minimal' as OpenAIReasoningEffort, label: 'Minimal' },
+                    { value: 'low' as OpenAIReasoningEffort, label: 'Low' },
+                    { value: 'medium' as OpenAIReasoningEffort, label: 'Medium' },
+                    { value: 'high' as OpenAIReasoningEffort, label: 'High' },
+                    { value: 'xhigh' as OpenAIReasoningEffort, label: 'XHigh' },
+                  ]).map((opt) => {
+                    const active = sessionOpenAIEffort === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setSessionOpenAIEffort(prev => (prev === opt.value ? '' : opt.value))}
+                        className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                          active
+                            ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-300'
+                            : 'border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>

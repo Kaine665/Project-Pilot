@@ -130,6 +130,7 @@ async function runSingleTest(
       provider,
       model || preset.models[0]?.id,
       undefined,
+      undefined,
       true, // ephemeral
     );
   } catch (err) {

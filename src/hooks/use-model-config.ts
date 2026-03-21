@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { getProviderPreset, getModelContextWindow } from '@/lib/provider-registry';
+import { normalizeOpenAIFastMode } from '@/lib/openai-fast-mode';
 import {
   DEFAULT_OPENAI_REASONING_EFFORT,
   isOpenAIReasoningEffort,
@@ -19,6 +20,7 @@ interface CachedSettings {
   model: string;
   modelOptions: ModelSelectOption[];
   effort: OpenAIReasoningEffort;
+  fastMode: boolean;
 }
 
 export interface UseModelConfigReturn {
@@ -26,12 +28,14 @@ export interface UseModelConfigReturn {
   model: string;
   options: ModelSelectOption[];
   effort: OpenAIReasoningEffort;
+  fastMode: boolean;
   contextWindow: number;
   promptEstimate: number;
   setProvider: (p: ProviderId) => void;
   setModel: (m: string) => void;
   setOptions: (o: ModelSelectOption[]) => void;
   setEffort: (e: OpenAIReasoningEffort) => void;
+  setFastMode: (enabled: boolean) => void;
   applySessionConfig: (config: SessionConfig) => void;
   resetToAgentDefaults: (agent: Agent) => void;
 }
@@ -70,9 +74,11 @@ export function useModelConfig(
   const [model, setModel] = useState(INITIAL_MODEL);
   const [options, setOptions] = useState<ModelSelectOption[]>(INITIAL_OPTIONS);
   const [effort, setEffort] = useState<OpenAIReasoningEffort>(DEFAULT_OPENAI_REASONING_EFFORT);
+  const [fastMode, setFastMode] = useState<boolean>(cachedSettings?.fastMode ?? false);
   const [globalEffort, setGlobalEffort] = useState<OpenAIReasoningEffort>(
     cachedSettings?.effort ?? DEFAULT_OPENAI_REASONING_EFFORT,
   );
+  const [globalFastMode, setGlobalFastMode] = useState<boolean>(cachedSettings?.fastMode ?? false);
   const [contextWindow, setContextWindow] = useState(getModelContextWindow(INITIAL_MODEL));
   const [promptEstimate, setPromptEstimate] = useState(0);
   const agentDefaultProvider = agent.defaultProvider;
@@ -89,9 +95,11 @@ export function useModelConfig(
       const loadedModel = loaded.model;
       const loadedOptions = loaded.modelOptions;
       const loadedEffort = loaded.effort;
+      const loadedFastMode = loaded.fastMode;
       const effectiveProvider = agentDefaultProvider ?? loadedProvider;
 
       setGlobalEffort(loadedEffort);
+      setGlobalFastMode(loadedFastMode);
 
       if (agentDefaultProvider) {
         const agentOptions = buildProviderOptions(agentDefaultProvider, agentDefaultModel || '');
@@ -106,6 +114,7 @@ export function useModelConfig(
       }
 
       setEffort(resolveOpenAIDefaultEffort(agentDefaultOpenAIReasoningEffort, effectiveProvider, loadedEffort));
+      setFastMode(effectiveProvider === 'openai' ? loadedFastMode : false);
     };
 
     if (cachedSettings) {
@@ -159,12 +168,14 @@ export function useModelConfig(
         const savedEffort = isOpenAIReasoningEffort(claude.openaiReasoningEffort)
           ? claude.openaiReasoningEffort
           : DEFAULT_OPENAI_REASONING_EFFORT;
+        const savedFastMode = normalizeOpenAIFastMode(claude.openaiFastMode) ?? false;
 
         applyLoadedSettings({
           provider: loadedProvider,
           model: selectedModel,
           modelOptions,
           effort: savedEffort,
+          fastMode: savedFastMode,
         });
       } catch {
         // ignore
@@ -239,6 +250,12 @@ export function useModelConfig(
   }, [model]);
 
   useEffect(() => {
+    if (provider !== 'openai' && fastMode) {
+      setFastMode(false);
+    }
+  }, [provider, fastMode]);
+
+  useEffect(() => {
     let cancelled = false;
     const params = new URLSearchParams({ agentId: agent.id });
     if (projectKey) params.set('projectKey', projectKey);
@@ -275,6 +292,9 @@ export function useModelConfig(
     }
     if (nextProvider === 'openai') {
       setEffort(config.openaiReasoningEffort ?? resolveOpenAIDefaultEffort(defaultEffort, nextProvider, globalEffort));
+      setFastMode(config.openaiFastMode ?? globalFastMode);
+    } else {
+      setFastMode(false);
     }
   };
 
@@ -296,6 +316,9 @@ export function useModelConfig(
         nextAgent.defaultProvider,
         globalEffort,
       ));
+      setFastMode(globalFastMode);
+    } else {
+      setFastMode(false);
     }
   };
 
@@ -304,12 +327,14 @@ export function useModelConfig(
     model,
     options,
     effort,
+    fastMode,
     contextWindow,
     promptEstimate,
     setProvider,
     setModel,
     setOptions,
     setEffort,
+    setFastMode,
     applySessionConfig,
     resetToAgentDefaults,
   };

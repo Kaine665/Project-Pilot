@@ -23,6 +23,7 @@ import {
   DEFAULT_OPENAI_REASONING_EFFORT,
   isOpenAIReasoningEffort,
 } from '@/lib/openai-reasoning-effort';
+import { isOpenAIFastModel } from '@/lib/openai-fast-mode';
 import type { CustomProviderConfig, ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort, DangerCategory, DangerActionLevel, DangerDetectorSettings, TitleGenerationChainEntry } from '@/types';
 import { DEFAULT_DANGER_SETTINGS, DEFAULT_TITLE_GENERATION } from '@/types';
 const INITIAL_PROVIDER: ProviderId = 'anthropic';
@@ -78,6 +79,7 @@ export default function SettingsPage() {
   const [skipPermissions, setSkipPermissions] = useState(true);
   const [effortLevel, setEffortLevel] = useState<EffortLevel>('high');
   const [openaiReasoningEffort, setOpenaiReasoningEffort] = useState<OpenAIReasoningEffort>(DEFAULT_OPENAI_REASONING_EFFORT);
+  const [openaiFastMode, setOpenaiFastMode] = useState(false);
   const [openaiModels, setOpenaiModels] = useState<Array<{ id: string; displayName: string }>>([]);
   const [openaiModelsLoading, setOpenaiModelsLoading] = useState(false);
   const [maxTurns, setMaxTurns] = useState(0);
@@ -232,6 +234,7 @@ export default function SettingsPage() {
             ? data.claude.openaiReasoningEffort
             : DEFAULT_OPENAI_REASONING_EFFORT
         );
+        setOpenaiFastMode(data.claude.openaiFastMode === true);
         setMaxTurns(data.claude.maxTurns || 0);
         setDefaultExposePromptPath(data.claude.defaultExposePromptPath !== false);
         setBaseUrl(data.claude.baseUrl || '');
@@ -501,6 +504,7 @@ export default function SettingsPage() {
             })),
             model: effectiveModel,
             openaiReasoningEffort,
+            openaiFastMode,
             skipPermissions, effortLevel, maxTurns, defaultExposePromptPath, baseUrl,
           },
           general: { telemetry },
@@ -804,6 +808,8 @@ export default function SettingsPage() {
                 provider={provider} authMode={authMode} apiKey={apiKey}
                 model={model} customModel={customModel} baseUrl={baseUrl}
                 openaiReasoningEffort={openaiReasoningEffort}
+                openaiFastMode={openaiFastMode}
+                openaiFastModeEligible={authMode === 'oauth' && isOpenAIFastModel(model === '__custom__' ? customModel : model)}
                 openaiReasoningOptions={openaiReasoningOptions}
                 oauthStatus={oauthStatus} loginPending={loginPending}
                 loginUrl={loginUrl} loginCode={loginCode} loginFlowActive={loginFlowActive}
@@ -817,6 +823,7 @@ export default function SettingsPage() {
                 onCustomModelChange={handleCustomModelChange}
                 onBaseUrlChange={setBaseUrl}
                 onOpenAIReasoningEffortChange={setOpenaiReasoningEffort}
+                onOpenAIFastModeChange={setOpenaiFastMode}
                 onCheckOAuthStatus={checkOAuthStatus} onTriggerOAuthLogin={triggerOAuthLogin}
                 onOauthCodeChange={setOauthCode} onCodeSubmit={handleCodeSubmit}
                 onCancelLoginFlow={cancelLoginFlow}
