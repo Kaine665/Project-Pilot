@@ -2,9 +2,13 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
 import {
+  Bell,
   Bot, Plus, Trash2, X, ChevronRight, Minimize2,
   Settings, MessageSquare, Archive, ArchiveRestore,
-  Download, Upload, FileDown, FolderOpen,
+  Download, Upload, FileDown, FolderOpen, Search,
+  Command, Share2, MoreVertical, Terminal, Globe,
+  Files, GitBranch, Eye, Database, ListTodo, HardDrive,
+  FileText, FileJson,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
@@ -39,6 +43,35 @@ function formatSessionElapsed(startedAt: string | undefined, nowTs: number): str
   return `${Math.floor(diffSeconds / 3600)}h`;
 }
 
+function formatSessionTimestamp(timestamp: string | undefined, nowTs: number): string {
+  if (!timestamp) return '--';
+  const diffSeconds = Math.max(0, Math.floor((nowTs - new Date(timestamp).getTime()) / 1000));
+  if (diffSeconds < 60) return `${diffSeconds}s`;
+  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m`;
+  if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h`;
+  if (diffSeconds < 172800) return 'Yesterday';
+  return `${Math.floor(diffSeconds / 86400)}d`;
+}
+
+function estimateTokenCount(content: string | undefined): number {
+  const normalized = content?.trim() ?? '';
+  if (!normalized) return 0;
+  return Math.max(1, Math.round(normalized.length / 4));
+}
+
+function formatTokenCount(tokens: number | null | undefined): string {
+  if (!tokens) return '--';
+  if (tokens >= 1000) return `~${(tokens / 1000).toFixed(1)}k`;
+  return `~${tokens}`;
+}
+
+function getBaseName(pathValue: string | undefined): string {
+  if (!pathValue) return 'develop-static';
+  const normalized = pathValue.replace(/\\/g, '/').replace(/\/+$/, '');
+  const segments = normalized.split('/').filter(Boolean);
+  return segments[segments.length - 1] ?? 'develop-static';
+}
+
 // ── Session card (memo-ized to avoid re-render on listClockNow ticks) ──
 
 interface SessionCardProps {
@@ -56,33 +89,43 @@ const SessionCard = memo(function SessionCard({
   onClick,
   onArchiveToggle,
 }: SessionCardProps) {
+  const nowTs = listClockNow ?? 0;
+
   return (
     <div
       onClick={() => onClick(s)}
-      className={`group/session flex cursor-pointer items-center gap-3.5 rounded-xl border px-3 py-3.5 transition-all ${
+      className={`group/session flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-3 transition-all ${
         isActive
-          ? 'bg-zinc-50 border-zinc-100 shadow-sm dark:bg-zinc-800 dark:border-zinc-700'
-          : 'border-transparent hover:bg-zinc-50 hover:border-zinc-100 dark:hover:bg-zinc-800/50 dark:hover:border-zinc-700/50'
+          ? 'border-zinc-200 bg-zinc-50 shadow-sm dark:border-zinc-700 dark:bg-zinc-800'
+          : 'border-transparent hover:border-zinc-100 hover:bg-zinc-50 dark:hover:border-zinc-700/50 dark:hover:bg-zinc-800/50'
       } ${s.archived ? 'opacity-45' : ''}`}
     >
-      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ${
-        isActive ? 'bg-white shadow-sm ring-zinc-200 dark:bg-zinc-700 dark:ring-zinc-600' : 'bg-zinc-50 ring-zinc-100 dark:bg-zinc-800 dark:ring-zinc-700'
+      <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${
+        isActive ? 'bg-white shadow-sm ring-zinc-200 dark:bg-zinc-700 dark:ring-zinc-600' : 'bg-zinc-100 ring-zinc-100 dark:bg-zinc-800 dark:ring-zinc-700'
       }`}>
         <AgentIcon iconKey={s.agentIcon} className={`h-5 w-5 ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400'}`} />
       </div>
       <div className="min-w-0 flex-1">
-        <div className={`truncate text-[13px] ${s.archived ? 'font-medium text-zinc-400 dark:text-zinc-500' : 'font-semibold text-zinc-900 dark:text-zinc-100'}`}>
-          {s.title}
+        <div className="mb-0.5 flex items-start justify-between gap-2">
+          <div className={`truncate text-[13px] ${s.archived ? 'font-medium text-zinc-400 dark:text-zinc-500' : 'font-semibold text-zinc-900 dark:text-zinc-100'}`}>
+            {s.title}
+          </div>
+          <span className="shrink-0 pt-0.5 text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
+            {s.isRunning && listClockNow !== undefined
+              ? formatSessionElapsed(s.runningStartedAt, listClockNow)
+              : formatSessionTimestamp(s.updatedAt, nowTs)}
+          </span>
         </div>
         <div className={`truncate text-[11px] ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400'}`}>
           {s.agentName}
         </div>
+        {s.archived && (
+          <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-zinc-300 dark:text-zinc-600">
+            Archived
+          </div>
+        )}
       </div>
-      {s.isRunning && listClockNow !== undefined ? (
-        <span className="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-blue-700 dark:bg-blue-950/70 dark:text-blue-300">
-          {formatSessionElapsed(s.runningStartedAt, listClockNow)}
-        </span>
-      ) : !isActive && !!s.unreadCount && s.unreadCount > 0 && !s.archived && (
+      {!isActive && !!s.unreadCount && s.unreadCount > 0 && !s.archived && (
         <span className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-zinc-900 px-1.5 text-[10px] font-bold text-white dark:bg-zinc-100 dark:text-zinc-900">
           {s.unreadCount > 99 ? '99+' : s.unreadCount}
         </span>
@@ -134,6 +177,7 @@ export default function AgentsPage() {
 
   // ── Session archive filter ──
   const [sessionFilter, setSessionFilter] = useState<'active' | 'archived' | 'all'>('active');
+  const [sessionQuery, setSessionQuery] = useState('');
 
   // ── New session agent picker (dropdown + modal) ──
   const [showAgentDropdown, setShowAgentDropdown] = useState(false);
@@ -142,6 +186,10 @@ export default function AgentsPage() {
   // ── Cached settings for child panels (fetched once, shared to all AgentChatPanel instances) ──
   type CachedSettings = { provider: ProviderId; model: string; modelOptions: Array<{ value: string; label: string }>; effort: OpenAIReasoningEffort };
   const [cachedSettings, setCachedSettings] = useState<CachedSettings | undefined>(undefined);
+  const [promptMetrics, setPromptMetrics] = useState<{ global: number | null; project: number | null }>({
+    global: null,
+    project: null,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -191,6 +239,47 @@ export default function AgentsPage() {
   }, []);
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const nextMetrics: { global: number | null; project: number | null } = {
+        global: null,
+        project: null,
+      };
+
+      try {
+        const globalRes = await fetch('/api/global-prompt', { cache: 'no-store' });
+        if (globalRes.ok) {
+          const globalData = await globalRes.json();
+          nextMetrics.global = estimateTokenCount(globalData.content);
+        }
+      } catch {
+        // ignore prompt metric failures
+      }
+
+      if (activeKey) {
+        try {
+          const projectRes = await fetch(`/api/project-prompt/${encodeURIComponent(activeKey)}`, {
+            cache: 'no-store',
+          });
+          if (projectRes.ok) {
+            const projectData = await projectRes.json();
+            nextMetrics.project = estimateTokenCount(projectData.content);
+          }
+        } catch {
+          // ignore prompt metric failures
+        }
+      }
+
+      if (!cancelled) {
+        setPromptMetrics(nextMetrics);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [activeKey]);
 
   // Restore selection from URL params after agents load
   useEffect(() => {
@@ -347,9 +436,6 @@ export default function AgentsPage() {
     return allSessions.filter(s => !s.archived); // 'active'
   }, [allSessions, sessionFilter]);
 
-  // ── Grouped sessions for display ──
-  const groupedSessions = useMemo(() => groupSessionsByDay(filteredSessions), [filteredSessions]);
-
   // ── Project-filtered agents（项目专属排前面，全局排后面）──
   const filteredAgents = useMemo(() => {
     if (!activeKey) return agents;
@@ -454,35 +540,6 @@ export default function AgentsPage() {
     setForm({ ...emptyForm, projectKey: activeKey ?? '' });
     setExpandedPrompt(false);
     setActivePanel(null);
-  };
-
-  // B1: Clone an agent — copy all config with "(副本)" suffix
-  const handleClone = async (source: Agent) => {
-    try {
-      const res = await fetch('/api/agents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: `${source.name} (副本)`,
-          description: source.description,
-          systemPrompt: source.systemPrompt,
-          icon: source.icon,
-          capabilities: source.capabilities,
-          requiredParams: source.requiredParams,
-          contextIds: source.contextIds,
-          defaultResources: source.defaultResources,
-          projectKey: source.projectKey,
-          defaultProvider: source.defaultProvider,
-          defaultModel: source.defaultModel,
-          contextStrategy: source.contextStrategy,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        await fetchAgents();
-        handleSelect(data.agent);
-      }
-    } catch { /* ignore */ }
   };
 
   const handleClose = () => {
@@ -678,10 +735,121 @@ export default function AgentsPage() {
     activeOpened?.sessionId ? allSessions.find(s => s.id === activeOpened.sessionId) ?? null : null,
     [activeOpened, allSessions]);
 
+  const visibleSessions = useMemo(() => {
+    const query = sessionQuery.trim().toLowerCase();
+    if (!query) return filteredSessions;
+    return filteredSessions.filter((session) => {
+      const haystack = `${session.title} ${session.agentName}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [filteredSessions, sessionQuery]);
+
+  const pinnedSession = useMemo(() => {
+    if (visibleSessions.length === 0) return null;
+    return (
+      visibleSessions.find((session) => session.id === activeSessionId)
+      ?? visibleSessions.find((session) => session.isRunning)
+      ?? visibleSessions[0]
+    );
+  }, [activeSessionId, visibleSessions]);
+
+  const recentSessions = useMemo(
+    () => visibleSessions.filter((session) => session.id !== pinnedSession?.id),
+    [pinnedSession?.id, visibleSessions],
+  );
+
+  const recentGroups = useMemo(() => groupSessionsByDay(recentSessions), [recentSessions]);
+
+  const activeProject = useMemo(
+    () => projects.find((project) => project.key === activeKey) ?? null,
+    [projects, activeKey],
+  );
+
+  const workspaceAgent = selectedAgent ?? activeSessionAgent;
+  const workspaceSessionId = activeSessionInfo?.id ?? activeOpened?.sessionId ?? null;
+  const workspaceTitle = activeSessionInfo?.title ?? workspaceAgent?.name ?? 'Agent Workspace';
+  const workspaceAgentCapabilities = workspaceAgent?.capabilities ?? DEFAULT_AGENT_CAPABILITIES;
+  const projectRootLabel = `${getBaseName(activeProject?.path)}/`;
+  const projectPromptLabel = activeKey ? `${activeKey}.md` : 'project-pilot.md';
+  const projectPromptPath = activeKey
+    ? `~/.project-pilot/data/project-prompts/${activeKey}.md`
+    : '~/.project-pilot/data/project-prompts/project-pilot.md';
+  const agentPromptLabel = workspaceAgent
+    ? `${workspaceAgent.id}.md`
+    : 'agent-builtin-self-dev.md';
+  const agentPromptPath = workspaceAgent
+    ? (workspaceAgent.builtIn
+        ? `~/.project-pilot/data/prompts/${workspaceAgent.id}.md`
+        : `~/.project-pilot/data/prompts/agents/${workspaceAgent.id}.md`)
+    : '~/.project-pilot/data/prompts/agent-builtin-self-dev.md';
+  const runtimePromptLabel = workspaceSessionId && workspaceAgent
+    ? `${workspaceSessionId}.md`
+    : 'session-runtime.md';
+  const runtimePromptPath = workspaceSessionId && workspaceAgent
+    ? `~/.project-pilot/data/prompts/runtime/${workspaceAgent.id}/${workspaceSessionId}.md`
+    : '~/.project-pilot/data/prompts/runtime/<agent>/<session>.md';
+  const agentPromptTokens = estimateTokenCount(workspaceAgent?.systemPrompt);
+  const combinedPromptTokens = (promptMetrics.global ?? 0) + (promptMetrics.project ?? 0) + agentPromptTokens;
+  const promptUsagePercent = Math.min(100, Math.round((combinedPromptTokens / 128000) * 100));
+
+  const promptStackItems = [
+    {
+      scope: 'Global',
+      accent: 'bg-blue-50 text-blue-700 border-blue-100',
+      line: 'bg-blue-100',
+      label: 'global.md',
+      path: '~/.project-pilot/data/prompts/global.md',
+      tokens: promptMetrics.global,
+      description: '所有 Agent 共用的全局约束、操作规则与安全边界。',
+    },
+    {
+      scope: 'Project',
+      accent: 'bg-amber-50 text-amber-700 border-amber-100',
+      line: 'bg-amber-100',
+      label: projectPromptLabel,
+      path: projectPromptPath,
+      tokens: promptMetrics.project,
+      description: activeKey
+        ? `${activeKey} 项目的项目级约束、流程规则与上下文。`
+        : '当前项目的项目级约束与工程上下文。',
+    },
+    {
+      scope: 'Agent',
+      accent: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+      line: 'bg-emerald-100',
+      label: agentPromptLabel,
+      path: agentPromptPath,
+      tokens: agentPromptTokens,
+      description: workspaceAgent?.description || '当前 Agent 的系统提示词与默认资源配置。',
+    },
+    {
+      scope: 'Session',
+      accent: 'bg-zinc-100 text-zinc-700 border-zinc-200',
+      line: 'bg-zinc-200',
+      label: runtimePromptLabel,
+      path: runtimePromptPath,
+      tokens: null,
+      description: workspaceSessionId
+        ? '当前会话的运行时提示词副本与瞬时记忆状态。'
+        : '会话启动后将生成 runtime prompt 副本。',
+    },
+  ] as const;
+
+  const capabilityCards = [
+    { label: 'Terminal', enabled: workspaceAgentCapabilities.bash, icon: Terminal },
+    { label: 'Web Browse', enabled: workspaceAgentCapabilities.web, icon: Globe },
+    { label: 'File System', enabled: workspaceAgentCapabilities.fileAccess, icon: Files },
+    { label: 'Sub Agents', enabled: workspaceAgentCapabilities.subAgent, icon: GitBranch },
+    { label: 'Todo Read', enabled: workspaceAgentCapabilities.todoRead, icon: ListTodo },
+    { label: 'Data Store', enabled: workspaceAgentCapabilities.dataStore, icon: HardDrive },
+    { label: 'Prompt Path', enabled: workspaceAgentCapabilities.exposePromptPath, icon: Eye },
+    { label: 'Skip Review', enabled: workspaceAgentCapabilities.skipReview, icon: Database },
+  ] as const;
+
   return (
-    <div className="flex h-full">
+    <div className="flex h-full overflow-hidden bg-[#fdfdfd] text-zinc-900">
       {/* Left sidebar */}
-      <div className="flex w-72 shrink-0 flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="flex w-[320px] shrink-0 flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
         {/* ── Tab switcher ── */}
         <div className="flex gap-1 px-4 pt-4 pb-2">
           <button
@@ -759,35 +927,63 @@ export default function AgentsPage() {
                 recentAgentIds={recentAgentIds}
               />
             </div>
+            <div className="px-5 pb-3">
+              <div className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+                <Search className="h-4 w-4 shrink-0" />
+                <input
+                  value={sessionQuery}
+                  onChange={(e) => setSessionQuery(e.target.value)}
+                  placeholder="搜索会话、Agent 或标题"
+                  className="w-full bg-transparent text-[12px] outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-500"
+                />
+              </div>
+            </div>
             {/* Session list */}
-            <div className="flex-1 overflow-y-auto px-2 pb-4">
-              {filteredSessions.length === 0 ? (
+            <div className="flex-1 overflow-y-auto px-3 pb-5">
+              {visibleSessions.length === 0 ? (
                 <div className="px-4 py-12 text-center text-xs text-zinc-400 dark:text-zinc-500">
                   <MessageSquare className="mx-auto mb-2 h-8 w-8 text-zinc-300 dark:text-zinc-600" />
-                  <p>{sessionFilter === 'archived' ? '暂无归档对话' : sessionFilter === 'all' ? '暂无对话' : '暂无活跃对话'}</p>
-                  {sessionFilter === 'active' && <p className="mt-1">点击右上角 + 开始新对话</p>}
+                  <p>{sessionQuery ? '没有匹配的会话' : sessionFilter === 'archived' ? '暂无归档对话' : sessionFilter === 'all' ? '暂无对话' : '暂无活跃对话'}</p>
+                  {!sessionQuery && sessionFilter === 'active' && <p className="mt-1">点击右上角 + 开始新对话</p>}
                 </div>
               ) : (
-                groupedSessions.map(group => (
-                  <div key={group.label} className="space-y-1">
-                    <div className="px-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                      {group.label}
+                <div className="space-y-5">
+                  {pinnedSession && (
+                    <div className="space-y-2">
+                      <div className="px-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-400 dark:text-zinc-500">
+                        当前焦点
+                      </div>
+                      <SessionCard
+                        key={pinnedSession.id}
+                        session={pinnedSession}
+                        isActive={activeSessionId === pinnedSession.id}
+                        listClockNow={pinnedSession.isRunning ? listClockNow : undefined}
+                        onClick={handleSessionClick}
+                        onArchiveToggle={handleArchiveToggle}
+                      />
                     </div>
-                    {group.items.map(s => {
-                      const isActive = activeSessionId === s.id;
-                      return (
-                        <SessionCard
-                          key={s.id}
-                          session={s}
-                          isActive={isActive}
-                          listClockNow={s.isRunning ? listClockNow : undefined}
-                          onClick={handleSessionClick}
-                          onArchiveToggle={handleArchiveToggle}
-                        />
-                      );
-                    })}
-                  </div>
-                ))
+                  )}
+
+                  {recentGroups.map(group => (
+                    <div key={group.label} className="space-y-2">
+                      <div className="px-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-400 dark:text-zinc-500">
+                        {group.label}
+                      </div>
+                      <div className="space-y-1">
+                        {group.items.map(s => (
+                          <SessionCard
+                            key={s.id}
+                            session={s}
+                            isActive={activeSessionId === s.id}
+                            listClockNow={s.isRunning ? listClockNow : undefined}
+                            onClick={handleSessionClick}
+                            onArchiveToggle={handleArchiveToggle}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>
@@ -867,8 +1063,9 @@ export default function AgentsPage() {
         )}
       </div>
 
-      {/* Right panel */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1">
+        {/* Center panel */}
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white">
         {creating ? (
           /* ── Creating new agent ── */
           expandedPrompt ? (
@@ -1197,6 +1394,158 @@ export default function AgentsPage() {
             </div>
           </div>
         )}
+        </div>
+
+        <aside className="hidden w-[360px] shrink-0 border-l border-zinc-200 bg-[#fbfbfb] xl:flex xl:flex-col">
+          <div className="flex items-start justify-between border-b border-zinc-200 px-5 py-4">
+            <div className="min-w-0">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-zinc-400">
+                Inspector
+              </div>
+              <div className="mt-2 truncate text-[15px] font-semibold text-zinc-950">
+                {workspaceAgent?.name ?? 'Agent Workspace'}
+              </div>
+              <div className="mt-1 flex items-center gap-2 text-[11px] text-zinc-500">
+                <Command className="h-3.5 w-3.5" />
+                <span className="truncate">{workspaceSessionId ?? 'session-runtime'}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 text-zinc-400">
+              <button className="rounded-lg p-2 transition-colors hover:bg-white hover:text-zinc-700" title="分享视图">
+                <Share2 className="h-4 w-4" />
+              </button>
+              <button className="rounded-lg p-2 transition-colors hover:bg-white hover:text-zinc-700" title="通知">
+                <Bell className="h-4 w-4" />
+              </button>
+              <button className="rounded-lg p-2 transition-colors hover:bg-white hover:text-zinc-700" title="更多操作">
+                <MoreVertical className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
+            <section className="space-y-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-400">
+                Agent Workspace
+              </div>
+              <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-600">
+                    <AgentIcon iconKey={workspaceAgent?.icon} className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-semibold text-zinc-950">{workspaceTitle}</div>
+                    <div className="mt-1 text-[12px] text-zinc-500">
+                      {workspaceAgent?.id ?? 'agent-builtin-self-dev'}
+                    </div>
+                    <div className="mt-3 inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                      <Command className="h-3 w-3" />
+                      {activeProject?.key ?? 'project-pilot'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5">
+                    <div className="flex items-center gap-2 text-[11px] font-medium text-zinc-600">
+                      <FileJson className="h-3.5 w-3.5" />
+                      Project Root
+                    </div>
+                    <div className="mt-1 text-[12px] text-zinc-900">{projectRootLabel}</div>
+                    <div className="truncate text-[11px] text-zinc-500">{activeProject?.path ?? 'D:/Desktop/ProgrammingProjects/'}</div>
+                  </div>
+                  <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5">
+                    <div className="flex items-center gap-2 text-[11px] font-medium text-zinc-600">
+                      <FileText className="h-3.5 w-3.5" />
+                      Runtime Context
+                    </div>
+                    <div className="mt-1 text-[12px] text-zinc-900">{runtimePromptLabel}</div>
+                    <div className="truncate text-[11px] text-zinc-500">{runtimePromptPath}</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-400">
+                  Prompt Injection Stack
+                </div>
+                <div className="text-[11px] font-medium text-zinc-500">{formatTokenCount(combinedPromptTokens)}</div>
+              </div>
+              <div className="space-y-3">
+                {promptStackItems.map((item) => (
+                  <div key={item.scope} className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+                    <div className={`h-1 w-full ${item.line}`} />
+                    <div className="space-y-3 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${item.accent}`}>
+                            {item.scope}
+                          </div>
+                          <div className="mt-2 truncate text-[13px] font-semibold text-zinc-950">{item.label}</div>
+                          <div className="mt-1 truncate text-[11px] text-zinc-500">{item.path}</div>
+                        </div>
+                        <div className="shrink-0 text-[11px] font-medium text-zinc-500">{formatTokenCount(item.tokens)}</div>
+                      </div>
+                      <div className="text-[12px] leading-5 text-zinc-600">
+                        {item.description}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-400">
+                System Capabilities
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {capabilityCards.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <div key={item.label} className="rounded-2xl border border-zinc-200 bg-white px-3 py-3">
+                      <div className="flex items-center justify-between">
+                        <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${item.enabled ? 'bg-zinc-100 text-zinc-700' : 'bg-zinc-50 text-zinc-300'}`}>
+                          <Icon className="h-4 w-4" />
+                        </div>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${item.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-zinc-100 text-zinc-400'}`}>
+                          {item.enabled ? 'On' : 'Off'}
+                        </span>
+                      </div>
+                      <div className="mt-3 text-[12px] font-medium text-zinc-800">{item.label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-zinc-200 bg-white p-4">
+              <div className="flex items-center justify-between text-[11px] font-medium text-zinc-500">
+                <span>Prompt Budget</span>
+                <span>{promptUsagePercent}% of 128k</span>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-100">
+                <div className="h-full rounded-full bg-zinc-900" style={{ width: `${promptUsagePercent}%` }} />
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2 text-[11px] text-zinc-500">
+                <div>
+                  <div className="text-zinc-400">Global</div>
+                  <div className="mt-1 font-medium text-zinc-800">{formatTokenCount(promptMetrics.global)}</div>
+                </div>
+                <div>
+                  <div className="text-zinc-400">Project</div>
+                  <div className="mt-1 font-medium text-zinc-800">{formatTokenCount(promptMetrics.project)}</div>
+                </div>
+                <div>
+                  <div className="text-zinc-400">Agent</div>
+                  <div className="mt-1 font-medium text-zinc-800">{formatTokenCount(agentPromptTokens)}</div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </aside>
       </div>
     </div>
   );
