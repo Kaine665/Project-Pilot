@@ -23,10 +23,8 @@ data/
 ├── projects.json           # 项目注册表（key → 路径/配置）
 ├── agents.json             # Agent 列表（包含你自己）
 ├── agent-chat-sessions.json # Agent 会话列表
-├── agent-teams.json        # Agent 小队配置
 ├── active-tasks.json       # 共享任务看板（跨 Agent 并行感知）
 ├── suspended-tasks.json    # 挂起的任务（待接续）
-├── orchestrator-sessions.json # 编排器会话
 ├── todos.json              # 待办事项
 ├── dimensions.json         # 信息角度列表
 ├── worktree-ports.json     # Worktree 端口注册表

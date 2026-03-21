@@ -1,7 +1,7 @@
 /**
  * @deprecated 旧版项目 API — 代理到新系统 /api/data/projects
  *
- * 保留此端点是为了兼容旧版调用方（orchestrator、ProjectRegistry 等）。
+ * 保留此端点是为了兼容旧版调用方（ProjectRegistry 等）。
  * 内部改为读写 flows/_index.json，不再操作 projects.json。
  *
  * GET 返回格式保持 { projects: Record<key, ProjectConfig> } 以兼容旧调用方。

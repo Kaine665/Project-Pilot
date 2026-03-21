@@ -31,7 +31,7 @@ export interface RunStatusInfo {
 
 /**
  * Structured result object emitted after a Sub Agent run completes.
- * Orchestrators and CLI callers consume this instead of parsing natural language.
+ * Other manager layers and CLI callers consume this instead of parsing natural language.
  */
 export interface SubAgentResult {
   status: 'completed' | 'failed' | 'stopped' | 'timeout';
