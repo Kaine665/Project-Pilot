@@ -324,15 +324,14 @@ export default function AgentsPage() {
   const sessionCacheRef = useRef<Map<string, AllSessionItem[]>>(new Map());
   const CACHE_KEY_ALL = '__all__';
 
-  // 解析首次渲染时 URL 上的 projectKey，跳过等待 ProjectProvider 初始化
-  const initialProjectKeyRef = useRef<string | null>(
-    typeof window !== 'undefined'
-      ? new URLSearchParams(window.location.search).get('project')
-      : null,
-  );
+  const [urlProjectKey, setUrlProjectKey] = useState<string | null>(null);
 
-  // 实际使用的 projectKey：优先用 ProjectProvider 的值，首次渲染时用 URL 直读值
-  const effectiveProjectKey = activeKey ?? initialProjectKeyRef.current;
+  useEffect(() => {
+    setUrlProjectKey(new URLSearchParams(window.location.search).get('project'));
+  }, []);
+
+  // 实际使用的 projectKey：优先用 ProjectProvider 的值，挂载后再同步 URL 参数
+  const effectiveProjectKey = activeKey ?? urlProjectKey;
 
   // ── Fetch all sessions (cross-agent, filtered by active project) ──
   const fetchAllSessions = useCallback(async () => {
@@ -427,9 +426,10 @@ export default function AgentsPage() {
 
   // ── Clock for running-session elapsed display ──
   const hasRunningSession = useMemo(() => allSessions.some(s => s.isRunning), [allSessions]);
-  const [listClockNow, setListClockNow] = useState(() => Date.now());
+  const [listClockNow, setListClockNow] = useState<number | undefined>(undefined);
   useEffect(() => {
     if (!hasRunningSession) return;
+    setListClockNow(Date.now());
     const timer = setInterval(() => setListClockNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [hasRunningSession]);

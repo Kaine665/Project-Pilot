@@ -92,6 +92,8 @@ export default function SettingsPage() {
   // Privacy state
   const [telemetry, setTelemetry] = useState(false);
   const [satelliteTasksEnabled, setSatelliteTasksEnabled] = useState(true);
+  const [schedulesPageEnabled, setSchedulesPageEnabled] = useState(true);
+  const [taskTriggersPageEnabled, setTaskTriggersPageEnabled] = useState(true);
 
   // Safety detection state
   const [dangerSettings, setDangerSettings] = useState<DangerDetectorSettings>({ ...DEFAULT_DANGER_SETTINGS });
@@ -240,6 +242,8 @@ export default function SettingsPage() {
         setBaseUrl(data.claude.baseUrl || '');
         setTelemetry(data.general?.telemetry || false);
         setSatelliteTasksEnabled(data.developer?.satelliteTasksEnabled !== false);
+        setSchedulesPageEnabled(data.developer?.schedulesPageEnabled !== false);
+        setTaskTriggersPageEnabled(data.developer?.taskTriggersPageEnabled !== false);
         setDangerSettings({ ...DEFAULT_DANGER_SETTINGS, ...data.dangerDetector });
 
         // Title generation
@@ -509,7 +513,11 @@ export default function SettingsPage() {
             skipPermissions, effortLevel, maxTurns, defaultExposePromptPath, baseUrl,
           },
           general: { telemetry },
-          developer: { satelliteTasksEnabled },
+          developer: {
+            satelliteTasksEnabled,
+            schedulesPageEnabled,
+            taskTriggersPageEnabled,
+          },
           dangerDetector: dangerSettings,
           titleGeneration: {
             enabled: titleGenEnabled,
@@ -859,6 +867,10 @@ export default function SettingsPage() {
                 t={t} tActions={tActions} btnActive={btnActive} btnInactive={btnInactive}
                 satelliteTasksEnabled={satelliteTasksEnabled}
                 onSatelliteTasksEnabledChange={setSatelliteTasksEnabled}
+                schedulesPageEnabled={schedulesPageEnabled}
+                onSchedulesPageEnabledChange={setSchedulesPageEnabled}
+                taskTriggersPageEnabled={taskTriggersPageEnabled}
+                onTaskTriggersPageEnabledChange={setTaskTriggersPageEnabled}
               />
             )}
 

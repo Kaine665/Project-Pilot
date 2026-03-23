@@ -182,6 +182,12 @@ export async function POST(request: NextRequest) {
     if (body.developer.satelliteTasksEnabled !== undefined && typeof body.developer.satelliteTasksEnabled !== 'boolean') {
       return NextResponse.json({ error: 'developer.satelliteTasksEnabled must be a boolean' }, { status: 400 });
     }
+    if (body.developer.schedulesPageEnabled !== undefined && typeof body.developer.schedulesPageEnabled !== 'boolean') {
+      return NextResponse.json({ error: 'developer.schedulesPageEnabled must be a boolean' }, { status: 400 });
+    }
+    if (body.developer.taskTriggersPageEnabled !== undefined && typeof body.developer.taskTriggersPageEnabled !== 'boolean') {
+      return NextResponse.json({ error: 'developer.taskTriggersPageEnabled must be a boolean' }, { status: 400 });
+    }
   }
 
   // dangerDetector 字段验证
