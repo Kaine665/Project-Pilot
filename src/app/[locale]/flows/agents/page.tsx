@@ -13,6 +13,8 @@ import {
 import dynamic from 'next/dynamic';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
+import { FolderExplorerPanel } from '@/components/folder-explorer-panel';
+import { AgentSessionPromptStack } from '@/components/agent-session-prompt-stack';
 
 const AgentChatPanel = dynamic(
   () => import('@/components/agent-chat-panel').then(m => ({ default: m.AgentChatPanel })),
@@ -1396,6 +1398,7 @@ export default function AgentsPage() {
         )}
         </div>
 
+        {false && (
         <aside className="hidden w-[360px] shrink-0 border-l border-zinc-200 bg-[#fbfbfb] xl:flex xl:flex-col">
           <div className="flex items-start justify-between border-b border-zinc-200 px-5 py-4">
             <div className="min-w-0">
@@ -1543,6 +1546,58 @@ export default function AgentsPage() {
                   <div className="mt-1 font-medium text-zinc-800">{formatTokenCount(agentPromptTokens)}</div>
                 </div>
               </div>
+            </section>
+          </div>
+        </aside>
+        )}
+
+        <aside className="hidden w-[320px] shrink-0 border-l border-[#e7dfd0] bg-[#fcfaf5] shadow-[0_18px_48px_rgba(15,23,42,0.08)] xl:flex xl:flex-col dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="flex h-full flex-col">
+            <section className="flex h-[52%] min-h-0 flex-col border-b border-[#e7dfd0] bg-[#f8f3e8] dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="flex h-11 items-center justify-between border-b border-[#e7dfd0] px-4 dark:border-zinc-800">
+                <div className="flex items-center gap-2">
+                  <FolderOpen className="h-4 w-4 text-[#5f5a4f] dark:text-zinc-300" />
+                  <h2 className="text-[13px] font-bold tracking-tight text-zinc-900 dark:text-zinc-100">项目工作区</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!workspaceAgent) return;
+                    setCreating(false);
+                    setSelectedAgentId(workspaceAgent.id);
+                    setForm(agentToForm(workspaceAgent));
+                    setExpandedPrompt(false);
+                    setActivePanel({ type: 'agent', agentId: workspaceAgent.id, mode: 'settings' });
+                    syncUrlParams({ agent: workspaceAgent.id, session: workspaceSessionId });
+                  }}
+                  className="flex items-center gap-1.5 text-[#7f7461] transition-colors hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                  title="打开 Agent 设置"
+                >
+                  <Settings className="h-4 w-4" />
+                  <span className="text-[12px] font-medium">设置</span>
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1">
+                {activeProject?.path ? (
+                  <FolderExplorerPanel
+                    embedded
+                    onClose={() => {}}
+                    initialPath={activeProject.path}
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center px-6 text-center text-[12px] text-zinc-500 dark:text-zinc-400">
+                    选择项目后，这里会显示当前项目的文件结构。
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="flex h-[48%] min-h-0 flex-col bg-[#fcfbf8] dark:bg-zinc-950">
+              <AgentSessionPromptStack
+                key={promptStackItems.map((item) => `${item.scope}:${item.label}:${item.path}`).join('|')}
+                items={promptStackItems}
+              />
             </section>
           </div>
         </aside>
