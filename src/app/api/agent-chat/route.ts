@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
     agentId, message, sessionId: requestedSessionId, projectKey,
     providerOverride, modelOverride, effortOverride,
     images, initialTitle, config, parentSessionId, depth, background,
+    sourceType, sourceId, todoId,
   } = body as {
     agentId: string;
     message: string;
@@ -41,6 +42,9 @@ export async function POST(request: NextRequest) {
     parentSessionId?: string;
     depth?: number;
     background?: boolean;
+    sourceType?: 'manual' | 'schedule' | 'todo' | 'event';
+    sourceId?: string;
+    todoId?: string;
   };
 
   // 🔒 Security: validate required fields
@@ -137,6 +141,9 @@ export async function POST(request: NextRequest) {
         effortOverride: normalizedEffort || undefined,
         depth: typeof depth === 'number' ? depth : undefined,
         background: background || undefined,
+        sourceType: sourceType || 'manual',
+        sourceId,
+        todoId,
       }),
     });
     const data = await res.json() as { runId?: string; error?: string };

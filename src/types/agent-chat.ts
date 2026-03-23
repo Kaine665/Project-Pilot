@@ -4,6 +4,8 @@
 
 import type { SessionExecution } from '@/lib/chat-managers/types';
 
+export type SessionSourceType = 'manual' | 'schedule' | 'todo' | 'event';
+
 /**
  * 会话检查点 — 记录会话上下文断裂前的工作状态，
  * 以便在新会话中快速恢复，无需重新探索已知信息。
@@ -90,6 +92,10 @@ export interface AgentChatSession {
 
   /** 未读消息计数（agent 回复但用户尚未查看） */
   unreadCount?: number;
+
+  sourceType?: SessionSourceType;
+  sourceId?: string;
+  todoId?: string;
 
   /** 会话已归档（已完成的任务，侧边栏显示为灰色） */
   archived?: boolean;

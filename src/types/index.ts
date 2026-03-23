@@ -1,6 +1,7 @@
 // ==================== Session（AI 会话） ====================
 
 import type { FlowTaskContext } from './flow-context';
+import type { SessionSourceType } from './agent-chat';
 import type { ResourceRef } from './resource';
 
 /**
@@ -167,10 +168,16 @@ export interface GeneralSettings {
 export interface DeveloperSettings {
   /** 卫星任务总开关 */
   satelliteTasksEnabled?: boolean;
+  /** 是否显示定时任务入口与页面 */
+  schedulesPageEnabled?: boolean;
+  /** 是否显示事件驱动任务触发入口与页面 */
+  taskTriggersPageEnabled?: boolean;
 }
 
 export const DEFAULT_DEVELOPER_SETTINGS: DeveloperSettings = {
   satelliteTasksEnabled: true,
+  schedulesPageEnabled: true,
+  taskTriggersPageEnabled: true,
 };
 
 /** 会话标题自动生成配置 */
@@ -750,17 +757,23 @@ export interface ProjectInbox {
 
 // ==================== Agent Schedules（定时运行） ====================
 
+export type ScheduleTargetType = 'agent_message' | 'todo';
+
 /**
  * Agent 定时运行配置。
  * 每条记录对应一个"每到 cron 时间就启动一次 Agent 会话"的规则。
  */
 export interface AgentSchedule {
   id: string;           // sched-{timestamp}-{random4}
-  agentId: string;      // 关联的 Agent ID
+  /** 触发目标类型，默认 message */
+  targetType?: ScheduleTargetType;
+  agentId?: string;     // 关联的 Agent ID（message 必填；todo 为快照）
+  /** 当 targetType=todo 时，定时触发的 Todo ID */
+  todoId?: string;
   /** cron 表达式，标准 5 段格式（分 时 日 月 周）*/
   cron: string;
-  /** 启动时发送的初始消息 */
-  message: string;
+  /** 启动时发送的初始消息（targetType=message 时使用） */
+  message?: string;
   /** 可选：绑定的项目 key（会加载项目流程数据） */
   projectKey?: string;
   /** 是否启用，默认 true */
@@ -785,6 +798,9 @@ export interface ScheduleRunRecord {
   scheduleId: string;   // 关联的 AgentSchedule ID
   sessionId: string;    // 创建的 Agent 会话 ID
   trigger: 'cron' | 'manual';  // 触发方式
+  sourceType: SessionSourceType;
+  sourceId: string;
+  todoId?: string;
   startedAt: string;    // ISO timestamp
   status: 'started' | 'completed' | 'failed';
   error?: string;       // 失败时的错误信息

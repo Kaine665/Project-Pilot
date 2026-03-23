@@ -20,7 +20,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
 /**
  * PATCH /api/schedules/[id]
  * 更新调度规则（部分更新）。
- * Body: { cron?, message?, label?, enabled?, projectKey? }
+ * Body: { targetType?, agentId?, todoId?, cron?, message?, label?, enabled?, projectKey? }
  */
 export async function PATCH(request: NextRequest, { params }: Params) {
   const { id } = await params;
@@ -29,7 +29,10 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { cron, message, label, enabled, projectKey } = body as {
+  const { targetType, agentId, todoId, cron, message, label, enabled, projectKey } = body as {
+    targetType?: 'agent_message' | 'todo' | 'message';
+    agentId?: string;
+    todoId?: string;
     cron?: string;
     message?: string;
     label?: string;
@@ -45,6 +48,9 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     const res = await sidecarFetch(`/schedules/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify({
+        ...(targetType !== undefined ? { targetType } : {}),
+        ...(agentId !== undefined ? { agentId } : {}),
+        ...(todoId !== undefined ? { todoId } : {}),
         ...(cron !== undefined ? { cron } : {}),
         ...(message !== undefined ? { message } : {}),
         ...(label !== undefined ? { label: String(label).slice(0, 100) } : {}),

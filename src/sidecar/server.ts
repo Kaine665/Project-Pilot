@@ -39,10 +39,13 @@ import type { FlowContext } from '@/lib/chat-managers/agent-chat-manager';
 import { loadSession, listAllSessions } from '@/lib/chat-managers/agent-chat-session-store';
 import { subAgentWatcher } from '@/lib/chat-managers/sub-agent-watcher';
 import type { WatchEntry } from '@/lib/chat-managers/sub-agent-watcher';
+import { eventTriggerManager } from '@/lib/event-trigger-manager';
 import { schedulerManager } from '@/lib/scheduler-manager';
+import { dispatchTodoToAgent } from '@/lib/todo-dispatch';
 import { tokenRefreshManager } from '@/lib/token-refresh-manager';
 import type { ChatSSEEvent } from '@/types';
 import type { SessionConfig, SessionMeta } from '@/types/agent-chat';
+import type { EventTrigger } from '@/types/event-trigger';
 import type { ProviderId } from '@/types';
 import type { ImageAttachment } from '@/lib/image-assets';
 import { HttpError } from '@/lib/http-error';
@@ -127,21 +130,24 @@ async function handleStart(
   req: http.IncomingMessage,
   res: http.ServerResponse,
 ): Promise<void> {
-  const body = await readBody(req) as {
-    sessionId?: string;
-    agentId: string;
-    message: string;
-    flowContext?: FlowContext;
+    const body = await readBody(req) as {
+      sessionId?: string;
+      agentId: string;
+      message: string;
+      flowContext?: FlowContext;
     images?: Array<{ mediaType: string; data: string }>;
     initialTitle?: string;
     config?: SessionConfig;
     parentSessionId?: string;
     providerOverride?: ProviderId;
     modelOverride?: string;
-    effortOverride?: string;
-    depth?: number;
-    background?: boolean;
-  };
+      effortOverride?: string;
+      depth?: number;
+      background?: boolean;
+      sourceType?: 'manual' | 'schedule' | 'todo' | 'event';
+      sourceId?: string;
+      todoId?: string;
+    };
 
   const sessionId = body.sessionId ?? generateSessionId();
 
@@ -175,10 +181,13 @@ async function handleStart(
       body.providerOverride,
       body.modelOverride,
       body.effortOverride,
-      undefined, // ephemeral
-      effectiveDepth,
-      body.background,
-    );
+        undefined, // ephemeral
+        effectiveDepth,
+        body.background,
+        body.sourceType,
+        body.sourceId,
+        body.todoId,
+      );
     jsonResponse(res, { runId, sessionId });
   } catch (err) {
     const status = err instanceof HttpError ? err.statusCode : 500;
@@ -339,16 +348,20 @@ async function handleCreateSchedule(
   res: http.ServerResponse,
 ): Promise<void> {
   const body = await readBody(req) as {
-    agentId: string;
+    targetType?: 'agent_message' | 'todo' | 'message';
+    agentId?: string;
+    todoId?: string;
     cron: string;
-    message: string;
+    message?: string;
     projectKey?: string;
     label?: string;
     enabled?: boolean;
   };
   try {
     const schedule = await schedulerManager.createSchedule({
+      targetType: body.targetType,
       agentId: body.agentId,
+      todoId: body.todoId,
       cron: body.cron,
       message: body.message,
       projectKey: body.projectKey,
@@ -380,6 +393,9 @@ async function handlePatchSchedule(
   scheduleId: string,
 ): Promise<void> {
   const body = await readBody(req) as {
+    targetType?: 'agent_message' | 'todo' | 'message';
+    agentId?: string;
+    todoId?: string;
     cron?: string;
     message?: string;
     label?: string;
@@ -388,6 +404,9 @@ async function handlePatchSchedule(
   };
   try {
     const updated = await schedulerManager.updateSchedule(scheduleId, {
+      ...(body.targetType !== undefined ? { targetType: body.targetType } : {}),
+      ...(body.agentId !== undefined ? { agentId: body.agentId } : {}),
+      ...(body.todoId !== undefined ? { todoId: body.todoId } : {}),
       ...(body.cron !== undefined ? { cron: body.cron } : {}),
       ...(body.message !== undefined ? { message: body.message } : {}),
       ...(body.label !== undefined ? { label: String(body.label).slice(0, 100) } : {}),
@@ -401,6 +420,35 @@ async function handlePatchSchedule(
     jsonResponse(res, { schedule: updated });
   } catch (err) {
     jsonResponse(res, { error: (err as Error).message }, 400);
+  }
+}
+
+async function handleDispatchTodo(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  todoId: string,
+): Promise<void> {
+  const body = await readBody(req) as {
+    projectKeyOverride?: string;
+    initialTitle?: string;
+    allowRelaunch?: boolean;
+    sourceType?: 'manual' | 'schedule' | 'todo' | 'event';
+    sourceId?: string;
+  };
+
+  try {
+    const result = await dispatchTodoToAgent(todoId, {
+      projectKeyOverride: body.projectKeyOverride,
+      initialTitle: body.initialTitle,
+      allowRelaunch: body.allowRelaunch,
+      sourceType: body.sourceType,
+      sourceId: body.sourceId,
+    });
+    jsonResponse(res, result);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const status = msg.includes('does not exist') ? 404 : 400;
+    jsonResponse(res, { error: msg }, status);
   }
 }
 
@@ -438,6 +486,101 @@ async function handleListRuns(
   const limit = parseInt(url.searchParams.get('limit') ?? '20', 10);
   try {
     const runs = await schedulerManager.listRuns(scheduleId, limit);
+    jsonResponse(res, { runs });
+  } catch (err) {
+    jsonResponse(res, { error: (err as Error).message }, 500);
+  }
+}
+
+// ── Event Triggers ───────────────────────────────────────────────────────────
+
+async function handleListEventTriggers(res: http.ServerResponse): Promise<void> {
+  try {
+    const triggers = await eventTriggerManager.listTriggers();
+    jsonResponse(res, { triggers });
+  } catch (err) {
+    jsonResponse(res, { error: (err as Error).message }, 500);
+  }
+}
+
+async function handleCreateEventTrigger(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+): Promise<void> {
+  const body = await readBody(req) as Omit<EventTrigger, 'id' | 'createdAt' | 'updatedAt'>;
+  try {
+    const trigger = await eventTriggerManager.createTrigger(body);
+    jsonResponse(res, { trigger }, 201);
+  } catch (err) {
+    jsonResponse(res, { error: (err as Error).message }, 400);
+  }
+}
+
+async function handleGetEventTrigger(
+  res: http.ServerResponse,
+  triggerId: string,
+): Promise<void> {
+  const triggers = await eventTriggerManager.listTriggers();
+  const trigger = triggers.find((item) => item.id === triggerId);
+  if (!trigger) {
+    jsonResponse(res, { error: 'Not found' }, 404);
+    return;
+  }
+  jsonResponse(res, { trigger });
+}
+
+async function handlePatchEventTrigger(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  triggerId: string,
+): Promise<void> {
+  const body = await readBody(req) as Partial<Omit<EventTrigger, 'id' | 'createdAt' | 'updatedAt'>>;
+  try {
+    const trigger = await eventTriggerManager.updateTrigger(triggerId, body);
+    if (!trigger) {
+      jsonResponse(res, { error: 'Not found' }, 404);
+      return;
+    }
+    jsonResponse(res, { trigger });
+  } catch (err) {
+    jsonResponse(res, { error: (err as Error).message }, 400);
+  }
+}
+
+async function handleDeleteEventTrigger(
+  res: http.ServerResponse,
+  triggerId: string,
+): Promise<void> {
+  const deleted = await eventTriggerManager.deleteTrigger(triggerId);
+  if (!deleted) {
+    jsonResponse(res, { error: 'Not found' }, 404);
+    return;
+  }
+  jsonResponse(res, { success: true });
+}
+
+async function handlePollEventTrigger(
+  res: http.ServerResponse,
+  triggerId: string,
+): Promise<void> {
+  try {
+    const runs = await eventTriggerManager.pollNow(triggerId);
+    jsonResponse(res, { runs });
+  } catch (err) {
+    const msg = (err as Error).message;
+    const status = msg.includes('not found') ? 404 : 400;
+    jsonResponse(res, { error: msg }, status);
+  }
+}
+
+async function handleListEventTriggerRuns(
+  res: http.ServerResponse,
+  triggerId: string,
+  url: URL,
+): Promise<void> {
+  const limit = parseInt(url.searchParams.get('limit') ?? '20', 10);
+  try {
+    const runs = await eventTriggerManager.listRuns(triggerId, limit);
     jsonResponse(res, { runs });
   } catch (err) {
     jsonResponse(res, { error: (err as Error).message }, 500);
@@ -506,6 +649,10 @@ const server = http.createServer(async (req, res) => {
     const scheduleTriggerMatch = pathname.match(/^\/schedules\/([^/]+)\/trigger$/);
     const scheduleRunsMatch = pathname.match(/^\/schedules\/([^/]+)\/runs$/);
     const scheduleMatch = pathname.match(/^\/schedules\/([^/]+)$/);
+    const eventTriggerPollMatch = pathname.match(/^\/event-triggers\/([^/]+)\/poll$/);
+    const eventTriggerRunsMatch = pathname.match(/^\/event-triggers\/([^/]+)\/runs$/);
+    const eventTriggerMatch = pathname.match(/^\/event-triggers\/([^/]+)$/);
+    const todoDispatchMatch = pathname.match(/^\/todos\/([^/]+)\/dispatch$/);
 
     if (pathname === '/schedules' && method === 'GET') {
       await handleListSchedules(res);
@@ -533,6 +680,38 @@ const server = http.createServer(async (req, res) => {
     }
     if (scheduleMatch && method === 'DELETE') {
       await handleDeleteSchedule(res, scheduleMatch[1]);
+      return;
+    }
+    if (pathname === '/event-triggers' && method === 'GET') {
+      await handleListEventTriggers(res);
+      return;
+    }
+    if (pathname === '/event-triggers' && method === 'POST') {
+      await handleCreateEventTrigger(req, res);
+      return;
+    }
+    if (eventTriggerPollMatch && method === 'POST') {
+      await handlePollEventTrigger(res, eventTriggerPollMatch[1]);
+      return;
+    }
+    if (eventTriggerRunsMatch && method === 'GET') {
+      await handleListEventTriggerRuns(res, eventTriggerRunsMatch[1], url);
+      return;
+    }
+    if (eventTriggerMatch && method === 'GET') {
+      await handleGetEventTrigger(res, eventTriggerMatch[1]);
+      return;
+    }
+    if (eventTriggerMatch && method === 'PATCH') {
+      await handlePatchEventTrigger(req, res, eventTriggerMatch[1]);
+      return;
+    }
+    if (eventTriggerMatch && method === 'DELETE') {
+      await handleDeleteEventTrigger(res, eventTriggerMatch[1]);
+      return;
+    }
+    if (todoDispatchMatch && method === 'POST') {
+      await handleDispatchTodo(req, res, todoDispatchMatch[1]);
       return;
     }
 
@@ -604,6 +783,12 @@ async function main(): Promise<void> {
     await schedulerManager.init();
   } catch (err) {
     console.error('[Sidecar] SchedulerManager init failed:', err);
+  }
+
+  try {
+    await eventTriggerManager.init();
+  } catch (err) {
+    console.error('[Sidecar] EventTriggerManager init failed:', err);
   }
 
   // Initialize OAuth token refresh (proactively refresh before expiry)

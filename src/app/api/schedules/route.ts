@@ -17,7 +17,7 @@ export async function GET() {
 /**
  * POST /api/schedules
  * 创建新调度规则。
- * Body: { agentId, cron, message, projectKey?, label?, enabled? }
+ * Body: { targetType?, agentId?, todoId?, cron, message?, projectKey?, label?, enabled? }
  */
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
@@ -25,8 +25,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { agentId, cron, message, projectKey, label, enabled } = body as {
+  const { targetType, agentId, todoId, cron, message, projectKey, label, enabled } = body as {
+    targetType?: 'agent_message' | 'todo' | 'message';
     agentId?: string;
+    todoId?: string;
     cron?: string;
     message?: string;
     projectKey?: string;
@@ -34,14 +36,18 @@ export async function POST(request: NextRequest) {
     enabled?: boolean;
   };
 
-  if (!agentId || typeof agentId !== 'string') {
-    return NextResponse.json({ error: 'agentId is required' }, { status: 400 });
-  }
   if (!cron || typeof cron !== 'string') {
     return NextResponse.json({ error: 'cron is required' }, { status: 400 });
   }
-  if (!message || typeof message !== 'string' || message.length > 10000) {
-    return NextResponse.json({ error: 'message is required (max 10000 chars)' }, { status: 400 });
+  const normalizedTargetType = !targetType || targetType === 'message' ? 'agent_message' : targetType;
+  if (normalizedTargetType === 'agent_message' && (!agentId || typeof agentId !== 'string')) {
+    return NextResponse.json({ error: 'agentId is required for agent_message schedules' }, { status: 400 });
+  }
+  if (normalizedTargetType === 'agent_message' && (!message || typeof message !== 'string' || message.length > 10000)) {
+    return NextResponse.json({ error: 'message is required for agent_message schedules' }, { status: 400 });
+  }
+  if (normalizedTargetType === 'todo' && (!todoId || typeof todoId !== 'string')) {
+    return NextResponse.json({ error: 'todoId is required for todo schedules' }, { status: 400 });
   }
   if (projectKey !== undefined && typeof projectKey !== 'string') {
     return NextResponse.json({ error: 'projectKey must be a string' }, { status: 400 });
@@ -51,7 +57,9 @@ export async function POST(request: NextRequest) {
     const res = await sidecarFetch('/schedules', {
       method: 'POST',
       body: JSON.stringify({
+        targetType: normalizedTargetType,
         agentId,
+        todoId,
         cron,
         message,
         projectKey,

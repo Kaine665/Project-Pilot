@@ -23,7 +23,7 @@ import { createAgentRunner, type IAgentRunner } from './agent-runner';
 import { detectDangerousCommand } from '@/lib/danger-detector';
 import type { ChatSSEEvent, ContentBlock, Agent, AgentCapabilities, ProviderId } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_DANGER_SETTINGS } from '@/types';
-import type { AgentChatSession, SessionConfig, SessionCheckpoint } from '@/types/agent-chat';
+import type { AgentChatSession, SessionConfig, SessionCheckpoint, SessionSourceType } from '@/types/agent-chat';
 import type { ResourceRef, InlineTextRef, FlowContextRef, ReferenceTurnsRef } from '@/types/resource';
 import { resourceRegistry } from '@/lib/resource-registry';
 import { formatConversationHistory } from './conversation-history';
@@ -86,6 +86,9 @@ export interface AgentChatRun {
   agentId: string;
   projectKey?: string;
   sessionTitle?: string;
+  sourceType?: SessionSourceType;
+  sourceId?: string;
+  todoId?: string;
 
   /** 当前运行的 SDK runner（统一 Claude Agent SDK / Codex SDK 抽象） */
   runner: IAgentRunner | null;
@@ -177,6 +180,9 @@ class AgentChatManager {
     ephemeral?: boolean,
     _depth?: number,
     _background?: boolean,
+    sourceType?: SessionSourceType,
+    sourceId?: string,
+    todoId?: string,
   ): Promise<string> {
     const agent = await loadAgent(agentId);
     void _depth;
@@ -274,6 +280,9 @@ class AgentChatManager {
         agentId,
         projectKey: flowContext?.projectKey ?? existingProjectKey,
         sessionTitle: existingSessionTitle ?? initialTitle,
+        sourceType: sourceType ?? diskSession?.sourceType ?? 'manual',
+        sourceId: sourceId ?? diskSession?.sourceId,
+        todoId: todoId ?? diskSession?.todoId,
         messages,
         claudeSessionId: resumeSessionId,
         config: persistedConfig,
@@ -284,14 +293,17 @@ class AgentChatManager {
 
     // ── Create run ──
     const runId = `run-${sessionId}-${Date.now()}`;
-    const run: AgentChatRun = {
-      runId,
-      sessionId,
-      agentId,
-      projectKey: flowContext?.projectKey ?? existingProjectKey,
-      sessionTitle: existingSessionTitle ?? initialTitle,
-      runner: null,
-      status: 'running',
+      const run: AgentChatRun = {
+        runId,
+        sessionId,
+        agentId,
+        projectKey: flowContext?.projectKey ?? existingProjectKey,
+        sessionTitle: existingSessionTitle ?? initialTitle,
+        sourceType: sourceType ?? diskSession?.sourceType ?? 'manual',
+        sourceId: sourceId ?? diskSession?.sourceId,
+        todoId: todoId ?? diskSession?.todoId,
+        runner: null,
+        status: 'running',
       startedAt: Date.now(),
       events: [],
       listeners: new Set(),
@@ -889,6 +901,9 @@ class AgentChatManager {
       agentId: run.agentId,
       projectKey: run.projectKey,
       title: repairStoredTextIfNeeded(run.sessionTitle) ?? '新会话',
+      sourceType: run.sourceType,
+      sourceId: run.sourceId,
+      todoId: run.todoId,
       messages: run.messages,
       claudeSessionId: run.claudeSessionId,
       createdAt: new Date(run.startedAt).toISOString(),
@@ -930,6 +945,9 @@ class AgentChatManager {
           agentId: run.agentId,
           projectKey: run.projectKey,
           title: normalizedTitle,
+          sourceType: run.sourceType,
+          sourceId: run.sourceId,
+          todoId: run.todoId,
           messages: run.messages,
           claudeSessionId: run.claudeSessionId,
           createdAt: new Date(run.startedAt).toISOString(),

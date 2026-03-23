@@ -143,6 +143,9 @@ function sanitizeSessionMeta(meta: LegacySessionMeta): SessionMeta {
     agentId: meta.agentId,
     projectKey: meta.projectKey,
     title: repairedTitle,
+    sourceType: meta.sourceType,
+    sourceId: meta.sourceId,
+    todoId: meta.todoId,
     claudeSessionId: meta.claudeSessionId,
     createdAt: meta.createdAt,
     updatedAt: meta.updatedAt,
@@ -785,6 +788,9 @@ export async function eagerlySaveUserTurn(opts: {
   agentId: string;
   projectKey?: string;
   sessionTitle?: string;
+  sourceType?: AgentChatSession['sourceType'];
+  sourceId?: string;
+  todoId?: string;
   messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }>;
   claudeSessionId?: string;
   config?: SessionConfig;
@@ -814,6 +820,9 @@ export async function eagerlySaveUserTurn(opts: {
         if (incomingLen > existingLen) {
           data.sessions[idx].updatedAt = now;
           data.sessions[idx].messageCount = incomingLen;
+          data.sessions[idx].sourceType = opts.sourceType ?? data.sessions[idx].sourceType;
+          data.sessions[idx].sourceId = opts.sourceId ?? data.sessions[idx].sourceId;
+          data.sessions[idx].todoId = opts.todoId ?? data.sessions[idx].todoId;
         }
         } else {
           const normalizedTitle = repairStoredTextIfNeeded(opts.sessionTitle) ?? '\u65B0\u4F1A\u8BDD';
@@ -822,6 +831,9 @@ export async function eagerlySaveUserTurn(opts: {
             agentId: opts.agentId,
             projectKey: opts.projectKey,
             title: normalizedTitle,
+          sourceType: opts.sourceType,
+          sourceId: opts.sourceId,
+          todoId: opts.todoId,
           claudeSessionId: opts.claudeSessionId,
           createdAt: now,
           updatedAt: now,

@@ -1043,6 +1043,18 @@ export function getScheduleRunsPath(): string {
   return path.join(DATA_DIR, 'agents', 'schedule-runs.json');
 }
 
+export function getEventTriggersPath(): string {
+  return path.join(DATA_DIR, 'agents', 'event-triggers.json');
+}
+
+export function getEventTriggerRunsPath(): string {
+  return path.join(DATA_DIR, 'agents', 'event-trigger-runs.json');
+}
+
+export function getEventTriggerStatesPath(): string {
+  return path.join(DATA_DIR, 'agents', 'event-trigger-states.json');
+}
+
 /**
  * 通知数据已变更（供 MCP Server 写入后触发 UI 刷新）
  */
