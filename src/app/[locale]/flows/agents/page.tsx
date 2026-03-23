@@ -1605,8 +1605,8 @@ export default function AgentsPage() {
         )}
 
         <aside className="hidden w-[320px] shrink-0 border-l border-[#e7dfd0] bg-[#fcfaf5] shadow-[0_18px_48px_rgba(15,23,42,0.08)] xl:flex xl:flex-col dark:border-zinc-800 dark:bg-zinc-950">
-          <div className="flex h-full flex-col">
-            <section className="flex h-[52%] min-h-0 flex-col border-b border-[#e7dfd0] bg-[#f8f3e8] dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex h-full min-h-0 flex-col">
+            <section className="flex min-h-0 flex-[1.15] flex-col border-b border-[#e7dfd0] bg-[#f8f3e8] dark:border-zinc-800 dark:bg-zinc-900">
               <div className="flex h-11 items-center justify-between border-b border-[#e7dfd0] px-4 dark:border-zinc-800">
                 <div className="flex items-center gap-2">
                   <FolderOpen className="h-4 w-4 text-[#5f5a4f] dark:text-zinc-300" />
@@ -1646,11 +1646,40 @@ export default function AgentsPage() {
               </div>
             </section>
 
-            <section className="flex h-[48%] min-h-0 flex-col bg-[#fcfbf8] dark:bg-zinc-950">
+            <section className="flex min-h-0 flex-[0.95] flex-col border-b border-[#e7dfd0] bg-[#fcfbf8] dark:border-zinc-800 dark:bg-zinc-950">
               <AgentSessionPromptStack
                 key={promptStackItems.map((item) => `${item.scope}:${item.label}:${item.path}`).join('|')}
                 items={promptStackItems}
               />
+            </section>
+            <section className="min-h-0 flex-[0.8] overflow-y-auto bg-[#fcfbf8] px-3 py-3 dark:bg-zinc-950">
+              <div className="space-y-3">
+                <div className="px-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-400">
+                  System Capabilities
+                </div>
+                <div className="rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/90">
+                  {capabilityCards.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <div key={item.label} className="flex items-center justify-between border-b border-zinc-100 px-1 py-2.5 last:border-b-0 dark:border-zinc-800">
+                        <div className="flex items-center gap-2.5">
+                          <div className={`flex h-7 w-7 items-center justify-center rounded-md ${item.enabled ? 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-100' : 'bg-zinc-50 text-zinc-300 dark:bg-zinc-900 dark:text-zinc-600'}`}>
+                            <Icon className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="truncate text-[12px] font-medium text-zinc-800 dark:text-zinc-200">{item.label}</div>
+                            <div className="mt-0.5 text-[10px] uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">{item.hint}</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 dark:text-zinc-400">
+                          <span className={`h-1.5 w-1.5 rounded-full ${item.enabled ? 'bg-zinc-700 dark:bg-zinc-200' : 'bg-zinc-300 dark:bg-zinc-600'}`} />
+                          <span>{item.enabled ? 'Enabled' : 'Hidden'}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </section>
           </div>
         </aside>
