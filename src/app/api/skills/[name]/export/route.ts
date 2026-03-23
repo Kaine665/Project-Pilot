@@ -51,7 +51,7 @@ async function createSkillZip(
 }
 
 /**
- * GET /api/skills/{name}/export?scope=global&format=openclaw
+ * GET /api/skills/{name}/export?scope=global&format=standard
  *
  * 导出单个 Skill 为 ZIP 包。
  * - format 缺省时返回可用格式列表。

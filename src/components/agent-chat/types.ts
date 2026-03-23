@@ -32,6 +32,8 @@ export interface AgentChatPanelProps {
     modelOptions: ModelSelectOption[];
     effort: OpenAIReasoningEffort;
   };
+  /** Workspace mode hides legacy runtime/config chrome so the parent page owns the three-column shell. */
+  workspaceMode?: boolean;
 }
 
 export type IndexedSSEEvent = ChatSSEEvent & { _idx: number };

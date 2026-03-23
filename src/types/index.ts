@@ -164,6 +164,15 @@ export interface GeneralSettings {
   telemetry?: boolean;
 }
 
+export interface DeveloperSettings {
+  /** 卫星任务总开关 */
+  satelliteTasksEnabled?: boolean;
+}
+
+export const DEFAULT_DEVELOPER_SETTINGS: DeveloperSettings = {
+  satelliteTasksEnabled: true,
+};
+
 /** 会话标题自动生成配置 */
 export interface TitleGenerationChainEntry {
   provider: ProviderId;
@@ -246,6 +255,7 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
 export interface AppSettings {
   claude: ClaudeSettings;
   general?: GeneralSettings;
+  developer?: DeveloperSettings;
   /** 危险命令检测配置（各分类的检测级别） */
   dangerDetector?: DangerDetectorSettings;
   /** 会话标题自动生成配置 */
@@ -261,6 +271,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     authMode: 'api_key',
     model: 'claude-sonnet-4-6',
   },
+  developer: DEFAULT_DEVELOPER_SETTINGS,
   notifications: DEFAULT_NOTIFICATION_SETTINGS,
   version: 1,
 };

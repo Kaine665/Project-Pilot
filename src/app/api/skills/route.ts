@@ -39,7 +39,7 @@ export const GET = apiHandler(async (request: NextRequest) => {
 });
 
 // POST /api/skills — 创建新 skill 或迁移旧 skill
-// Body: { name, content, scope: { level, projectKey?, agentId? } }
+// Body: { content, name?, scope: { level, projectKey?, agentId? } }
 // 迁移: { action: "migrate", dirName, scope: { level, projectKey?, agentId? } }
 export const POST = apiHandler(async (request: NextRequest) => {
   const body = await request.json();
@@ -55,8 +55,8 @@ export const POST = apiHandler(async (request: NextRequest) => {
   }
 
   // 创建新 skill
-  if (!body.name || !body.content) {
-    throw badRequest('name and content are required');
+  if (!body.content) {
+    throw badRequest('content is required');
   }
 
   const meta = parseSkillFrontmatter(body.content);
@@ -64,9 +64,12 @@ export const POST = apiHandler(async (request: NextRequest) => {
     throw badRequest('content must have valid YAML frontmatter with name and description');
   }
 
+  const skillName = typeof body.name === 'string' && body.name.trim()
+    ? body.name.trim()
+    : meta.name;
   const scope = body.scope ? parseScopeFromBody(body.scope) : { level: 'global' as const };
-  await writeSkillFile(body.name, body.content, scope);
-  return NextResponse.json({ name: body.name, scope }, { status: 201 });
+  await writeSkillFile(skillName, body.content, scope);
+  return NextResponse.json({ name: skillName, scope }, { status: 201 });
 });
 
 function parseScopeFromBody(s: { level: string; projectKey?: string; agentId?: string }) {

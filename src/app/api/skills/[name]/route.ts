@@ -15,7 +15,12 @@ export async function GET(req: Request, { params }: Params) {
       return NextResponse.json({ error: 'Skill not found' }, { status: 404 });
     }
     const meta = parseSkillFrontmatter(content);
-    return NextResponse.json({ name, description: meta?.description ?? '', content, scope });
+    return NextResponse.json({
+      name: meta?.name ?? name,
+      description: meta?.description ?? '',
+      content,
+      scope,
+    });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }

@@ -2,11 +2,10 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
 import {
-  Bell,
-  Bot, Plus, Trash2, X, ChevronRight, Minimize2,
-  Settings, MessageSquare, Archive, ArchiveRestore,
-  Download, Upload, FileDown, FolderOpen, Search,
-  Command, Share2, MoreVertical, Terminal, Globe,
+  Plus, Trash2, X, Minimize2,
+  MessageSquare, Archive, ArchiveRestore,
+  Download, Upload, Search, Folder, FolderOpen,
+  Command, Terminal, Globe,
   Files, GitBranch, Eye, Database, ListTodo, HardDrive,
   FileText, FileJson,
 } from 'lucide-react';
@@ -28,9 +27,10 @@ const AgentChatPanel = dynamic(
 import { AgentIcon, SettingsForm, type FormData, emptyForm, agentToForm } from '@/components/agent-form';
 import { AgentPickerDropdown } from '@/components/agent-picker-dropdown';
 import { AgentPickerModal } from '@/components/agent-picker-modal';
-import { type AllSessionItem, type OpenedSession, groupSessionsByDay, syncUrlParams } from '@/components/agent-session-utils';
+import { type AllSessionItem, type OpenedSession, syncUrlParams } from '@/components/agent-session-utils';
 import { useProject } from '@/components/project-context';
 import { getProviderPreset } from '@/lib/provider-registry';
+import { repairTextIfNeeded } from '@/lib/text-repair';
 
 
 // ── Helpers ──
@@ -72,6 +72,10 @@ function getBaseName(pathValue: string | undefined): string {
   return segments[segments.length - 1] ?? 'develop-static';
 }
 
+function displayText(value: string | undefined, fallback = '--'): string {
+  return repairTextIfNeeded(value) ?? value ?? fallback;
+}
+
 // ── Session card (memo-ized to avoid re-render on listClockNow ticks) ──
 
 interface SessionCardProps {
@@ -94,30 +98,33 @@ const SessionCard = memo(function SessionCard({
   return (
     <div
       onClick={() => onClick(s)}
-      className={`group/session flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-3 transition-all ${
+      className={`group/session relative flex cursor-pointer items-start gap-3 rounded-2xl border px-3.5 py-3 transition-all ${
         isActive
-          ? 'border-zinc-200 bg-zinc-50 shadow-sm dark:border-zinc-700 dark:bg-zinc-800'
-          : 'border-transparent hover:border-zinc-100 hover:bg-zinc-50 dark:hover:border-zinc-700/50 dark:hover:bg-zinc-800/50'
+          ? 'border-border bg-card shadow-[0_12px_32px_rgba(15,23,42,0.06)] dark:shadow-none'
+          : 'border-transparent bg-transparent hover:border-border/70 hover:bg-card/80'
       } ${s.archived ? 'opacity-45' : ''}`}
     >
-      <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${
-        isActive ? 'bg-white shadow-sm ring-zinc-200 dark:bg-zinc-700 dark:ring-zinc-600' : 'bg-zinc-100 ring-zinc-100 dark:bg-zinc-800 dark:ring-zinc-700'
+      {isActive && (
+        <div className="absolute inset-y-3 left-1.5 w-0.5 rounded-full bg-zinc-900 dark:bg-zinc-100" />
+      )}
+      <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ring-1 ${
+        isActive ? 'bg-background shadow-sm ring-border' : 'bg-muted/70 ring-border/70'
       }`}>
-        <AgentIcon iconKey={s.agentIcon} className={`h-5 w-5 ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400'}`} />
+        <AgentIcon iconKey={s.agentIcon} className={`h-5 w-5 ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-300'}`} />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="mb-0.5 flex items-start justify-between gap-2">
-          <div className={`truncate text-[13px] ${s.archived ? 'font-medium text-zinc-400 dark:text-zinc-500' : 'font-semibold text-zinc-900 dark:text-zinc-100'}`}>
-            {s.title}
+        <div className="mb-0.5 flex items-start justify-between gap-3">
+          <div className={`truncate text-[13px] ${s.archived ? 'font-medium text-zinc-400 dark:text-zinc-500' : 'font-semibold text-foreground'}`}>
+            {displayText(s.title, '新会话')}
           </div>
-          <span className="shrink-0 pt-0.5 text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
+          <span className="shrink-0 pt-0.5 text-[10px] font-medium text-muted-foreground">
             {s.isRunning && listClockNow !== undefined
               ? formatSessionElapsed(s.runningStartedAt, listClockNow)
               : formatSessionTimestamp(s.updatedAt, nowTs)}
           </span>
         </div>
-        <div className={`truncate text-[11px] ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400'}`}>
-          {s.agentName}
+        <div className={`truncate text-[11px] ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-muted-foreground'}`}>
+          {displayText(s.agentName, s.agentId)}
         </div>
         {s.archived && (
           <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-zinc-300 dark:text-zinc-600">
@@ -132,7 +139,7 @@ const SessionCard = memo(function SessionCard({
       )}
       <button
         onClick={(e) => onArchiveToggle(s, e)}
-        className="shrink-0 rounded-lg p-1.5 text-zinc-400 opacity-0 transition-all hover:bg-zinc-100 hover:text-zinc-600 group-hover/session:opacity-100 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-400"
+        className="shrink-0 rounded-lg p-1.5 text-zinc-400 opacity-0 transition-all hover:bg-muted hover:text-foreground group-hover/session:opacity-100 dark:text-zinc-500"
         title={s.archived ? '取消归档' : '归档'}
       >
         {s.archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
@@ -144,16 +151,13 @@ const SessionCard = memo(function SessionCard({
 // ── Main page ──
 
 export default function AgentsPage() {
-  const { projects, activeKey, initialized: projectInitialized } = useProject();
+  const { projects, activeKey } = useProject();
 
   // ── Core data ──
   const [agents, setAgents] = useState<Agent[]>([]);
   const agentsRef = useRef<Agent[]>(agents);
   agentsRef.current = agents;
   const [allSessions, setAllSessions] = useState<AllSessionItem[]>([]);
-
-  // ── Sidebar tab ──
-  const [sidebarTab, setSidebarTab] = useState<'conversations' | 'agents'>('conversations');
 
   // ── Active panel ──
   const [activePanel, setActivePanel] = useState<
@@ -175,8 +179,6 @@ export default function AgentsPage() {
   const [saving, setSaving] = useState(false);
   const [expandedPrompt, setExpandedPrompt] = useState(false);
 
-  // ── Session archive filter ──
-  const [sessionFilter, setSessionFilter] = useState<'active' | 'archived' | 'all'>('active');
   const [sessionQuery, setSessionQuery] = useState('');
 
   // ── New session agent picker (dropdown + modal) ──
@@ -327,7 +329,7 @@ export default function AgentsPage() {
   );
 
   // 实际使用的 projectKey：优先用 ProjectProvider 的值，首次渲染时用 URL 直读值
-  const effectiveProjectKey = projectInitialized ? activeKey : initialProjectKeyRef.current;
+  const effectiveProjectKey = activeKey ?? initialProjectKeyRef.current;
 
   // ── Fetch all sessions (cross-agent, filtered by active project) ──
   const fetchAllSessions = useCallback(async () => {
@@ -369,10 +371,10 @@ export default function AgentsPage() {
         const agent = agentMap.get(s.agentId);
         return {
           id: s.id,
-          title: s.title,
+          title: repairTextIfNeeded(s.title) ?? s.title,
           updatedAt: s.updatedAt,
           agentId: s.agentId,
-          agentName: agent?.name ?? '未知 Agent',
+          agentName: agent?.name ?? s.agentId ?? '已删除 Agent',
           agentIcon: agent?.icon,
           unreadCount: s.unreadCount,
           archived: s.archived,
@@ -429,24 +431,17 @@ export default function AgentsPage() {
     return () => clearInterval(timer);
   }, [hasRunningSession]);
 
-  // ── Filtered sessions by archive status ──
-  const filteredSessions = useMemo(() => {
-    if (sessionFilter === 'all') return allSessions;
-    if (sessionFilter === 'archived') return allSessions.filter(s => s.archived);
-    return allSessions.filter(s => !s.archived); // 'active'
-  }, [allSessions, sessionFilter]);
-
   // ── Project-filtered agents（项目专属排前面，全局排后面）──
   const filteredAgents = useMemo(() => {
-    if (!activeKey) return agents;
+    if (!effectiveProjectKey) return agents;
     return agents
-      .filter(a => !a.projectKey || a.projectKey === activeKey)
+      .filter(a => !a.projectKey || a.projectKey === effectiveProjectKey)
       .sort((a, b) => {
         const aGlobal = a.projectKey ? 0 : 1;
         const bGlobal = b.projectKey ? 0 : 1;
         return aGlobal - bGlobal;
       });
-  }, [agents, activeKey]);
+  }, [agents, effectiveProjectKey]);
 
   // ── Recent agent IDs (derived from sessions) ──
   const recentAgentIds = useMemo(() => {
@@ -528,6 +523,15 @@ export default function AgentsPage() {
     setForm(agentToForm(agent));
     setExpandedPrompt(false);
     setActivePanel({ type: 'agent', agentId: agent.id, mode: 'chat' });
+    syncUrlParams({ agent: agent.id, session: null });
+  };
+
+  const handleAgentSettingsClick = (agent: Agent) => {
+    setCreating(false);
+    setSelectedAgentId(agent.id);
+    setForm(agentToForm(agent));
+    setExpandedPrompt(false);
+    setActivePanel({ type: 'agent', agentId: agent.id, mode: 'settings' });
     syncUrlParams({ agent: agent.id, session: null });
   };
 
@@ -731,48 +735,73 @@ export default function AgentsPage() {
   const activeSessionAgent = useMemo(() =>
     activeOpened ? agents.find(a => a.id === activeOpened.agentId) ?? null : null,
     [activeOpened, agents]);
-  const activeSessionInfo = useMemo(() =>
-    activeOpened?.sessionId ? allSessions.find(s => s.id === activeOpened.sessionId) ?? null : null,
-    [activeOpened, allSessions]);
+
+  const agentLookup = useMemo(() => new Map(agents.map((agent) => [agent.id, agent])), [agents]);
+
+  const resolvedSessions = useMemo(() => allSessions.map((session) => {
+    const agent = agentLookup.get(session.agentId);
+    if (!agent) return session;
+    if (session.agentName === agent.name && session.agentIcon === agent.icon) return session;
+    return {
+      ...session,
+      agentName: agent.name,
+      agentIcon: agent.icon,
+    };
+  }), [allSessions, agentLookup]);
+
+  const projectScopedSessions = useMemo(() => {
+    if (!effectiveProjectKey) return resolvedSessions;
+    return resolvedSessions.filter((session) => session.projectKey === effectiveProjectKey);
+  }, [resolvedSessions, effectiveProjectKey]);
 
   const visibleSessions = useMemo(() => {
     const query = sessionQuery.trim().toLowerCase();
-    if (!query) return filteredSessions;
-    return filteredSessions.filter((session) => {
+    if (!query) return projectScopedSessions;
+    return projectScopedSessions.filter((session) => {
       const haystack = `${session.title} ${session.agentName}`.toLowerCase();
       return haystack.includes(query);
     });
-  }, [filteredSessions, sessionQuery]);
+  }, [projectScopedSessions, sessionQuery]);
 
-  const pinnedSession = useMemo(() => {
-    if (visibleSessions.length === 0) return null;
-    return (
-      visibleSessions.find((session) => session.id === activeSessionId)
-      ?? visibleSessions.find((session) => session.isRunning)
-      ?? visibleSessions[0]
-    );
-  }, [activeSessionId, visibleSessions]);
+  useEffect(() => {
+    if (agents.length === 0) return;
+    setAllSessions(prev => prev.map((session) => {
+      const agent = agentLookup.get(session.agentId);
+      if (!agent) return session;
+      if (session.agentName === agent.name && session.agentIcon === agent.icon) return session;
+      return {
+        ...session,
+        agentName: agent.name,
+        agentIcon: agent.icon,
+      };
+    }));
+  }, [agents, agentLookup]);
 
-  const recentSessions = useMemo(
-    () => visibleSessions.filter((session) => session.id !== pinnedSession?.id),
-    [pinnedSession?.id, visibleSessions],
-  );
-
-  const recentGroups = useMemo(() => groupSessionsByDay(recentSessions), [recentSessions]);
+  const activeSessionInfo = useMemo(() =>
+    activeOpened?.sessionId ? resolvedSessions.find(s => s.id === activeOpened.sessionId) ?? null : null,
+    [activeOpened, resolvedSessions]);
 
   const activeProject = useMemo(
-    () => projects.find((project) => project.key === activeKey) ?? null,
-    [projects, activeKey],
+    () => projects.find((project) => project.key === effectiveProjectKey) ?? null,
+    [projects, effectiveProjectKey],
   );
 
-  const workspaceAgent = selectedAgent ?? activeSessionAgent;
+  const fallbackWorkspaceAgent = filteredAgents.find((agent) => agent.id === 'agent-builtin-self-dev') ?? filteredAgents[0] ?? null;
+  const workspaceAgent = selectedAgent ?? activeSessionAgent ?? fallbackWorkspaceAgent;
   const workspaceSessionId = activeSessionInfo?.id ?? activeOpened?.sessionId ?? null;
-  const workspaceTitle = activeSessionInfo?.title ?? workspaceAgent?.name ?? 'Agent Workspace';
+  const workspaceTitle = activeSessionInfo?.title ?? '新对话';
+  const workspaceDisplayTitle = repairTextIfNeeded(workspaceTitle) ?? workspaceTitle;
   const workspaceAgentCapabilities = workspaceAgent?.capabilities ?? DEFAULT_AGENT_CAPABILITIES;
+  const workspaceAgentName = displayText(workspaceAgent?.name, 'Self-Dev Agent');
+  const workspaceAgentId = workspaceAgent?.id ?? 'agent-builtin-self-dev';
+  const workspaceAgentDescription = displayText(
+    workspaceAgent?.description,
+    `${workspaceAgentName} 已就绪。先从左侧连续 inbox 选择一个会话对象，或者直接开启新的 agent 对话。`,
+  );
   const projectRootLabel = `${getBaseName(activeProject?.path)}/`;
-  const projectPromptLabel = activeKey ? `${activeKey}.md` : 'project-pilot.md';
-  const projectPromptPath = activeKey
-    ? `~/.project-pilot/data/project-prompts/${activeKey}.md`
+  const projectPromptLabel = effectiveProjectKey ? `${effectiveProjectKey}.md` : 'project-pilot.md';
+  const projectPromptPath = effectiveProjectKey
+    ? `~/.project-pilot/data/project-prompts/${effectiveProjectKey}.md`
     : '~/.project-pilot/data/project-prompts/project-pilot.md';
   const agentPromptLabel = workspaceAgent
     ? `${workspaceAgent.id}.md`
@@ -792,280 +821,384 @@ export default function AgentsPage() {
   const combinedPromptTokens = (promptMetrics.global ?? 0) + (promptMetrics.project ?? 0) + agentPromptTokens;
   const promptUsagePercent = Math.min(100, Math.round((combinedPromptTokens / 128000) * 100));
 
-  const promptStackItems = [
+  const workspaceTreeNodes = [
     {
-      scope: 'Global',
-      accent: 'bg-blue-50 text-blue-700 border-blue-100',
-      line: 'bg-blue-100',
+      depth: 0,
+      kind: 'folder',
+      label: projectRootLabel,
+      path: activeProject?.path ?? 'D:/Desktop/ProgrammingProjects/',
+      detail: 'root',
+    },
+    {
+      depth: 1,
+      kind: 'folder',
+      label: 'develop-static/',
+      path: activeProject?.path ?? 'D:/Desktop/ProgrammingProjects/personal-projects/03-In-Development/project-pilot/develop-static/',
+      detail: 'worktree',
+    },
+    {
+      depth: 2,
+      kind: 'folder',
+      label: '.project-pilot/',
+      path: '~/.project-pilot/',
+      detail: 'pp home',
+    },
+    {
+      depth: 3,
+      kind: 'folder',
+      label: 'data/',
+      path: '~/.project-pilot/data/',
+      detail: 'shared data',
+    },
+    {
+      depth: 4,
+      kind: 'folder',
+      label: 'prompts/',
+      path: '~/.project-pilot/data/prompts/',
+      detail: 'prompt root',
+    },
+    {
+      depth: 5,
+      kind: 'folder',
+      label: 'agents/',
+      path: '~/.project-pilot/data/prompts/agents/',
+      detail: 'agent prompts',
+    },
+    {
+      depth: 6,
+      kind: 'file',
+      label: agentPromptLabel,
+      path: agentPromptPath,
+      detail: 'active',
+    },
+    {
+      depth: 5,
+      kind: 'file',
       label: 'global.md',
       path: '~/.project-pilot/data/prompts/global.md',
-      tokens: promptMetrics.global,
-      description: '所有 Agent 共用的全局约束、操作规则与安全边界。',
+      detail: 'global',
+    },
+    {
+      depth: 5,
+      kind: 'file',
+      label: projectPromptLabel,
+      path: projectPromptPath,
+      detail: 'project',
+    },
+    {
+      depth: 3,
+      kind: 'folder',
+      label: 'runtime/',
+      path: `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/`,
+      detail: 'runtime',
+    },
+    {
+      depth: 4,
+      kind: 'folder',
+      label: `${workspaceAgentId}/`,
+      path: `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/`,
+      detail: 'agent scope',
+    },
+    {
+      depth: 5,
+      kind: 'folder',
+      label: workspaceSessionId ? `${workspaceSessionId}/` : '<session>/',
+      path: workspaceSessionId
+        ? `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/${workspaceSessionId}/`
+        : `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/<session>/`,
+      detail: 'active session',
+    },
+    {
+      depth: 6,
+      kind: 'file',
+      label: runtimePromptLabel,
+      path: runtimePromptPath,
+      detail: 'runtime copy',
+    },
+    {
+      depth: 6,
+      kind: 'block',
+      label: 'memory.snapshot.json',
+      path: workspaceSessionId
+        ? `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/${workspaceSessionId}/memory.snapshot.json`
+        : '~/.project-pilot/data/prompts/runtime/<agent>/<session>/memory.snapshot.json',
+      detail: 'memory',
+    },
+  ] as const;
+
+  const promptTreeSections = [
+    {
+      scope: 'Global',
+      accent: 'text-blue-700',
+      summary: '全局约束、安全规则与默认提示词。',
+      file: {
+        label: 'global.md',
+        path: '~/.project-pilot/data/prompts/global.md',
+        tokens: promptMetrics.global,
+      },
+      nodes: [
+        { kind: 'folder', label: 'prompt-blocks/_global/', path: '~/.project-pilot/data/prompt-blocks/_global/' },
+        { kind: 'block', label: 'safety-rules.block.md', path: '~/.project-pilot/data/prompt-blocks/_global/safety-rules.block.md' },
+      ],
     },
     {
       scope: 'Project',
-      accent: 'bg-amber-50 text-amber-700 border-amber-100',
-      line: 'bg-amber-100',
-      label: projectPromptLabel,
-      path: projectPromptPath,
-      tokens: promptMetrics.project,
-      description: activeKey
-        ? `${activeKey} 项目的项目级约束、流程规则与上下文。`
-        : '当前项目的项目级约束与工程上下文。',
+      accent: 'text-amber-700',
+      summary: '项目级提示词、文档与 prompt blocks。',
+      file: {
+        label: projectPromptLabel,
+        path: projectPromptPath,
+        tokens: promptMetrics.project,
+      },
+      nodes: [
+        { kind: 'folder', label: `prompt-blocks/_projects/${effectiveProjectKey ?? 'project-pilot'}/`, path: `~/.project-pilot/data/prompt-blocks/_projects/${effectiveProjectKey ?? 'project-pilot'}/` },
+        { kind: 'folder', label: `docs/${effectiveProjectKey ?? 'project-pilot'}/`, path: `~/.project-pilot/data/docs/${effectiveProjectKey ?? 'project-pilot'}/` },
+        { kind: 'block', label: 'workspace-context.block.md', path: `~/.project-pilot/data/prompt-blocks/_projects/${effectiveProjectKey ?? 'project-pilot'}/workspace-context.block.md` },
+      ],
     },
     {
       scope: 'Agent',
-      accent: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-      line: 'bg-emerald-100',
-      label: agentPromptLabel,
-      path: agentPromptPath,
-      tokens: agentPromptTokens,
-      description: workspaceAgent?.description || '当前 Agent 的系统提示词与默认资源配置。',
-    },
-    {
-      scope: 'Session',
-      accent: 'bg-zinc-100 text-zinc-700 border-zinc-200',
-      line: 'bg-zinc-200',
-      label: runtimePromptLabel,
-      path: runtimePromptPath,
-      tokens: null,
-      description: workspaceSessionId
-        ? '当前会话的运行时提示词副本与瞬时记忆状态。'
-        : '会话启动后将生成 runtime prompt 副本。',
+      accent: 'text-emerald-700',
+      summary: '当前 agent 的提示词、skills 与专属上下文。',
+      file: {
+        label: agentPromptLabel,
+        path: agentPromptPath,
+        tokens: agentPromptTokens,
+      },
+      nodes: [
+        { kind: 'folder', label: `skills/_agents/${workspaceAgentId}/`, path: `~/.project-pilot/data/skills/_agents/${workspaceAgentId}/` },
+        { kind: 'folder', label: `agent-data/${workspaceAgentId}/`, path: `~/.project-pilot/data/agent-data/${workspaceAgentId}/` },
+        { kind: 'block', label: 'agent-capabilities.block.md', path: `~/.project-pilot/data/prompt-blocks/_agents/${workspaceAgentId}/agent-capabilities.block.md` },
+        ...(workspaceSessionId
+          ? [
+            { kind: 'folder', label: `${workspaceSessionId}/`, path: `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/${workspaceSessionId}/` },
+            { kind: 'block', label: 'memory.snapshot.json', path: `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/${workspaceSessionId}/memory.snapshot.json` },
+          ]
+          : [
+            { kind: 'folder', label: 'runtime/<session>/', path: `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/<session>/` },
+          ]),
+      ],
     },
   ] as const;
 
   const capabilityCards = [
-    { label: 'Terminal', enabled: workspaceAgentCapabilities.bash, icon: Terminal },
-    { label: 'Web Browse', enabled: workspaceAgentCapabilities.web, icon: Globe },
-    { label: 'File System', enabled: workspaceAgentCapabilities.fileAccess, icon: Files },
-    { label: 'Sub Agents', enabled: workspaceAgentCapabilities.subAgent, icon: GitBranch },
-    { label: 'Todo Read', enabled: workspaceAgentCapabilities.todoRead, icon: ListTodo },
-    { label: 'Data Store', enabled: workspaceAgentCapabilities.dataStore, icon: HardDrive },
-    { label: 'Prompt Path', enabled: workspaceAgentCapabilities.exposePromptPath, icon: Eye },
-    { label: 'Skip Review', enabled: workspaceAgentCapabilities.skipReview, icon: Database },
+    { label: '终端', hint: 'Shell', enabled: workspaceAgentCapabilities.bash, icon: Terminal },
+    { label: '网页', hint: 'Web', enabled: workspaceAgentCapabilities.web, icon: Globe },
+    { label: '文件', hint: 'FS', enabled: workspaceAgentCapabilities.fileAccess, icon: Files },
+    { label: '子代理', hint: 'A2A', enabled: workspaceAgentCapabilities.subAgent, icon: GitBranch },
+    { label: '待办', hint: 'Todo', enabled: workspaceAgentCapabilities.todoRead, icon: ListTodo },
+    { label: '存储', hint: 'Data', enabled: workspaceAgentCapabilities.dataStore, icon: HardDrive },
+    { label: 'Prompt 路径', hint: 'Path', enabled: workspaceAgentCapabilities.exposePromptPath, icon: Eye },
+    { label: '跳过评审', hint: 'Skip', enabled: workspaceAgentCapabilities.skipReview, icon: Database },
   ] as const;
 
+  const inboxSummary = `${visibleSessions.length} 个会话对象`;
+  const activeWorkspaceSession = activePanel?.type === 'session' ? activeOpened : null;
+  const activeWorkspaceAgent = activeWorkspaceSession
+    ? agents.find((agent) => agent.id === activeWorkspaceSession.agentId) ?? workspaceAgent
+    : (selectedAgent ?? workspaceAgent);
+  const activeWorkspacePanelKey = activeWorkspaceSession?.key ?? null;
+  const activeWorkspaceSessionId = activeWorkspaceSession?.sessionId ?? null;
+
+  const handleWorkspacePanelSessionChange = useCallback((
+    agent: Agent,
+    panelKey: number | null,
+    previousSessionId: string | null,
+    newSession?: {
+      id: string;
+      title: string;
+      updatedAt: string;
+      unreadCount?: number;
+      isRunning?: boolean;
+      runningStartedAt?: string;
+    },
+  ) => {
+    if (newSession) {
+      const repairedTitle = displayText(newSession.title, '新会话');
+      setAllSessions(prev => {
+        const existing = prev.find((session) => session.id === newSession.id);
+        if (existing) {
+          return prev.map((session) => session.id === newSession.id
+            ? {
+                ...session,
+                title: repairedTitle,
+                updatedAt: newSession.updatedAt,
+                agentId: agent.id,
+                agentName: displayText(agent.name, agent.id),
+                agentIcon: agent.icon,
+                ...(newSession.isRunning !== undefined && {
+                  isRunning: newSession.isRunning,
+                  runningStartedAt: newSession.runningStartedAt,
+                }),
+                ...(newSession.unreadCount !== undefined && {
+                  unreadCount: newSession.unreadCount,
+                }),
+              }
+            : session);
+        }
+        return [{
+          id: newSession.id,
+          title: repairedTitle,
+          updatedAt: newSession.updatedAt,
+          agentId: agent.id,
+          agentName: displayText(agent.name, agent.id),
+          agentIcon: agent.icon,
+          isRunning: newSession.isRunning,
+          runningStartedAt: newSession.runningStartedAt,
+          unreadCount: newSession.unreadCount,
+          projectKey: effectiveProjectKey ?? undefined,
+        }, ...prev];
+      });
+
+      if (panelKey !== null) {
+        if (previousSessionId !== newSession.id) {
+          setOpenedSessions(prev =>
+            prev.map((panel) => panel.key === panelKey ? { ...panel, sessionId: newSession.id } : panel),
+          );
+        }
+        setActivePanel({ type: 'session', key: panelKey });
+      } else {
+        const existing = openedSessionsRef.current.find(
+          (panel) => panel.sessionId === newSession.id && panel.agentId === agent.id,
+        );
+        if (existing) {
+          setActivePanel({ type: 'session', key: existing.key });
+        } else {
+          const nextKey = nextKeyRef.current++;
+          setOpenedSessions(prev => [...prev, { sessionId: newSession.id, agentId: agent.id, key: nextKey }]);
+          setActivePanel({ type: 'session', key: nextKey });
+        }
+      }
+
+      fetch(`/api/agent-chat/sessions/${newSession.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'markAsRead' }),
+      }).catch(() => {});
+
+      syncUrlParams({ agent: agent.id, session: newSession.id });
+    }
+
+    if (!newSession || newSession.isRunning !== true) {
+      fetchAllSessions();
+    }
+  }, [effectiveProjectKey, fetchAllSessions]);
+
   return (
-    <div className="flex h-full overflow-hidden bg-[#fdfdfd] text-zinc-900">
-      {/* Left sidebar */}
-      <div className="flex w-[320px] shrink-0 flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-        {/* ── Tab switcher ── */}
-        <div className="flex gap-1 px-4 pt-4 pb-2">
-          <button
-            onClick={() => setSidebarTab('conversations')}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-all ${
-              sidebarTab === 'conversations'
-                ? 'bg-zinc-900 text-white shadow-sm dark:bg-zinc-100 dark:text-zinc-900'
-                : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 dark:hover:text-zinc-300'
-            }`}
-          >
-            <MessageSquare className="h-3.5 w-3.5" />
-            对话
-          </button>
-          <button
-            onClick={() => setSidebarTab('agents')}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-all ${
-              sidebarTab === 'agents'
-                ? 'bg-zinc-900 text-white shadow-sm dark:bg-zinc-100 dark:text-zinc-900'
-                : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 dark:hover:text-zinc-300'
-            }`}
-          >
-            <Bot className="h-3.5 w-3.5" />
-            Agents
-          </button>
+    <div className="flex h-full overflow-hidden bg-background text-foreground">
+      <aside className="relative flex w-[356px] shrink-0 flex-col border-r border-border bg-muted/30">
+        <div className="border-b border-border px-4 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                Current Workspace
+              </div>
+              <div className="mt-2 truncate text-[17px] font-semibold text-foreground">
+                {activeProject?.name ?? activeProject?.key ?? 'ProjectPilot'}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="inline-flex max-w-full items-center rounded-full border border-border bg-background px-2.5 py-1 text-[10px] font-medium text-foreground">
+                  <span className="truncate">{workspaceAgentName}</span>
+                </span>
+                <span className="inline-flex items-center rounded-full border border-border bg-background px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
+                  {inboxSummary}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowAgentDropdown(v => !v)}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-border bg-background text-foreground transition-colors hover:bg-card"
+              title="新建会话"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="mt-4 flex h-10 items-center gap-2 rounded-2xl border border-border bg-background px-3 text-muted-foreground">
+            <Search className="h-4 w-4 shrink-0" />
+            <input
+              value={sessionQuery}
+              onChange={(e) => setSessionQuery(e.target.value)}
+              placeholder="搜索会话、Agent 或标题"
+              className="w-full bg-transparent text-[12px] text-foreground outline-none placeholder:text-muted-foreground"
+            />
+          </div>
+
+          <div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
+            <span className="truncate">{activeProject?.key ?? 'project-pilot'}</span>
+            <span className="truncate">{workspaceAgentId}</span>
+          </div>
+
+          <AgentPickerDropdown
+            open={showAgentDropdown}
+            onClose={() => setShowAgentDropdown(false)}
+            onSelect={handleNewSession}
+            onExpand={() => { setShowAgentDropdown(false); setShowAgentModal(true); }}
+            agents={filteredAgents}
+            activeProjectKey={effectiveProjectKey ?? undefined}
+            recentAgentIds={recentAgentIds}
+          />
+          <AgentPickerModal
+            open={showAgentModal}
+            onClose={() => setShowAgentModal(false)}
+            onSelect={handleNewSession}
+            agents={filteredAgents}
+            activeProjectKey={effectiveProjectKey ?? undefined}
+            recentAgentIds={recentAgentIds}
+          />
         </div>
 
-        {/* ── Tab content ── */}
-        {sidebarTab === 'conversations' ? (
-          <div className="flex flex-1 flex-col overflow-hidden">
-            {/* Session filter + new session button */}
-            <div className="relative flex items-center justify-between px-5 py-4">
-              <div className="flex items-center gap-1 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800">
-                {([
-                  ['active', '活跃'],
-                  ['archived', '归档'],
-                  ['all', '全部'],
-                ] as const).map(([key, label]) => (
-                  <button
-                    key={key}
-                    onClick={() => setSessionFilter(key)}
-                    className={`rounded-md px-2 py-1 text-[11px] font-medium transition-all ${
-                      sessionFilter === key
-                        ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
-                        : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <button
-                onClick={() => setShowAgentDropdown(v => !v)}
-                className="flex h-7 w-7 items-center justify-center rounded-full bg-zinc-50 text-zinc-500 transition-all hover:bg-zinc-900 hover:text-white dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-100 dark:hover:text-zinc-900"
-                title="新建对话"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-              {/* Agent picker dropdown (compact, default) */}
-              <AgentPickerDropdown
-                open={showAgentDropdown}
-                onClose={() => setShowAgentDropdown(false)}
-                onSelect={handleNewSession}
-                onExpand={() => { setShowAgentDropdown(false); setShowAgentModal(true); }}
-                agents={filteredAgents}
-                activeProjectKey={activeKey ?? undefined}
-                recentAgentIds={recentAgentIds}
-              />
-              {/* Agent picker modal (expanded, triggered from dropdown) */}
-              <AgentPickerModal
-                open={showAgentModal}
-                onClose={() => setShowAgentModal(false)}
-                onSelect={handleNewSession}
-                agents={filteredAgents}
-                activeProjectKey={activeKey ?? undefined}
-                recentAgentIds={recentAgentIds}
-              />
+        <div className="flex-1 overflow-y-auto px-3 py-3">
+          {visibleSessions.length === 0 ? (
+            <div className="rounded-[22px] border border-dashed border-border bg-card/70 px-5 py-10 text-center text-sm text-muted-foreground">
+              <MessageSquare className="mx-auto mb-3 h-8 w-8 text-zinc-300 dark:text-zinc-600" />
+              <p>{sessionQuery ? '没有匹配的会话对象' : `还没有和 ${workspaceAgentName} 的连续会话`}</p>
+              <p className="mt-1 text-xs text-muted-foreground">点击右上角 + 开始新的 agent 会话。</p>
             </div>
-            <div className="px-5 pb-3">
-              <div className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-                <Search className="h-4 w-4 shrink-0" />
-                <input
-                  value={sessionQuery}
-                  onChange={(e) => setSessionQuery(e.target.value)}
-                  placeholder="搜索会话、Agent 或标题"
-                  className="w-full bg-transparent text-[12px] outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-500"
+          ) : (
+            <div className="space-y-2.5">
+              {visibleSessions.map((session) => (
+                <SessionCard
+                  key={session.id}
+                  session={session}
+                  isActive={activeSessionId === session.id}
+                  listClockNow={session.isRunning ? listClockNow : undefined}
+                  onClick={handleSessionClick}
+                  onArchiveToggle={handleArchiveToggle}
                 />
-              </div>
+              ))}
             </div>
-            {/* Session list */}
-            <div className="flex-1 overflow-y-auto px-3 pb-5">
-              {visibleSessions.length === 0 ? (
-                <div className="px-4 py-12 text-center text-xs text-zinc-400 dark:text-zinc-500">
-                  <MessageSquare className="mx-auto mb-2 h-8 w-8 text-zinc-300 dark:text-zinc-600" />
-                  <p>{sessionQuery ? '没有匹配的会话' : sessionFilter === 'archived' ? '暂无归档对话' : sessionFilter === 'all' ? '暂无对话' : '暂无活跃对话'}</p>
-                  {!sessionQuery && sessionFilter === 'active' && <p className="mt-1">点击右上角 + 开始新对话</p>}
-                </div>
-              ) : (
-                <div className="space-y-5">
-                  {pinnedSession && (
-                    <div className="space-y-2">
-                      <div className="px-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-400 dark:text-zinc-500">
-                        当前焦点
-                      </div>
-                      <SessionCard
-                        key={pinnedSession.id}
-                        session={pinnedSession}
-                        isActive={activeSessionId === pinnedSession.id}
-                        listClockNow={pinnedSession.isRunning ? listClockNow : undefined}
-                        onClick={handleSessionClick}
-                        onArchiveToggle={handleArchiveToggle}
-                      />
-                    </div>
-                  )}
+          )}
+        </div>
 
-                  {recentGroups.map(group => (
-                    <div key={group.label} className="space-y-2">
-                      <div className="px-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-400 dark:text-zinc-500">
-                        {group.label}
-                      </div>
-                      <div className="space-y-1">
-                        {group.items.map(s => (
-                          <SessionCard
-                            key={s.id}
-                            session={s}
-                            isActive={activeSessionId === s.id}
-                            listClockNow={s.isRunning ? listClockNow : undefined}
-                            onClick={handleSessionClick}
-                            onArchiveToggle={handleArchiveToggle}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+        <div className="border-t border-border px-3 py-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => workspaceAgent && handleAgentSettingsClick(workspaceAgent)}
+              className="flex-1 rounded-xl border border-border bg-card px-3 py-2 text-[12px] font-medium text-foreground transition-colors hover:bg-background"
+            >
+              Agent 设置
+            </button>
+            <button
+              onClick={() => setShowAgentDropdown(v => !v)}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+              title="新建会话"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+            <button
+              onClick={handleImport}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+              title="导入 Agent"
+            >
+              <Upload className="h-4 w-4" />
+            </button>
           </div>
-        ) : (
-          /* ── Agents tab ── */
-          <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4">
-              <div className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
-                {filteredAgents.length > 0 ? `${filteredAgents.length} 个 Agent` : 'Agents'}
-              </div>
-              <div className="flex items-center gap-0.5">
-                <button
-                  onClick={handleImport}
-                  className="rounded-lg p-1.5 text-zinc-400 transition-all hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                  title="导入 .ppagent"
-                >
-                  <Upload className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={handleStartCreate}
-                  className="rounded-lg p-1.5 text-zinc-400 transition-all hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                  title="新建 Agent"
-                >
-                  <Plus className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto px-2 pb-4 space-y-1">
-              {filteredAgents.length === 0 ? (
-                <div className="px-4 py-8 text-center text-xs text-zinc-400 dark:text-zinc-500">
-                  暂无 Agent
-                </div>
-              ) : (
-                filteredAgents.map(a => (
-                  <div
-                    key={a.id}
-                    onClick={() => handleAgentClick(a)}
-                    className={`group flex cursor-pointer items-center gap-3.5 rounded-xl border px-3 py-3.5 transition-all ${
-                      activePanel?.type === 'agent' && activePanel.agentId === a.id
-                        ? 'bg-zinc-50 border-zinc-100 shadow-sm dark:bg-zinc-800 dark:border-zinc-700'
-                        : 'border-transparent hover:bg-zinc-50 hover:border-zinc-100 dark:hover:bg-zinc-800/50 dark:hover:border-zinc-700/50'
-                    }`}
-                  >
-                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ${
-                      activePanel?.type === 'agent' && activePanel.agentId === a.id
-                        ? 'bg-white shadow-sm ring-zinc-200 dark:bg-zinc-700 dark:ring-zinc-600'
-                        : 'bg-zinc-50 ring-zinc-100 dark:bg-zinc-800 dark:ring-zinc-700'
-                    }`}>
-                      <AgentIcon iconKey={a.icon} className="h-5 w-5 text-zinc-500 dark:text-zinc-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">
-                        <span className="truncate">{a.name}</span>
-                        {a.builtIn && (
-                          <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                            内置
-                          </span>
-                        )}
-                        {!a.projectKey && activeKey && (
-                          <span className="shrink-0 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:bg-amber-900/30 dark:text-amber-400">
-                            全局
-                          </span>
-                        )}
-                      </div>
-                      {a.description && (
-                        <div className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
-                          {a.description}
-                        </div>
-                      )}
-                    </div>
-                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-300 dark:text-zinc-600" />
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-      </div>
+        </div>
+      </aside>
 
       <div className="flex min-w-0 flex-1">
-        {/* Center panel */}
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white">
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#fcfbf8] dark:bg-[#0f141b]">
         {creating ? (
           /* ── Creating new agent ── */
           expandedPrompt ? (
@@ -1106,9 +1239,8 @@ export default function AgentsPage() {
               projects={projects}
             />
           )
-        ) : activePanel?.type === 'agent' && selectedAgent ? (
-          /* ── Agent detail (chat / settings) ── */
-          expandedPrompt && agentViewMode === 'settings' ? (
+        ) : activePanel?.type === 'agent' && selectedAgent && agentViewMode === 'settings' ? (
+          expandedPrompt ? (
             <div className="flex flex-1 flex-col p-4 gap-3 overflow-hidden">
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
@@ -1132,35 +1264,27 @@ export default function AgentsPage() {
             </div>
           ) : (
             <>
-              {/* Agent panel header */}
-              <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
-                <div className="flex items-center gap-2 min-w-0">
-                  <AgentIcon iconKey={selectedAgent.icon} className="h-4 w-4 shrink-0 text-zinc-500" />
-                  <span className="text-sm font-medium text-zinc-900 truncate dark:text-zinc-100">{selectedAgent.name}</span>
-                  {selectedAgent.builtIn && (
-                    <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                      内置
-                    </span>
-                  )}
+              <div className="flex items-start justify-between border-b border-zinc-200 px-6 py-4">
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-600">
+                    <AgentIcon iconKey={selectedAgent.icon} className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-[15px] font-semibold text-zinc-950">{selectedAgent.name}</span>
+                      {selectedAgent.builtIn && (
+                        <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                          内置
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 truncate text-[12px] text-zinc-500">{selectedAgent.id}</div>
+                    <div className="mt-2 text-[12px] text-zinc-600">
+                      {selectedAgent.description || '当前 agent 的默认工作区入口。'}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => {
-                      if (activePanel?.type === 'agent') {
-                        const newMode = activePanel.mode === 'chat' ? 'settings' : 'chat';
-                        setActivePanel({ ...activePanel, mode: newMode });
-                        setExpandedPrompt(false);
-                      }
-                    }}
-                    className={`rounded-md p-1.5 transition-colors ${
-                      agentViewMode === 'settings'
-                        ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                        : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300'
-                    }`}
-                    title={agentViewMode === 'chat' ? '设置' : '聊天'}
-                  >
-                    {agentViewMode === 'chat' ? <Settings className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
-                  </button>
+                <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => handleExport(selectedAgent)}
                     className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
@@ -1187,238 +1311,85 @@ export default function AgentsPage() {
                 </div>
               </div>
 
-              {agentViewMode === 'chat' ? (
-                <div className="flex-1 overflow-hidden">
-                  <AgentChatPanel
-                    key={`agent-${selectedAgent.id}`}
-                    agent={selectedAgent}
-                    initialSessionId={null}
-                    projectKey={activeKey}
-                    cachedAgents={agents}
-                    cachedSettings={cachedSettings}
-                    onSessionChange={(newSession) => {
-                      if (newSession && selectedAgent) {
-                        setAllSessions(prev => {
-                          const existing = prev.find(s => s.id === newSession.id);
-                          if (existing) {
-                            return prev.map(s => s.id === newSession.id
-                              ? {
-                                  ...s,
-                                  title: newSession.title,
-                                  updatedAt: newSession.updatedAt,
-                                  ...(newSession.isRunning !== undefined && {
-                                    isRunning: newSession.isRunning,
-                                    runningStartedAt: newSession.runningStartedAt,
-                                  }),
-                                  ...(newSession.unreadCount !== undefined && {
-                                    unreadCount: newSession.unreadCount,
-                                  }),
-                                }
-                              : s);
-                          }
-                          return [{
-                            id: newSession.id,
-                            title: newSession.title,
-                            updatedAt: newSession.updatedAt,
-                            agentId: selectedAgent.id,
-                            agentName: selectedAgent.name,
-                            agentIcon: selectedAgent.icon,
-                            isRunning: newSession.isRunning,
-                            runningStartedAt: newSession.runningStartedAt,
-                            unreadCount: newSession.unreadCount,
-                          }, ...prev];
-                        });
-                      }
-                      // Don't fetch on every streaming tick – only fetch on real content changes
-                      if (!newSession || newSession.isRunning !== true) {
-                        fetchAllSessions();
-                      }
-                    }}
-                  />
-                </div>
-              ) : (
-                <SettingsForm
-                  creating={false}
-                  form={form}
-                  setForm={setForm}
-                  selectedAgent={selectedAgent}
-                  hasChanges={hasChanges}
-                  saving={saving}
-                  onSave={handleSave}
-                  onClose={handleClose}
-                  onDelete={handleDelete}
-                  selectedId={selectedAgentId}
-                  onExpandPrompt={() => setExpandedPrompt(true)}
-                  projects={projects}
-                />
-              )}
+              <SettingsForm
+                creating={false}
+                form={form}
+                setForm={setForm}
+                selectedAgent={selectedAgent}
+                hasChanges={hasChanges}
+                saving={saving}
+                onSave={handleSave}
+                onClose={handleClose}
+                onDelete={handleDelete}
+                selectedId={selectedAgentId}
+                onExpandPrompt={() => setExpandedPrompt(true)}
+                projects={projects}
+              />
             </>
           )
-        ) : activePanel?.type === 'session' ? (
-          /* ── Session chat panels (multi-instance, CSS visibility toggle) ── */
-          <>
-            {/* Session header */}
-            {activeSessionAgent && (
-              <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
-                <div className="flex items-center gap-2 min-w-0">
-                  <AgentIcon iconKey={activeSessionAgent.icon} className="h-4 w-4 shrink-0 text-zinc-500" />
-                  <span className="text-sm font-medium text-zinc-900 truncate dark:text-zinc-100">
-                    {activeSessionInfo?.title ?? '新会话'}
-                  </span>
-                  <span className="text-xs text-zinc-400 shrink-0">
-                    — {activeSessionAgent.name}
-                  </span>
-                  <button
-                    onClick={() => {
-                      window.dispatchEvent(new CustomEvent('toggle-session-compress', { detail: { sessionId: activeOpened?.sessionId } }));
-                    }}
-                    className="shrink-0 rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-blue-500 transition-colors dark:hover:bg-zinc-800 dark:hover:text-blue-400"
-                    title="压缩会话历史"
-                  >
-                    <FileDown className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      window.dispatchEvent(new CustomEvent('toggle-session-config'));
-                    }}
-                    className="shrink-0 rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                    title="会话配置"
-                  >
-                    <Settings className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      window.dispatchEvent(new CustomEvent('toggle-folder-explorer'));
-                    }}
-                    className="shrink-0 rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                    title="打开本地文件夹"
-                  >
-                    <FolderOpen className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+        ) : (
+          <div className="flex flex-1 flex-col overflow-hidden bg-[linear-gradient(180deg,#ffffff_0%,#faf8f3_100%)] dark:bg-[linear-gradient(180deg,#0f141b_0%,#111722_100%)]">
+            {activeWorkspaceAgent ? (
+              <div className="flex-1 overflow-hidden">
+                <AgentChatPanel
+                  key={`workspace-${activeWorkspaceAgent.id}-${activeWorkspaceSessionId ?? 'draft'}-${activeWorkspacePanelKey ?? 'root'}`}
+                  agent={activeWorkspaceAgent}
+                  initialSessionId={activeWorkspaceSessionId}
+                  variant="full"
+                  projectKey={effectiveProjectKey}
+                  cachedAgents={agents}
+                  cachedSettings={cachedSettings}
+                  workspaceMode
+                  onSessionChange={(newSession) => handleWorkspacePanelSessionChange(
+                    activeWorkspaceAgent,
+                    activeWorkspacePanelKey,
+                    activeWorkspaceSessionId,
+                    newSession,
+                  )}
+                />
+              </div>
+            ) : (
+              <div className="flex h-full items-center justify-center px-8 text-sm text-zinc-500">
+                暂无可用 Agent。
               </div>
             )}
-            {/* Render all opened sessions, toggle visibility */}
-            <div className="flex-1 overflow-hidden relative">
-              {openedSessions.map(os => {
-                const agent = agents.find(a => a.id === os.agentId);
-                if (!agent) return null;
-                const isVisible = activePanel.key === os.key;
-                return (
-                  <div
-                    key={os.key}
-                    className={`absolute inset-0 ${isVisible ? 'flex flex-col' : 'hidden'}`}
-                  >
-                    <AgentChatPanel
-                      agent={agent}
-                      initialSessionId={os.sessionId}
-                      projectKey={activeKey}
-                      cachedAgents={agents}
-                      cachedSettings={cachedSettings}
-                      onSessionChange={(newSession) => {
-                        // Update the opened session's sessionId (new session or branch switch)
-                        if (newSession && os.sessionId !== newSession.id) {
-                          setOpenedSessions(prev =>
-                            prev.map(p => p.key === os.key ? { ...p, sessionId: newSession.id } : p),
-                          );
-                          syncUrlParams({ session: newSession.id });
-                        }
-                        // Optimistically insert/update session in sidebar list
-                        if (newSession) {
-                          setAllSessions(prev => {
-                            const existing = prev.find(s => s.id === newSession.id);
-                            if (existing) {
-                              return prev.map(s => s.id === newSession.id
-                                ? {
-                                    ...s,
-                                    title: newSession.title,
-                                    updatedAt: newSession.updatedAt,
-                                    ...(newSession.isRunning !== undefined && {
-                                      isRunning: newSession.isRunning,
-                                      runningStartedAt: newSession.runningStartedAt,
-                                    }),
-                                  }
-                                : s);
-                            }
-                            return [{
-                              id: newSession.id,
-                              title: newSession.title,
-                              updatedAt: newSession.updatedAt,
-                              agentId: os.agentId,
-                              agentName: agent.name,
-                              agentIcon: agent.icon,
-                              isRunning: newSession.isRunning,
-                              runningStartedAt: newSession.runningStartedAt,
-                            }, ...prev];
-                          });
-                        }
-                        // Mark as read if user is actively viewing this session
-                        const sid = newSession?.id ?? os.sessionId;
-                        if (sid) {
-                          fetch(`/api/agent-chat/sessions/${sid}`, {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ action: 'markAsRead' }),
-                          }).catch(() => {});
-                        }
-                        // Don't fetch on every streaming tick – only fetch on real content changes
-                        if (!newSession || newSession.isRunning !== true) {
-                          fetchAllSessions();
-                        }
-                      }}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        ) : (
-          /* ── Empty state ── */
-          <div className="flex flex-1 flex-col overflow-hidden bg-zinc-50/30 dark:bg-zinc-950/50">
-            <div className="flex h-full flex-col items-center justify-center p-12 text-center">
-              <div className="relative mb-6">
-                <div className="absolute -inset-4 rounded-full bg-zinc-100/50 blur-xl dark:bg-zinc-800/30" />
-                <MessageSquare className="relative h-16 w-16 text-zinc-200 dark:text-zinc-600" />
-              </div>
-              <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-2">ProjectPilot Agents</h3>
-              <p className="text-sm text-zinc-400 dark:text-zinc-500 max-w-xs leading-relaxed">
-                选择左侧的一个对话继续，或者通过新建对话来让 AI 协助你完成项目任务。
-              </p>
-              <button
-                onClick={() => { setSidebarTab('conversations'); setShowAgentDropdown(true); }}
-                className="mt-8 flex items-center gap-2 rounded-xl bg-zinc-900 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-zinc-200 transition-all hover:-translate-y-0.5 hover:shadow-zinc-300 dark:bg-zinc-100 dark:text-zinc-900 dark:shadow-zinc-800 dark:hover:bg-zinc-200"
-              >
-                <Plus className="h-4 w-4" />
-                开启新对话
-              </button>
-            </div>
           </div>
         )}
-        </div>
+        </main>
 
-        <aside className="hidden w-[360px] shrink-0 border-l border-zinc-200 bg-[#fbfbfb] xl:flex xl:flex-col">
-          <div className="flex items-start justify-between border-b border-zinc-200 px-5 py-4">
+        <aside className="hidden w-[372px] shrink-0 border-l border-zinc-200 bg-[#f6f4ef] dark:border-zinc-800 dark:bg-[#11161d] xl:flex xl:flex-col">
+          <div className="flex items-start justify-between border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
             <div className="min-w-0">
               <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-zinc-400">
-                Inspector
+                Agent Workspace
               </div>
-              <div className="mt-2 truncate text-[15px] font-semibold text-zinc-950">
-                {workspaceAgent?.name ?? 'Agent Workspace'}
+              <div className="mt-2 truncate text-[15px] font-semibold text-zinc-950 dark:text-zinc-100">
+                {workspaceAgentName}
               </div>
               <div className="mt-1 flex items-center gap-2 text-[11px] text-zinc-500">
                 <Command className="h-3.5 w-3.5" />
-                <span className="truncate">{workspaceSessionId ?? 'session-runtime'}</span>
+                <span className="truncate">{`workspace/${activeProject?.key ?? 'project-pilot'}`}</span>
               </div>
             </div>
-            <div className="flex items-center gap-1 text-zinc-400">
-              <button className="rounded-lg p-2 transition-colors hover:bg-white hover:text-zinc-700" title="分享视图">
-                <Share2 className="h-4 w-4" />
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => workspaceAgent && handleAgentSettingsClick(workspaceAgent)}
+                className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[12px] font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                Agent 设置
               </button>
-              <button className="rounded-lg p-2 transition-colors hover:bg-white hover:text-zinc-700" title="通知">
-                <Bell className="h-4 w-4" />
+              <button
+                onClick={handleStartCreate}
+                className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[12px] font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                新建 Agent
               </button>
-              <button className="rounded-lg p-2 transition-colors hover:bg-white hover:text-zinc-700" title="更多操作">
-                <MoreVertical className="h-4 w-4" />
+              <button
+                onClick={handleImport}
+                className="rounded-md p-2 text-zinc-400 transition-colors hover:bg-white hover:text-zinc-700 dark:hover:bg-zinc-900 dark:hover:text-zinc-200"
+                title="导入 Agent"
+              >
+                <Upload className="h-4 w-4" />
               </button>
             </div>
           </div>
@@ -1428,39 +1399,58 @@ export default function AgentsPage() {
               <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-400">
                 Agent Workspace
               </div>
-              <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+              <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)] dark:border-zinc-800 dark:bg-zinc-900/90 dark:shadow-none">
                 <div className="flex items-start gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-600">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-200">
                     <AgentIcon iconKey={workspaceAgent?.icon} className="h-5 w-5" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold text-zinc-950">{workspaceTitle}</div>
-                    <div className="mt-1 text-[12px] text-zinc-500">
-                      {workspaceAgent?.id ?? 'agent-builtin-self-dev'}
-                    </div>
-                    <div className="mt-3 inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                    <div className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-100">{workspaceDisplayTitle}</div>
+                    <div className="mt-1 text-[12px] text-zinc-500">{workspaceAgentId}</div>
+                    <div className="mt-3 inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-300">
                       <Command className="h-3 w-3" />
                       {activeProject?.key ?? 'project-pilot'}
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-4 space-y-3">
-                  <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5">
-                    <div className="flex items-center gap-2 text-[11px] font-medium text-zinc-600">
-                      <FileJson className="h-3.5 w-3.5" />
-                      Project Root
-                    </div>
-                    <div className="mt-1 text-[12px] text-zinc-900">{projectRootLabel}</div>
-                    <div className="truncate text-[11px] text-zinc-500">{activeProject?.path ?? 'D:/Desktop/ProgrammingProjects/'}</div>
+                <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50/80 px-3 py-3 dark:border-zinc-800 dark:bg-zinc-950/70">
+                  <div className="mb-2 text-[11px] leading-5 text-zinc-500 dark:text-zinc-400">
+                    {workspaceAgentDescription}
                   </div>
-                  <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5">
-                    <div className="flex items-center gap-2 text-[11px] font-medium text-zinc-600">
-                      <FileText className="h-3.5 w-3.5" />
-                      Runtime Context
-                    </div>
-                    <div className="mt-1 text-[12px] text-zinc-900">{runtimePromptLabel}</div>
-                    <div className="truncate text-[11px] text-zinc-500">{runtimePromptPath}</div>
+                  <div className="space-y-0.5 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+                    {workspaceTreeNodes.map((node) => (
+                      <div
+                        key={`${node.depth}-${node.path}`}
+                        className="relative"
+                        style={{ marginLeft: `${node.depth * 14}px` }}
+                      >
+                        {node.depth > 0 && (
+                          <>
+                            <div className="absolute bottom-1/2 left-0 top-[-10px] w-px bg-zinc-200 dark:bg-zinc-800" />
+                            <div className="absolute left-0 top-1/2 h-px w-3 bg-zinc-200 dark:bg-zinc-800" />
+                          </>
+                        )}
+                        <div className="rounded-md px-2 py-1.5 transition-colors hover:bg-white/70 dark:hover:bg-zinc-900/70">
+                          <div className="flex items-center gap-2 text-[12px] font-medium text-zinc-800 dark:text-zinc-200">
+                            {node.kind === 'folder' ? (
+                              <FolderOpen className="h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
+                            ) : node.kind === 'file' ? (
+                              <FileText className="h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
+                            ) : (
+                              <FileJson className="h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
+                            )}
+                            <span className="truncate">{node.label}</span>
+                            <span className="ml-auto rounded bg-zinc-100 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.12em] text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500">
+                              {node.detail}
+                            </span>
+                          </div>
+                          {node.kind !== 'folder' && (
+                            <div className="truncate pl-5 text-[10px] text-zinc-500 dark:text-zinc-400">{node.path}</div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -1473,24 +1463,44 @@ export default function AgentsPage() {
                 </div>
                 <div className="text-[11px] font-medium text-zinc-500">{formatTokenCount(combinedPromptTokens)}</div>
               </div>
-              <div className="space-y-3">
-                {promptStackItems.map((item) => (
-                  <div key={item.scope} className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
-                    <div className={`h-1 w-full ${item.line}`} />
-                    <div className="space-y-3 p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${item.accent}`}>
-                            {item.scope}
+              <div className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/90">
+                {promptTreeSections.map((section) => (
+                  <div key={section.scope} className="space-y-2 border-b border-zinc-100 pb-3 last:border-b-0 last:pb-0 dark:border-zinc-800/80">
+                    <div className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${section.accent}`}>{section.scope}</div>
+                    <div className="text-[11px] leading-5 text-zinc-500 dark:text-zinc-400">{section.summary}</div>
+                    <div className="space-y-1 pl-4">
+                      <div className="relative rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-950/70">
+                        <div className="absolute bottom-1/2 left-[-16px] top-[-10px] w-px bg-zinc-200 dark:bg-zinc-800" />
+                        <div className="absolute left-[-16px] top-1/2 h-px w-3 bg-zinc-200 dark:bg-zinc-800" />
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 text-[12px] font-semibold text-zinc-900 dark:text-zinc-100">
+                              <span className="rounded bg-white px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:bg-zinc-900 dark:text-zinc-500">main</span>
+                              <span className="truncate">{section.file.label}</span>
+                            </div>
+                            <div className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">{section.file.path}</div>
                           </div>
-                          <div className="mt-2 truncate text-[13px] font-semibold text-zinc-950">{item.label}</div>
-                          <div className="mt-1 truncate text-[11px] text-zinc-500">{item.path}</div>
+                          <div className="shrink-0 text-[11px] font-medium text-zinc-500">{formatTokenCount(section.file.tokens)}</div>
                         </div>
-                        <div className="shrink-0 text-[11px] font-medium text-zinc-500">{formatTokenCount(item.tokens)}</div>
                       </div>
-                      <div className="text-[12px] leading-5 text-zinc-600">
-                        {item.description}
-                      </div>
+                      {section.nodes.map((node) => (
+                        <div key={node.path} className="relative rounded-md px-3 py-1.5 dark:bg-zinc-950/20">
+                          <div className="absolute bottom-1/2 left-[-16px] top-[-10px] w-px bg-zinc-200 dark:bg-zinc-800" />
+                          <div className="absolute left-[-16px] top-1/2 h-px w-3 bg-zinc-200 dark:bg-zinc-800" />
+                          <div className="flex items-center gap-2 text-[12px] font-medium text-zinc-700 dark:text-zinc-200">
+                            {node.kind === 'folder' ? (
+                              <Folder className="h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
+                            ) : node.kind === 'block' ? (
+                              <FileJson className="h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
+                            ) : (
+                              <FileText className="h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
+                            )}
+                            <span className="truncate">{node.label}</span>
+                            <span className="ml-auto rounded bg-zinc-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500">{node.kind}</span>
+                          </div>
+                          <div className="truncate pl-5 text-[10px] text-zinc-500 dark:text-zinc-400">{node.path}</div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ))}
@@ -1501,38 +1511,42 @@ export default function AgentsPage() {
               <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-400">
                 System Capabilities
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/90">
                 {capabilityCards.map((item) => {
                   const Icon = item.icon;
                   return (
-                    <div key={item.label} className="rounded-2xl border border-zinc-200 bg-white px-3 py-3">
-                      <div className="flex items-center justify-between">
-                        <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${item.enabled ? 'bg-zinc-100 text-zinc-700' : 'bg-zinc-50 text-zinc-300'}`}>
+                    <div key={item.label} className="flex items-center justify-between border-b border-zinc-100 px-1 py-2.5 last:border-b-0 dark:border-zinc-800">
+                      <div className="flex items-center gap-2.5">
+                        <div className={`flex h-7 w-7 items-center justify-center rounded-md ${item.enabled ? 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-100' : 'bg-zinc-50 text-zinc-300 dark:bg-zinc-900 dark:text-zinc-600'}`}>
                           <Icon className="h-4 w-4" />
                         </div>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${item.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-zinc-100 text-zinc-400'}`}>
-                          {item.enabled ? 'On' : 'Off'}
-                        </span>
+                        <div className="min-w-0">
+                          <div className="truncate text-[12px] font-medium text-zinc-800 dark:text-zinc-200">{item.label}</div>
+                          <div className="mt-0.5 text-[10px] uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">{item.hint}</div>
+                        </div>
                       </div>
-                      <div className="mt-3 text-[12px] font-medium text-zinc-800">{item.label}</div>
+                      <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 dark:text-zinc-400">
+                        <span className={`h-1.5 w-1.5 rounded-full ${item.enabled ? 'bg-zinc-700 dark:bg-zinc-200' : 'bg-zinc-300 dark:bg-zinc-600'}`} />
+                        <span>{item.enabled ? '已挂载' : '未暴露'}</span>
+                      </div>
                     </div>
                   );
                 })}
               </div>
             </section>
 
-            <section className="rounded-2xl border border-zinc-200 bg-white p-4">
+            <section className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/90">
               <div className="flex items-center justify-between text-[11px] font-medium text-zinc-500">
                 <span>Prompt Budget</span>
                 <span>{promptUsagePercent}% of 128k</span>
               </div>
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-100">
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
                 <div className="h-full rounded-full bg-zinc-900" style={{ width: `${promptUsagePercent}%` }} />
               </div>
               <div className="mt-3 grid grid-cols-3 gap-2 text-[11px] text-zinc-500">
                 <div>
                   <div className="text-zinc-400">Global</div>
-                  <div className="mt-1 font-medium text-zinc-800">{formatTokenCount(promptMetrics.global)}</div>
+                  <div className="mt-1 font-medium text-zinc-800 dark:text-zinc-200">{formatTokenCount(promptMetrics.global)}</div>
                 </div>
                 <div>
                   <div className="text-zinc-400">Project</div>

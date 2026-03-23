@@ -21,13 +21,10 @@ export function usePanelCacheSnapshot({
   queueExpanded,
 }: UsePanelCacheSnapshotParams): void {
   useEffect(() => {
-    const cachedSessionId = sessionIdRef.current;
-    const shouldReconnect = isStreamingRef.current;
-
     return () => {
       cachePanelState(cacheKey, {
-        sessionId: cachedSessionId,
-        shouldReconnect,
+        sessionId: sessionIdRef.current,
+        shouldReconnect: isStreamingRef.current,
         showConfig,
         showFolderExplorer,
         showRuntimePanel,

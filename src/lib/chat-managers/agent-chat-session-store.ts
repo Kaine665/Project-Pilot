@@ -32,6 +32,7 @@ import {
   parseJsonSafe,
 } from '@/lib/file-store';
 import { deleteRuntimePromptCopy } from '@/lib/agent-prompt-store';
+import { looksLikeCorruptedStoredText, repairStoredTextIfNeeded } from '@/lib/text-repair-server';
 import type { Agent, AgentsData, ContentBlock } from '@/types';
 import type {
   AgentChatSession,
@@ -125,7 +126,7 @@ function sanitizeExecution(
     status: execution.status,
     startedAt: execution.startedAt,
     completedAt: execution.completedAt ?? execution.startedAt,
-    errorMessage: execution.errorMessage,
+    errorMessage: repairStoredTextIfNeeded(execution.errorMessage),
     stopReason: execution.stopReason,
     resultSummary: execution.resultSummary ?? execution.result?.summary,
     result: execution.result,
@@ -136,11 +137,12 @@ function sanitizeExecution(
 }
 
 function sanitizeSessionMeta(meta: LegacySessionMeta): SessionMeta {
+  const repairedTitle = repairStoredTextIfNeeded(meta.title) ?? meta.title;
   const normalized: SessionMeta = {
     id: meta.id,
     agentId: meta.agentId,
     projectKey: meta.projectKey,
-    title: meta.title,
+    title: repairedTitle,
     claudeSessionId: meta.claudeSessionId,
     createdAt: meta.createdAt,
     updatedAt: meta.updatedAt,
@@ -164,7 +166,9 @@ function sanitizeSessionMeta(meta: LegacySessionMeta): SessionMeta {
 
 function needsSessionNormalization(meta: LegacySessionMeta): boolean {
   return Boolean(
-    meta.pendingUserQueue
+    looksLikeCorruptedStoredText(meta.title)
+      || looksLikeCorruptedStoredText(meta.execution?.errorMessage)
+      || meta.pendingUserQueue
       || meta.background !== undefined
       || meta.depth !== undefined
       || meta.execution?.awaitingSubAgents,
@@ -747,7 +751,7 @@ export async function branchSession(
     id: newId,
     agentId: source.agentId,
     projectKey: source.projectKey,
-    title: `\u{1F33F} ${source.title}`,
+    title: `\u{1F33F} ${repairStoredTextIfNeeded(source.title) ?? source.title}`,
     createdAt: now,
     updatedAt: now,
     config: source.config,
@@ -811,12 +815,13 @@ export async function eagerlySaveUserTurn(opts: {
           data.sessions[idx].updatedAt = now;
           data.sessions[idx].messageCount = incomingLen;
         }
-      } else {
-        data.sessions.push({
-          id: opts.sessionId,
-          agentId: opts.agentId,
-          projectKey: opts.projectKey,
-          title: opts.sessionTitle ?? '\u65B0\u4F1A\u8BDD',
+        } else {
+          const normalizedTitle = repairStoredTextIfNeeded(opts.sessionTitle) ?? '\u65B0\u4F1A\u8BDD';
+          data.sessions.push({
+            id: opts.sessionId,
+            agentId: opts.agentId,
+            projectKey: opts.projectKey,
+            title: normalizedTitle,
           claudeSessionId: opts.claudeSessionId,
           createdAt: now,
           updatedAt: now,
@@ -856,6 +861,7 @@ export async function persistSessionToDisk(
       const { messages: _msgs, ...incomingMeta } = session;
       const meta: SessionMeta = {
         ...incomingMeta,
+        title: repairStoredTextIfNeeded(incomingMeta.title) ?? incomingMeta.title,
         messageCount: session.messages.length,
       };
 

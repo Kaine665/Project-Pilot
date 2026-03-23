@@ -5,7 +5,7 @@ import { useTranslations, useLocale } from 'next-intl';
 import { useRouter, usePathname } from '@/i18n/routing';
 import { TopNav } from '@/components/top-nav';
 import { Button } from '@/components/ui/button';
-import { Check, X, Loader2, Brain, Wrench, Palette, Database, Eye, Settings, ShieldAlert, Sparkles } from 'lucide-react';
+import { Check, X, Loader2, Brain, Wrench, Palette, Database, Eye, Settings, ShieldAlert, Sparkles, Satellite } from 'lucide-react';
 import { getProviderPreset } from '@/lib/provider-registry';
 import { useTheme } from '@/components/theme-provider';
 import { AddCustomProviderDialog } from '@/components/add-custom-provider-dialog';
@@ -14,6 +14,7 @@ import {
   SettingsClaudeSection,
   SettingsAppearanceSection,
   SettingsDataSection,
+  SettingsDeveloperSection,
   SettingsPrivacySection,
   SettingsSafetySection,
   SettingsTitleGenerationSection,
@@ -90,6 +91,7 @@ export default function SettingsPage() {
 
   // Privacy state
   const [telemetry, setTelemetry] = useState(false);
+  const [satelliteTasksEnabled, setSatelliteTasksEnabled] = useState(true);
 
   // Safety detection state
   const [dangerSettings, setDangerSettings] = useState<DangerDetectorSettings>({ ...DEFAULT_DANGER_SETTINGS });
@@ -237,6 +239,7 @@ export default function SettingsPage() {
         setDefaultExposePromptPath(data.claude.defaultExposePromptPath !== false);
         setBaseUrl(data.claude.baseUrl || '');
         setTelemetry(data.general?.telemetry || false);
+        setSatelliteTasksEnabled(data.developer?.satelliteTasksEnabled !== false);
         setDangerSettings({ ...DEFAULT_DANGER_SETTINGS, ...data.dangerDetector });
 
         // Title generation
@@ -385,6 +388,7 @@ export default function SettingsPage() {
     { id: 'ai', icon: Brain, label: t('aiConfig') },
     { id: 'claude', icon: Wrench, label: t('claudeCodeConfig') },
     { id: 'safety', icon: ShieldAlert, label: t('safetyDetection') },
+    { id: 'developer', icon: Satellite, label: t('developerTools') },
     { id: 'titleGeneration', icon: Sparkles, label: t('titleGeneration') },
     { id: 'appearance', icon: Palette, label: t('appearance') },
     { id: 'data', icon: Database, label: t('dataManagement') },
@@ -505,6 +509,7 @@ export default function SettingsPage() {
             skipPermissions, effortLevel, maxTurns, defaultExposePromptPath, baseUrl,
           },
           general: { telemetry },
+          developer: { satelliteTasksEnabled },
           dangerDetector: dangerSettings,
           titleGeneration: {
             enabled: titleGenEnabled,
@@ -849,6 +854,14 @@ export default function SettingsPage() {
               />
             )}
 
+            {activeSection === 'developer' && (
+              <SettingsDeveloperSection
+                t={t} tActions={tActions} btnActive={btnActive} btnInactive={btnInactive}
+                satelliteTasksEnabled={satelliteTasksEnabled}
+                onSatelliteTasksEnabledChange={setSatelliteTasksEnabled}
+              />
+            )}
+
             {activeSection === 'titleGeneration' && (
               <SettingsTitleGenerationSection
                 t={t} tActions={tActions} btnActive={btnActive} btnInactive={btnInactive}
@@ -886,7 +899,12 @@ export default function SettingsPage() {
             )}
 
             {/* ── Save Button (for AI/Claude/Privacy sections) ── */}
-            {(activeSection === 'ai' || activeSection === 'claude' || activeSection === 'safety' || activeSection === 'titleGeneration' || activeSection === 'privacy') && (
+            {(activeSection === 'ai'
+              || activeSection === 'claude'
+              || activeSection === 'safety'
+              || activeSection === 'developer'
+              || activeSection === 'titleGeneration'
+              || activeSection === 'privacy') && (
               <div className="flex items-center gap-3">
                 <Button onClick={handleSave} disabled={saving}>
                   {saving && <Loader2 className="h-4 w-4 animate-spin" />}

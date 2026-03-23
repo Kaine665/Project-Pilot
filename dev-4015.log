@@ -1,0 +1,17 @@
+
+> project-pilot@0.1.0 predev
+> node scripts/ensure-postcss-alloc-lru.mjs
+
+[ensure-postcss-alloc-lru] 已同步到 @tailwindcss/postcss/node_modules/@alloc/quick-lru
+
+> project-pilot@0.1.0 dev
+> next dev --port 4000 --turbopack --port 4015
+
+[1m[38;2;173;127;168m▲ Next.js 16.1.6[39m[22m (Turbopack)
+- Local:         http://localhost:4015
+- Network:       http://198.18.0.1:4015
+
+[32m[1m✓[22m[39m Starting...
+[31m[1m⨯[22m[39m Unable to acquire lock at [36mD:\Desktop\ProgrammingProjects\personal-projects\03-In-Development\project-pilot\test\.next\dev\lock[39m, is another instance of [36mnext dev[39m running?
+[37m[1m [22m[39m [1mSuggestion:[22m If you intended to restart [36mnext dev[39m, terminate the other process, and then try again.
+[?25h

@@ -14,6 +14,7 @@ import { satelliteRegistry } from './registry';
 import { isTaskEnabled } from './config';
 import { callLightweightAI } from './lightweight-ai';
 import { appendRun } from './run-store';
+import { getSettings } from '@/lib/settings-manager';
 import { refreshTitleTriggerCache } from './tasks/title-generation';
 import { refreshHealthGuardCache } from './tasks/health-guard';
 import { refreshKnowledgeExtractionCache } from './tasks/knowledge-extraction';
@@ -25,6 +26,12 @@ import type { SatelliteContext, SatelliteTask } from './types';
 const LOG_PREFIX = '[Satellite]';
 
 export async function runSatelliteTasks(ctx: SatelliteContext): Promise<void> {
+  const settings = await getSettings();
+  if (settings.developer?.satelliteTasksEnabled === false) {
+    ctx.emit({ type: 'stream_end' });
+    return;
+  }
+
   // Refresh config caches before evaluating shouldRun (which is sync)
   await Promise.all([
     refreshTitleTriggerCache(),

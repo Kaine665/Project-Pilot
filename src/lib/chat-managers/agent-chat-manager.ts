@@ -37,6 +37,7 @@ import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-pr
 import { runSatelliteTasks } from '@/lib/satellite-tasks';
 import '@/lib/satellite-tasks'; // side-effect: registers all satellite tasks
 import type { SatelliteContext } from '@/lib/satellite-tasks';
+import { repairStoredTextIfNeeded } from '@/lib/text-repair-server';
 import type { RunStatus, RunStatusInfo, SessionExecution } from './types';
 import { appendUsageRecord } from '@/lib/usage-store';
 
@@ -887,7 +888,7 @@ class AgentChatManager {
       id: run.sessionId,
       agentId: run.agentId,
       projectKey: run.projectKey,
-      title: run.sessionTitle ?? '新会话',
+      title: repairStoredTextIfNeeded(run.sessionTitle) ?? '新会话',
       messages: run.messages,
       claudeSessionId: run.claudeSessionId,
       createdAt: new Date(run.startedAt).toISOString(),
@@ -920,14 +921,15 @@ class AgentChatManager {
       emit: (event: ChatSSEEvent) => this.trackAndEmit(run, event),
 
       setSessionTitle: (title: string) => {
-        run.sessionTitle = title;
-        this.trackAndEmit(run, { type: 'session_title_set', title });
+        const normalizedTitle = repairStoredTextIfNeeded(title) ?? title;
+        run.sessionTitle = normalizedTitle;
+        this.trackAndEmit(run, { type: 'session_title_set', title: normalizedTitle });
         // Re-persist updated title to disk (fire-and-forget)
         persistSessionToDisk({
           id: run.sessionId,
           agentId: run.agentId,
           projectKey: run.projectKey,
-          title,
+          title: normalizedTitle,
           messages: run.messages,
           claudeSessionId: run.claudeSessionId,
           createdAt: new Date(run.startedAt).toISOString(),
