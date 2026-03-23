@@ -1678,9 +1678,12 @@ export default function AgentsPage() {
                             <span className="shrink-0 text-[9px] uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">{item.hint}</span>
                           </div>
                         </div>
-                        <div className="flex shrink-0 items-center gap-1.5 text-[10px] text-zinc-500 dark:text-zinc-400">
-                          <span className={`h-1.5 w-1.5 rounded-full ${item.enabled ? 'bg-zinc-700 dark:bg-zinc-200' : 'bg-zinc-300 dark:bg-zinc-600'}`} />
-                          <span>{item.enabled ? 'Enabled' : 'Hidden'}</span>
+                        <div className="flex shrink-0 items-center">
+                          <span
+                            className={`h-2 w-2 rounded-full ${item.enabled ? 'bg-zinc-700 dark:bg-zinc-200' : 'bg-zinc-300 dark:bg-zinc-600'}`}
+                            aria-label={item.enabled ? `${item.label} enabled` : `${item.label} hidden`}
+                            title={item.enabled ? 'Enabled' : 'Hidden'}
+                          />
                         </div>
                       </div>
                     );
