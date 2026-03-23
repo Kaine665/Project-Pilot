@@ -823,6 +823,44 @@ export default function AgentsPage() {
   const agentPromptTokens = estimateTokenCount(workspaceAgent?.systemPrompt);
   const combinedPromptTokens = (promptMetrics.global ?? 0) + (promptMetrics.project ?? 0) + agentPromptTokens;
   const promptUsagePercent = Math.min(100, Math.round((combinedPromptTokens / 128000) * 100));
+  const promptStackItems = [
+    {
+      scope: 'Global',
+      accent: 'bg-blue-50 text-blue-700 border-blue-100',
+      label: 'global.md',
+      path: '~/.project-pilot/data/prompts/global.md',
+      tokens: promptMetrics.global,
+      description: '所有 Agent 共用的全局约束、操作规则与安全边界。',
+    },
+    {
+      scope: 'Project',
+      accent: 'bg-amber-50 text-amber-700 border-amber-100',
+      label: projectPromptLabel,
+      path: projectPromptPath,
+      tokens: promptMetrics.project,
+      description: effectiveProjectKey
+        ? `${effectiveProjectKey} 项目的项目级约束、流程规则与上下文。`
+        : '当前项目的项目级约束与工程上下文。',
+    },
+    {
+      scope: 'Agent',
+      accent: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+      label: agentPromptLabel,
+      path: agentPromptPath,
+      tokens: agentPromptTokens,
+      description: workspaceAgent?.description || '当前 Agent 的系统提示词与默认资源配置。',
+    },
+    {
+      scope: 'Session',
+      accent: 'bg-zinc-100 text-zinc-700 border-zinc-200',
+      label: runtimePromptLabel,
+      path: runtimePromptPath,
+      tokens: null,
+      description: workspaceSessionId
+        ? '当前会话的运行时提示词副本与瞬时记忆状态。'
+        : '会话启动后将生成 runtime prompt 副本。',
+    },
+  ] as const;
 
   const workspaceTreeNodes = [
     {
