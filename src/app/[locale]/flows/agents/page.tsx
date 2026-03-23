@@ -14,7 +14,7 @@ import dynamic from 'next/dynamic';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import { FolderExplorerPanel } from '@/components/folder-explorer-panel';
-import { AgentSessionPromptStack } from '@/components/agent-session-prompt-stack';
+import { AgentSessionPromptStack, type PromptStackSeedItem } from '@/components/agent-session-prompt-stack';
 
 const AgentChatPanel = dynamic(
   () => import('@/components/agent-chat-panel').then(m => ({ default: m.AgentChatPanel })),
@@ -823,7 +823,7 @@ export default function AgentsPage() {
   const agentPromptTokens = estimateTokenCount(workspaceAgent?.systemPrompt);
   const combinedPromptTokens = (promptMetrics.global ?? 0) + (promptMetrics.project ?? 0) + agentPromptTokens;
   const promptUsagePercent = Math.min(100, Math.round((combinedPromptTokens / 128000) * 100));
-  const promptStackItems = [
+  const promptStackItems: PromptStackSeedItem[] = [
     {
       scope: 'Global',
       accent: 'bg-blue-50 text-blue-700 border-blue-100',
@@ -860,7 +860,7 @@ export default function AgentsPage() {
         ? '当前会话的运行时提示词副本与瞬时记忆状态。'
         : '会话启动后将生成 runtime prompt 副本。',
     },
-  ] as const;
+  ];
 
   const workspaceTreeNodes = [
     {
