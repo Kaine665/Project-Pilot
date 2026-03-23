@@ -1681,8 +1681,8 @@ export default function AgentsPage() {
                         <div className="flex shrink-0 items-center">
                           <span
                             className={`h-2 w-2 rounded-full ${item.enabled ? 'bg-zinc-700 dark:bg-zinc-200' : 'bg-zinc-300 dark:bg-zinc-600'}`}
-                            aria-label={item.enabled ? `${item.label} enabled` : `${item.label} hidden`}
-                            title={item.enabled ? 'Enabled' : 'Hidden'}
+                            aria-label={item.enabled ? `${item.label}已启用` : `${item.label}未启用`}
+                            title={item.enabled ? '已启用' : '未启用'}
                           />
                         </div>
                       </div>
