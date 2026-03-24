@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { isValidWorkingDir } from '@/lib/security';
+import { getDataDir } from '@/lib/file-store';
 
 export interface DirEntry {
   name: string;
@@ -19,6 +20,7 @@ export interface DirEntry {
 
 export async function GET(request: NextRequest) {
   const pathParam = request.nextUrl.searchParams.get('path');
+  const resolveMode = request.nextUrl.searchParams.get('resolve');
   if (!pathParam || typeof pathParam !== 'string') {
     return NextResponse.json({ error: 'path is required' }, { status: 400 });
   }
@@ -29,7 +31,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'path is required' }, { status: 400 });
     }
     // 规范化路径：处理尾部斜杠、正反斜杠混用等
-    const resolved = path.normalize(path.resolve(decoded));
+    const resolved = resolveMode === 'data'
+      ? path.normalize(path.resolve(getDataDir(), decoded))
+      : path.normalize(path.resolve(decoded));
 
     if (!isValidWorkingDir(resolved)) {
       return NextResponse.json({ error: 'Invalid path' }, { status: 400 });
@@ -66,7 +70,9 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const attempted = pathParam
-      ? path.normalize(path.resolve(decodeURIComponent(pathParam).trim()))
+      ? (resolveMode === 'data'
+          ? path.normalize(path.resolve(getDataDir(), decodeURIComponent(pathParam).trim()))
+          : path.normalize(path.resolve(decodeURIComponent(pathParam).trim())))
       : '';
     if (msg.includes('ENOENT')) {
       return NextResponse.json(

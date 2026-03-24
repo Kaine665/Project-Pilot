@@ -422,6 +422,148 @@
     "namePlaceholder": "Agent name",
     "confirmDelete": "Are you sure you want to delete agent \"{name}\"?"
   },
+  "agentsWorkspace": {
+    "workspace": {
+      "label": "Current Workspace",
+      "defaultProjectName": "ProjectPilot",
+      "defaultAgentName": "Self-Dev Agent",
+      "defaultAgentDescription": "{agentName} is ready. Pick a session from the inbox on the left, or start a new agent chat directly.",
+      "inboxSummary": "{count} sessions",
+      "projectKeyLabel": "Project Key",
+      "agentIdLabel": "Agent ID",
+      "newSession": "New Session",
+      "searchPlaceholder": "Search sessions, agents, or titles"
+    },
+    "session": {
+      "new": "New Session",
+      "archived": "Archived",
+      "yesterday": "Yesterday",
+      "emptyFiltered": "No matching sessions",
+      "emptyWithAgent": "No ongoing sessions with {agentName} yet",
+      "emptyHint": "Click the + button in the top right to start a new agent chat."
+    },
+    "agent": {
+      "settingsButton": "Agent Settings",
+      "settingsShort": "Settings",
+      "openSettings": "Open Agent Settings",
+      "deleteConfirm": "Move agent \"{name}\" to the recycle bin?",
+      "importButton": "Import Agent",
+      "importSuccess": "Imported agent \"{name}\"",
+      "importSuccessWithContexts": "Imported agent \"{name}\" and {count} contexts",
+      "importErrorWithReason": "Import failed: {reason}",
+      "importErrorInvalidFile": "Import failed: invalid file format"
+    },
+    "picker": {
+      "searchPlaceholder": "Search agents...",
+      "expandPanel": "Expand Panel",
+      "close": "Close",
+      "noMatch": "No matching agents",
+      "empty": "No agents",
+      "emptyInFilter": "No agents in this category",
+      "count": "{count} agents",
+      "group": {
+        "recent": "Recent",
+        "builtin": "Built-in",
+        "project": "Project",
+        "global": "Global"
+      },
+      "filter": {
+        "all": "All",
+        "recent": "Recent",
+        "builtin": "Built-in",
+        "project": "Project",
+        "global": "Global"
+      },
+      "keyboard": {
+        "navigate": "Navigate",
+        "select": "Select",
+        "close": "Close"
+      }
+    },
+    "projectWorkspace": {
+      "title": "Project Workspace",
+      "empty": "After selecting a project, this area will show the current project file structure.",
+      "tree": {
+        "root": "root",
+        "worktree": "worktree",
+        "ppHome": "pp home",
+        "sharedData": "shared data",
+        "promptRoot": "prompt root",
+        "agentPrompts": "agent prompts",
+        "active": "active",
+        "global": "global",
+        "project": "project"
+      }
+    },
+    "promptStack": {
+      "title": "Prompt Injection Stack",
+      "items": {
+        "global": {
+          "label": "Global Constraints",
+          "description": "Global constraints, operating rules, and safety boundaries shared by all agents."
+        },
+        "project": {
+          "label": "Project Constraints",
+          "labelWithKey": "{key} Project Constraints",
+          "description": "Project-level constraints and engineering context for the current project.",
+          "descriptionWithKey": "Project-level constraints, process rules, and context for {key}."
+        },
+        "agent": {
+          "description": "System prompt and default resources for the current agent."
+        },
+        "session": {
+          "label": "Runtime Session Prompt",
+          "labelWithTitle": "{title} (Runtime)",
+          "description": "A runtime prompt copy will be generated after the session starts.",
+          "descriptionActive": "Runtime prompt copy and transient memory state for the current session."
+        }
+      }
+    },
+    "promptTree": {
+      "global": {
+        "summary": "Global constraints, safety rules, and default prompts."
+      },
+      "project": {
+        "summary": "Project-level prompts, docs, and prompt blocks."
+      },
+      "agent": {
+        "summary": "Current agent prompts, skills, and private context."
+      },
+      "scope": {
+        "global": "Global",
+        "project": "Project",
+        "agent": "Agent"
+      },
+      "kind": {
+        "folder": "folder",
+        "block": "block",
+        "file": "file"
+      },
+      "mainBadge": "main"
+    },
+    "capabilities": {
+      "title": "System Capabilities",
+      "enabled": "Mounted",
+      "disabled": "Hidden",
+      "enabledAria": "{label} enabled",
+      "disabledAria": "{label} disabled",
+      "terminal": { "label": "Terminal", "hint": "Shell" },
+      "web": { "label": "Web", "hint": "Web" },
+      "files": { "label": "Files", "hint": "FS" },
+      "subAgent": { "label": "Sub Agents", "hint": "A2A" },
+      "todo": { "label": "Todos", "hint": "Todo" },
+      "data": { "label": "Storage", "hint": "Data" },
+      "promptPath": { "label": "Prompt Path", "hint": "Path" },
+      "skipReview": { "label": "Skip Review", "hint": "Skip" }
+    },
+    "budget": {
+      "title": "Prompt Budget",
+      "usage": "{percent}% of 128k",
+      "global": "Global",
+      "project": "Project",
+      "agent": "Agent"
+    }
+  },
   "context": {
     "title": "Context",
     "newEntry": "New Entry",

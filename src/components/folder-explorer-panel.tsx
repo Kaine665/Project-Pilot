@@ -40,6 +40,7 @@ interface FolderExplorerPanelProps {
   onInsertPath?: (path: string) => void;
   /** Auto-open this path on mount */
   initialPath?: string;
+  initialResolveMode?: 'data';
   embedded?: boolean;
 }
 
@@ -60,8 +61,9 @@ interface InlineInputState {
 
 // ── API helpers ──
 
-async function fetchDir(dirPath: string): Promise<{ path: string; entries: DirEntry[] }> {
-  const res = await fetch(`/api/fs/list-dir?path=${encodeURIComponent(dirPath)}`, { cache: 'no-store' });
+async function fetchDir(dirPath: string, resolveMode?: 'data'): Promise<{ path: string; entries: DirEntry[] }> {
+  const suffix = resolveMode ? `&resolve=${resolveMode}` : '';
+  const res = await fetch(`/api/fs/list-dir?path=${encodeURIComponent(dirPath)}${suffix}`, { cache: 'no-store' });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
   return { path: data.path, entries: data.entries ?? [] };
@@ -182,6 +184,7 @@ export function FolderExplorerPanel({
   onClose,
   onInsertPath,
   initialPath,
+  initialResolveMode,
   embedded = false,
 }: FolderExplorerPanelProps) {
   const [rootPath, setRootPath] = useState<string | null>(null);
@@ -251,19 +254,20 @@ export function FolderExplorerPanel({
   }, [closePreview, expandedView]);
 
   // ── Load directory ──
-  const loadRoot = useCallback(async (dirPath: string) => {
+  const loadRoot = useCallback(async (dirPath: string, resolveMode?: 'data') => {
     setLoading(true);
     setError(null);
     setSelectedPaths(new Set());
     try {
-      const { entries } = await fetchDir(dirPath);
-      setRootPath(dirPath);
+      const { path: resolvedPath, entries } = await fetchDir(dirPath, resolveMode);
+      setRootPath(resolvedPath);
+      setPathInput(resolvedPath);
       setTree(entries.map((e) => ({
         name: e.name, path: e.path, isDirectory: e.isDirectory,
         expanded: false, loaded: false,
       })));
       // Load git info in parallel
-      fetchGitInfo(dirPath).then(setGitInfo).catch(() => setGitInfo(null));
+      fetchGitInfo(resolvedPath).then(setGitInfo).catch(() => setGitInfo(null));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load directory');
       setTree([]);
@@ -274,9 +278,9 @@ export function FolderExplorerPanel({
 
   // Auto-open initialPath
   useEffect(() => {
-    if (initialPath) loadRoot(initialPath);
+    if (initialPath) loadRoot(initialPath, initialResolveMode);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialPath]);
+  }, [initialPath, initialResolveMode]);
 
   // ── Expand/collapse directory ──
   const handleExpand = useCallback(async (node: TreeNode) => {
