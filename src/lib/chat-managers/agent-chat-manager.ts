@@ -23,7 +23,7 @@ import { createAgentRunner, type IAgentRunner } from './agent-runner';
 import { detectDangerousCommand } from '@/lib/danger-detector';
 import type { ChatSSEEvent, ContentBlock, Agent, AgentCapabilities, ProviderId } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_DANGER_SETTINGS } from '@/types';
-import type { AgentChatSession, SessionConfig, SessionCheckpoint } from '@/types/agent-chat';
+import type { AgentChatSession, SessionConfig, SessionCheckpoint, SessionSourceType } from '@/types/agent-chat';
 import type { ResourceRef, InlineTextRef, FlowContextRef, ReferenceTurnsRef } from '@/types/resource';
 import { resourceRegistry } from '@/lib/resource-registry';
 import { formatConversationHistory } from './conversation-history';
@@ -37,6 +37,7 @@ import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-pr
 import { runSatelliteTasks } from '@/lib/satellite-tasks';
 import '@/lib/satellite-tasks'; // side-effect: registers all satellite tasks
 import type { SatelliteContext } from '@/lib/satellite-tasks';
+import { repairStoredTextIfNeeded } from '@/lib/text-repair-server';
 import type { RunStatus, RunStatusInfo, SessionExecution } from './types';
 import { appendUsageRecord } from '@/lib/usage-store';
 import { normalizeOpenAIFastMode } from '@/lib/openai-fast-mode';
@@ -87,6 +88,9 @@ export interface AgentChatRun {
   agentId: string;
   projectKey?: string;
   sessionTitle?: string;
+  sourceType?: SessionSourceType;
+  sourceId?: string;
+  todoId?: string;
 
   /** 当前运行的 SDK runner（统一 Claude Agent SDK / Codex SDK 抽象） */
   runner: IAgentRunner | null;
@@ -179,6 +183,9 @@ class AgentChatManager {
     ephemeral?: boolean,
     _depth?: number,
     _background?: boolean,
+    sourceType?: SessionSourceType,
+    sourceId?: string,
+    todoId?: string,
   ): Promise<string> {
     const agent = await loadAgent(agentId);
     void _depth;
@@ -295,6 +302,9 @@ class AgentChatManager {
         agentId,
         projectKey: flowContext?.projectKey ?? existingProjectKey,
         sessionTitle: existingSessionTitle ?? initialTitle,
+        sourceType: sourceType ?? diskSession?.sourceType ?? 'manual',
+        sourceId: sourceId ?? diskSession?.sourceId,
+        todoId: todoId ?? diskSession?.todoId,
         messages,
         claudeSessionId: resumeSessionId,
         config: persistedConfig,
@@ -305,14 +315,17 @@ class AgentChatManager {
 
     // ── Create run ──
     const runId = `run-${sessionId}-${Date.now()}`;
-    const run: AgentChatRun = {
-      runId,
-      sessionId,
-      agentId,
-      projectKey: flowContext?.projectKey ?? existingProjectKey,
-      sessionTitle: existingSessionTitle ?? initialTitle,
-      runner: null,
-      status: 'running',
+      const run: AgentChatRun = {
+        runId,
+        sessionId,
+        agentId,
+        projectKey: flowContext?.projectKey ?? existingProjectKey,
+        sessionTitle: existingSessionTitle ?? initialTitle,
+        sourceType: sourceType ?? diskSession?.sourceType ?? 'manual',
+        sourceId: sourceId ?? diskSession?.sourceId,
+        todoId: todoId ?? diskSession?.todoId,
+        runner: null,
+        status: 'running',
       startedAt: Date.now(),
       events: [],
       listeners: new Set(),
@@ -910,7 +923,10 @@ class AgentChatManager {
       id: run.sessionId,
       agentId: run.agentId,
       projectKey: run.projectKey,
-      title: run.sessionTitle ?? '新会话',
+      title: repairStoredTextIfNeeded(run.sessionTitle) ?? '新会话',
+      sourceType: run.sourceType,
+      sourceId: run.sourceId,
+      todoId: run.todoId,
       messages: run.messages,
       claudeSessionId: run.claudeSessionId,
       createdAt: new Date(run.startedAt).toISOString(),
@@ -943,14 +959,18 @@ class AgentChatManager {
       emit: (event: ChatSSEEvent) => this.trackAndEmit(run, event),
 
       setSessionTitle: (title: string) => {
-        run.sessionTitle = title;
-        this.trackAndEmit(run, { type: 'session_title_set', title });
+        const normalizedTitle = repairStoredTextIfNeeded(title) ?? title;
+        run.sessionTitle = normalizedTitle;
+        this.trackAndEmit(run, { type: 'session_title_set', title: normalizedTitle });
         // Re-persist updated title to disk (fire-and-forget)
         persistSessionToDisk({
           id: run.sessionId,
           agentId: run.agentId,
           projectKey: run.projectKey,
-          title,
+          title: normalizedTitle,
+          sourceType: run.sourceType,
+          sourceId: run.sourceId,
+          todoId: run.todoId,
           messages: run.messages,
           claudeSessionId: run.claudeSessionId,
           createdAt: new Date(run.startedAt).toISOString(),

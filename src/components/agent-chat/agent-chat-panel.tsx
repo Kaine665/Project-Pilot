@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo, useReducer, startTransition } from 'react';
-import { Bot, Sparkles, PanelRight, Settings } from 'lucide-react';
+import { Sparkles, PanelRight, Settings } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from '@/i18n/routing';
 import { ChatInput } from '@/components/chat-input';
 import { ChatNotificationBanners } from '@/components/chat-notification-banners';
 import { useNotificationManager } from '@/hooks/use-notification-manager';
 import { useModelConfig } from '@/hooks/use-model-config';
+import { AgentIcon } from '@/components/agent-form';
 import { SaveKnowledgeDialog } from '@/components/save-knowledge-dialog';
 import { GuestAgentOverlay } from '@/components/guest-agent-overlay';
 import { SessionConfigPanel } from '@/components/session-config-panel';
@@ -23,6 +24,7 @@ import type { SessionNavLink } from '@/components/agent-session-utils';
 import { buildSessionUrl } from '@/components/agent-session-utils';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import { imageAttachmentFromDataUrl } from '@/lib/image-assets';
+import { repairTextIfNeeded } from '@/lib/text-repair';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
 import type { DeferredInputBufferItem, DeferredInputBufferState, SessionConfig } from '@/types/agent-chat';
 import type { ChatMessage, ChatToolCall, ContentBlock } from '@/types';
@@ -51,6 +53,7 @@ export function AgentChatPanel({
   projectKey,
   cachedAgents,
   cachedSettings,
+  workspaceMode = false,
 }: AgentChatPanelProps) {
   const t = useTranslations();
   const router = useRouter();
@@ -86,7 +89,7 @@ export function AgentChatPanel({
   // Session management
   const defaultSessionTitle = hasProject ? t('chat.newSession') : 'New Session';
   const [session, sessionDispatch] = useReducer(sessionReducer, {
-    id: null,
+    id: initialSessionId ?? null,
     title: defaultSessionTitle,
     list: [],
     config: {},
@@ -169,7 +172,7 @@ export function AgentChatPanel({
   const finalizingRef = useRef(false);
   const streamTargetSessionRef = useRef<string | null>(null);
   const streamStartedAtRef = useRef<number | null>(null);
-  const sessionIdRef = useRef<string | null>(null);
+  const sessionIdRef = useRef<string | null>(initialSessionId ?? null);
   const sessionTitleRef = useRef<string>(defaultSessionTitle);
   const initTokenRef = useRef(0);
   const doSendRef = useRef<(text: string, images?: string[]) => void>(() => {});
@@ -1042,7 +1045,7 @@ export function AgentChatPanel({
     toolCallsRef.current = [];
     lastEventIdxRef.current = -1;
 
-    let targetSessionId = sessionId;
+    let targetSessionId = sessionIdRef.current ?? sessionId ?? initialSessionId ?? null;
     if (!targetSessionId) {
       targetSessionId = `agent-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const quickTitle = text.trim().slice(0, 10) || (hasProject ? t('chat.newSession') : 'New Session');
@@ -1707,36 +1710,54 @@ export function AgentChatPanel({
   };
 
   const plainToolbar = (
-    <div className="flex items-center justify-end gap-0.5 border-b border-zinc-100 px-3 py-1.5 dark:border-zinc-800">
-      <button
-        type="button"
-        onClick={() => setShowConfig(v => !v)}
-        className={`p-1 rounded transition-colors ${
-          showConfig
-            ? 'text-blue-500 dark:text-blue-400'
-            : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
-        }`}
-      >
-        <Settings className="h-3.5 w-3.5" />
-      </button>
-      <button
-        type="button"
-        onClick={() => setShowRuntimePanel(v => !v)}
-        className={`p-1 rounded transition-colors ${
-          showRuntimePanel
-            ? 'text-blue-500 dark:text-blue-400'
-            : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
-        }`}
-      >
-        <PanelRight className="h-3.5 w-3.5" />
-      </button>
-    </div>
+    workspaceMode
+      ? null
+      : (
+        <div className="flex items-center justify-end gap-0.5 border-b border-zinc-100 px-3 py-1.5 dark:border-zinc-800">
+          <button
+            type="button"
+            onClick={() => setShowConfig(v => !v)}
+            className={`p-1 rounded transition-colors ${
+              showConfig
+                ? 'text-blue-500 dark:text-blue-400'
+                : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+            }`}
+          >
+            <Settings className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowRuntimePanel(v => !v)}
+            className={`p-1 rounded transition-colors ${
+              showRuntimePanel
+                ? 'text-blue-500 dark:text-blue-400'
+                : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+            }`}
+          >
+            <PanelRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )
   );
 
+  const agentDisplayName = repairTextIfNeeded(agent.name) ?? agent.name;
+  const strippedSessionTitle = stripSessionTitleTag(sessionTitle).trim();
+  const sessionDisplayTitle = (repairTextIfNeeded(strippedSessionTitle) ?? strippedSessionTitle) || '新会话';
+  const agentDescriptionPreview = (repairTextIfNeeded(agent.description)?.trim() ?? agent.description?.trim() ?? '')
+    .replace(/\s+/g, ' ')
+    .slice(0, 88);
+
   const plainEmptyState = (
-    <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
-      <Bot className="h-10 w-10 stroke-1" />
-      <p className="text-sm">Send a message to {agent.name} to start chatting.</p>
+    <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-zinc-400 dark:text-zinc-500">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+        <AgentIcon iconKey={agent.icon} className="h-7 w-7" />
+      </div>
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">{agentDisplayName}</p>
+        <p className="max-w-sm text-sm">
+          {workspaceMode ? `向 ${agentDisplayName} 发一条消息，开始当前工作区会话。` : `向 ${agentDisplayName} 发一条消息，开始对话。`}
+        </p>
+      </div>
     </div>
   );
 
@@ -1751,12 +1772,48 @@ export function AgentChatPanel({
     <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
       <ChatInput
         {...chatInputProps}
-        placeholder={`Send a message to ${agent.name}...`}
+        placeholder={`发送消息给 ${agentDisplayName}...`}
       />
     </div>
   );
 
-  const projectHeader = (
+  const projectHeader = workspaceMode ? (
+    <div className="border-b border-zinc-200 bg-white/90 px-5 py-4 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/90">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+            <AgentIcon iconKey={agent.icon} className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="truncate text-[15px] font-semibold text-zinc-950 dark:text-zinc-100">{agentDisplayName}</div>
+            <div className="mt-1 truncate text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-400">
+              {agent.id}
+            </div>
+            {agentDescriptionPreview ? (
+              <div className="mt-2 line-clamp-2 max-w-xl text-[12px] leading-5 text-zinc-500 dark:text-zinc-400">
+                {agentDescriptionPreview}
+              </div>
+            ) : null}
+            <div className="mt-2 flex items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+              <span className="uppercase tracking-[0.14em] text-zinc-400">当前会话</span>
+              <span className="truncate">{sessionDisplayTitle}</span>
+            </div>
+          </div>
+        </div>
+        <div className="shrink-0 rounded-xl border border-zinc-200 bg-zinc-50/80 px-3 py-2 text-right dark:border-zinc-800 dark:bg-zinc-900/70">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">
+            模型
+          </div>
+          <div className="mt-1 text-[12px] font-medium text-zinc-700 dark:text-zinc-200">
+            {chatModel || 'auto'}
+          </div>
+          <div className="mt-1 text-[10px] text-zinc-400 dark:text-zinc-500">
+            {PROVIDER_LABELS[chatProvider]}
+          </div>
+        </div>
+      </div>
+    </div>
+  ) : (
     <ChatSessionHeader
       isFull={isFull}
       sessionId={sessionId}
@@ -1783,7 +1840,19 @@ export function AgentChatPanel({
 
   const projectTaskBanner = taskCard ? <TaskCardBanner card={taskCard} /> : null;
 
-  const projectEmptyState = (
+  const projectEmptyState = workspaceMode ? (
+    <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center text-zinc-400 dark:text-zinc-500">
+      <div className="flex h-16 w-16 items-center justify-center rounded-[24px] bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+        <AgentIcon iconKey={agent.icon} className="h-8 w-8" />
+      </div>
+      <div className="space-y-1.5">
+        <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">{agentDisplayName}</p>
+        <p className="max-w-sm text-sm leading-6">
+          向 {agentDisplayName} 发一条消息，开始当前工作区会话。
+        </p>
+      </div>
+    </div>
+  ) : (
     <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
       <Sparkles className="h-8 w-8 stroke-1" />
       <p className="text-xs">{t('chat.plannerHint')}</p>
@@ -1801,7 +1870,7 @@ export function AgentChatPanel({
     <div className="border-t border-zinc-100 p-2 dark:border-zinc-800">
       <ChatInput
         {...chatInputProps}
-        placeholder={t('chat.plannerPlaceholder')}
+        placeholder={workspaceMode ? `继续向 ${agentDisplayName} 发送消息...` : t('chat.plannerPlaceholder')}
         minHeight={isFull ? '120px' : '200px'}
         fullWidth
       />
@@ -1864,7 +1933,7 @@ export function AgentChatPanel({
       scrollRef={scrollRef}
       onChatScroll={handleChatScroll}
       hasPendingQueue={isStreaming && pendingUserMessages.length > 0}
-      plainScrollClassName="px-4 py-4 pr-24"
+      plainScrollClassName={workspaceMode ? 'px-5 py-5' : 'px-4 py-4 pr-24'}
       projectScrollClassName="px-3 py-3 pr-22"
       plainToolbar={plainToolbar}
       showPlainEmptyState={messages.length === 0 && !isStreaming}
@@ -1877,16 +1946,16 @@ export function AgentChatPanel({
       projectEmptyState={projectEmptyState}
       projectMessageList={projectMessageList}
       projectInput={projectInput}
-      timeline={timeline}
+      timeline={workspaceMode ? null : timeline}
       queueOverlay={queueOverlay}
       notificationBanners={notificationBanners}
       dialogs={dialogs}
-      configDrawer={configDrawer}
-      runtimeDrawer={runtimeDrawer}
-      folderExplorer={folderExplorer}
+      configDrawer={workspaceMode ? null : configDrawer}
+      runtimeDrawer={workspaceMode ? null : runtimeDrawer}
+      folderExplorer={workspaceMode ? null : folderExplorer}
       planPanel={planPanel}
       actionPanel={actionPanel}
-      sidebar={sidebar}
+      sidebar={workspaceMode ? null : sidebar}
     />
   );
 }

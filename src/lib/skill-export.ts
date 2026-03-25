@@ -1,31 +1,29 @@
 /**
- * Skill 导出系统 — 插件式格式转换器注册表。
+ * Skill export adapters for ProjectPilot.
  *
- * 当前已注册格式：
- *   - openclaw: OpenClaw SKILL.md 格式
- *   - raw:      原始 PP 格式（直通）
- *   - json:     结构化 JSON
+ * Current formats:
+ *   - standard: public SKILL.md spec (export exact content)
+ *   - json: structured JSON export
  *
- * 扩展：exporters.set('cursor-rules', cursorRulesExporter);
+ * Legacy aliases:
+ *   - openclaw -> standard
+ *   - raw -> standard
  */
 
-// ── Types ──
+const yaml = require('js-yaml') as {
+  load(input: string): unknown;
+  dump(input: unknown, options?: Record<string, unknown>): string;
+};
 
 export interface PPSkill {
-  /** Skill 目录名（如 "git-commit"） */
   name: string;
-  /** SKILL.md 原始内容 */
   content: string;
 }
 
 export interface ExportedSkill {
-  /** 导出后的目录名 */
   dirName: string;
-  /** 导出后的文件名 */
   fileName: string;
-  /** 导出后的文件内容 */
   content: string;
-  /** 导出格式标识 */
   format: string;
 }
 
@@ -35,10 +33,8 @@ export interface SkillExporter {
   convert: (skill: PPSkill) => ExportedSkill;
 }
 
-// ── Frontmatter 解析/序列化 ──
-
 interface ParsedSkill {
-  frontmatter: Record<string, string>;
+  frontmatter: Record<string, unknown>;
   body: string;
 }
 
@@ -48,90 +44,52 @@ function parseFrontmatter(content: string): ParsedSkill {
     return { frontmatter: {}, body: content };
   }
 
-  const fmBlock = match[1];
+  const frontmatterBlock = match[1];
   const body = match[2];
-  const frontmatter: Record<string, string> = {};
 
-  for (const line of fmBlock.split(/\r?\n/)) {
-    const m = line.match(/^(\w[\w.-]*):\s*(.*)$/);
-    if (m) {
-      frontmatter[m[1]] = m[2].replace(/^["']|["']$/g, '').trim();
+  try {
+    const parsed = yaml.load(frontmatterBlock);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { frontmatter: {}, body };
     }
+    return { frontmatter: parsed as Record<string, unknown>, body };
+  } catch {
+    return { frontmatter: {}, body };
   }
-
-  return { frontmatter, body };
 }
 
-function serializeFrontmatter(fields: Record<string, string>): string {
-  const lines = Object.entries(fields)
-    .filter(([, v]) => v !== undefined && v !== '')
-    .map(([k, v]) => {
-      // 如果值包含特殊 YAML 字符，用引号包裹
-      if (/[:#{}[\],&*?|>!%@`]/.test(v) || v.includes('\n')) {
-        return `${k}: "${v.replace(/"/g, '\\"')}"`;
-      }
-      return `${k}: ${v}`;
-    });
-  return lines.join('\n');
-}
-
-// ── OpenClaw 格式导出器 ──
-
-const openClawExporter: SkillExporter = {
-  format: 'openclaw',
-  label: 'OpenClaw 格式',
-  convert(skill: PPSkill): ExportedSkill {
-    const { frontmatter, body } = parseFrontmatter(skill.content);
-
-    // 只保留 name 和 description，丢弃 PP 特有字段（metadata.author, metadata.version 等）
-    const ocFields: Record<string, string> = {};
-    if (frontmatter.name) ocFields.name = frontmatter.name;
-    else ocFields.name = skill.name;
-    if (frontmatter.description) ocFields.description = frontmatter.description;
-
-    const fm = serializeFrontmatter(ocFields);
-    const exportedContent = `---\n${fm}\n---\n\n${body.replace(/^\n+/, '')}`;
-
-    return {
-      dirName: skill.name,
-      fileName: 'SKILL.md',
-      content: exportedContent,
-      format: 'openclaw',
-    };
-  },
-};
-
-// ── Raw 格式导出器（原样输出）──
-
-const rawExporter: SkillExporter = {
-  format: 'raw',
-  label: '原始 Markdown',
+const standardExporter: SkillExporter = {
+  format: 'standard',
+  label: 'Public SKILL.md',
   convert(skill: PPSkill): ExportedSkill {
     return {
       dirName: skill.name,
       fileName: 'SKILL.md',
       content: skill.content,
-      format: 'raw',
+      format: 'standard',
     };
   },
 };
 
-// ── JSON 格式导出器 ──
-
 const jsonExporter: SkillExporter = {
   format: 'json',
-  label: 'JSON（通用）',
+  label: 'JSON',
   convert(skill: PPSkill): ExportedSkill {
     const { frontmatter, body } = parseFrontmatter(skill.content);
     const json = JSON.stringify(
       {
-        name: frontmatter.name || skill.name,
-        description: frontmatter.description || '',
+        name: typeof frontmatter.name === 'string' && frontmatter.name.trim()
+          ? frontmatter.name
+          : skill.name,
+        description: typeof frontmatter.description === 'string'
+          ? frontmatter.description
+          : '',
         content: body.replace(/^\n+/, ''),
       },
       null,
       2,
     );
+
     return {
       dirName: skill.name,
       fileName: `${skill.name}.json`,
@@ -141,23 +99,31 @@ const jsonExporter: SkillExporter = {
   },
 };
 
-// ── 注册表 ──
-
 export const exporters = new Map<string, SkillExporter>();
-exporters.set('openclaw', openClawExporter);
-exporters.set('raw', rawExporter);
+exporters.set('standard', standardExporter);
 exporters.set('json', jsonExporter);
 
-/** 获取所有已注册格式的元信息 */
+const exportFormatAliases = new Map<string, string>([
+  ['openclaw', 'standard'],
+  ['raw', 'standard'],
+]);
+
 export function listExportFormats(): { format: string; label: string }[] {
-  return Array.from(exporters.values()).map(e => ({ format: e.format, label: e.label }));
+  return Array.from(exporters.values()).map(exporter => ({
+    format: exporter.format,
+    label: exporter.label,
+  }));
 }
 
-/** 导出单个 skill */
 export function exportSkill(skill: PPSkill, format: string): ExportedSkill {
-  const exporter = exporters.get(format);
+  const resolvedFormat = exportFormatAliases.get(format) ?? format;
+  const exporter = exporters.get(resolvedFormat);
   if (!exporter) {
-    throw new Error(`Unknown export format: "${format}". Available: ${Array.from(exporters.keys()).join(', ')}`);
+    const available = Array.from(new Set([
+      ...exporters.keys(),
+      ...exportFormatAliases.keys(),
+    ])).join(', ');
+    throw new Error(`Unknown export format: "${format}". Available: ${available}`);
   }
   return exporter.convert(skill);
 }

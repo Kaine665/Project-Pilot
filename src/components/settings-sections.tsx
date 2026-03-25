@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Link } from '@/i18n/routing';
 import {
   Shield, Brain, Wrench, Check, X, Loader2, ExternalLink, Server, Copy,
   Gauge, RotateCw, Eye, Sun, Moon, Monitor,
-  Download, Upload, Trash2, FolderOpen, Info, Github, ShieldAlert,
-  Sparkles, Plus, Minus, Zap, ActivitySquare,
+  Download, Upload, Trash2, FolderOpen, Info, Github, ShieldAlert, Satellite,
+  Sparkles, Plus, Minus, Zap, ActivitySquare, Timer,
 } from 'lucide-react';
 import type { DangerCategory, DangerActionLevel, DangerDetectorSettings, TitleGenerationChainEntry } from '@/types';
 import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
@@ -1076,6 +1077,124 @@ export function SettingsSafetySection({
         </CardContent>
       </Card>
     </>
+  );
+}
+
+interface DeveloperSectionProps extends TranslationProps {
+  satelliteTasksEnabled: boolean;
+  onSatelliteTasksEnabledChange: (v: boolean) => void;
+  schedulesPageEnabled: boolean;
+  onSchedulesPageEnabledChange: (v: boolean) => void;
+  taskTriggersPageEnabled: boolean;
+  onTaskTriggersPageEnabledChange: (v: boolean) => void;
+}
+
+export function SettingsDeveloperSection({
+  t,
+  satelliteTasksEnabled,
+  onSatelliteTasksEnabledChange,
+  schedulesPageEnabled,
+  onSchedulesPageEnabledChange,
+  taskTriggersPageEnabled,
+  onTaskTriggersPageEnabledChange,
+}: DeveloperSectionProps) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Satellite className="h-5 w-5" />
+          {t('developerTools')}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <label className="flex items-center justify-between cursor-pointer">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2 text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              <Satellite className="h-4 w-4" />
+              {t('satelliteTasksEnabled')}
+            </div>
+            <p className="pr-4 text-xs text-zinc-500">{t('satelliteTasksEnabledHint')}</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={satelliteTasksEnabled}
+            onClick={() => onSatelliteTasksEnabledChange(!satelliteTasksEnabled)}
+            className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
+              satelliteTasksEnabled ? 'bg-zinc-900 dark:bg-zinc-100' : 'bg-zinc-200 dark:bg-zinc-700'
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform dark:bg-zinc-900 ${
+                satelliteTasksEnabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </label>
+
+        <label className="flex items-center justify-between cursor-pointer">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2 text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              <Timer className="h-4 w-4" />
+              {t('schedulesPageEnabled')}
+            </div>
+            <p className="pr-4 text-xs text-zinc-500">{t('schedulesPageEnabledHint')}</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={schedulesPageEnabled}
+            onClick={() => onSchedulesPageEnabledChange(!schedulesPageEnabled)}
+            className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
+              schedulesPageEnabled ? 'bg-zinc-900 dark:bg-zinc-100' : 'bg-zinc-200 dark:bg-zinc-700'
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform dark:bg-zinc-900 ${
+                schedulesPageEnabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </label>
+
+        <label className="flex items-center justify-between cursor-pointer">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2 text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              <Zap className="h-4 w-4" />
+              {t('taskTriggersPageEnabled')}
+            </div>
+            <p className="pr-4 text-xs text-zinc-500">{t('taskTriggersPageEnabledHint')}</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={taskTriggersPageEnabled}
+            onClick={() => onTaskTriggersPageEnabledChange(!taskTriggersPageEnabled)}
+            className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
+              taskTriggersPageEnabled ? 'bg-zinc-900 dark:bg-zinc-100' : 'bg-zinc-200 dark:bg-zinc-700'
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform dark:bg-zinc-900 ${
+                taskTriggersPageEnabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </label>
+
+        <div className="rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900/40">
+          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{t('satelliteTasksInternalTitle')}</p>
+          <p className="mt-1 text-xs text-zinc-500">{t('satelliteTasksInternalHint')}</p>
+          <Link
+            href="/flows/satellite-tasks"
+            className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-zinc-700 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            {t('openSatelliteTasks')}
+          </Link>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

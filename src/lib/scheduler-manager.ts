@@ -1,255 +1,294 @@
-/**
- * SchedulerManager — Agent 定时运行调度器。
- *
- * 进程级单例，使用 node-cron 管理所有 AgentSchedule。
- * 挂在 globalThis 上，在 dev 模式下存活 HMR。
- *
- * 工作流：
- *   1. init() 读取 agent-schedules.json，为每条 enabled 的规则注册 cron job
- *   2. 到点时调用 agentChatManager.start() 创建新会话（不等待结果）
- *   3. 新增/更新/删除规则时，重新注册对应的 cron job
- */
-
 import * as cron from 'node-cron';
 import { randomBytes } from 'crypto';
-import { getSchedulesPath, getScheduleRunsPath, readJsonFile, modifyJsonFile } from './file-store';
-import type { AgentSchedule, AgentSchedulesData, ScheduleRunRecord, ScheduleRunsData } from '@/types';
+import {
+  getScheduleRunsPath,
+  getSchedulesPath,
+  modifyJsonFile,
+  readJsonFile,
+} from './file-store';
+import { dispatchTodoToAgent, readTodoById } from './todo-dispatch';
+import type {
+  AgentSchedule,
+  AgentSchedulesData,
+  ScheduleRunRecord,
+  ScheduleRunsData,
+  ScheduleTargetType,
+} from '@/types';
 
-// ── Constants ──
-
-/** 执行历史最多保留条数（每条调度规则） */
 const MAX_RUNS_PER_SCHEDULE = 50;
-/** 执行历史总量上限 */
 const MAX_TOTAL_RUNS = 500;
 
-// ── Helpers ──
+type ScheduleTrigger = 'cron' | 'manual';
 
 function generateScheduleId(): string {
-  const ts = Date.now();
-  const rand = randomBytes(2).toString('hex');
-  return `sched-${ts}-${rand}`;
+  return `sched-${Date.now()}-${randomBytes(2).toString('hex')}`;
 }
 
 function generateRunId(): string {
-  const ts = Date.now();
-  const rand = randomBytes(2).toString('hex');
-  return `run-${ts}-${rand}`;
+  return `run-${Date.now()}-${randomBytes(2).toString('hex')}`;
 }
 
-/** 计算 cron 表达式的下次执行时间（node-cron 无 nextDate API，暂返回 undefined） */
 function calcNextRunAt(_cronExpr: string): string | undefined {
   return undefined;
 }
 
-// ── SchedulerManager ──
+function normalizeTargetType(targetType?: string): ScheduleTargetType {
+  if (!targetType || targetType === 'message') return 'agent_message';
+  if (targetType === 'agent_message' || targetType === 'todo') return targetType;
+  throw new Error(`Unsupported schedule targetType: ${targetType}`);
+}
+
+function buildInitialTitle(schedule: AgentSchedule, trigger: ScheduleTrigger): string | undefined {
+  const prefix = trigger === 'manual' ? '[Manual]' : '[Schedule]';
+  if (schedule.label?.trim()) return `${prefix} ${schedule.label.trim()}`;
+  if (schedule.targetType === 'todo') return `${prefix} Todo ${schedule.todoId ?? ''}`.trim();
+  return schedule.agentId ? `${prefix} ${schedule.agentId}` : undefined;
+}
+
+async function hydrateTodoSnapshot(schedule: AgentSchedule): Promise<AgentSchedule> {
+  if (!schedule.todoId) return schedule;
+  const todo = await readTodoById(schedule.todoId);
+  if (!todo) {
+    throw new Error(`Todo ${schedule.todoId} does not exist`);
+  }
+  return {
+    ...schedule,
+    agentId: todo.agentId ?? schedule.agentId,
+    projectKey: schedule.projectKey ?? todo.projectKey,
+    label: schedule.label ?? todo.title,
+  };
+}
+
+async function validateScheduleInput(schedule: AgentSchedule): Promise<AgentSchedule> {
+  const targetType = normalizeTargetType(schedule.targetType);
+  const normalized: AgentSchedule = {
+    ...schedule,
+    targetType,
+  };
+
+  if (!cron.validate(normalized.cron)) {
+    throw new Error(`Invalid cron expression: ${normalized.cron}`);
+  }
+
+  if (targetType === 'agent_message') {
+    if (!normalized.agentId?.trim()) {
+      throw new Error('agentId is required for agent_message schedules');
+    }
+    if (!normalized.message?.trim()) {
+      throw new Error('message is required for agent_message schedules');
+    }
+    return {
+      ...normalized,
+      agentId: normalized.agentId.trim(),
+      message: normalized.message.trim(),
+    };
+  }
+
+  if (!normalized.todoId?.trim()) {
+    throw new Error('todoId is required for todo schedules');
+  }
+
+  return hydrateTodoSnapshot({
+    ...normalized,
+    todoId: normalized.todoId.trim(),
+    message: undefined,
+  });
+}
 
 export class SchedulerManager {
   private jobs = new Map<string, cron.ScheduledTask>();
 
-  /** 初始化：从磁盘加载所有调度规则并注册 cron job */
   async init(): Promise<void> {
     const data = await readJsonFile<AgentSchedulesData>(getSchedulesPath(), { schedules: [] });
     for (const schedule of data.schedules) {
-      if (schedule.enabled) {
-        this._register(schedule);
+      const normalized = { ...schedule, targetType: normalizeTargetType(schedule.targetType) };
+      if (normalized.enabled) {
+        this.register(normalized);
       }
     }
-    console.log(`[SchedulerManager] 初始化完成，共 ${this.jobs.size} 个活跃调度`);
   }
 
-  /** 停止所有 cron job（供测试/清理使用） */
   destroy(): void {
-    for (const [, task] of this.jobs) {
+    for (const task of this.jobs.values()) {
       task.stop();
     }
     this.jobs.clear();
   }
 
-  /**
-   * 注册或更新一条调度规则。
-   * 如果已存在同 ID 的 job，先停止旧的再注册新的。
-   */
   upsert(schedule: AgentSchedule): void {
-    this._unregister(schedule.id);
+    this.unregister(schedule.id);
     if (schedule.enabled) {
-      this._register(schedule);
+      this.register(schedule);
     }
   }
 
-  /** 停止并移除一条调度规则 */
   remove(scheduleId: string): void {
-    this._unregister(scheduleId);
+    this.unregister(scheduleId);
   }
 
-  private _register(schedule: AgentSchedule): void {
+  private register(schedule: AgentSchedule): void {
     if (!cron.validate(schedule.cron)) {
-      console.warn(`[SchedulerManager] 无效的 cron 表达式：${schedule.cron}（id=${schedule.id}）`);
+      console.warn(`[SchedulerManager] skip invalid cron ${schedule.cron} (${schedule.id})`);
       return;
     }
 
     const task = cron.schedule(schedule.cron, () => {
-      void this._fire(schedule.id, 'cron');
+      void this.fire(schedule.id, 'cron');
     });
 
     this.jobs.set(schedule.id, task);
   }
 
-  private _unregister(scheduleId: string): void {
-    const existing = this.jobs.get(scheduleId);
-    if (existing) {
-      existing.stop();
-      this.jobs.delete(scheduleId);
-    }
+  private unregister(scheduleId: string): void {
+    const task = this.jobs.get(scheduleId);
+    if (!task) return;
+    task.stop();
+    this.jobs.delete(scheduleId);
   }
 
-  /** 构建 flowContext（如果绑定了项目） */
-  private async _buildFlowContext(
-    projectKey: string | undefined,
-  ): Promise<import('./chat-managers/agent-chat-manager').FlowContext | undefined> {
-    if (!projectKey) return undefined;
-
-    const { getFlowDataPath, getFlowIndexPath, ensureDataDirV2Migrated } = await import('./file-store');
-    await ensureDataDirV2Migrated();
-    const flowDataPath = getFlowDataPath(projectKey);
-    let projectName = projectKey;
-    try {
-      const { readJsonFile: rjf } = await import('./file-store');
-      const idx = await rjf<{ projects: Array<{ key: string; name: string }> }>(
-        getFlowIndexPath(), { projects: [] }
-      );
-      const found = idx.projects.find(p => p.key === projectKey);
-      if (found) projectName = found.name;
-    } catch { /* ignore */ }
-
-    return { projectKey, projectName, flowDataPath };
-  }
-
-  /**
-   * 触发一条调度规则（cron 定时触发或手动触发共用）。
-   */
-  private async _fire(scheduleId: string, trigger: 'cron' | 'manual'): Promise<ScheduleRunRecord> {
-    // 重新读取最新配置（防止 cron job 创建后规则已被修改或禁用）
+  private async fire(scheduleId: string, trigger: ScheduleTrigger): Promise<ScheduleRunRecord> {
     const data = await readJsonFile<AgentSchedulesData>(getSchedulesPath(), { schedules: [] });
-    const schedule = data.schedules.find(s => s.id === scheduleId);
-
-    if (!schedule) {
-      throw new Error(`调度规则 ${scheduleId} 不存在`);
+    const stored = data.schedules.find((item) => item.id === scheduleId);
+    if (!stored) {
+      throw new Error(`Schedule ${scheduleId} does not exist`);
     }
 
-    // cron 触发时检查 enabled，手动触发不检查
+    const schedule = await validateScheduleInput(stored);
     if (trigger === 'cron' && !schedule.enabled) {
-      console.log(`[SchedulerManager] 调度 ${scheduleId} 已禁用，跳过本次触发`);
-      throw new Error(`调度规则 ${scheduleId} 已禁用`);
+      throw new Error(`Schedule ${scheduleId} is disabled`);
     }
-
-    console.log(`[SchedulerManager] ${trigger === 'manual' ? '手动' : '定时'}触发调度 ${scheduleId}（${schedule.label ?? schedule.agentId}）`);
 
     const runRecord: ScheduleRunRecord = {
       id: generateRunId(),
       scheduleId,
       sessionId: '',
       trigger,
+      sourceType: 'schedule',
+      sourceId: scheduleId,
+      todoId: schedule.todoId,
       startedAt: new Date().toISOString(),
       status: 'started',
     };
 
     try {
-      // 动态导入，避免循环依赖
-      const { agentChatManager, generateSessionId } = await import('./chat-managers/agent-chat-manager');
+      if (schedule.targetType === 'todo') {
+        const result = await dispatchTodoToAgent(schedule.todoId!, {
+          projectKeyOverride: schedule.projectKey,
+          initialTitle: buildInitialTitle(schedule, trigger),
+          sourceType: 'schedule',
+          sourceId: schedule.id,
+        });
+        runRecord.sessionId = result.sessionId;
+      } else {
+        const { agentChatManager, generateSessionId } = await import('./chat-managers/agent-chat-manager');
+        const sessionId = generateSessionId();
+        runRecord.sessionId = sessionId;
+        await agentChatManager.start(
+          sessionId,
+          schedule.agentId!,
+          schedule.message!,
+          await this.buildFlowContext(schedule.projectKey),
+          undefined,
+          buildInitialTitle(schedule, trigger),
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          'schedule',
+          schedule.id,
+          schedule.todoId,
+        );
+      }
 
-      const flowContext = await this._buildFlowContext(schedule.projectKey);
-
-      const sessionId = generateSessionId();
-      runRecord.sessionId = sessionId;
-
-      const titlePrefix = trigger === 'manual' ? '[手动]' : '[定时]';
-      await agentChatManager.start(
-        sessionId,
-        schedule.agentId,
-        schedule.message,
-        flowContext,
-        undefined, // images
-        `${titlePrefix} ${schedule.label ?? schedule.agentId}`, // initialTitle
-      );
-
-      runRecord.status = 'started'; // 会话已启动（不等待完成）
-
-      // 更新 lastRunAt
-      await modifyJsonFile<AgentSchedulesData>(
-        getSchedulesPath(),
-        { schedules: [] },
-        (d) => {
-          const idx = d.schedules.findIndex(s => s.id === scheduleId);
-          if (idx !== -1) {
-            d.schedules[idx].lastRunAt = new Date().toISOString();
-            d.schedules[idx].updatedAt = new Date().toISOString();
-          }
-          return d;
-        },
-      );
-    } catch (err) {
+      await modifyJsonFile<AgentSchedulesData>(getSchedulesPath(), { schedules: [] }, (current) => {
+        const index = current.schedules.findIndex((item) => item.id === scheduleId);
+        if (index >= 0) {
+          current.schedules[index] = {
+            ...current.schedules[index],
+            targetType: schedule.targetType,
+            agentId: schedule.agentId,
+            projectKey: schedule.projectKey,
+            label: schedule.label,
+            lastRunAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        return current;
+      });
+    } catch (error) {
       runRecord.status = 'failed';
-      runRecord.error = (err as Error).message;
-      console.error(`[SchedulerManager] 触发调度 ${scheduleId} 失败：`, err);
+      runRecord.error = error instanceof Error ? error.message : String(error);
     }
 
-    // 记录执行历史
-    await this._saveRunRecord(runRecord);
+    await this.saveRunRecord(runRecord);
 
     if (runRecord.status === 'failed') {
-      throw new Error(runRecord.error ?? '触发失败');
+      throw new Error(runRecord.error ?? 'Failed to trigger schedule');
     }
 
     return runRecord;
   }
 
-  /** 手动触发一次调度规则（不检查 enabled 状态） */
+  private async buildFlowContext(projectKey?: string) {
+    if (!projectKey) return undefined;
+    const { ensureDataDirV2Migrated, getFlowDataPath, getFlowIndexPath, readJsonFile: readJson } = await import('./file-store');
+    await ensureDataDirV2Migrated();
+
+    let projectName = projectKey;
+    try {
+      const index = await readJson<{ projects: Array<{ key: string; name: string }> }>(getFlowIndexPath(), { projects: [] });
+      const found = index.projects.find((project) => project.key === projectKey);
+      if (found) projectName = found.name;
+    } catch {
+      // Ignore index errors.
+    }
+
+    return {
+      projectKey,
+      projectName,
+      flowDataPath: getFlowDataPath(projectKey),
+    };
+  }
+
   async triggerNow(scheduleId: string): Promise<ScheduleRunRecord> {
-    return this._fire(scheduleId, 'manual');
+    return this.fire(scheduleId, 'manual');
   }
 
-  // ── 执行历史 ──
+  private async saveRunRecord(record: ScheduleRunRecord): Promise<void> {
+    await modifyJsonFile<ScheduleRunsData>(getScheduleRunsPath(), { runs: [] }, (data) => {
+      data.runs.push(record);
 
-  /** 保存一条执行记录，自动清理旧记录 */
-  private async _saveRunRecord(record: ScheduleRunRecord): Promise<void> {
-    await modifyJsonFile<ScheduleRunsData>(
-      getScheduleRunsPath(),
-      { runs: [] },
-      (d) => {
-        d.runs.push(record);
+      const grouped = new Map<string, ScheduleRunRecord[]>();
+      for (const run of data.runs) {
+        const group = grouped.get(run.scheduleId) ?? [];
+        group.push(run);
+        grouped.set(run.scheduleId, group);
+      }
 
-        // 按 scheduleId 分组清理，每组最多保留 MAX_RUNS_PER_SCHEDULE 条
-        const grouped = new Map<string, ScheduleRunRecord[]>();
-        for (const r of d.runs) {
-          const group = grouped.get(r.scheduleId) ?? [];
-          group.push(r);
-          grouped.set(r.scheduleId, group);
-        }
-        const trimmed: ScheduleRunRecord[] = [];
-        for (const [, group] of grouped) {
-          // 按 startedAt 降序，保留最新的
-          group.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-          trimmed.push(...group.slice(0, MAX_RUNS_PER_SCHEDULE));
-        }
-        // 全局上限
-        trimmed.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-        d.runs = trimmed.slice(0, MAX_TOTAL_RUNS);
+      const trimmed: ScheduleRunRecord[] = [];
+      for (const group of grouped.values()) {
+        group.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+        trimmed.push(...group.slice(0, MAX_RUNS_PER_SCHEDULE));
+      }
 
-        return d;
-      },
-    );
+      trimmed.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+      data.runs = trimmed.slice(0, MAX_TOTAL_RUNS);
+      return data;
+    });
   }
 
-  /** 查询某条调度规则的执行历史 */
   async listRuns(scheduleId: string, limit = 20): Promise<ScheduleRunRecord[]> {
     const data = await readJsonFile<ScheduleRunsData>(getScheduleRunsPath(), { runs: [] });
     return data.runs
-      .filter(r => r.scheduleId === scheduleId)
+      .filter((run) => run.scheduleId === scheduleId)
       .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
       .slice(0, limit);
   }
 
-  /** 查询所有执行历史 */
   async listAllRuns(limit = 50): Promise<ScheduleRunRecord[]> {
     const data = await readJsonFile<ScheduleRunsData>(getScheduleRunsPath(), { runs: [] });
     return data.runs
@@ -257,44 +296,46 @@ export class SchedulerManager {
       .slice(0, limit);
   }
 
-  // ── 数据 CRUD（供 API 路由调用） ──
-
   async listSchedules(): Promise<AgentSchedule[]> {
     const data = await readJsonFile<AgentSchedulesData>(getSchedulesPath(), { schedules: [] });
-    return data.schedules;
+    return data.schedules.map((schedule) => ({
+      ...schedule,
+      targetType: normalizeTargetType(schedule.targetType),
+    }));
   }
 
   async createSchedule(input: {
-    agentId: string;
+    targetType?: ScheduleTargetType | 'message';
+    agentId?: string;
+    todoId?: string;
     cron: string;
-    message: string;
+    message?: string;
     projectKey?: string;
     label?: string;
     enabled?: boolean;
   }): Promise<AgentSchedule> {
-    if (!cron.validate(input.cron)) {
-      throw new Error(`无效的 cron 表达式：${input.cron}`);
-    }
-
     const now = new Date().toISOString();
-    const schedule: AgentSchedule = {
+    const candidate: AgentSchedule = {
       id: generateScheduleId(),
+      targetType: normalizeTargetType(input.targetType),
       agentId: input.agentId,
+      todoId: input.todoId,
       cron: input.cron,
       message: input.message,
       projectKey: input.projectKey,
-      label: input.label,
       enabled: input.enabled ?? true,
+      label: input.label,
       nextRunAt: calcNextRunAt(input.cron),
       createdAt: now,
       updatedAt: now,
     };
 
-    await modifyJsonFile<AgentSchedulesData>(
-      getSchedulesPath(),
-      { schedules: [] },
-      (d) => { d.schedules.push(schedule); return d; },
-    );
+    const schedule = await validateScheduleInput(candidate);
+
+    await modifyJsonFile<AgentSchedulesData>(getSchedulesPath(), { schedules: [] }, (data) => {
+      data.schedules.push(schedule);
+      return data;
+    });
 
     this.upsert(schedule);
     return schedule;
@@ -302,49 +343,42 @@ export class SchedulerManager {
 
   async updateSchedule(
     scheduleId: string,
-    patch: Partial<Pick<AgentSchedule, 'cron' | 'message' | 'label' | 'enabled' | 'projectKey'>>,
+    patch: Partial<Omit<Pick<AgentSchedule, 'targetType' | 'agentId' | 'todoId' | 'cron' | 'message' | 'label' | 'enabled' | 'projectKey'>, 'targetType'>> & { targetType?: ScheduleTargetType | 'message' },
   ): Promise<AgentSchedule | null> {
-    if (patch.cron !== undefined && !cron.validate(patch.cron)) {
-      throw new Error(`无效的 cron 表达式：${patch.cron}`);
-    }
+    const data = await readJsonFile<AgentSchedulesData>(getSchedulesPath(), { schedules: [] });
+    const current = data.schedules.find((schedule) => schedule.id === scheduleId);
+    if (!current) return null;
 
-    let updated: AgentSchedule | null = null;
+    const validated = await validateScheduleInput({
+      ...current,
+      ...patch,
+      targetType: patch.targetType !== undefined
+        ? normalizeTargetType(patch.targetType)
+        : current.targetType,
+      updatedAt: new Date().toISOString(),
+    });
 
-    await modifyJsonFile<AgentSchedulesData>(
-      getSchedulesPath(),
-      { schedules: [] },
-      (d) => {
-        const idx = d.schedules.findIndex(s => s.id === scheduleId);
-        if (idx === -1) return d;
-        d.schedules[idx] = {
-          ...d.schedules[idx],
-          ...patch,
-          updatedAt: new Date().toISOString(),
-        };
-        updated = d.schedules[idx];
-        return d;
-      },
-    );
+    await modifyJsonFile<AgentSchedulesData>(getSchedulesPath(), { schedules: [] }, (data) => {
+      const index = data.schedules.findIndex((schedule) => schedule.id === scheduleId);
+      if (index >= 0) {
+        data.schedules[index] = validated!;
+      }
+      return data;
+    });
 
-    if (updated) {
-      this.upsert(updated);
-    }
-    return updated;
+    this.upsert(validated);
+    return validated;
   }
 
   async deleteSchedule(scheduleId: string): Promise<boolean> {
     let deleted = false;
 
-    await modifyJsonFile<AgentSchedulesData>(
-      getSchedulesPath(),
-      { schedules: [] },
-      (d) => {
-        const before = d.schedules.length;
-        d.schedules = d.schedules.filter(s => s.id !== scheduleId);
-        deleted = d.schedules.length < before;
-        return d;
-      },
-    );
+    await modifyJsonFile<AgentSchedulesData>(getSchedulesPath(), { schedules: [] }, (data) => {
+      const before = data.schedules.length;
+      data.schedules = data.schedules.filter((schedule) => schedule.id !== scheduleId);
+      deleted = data.schedules.length < before;
+      return data;
+    });
 
     if (deleted) {
       this.remove(scheduleId);
@@ -353,14 +387,11 @@ export class SchedulerManager {
   }
 }
 
-// ── Singleton ──
-
 const globalForSched = globalThis as unknown as {
   __schedulerManager?: SchedulerManager;
 };
 
-export const schedulerManager: SchedulerManager =
-  globalForSched.__schedulerManager ?? new SchedulerManager();
+export const schedulerManager = globalForSched.__schedulerManager ?? new SchedulerManager();
 
 if (process.env.NODE_ENV !== 'production') {
   globalForSched.__schedulerManager = schedulerManager;

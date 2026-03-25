@@ -1,4 +1,4 @@
-/**
+﻿/**
  * JSON 文件读写工具（简化版，无文件锁）
  * ProjectPilot 数据存储在用户目录：
  * - Windows: C:\Users\<username>\.project-pilot\data\
@@ -88,7 +88,6 @@ async function ensureDataDirInitialized(): Promise<void> {
     getDialoguesDir(),
     // workflows/
     getFlowsDir(),
-    path.join(DATA_DIR, 'workflows', 'orchestrations'),
     // storage/
     getSkillsDir(),
     // usage/
@@ -280,12 +279,10 @@ export async function ensureDataDirV2Migrated(): Promise<void> {
   const jsonMoves: [string, string][] = [
     // agents/
     [path.join(DATA_DIR, 'agents.json'), getAgentsPath()],
-    [path.join(DATA_DIR, 'agent-teams.json'), getAgentTeamsPath()],
     [path.join(DATA_DIR, 'agent-schedules.json'), getSchedulesPath()],
     [path.join(DATA_DIR, 'agent-schedule-runs.json'), getScheduleRunsPath()],
     // chat/
     [path.join(DATA_DIR, 'agent-chat-sessions.json'), getAgentChatSessionsPath()],
-    [path.join(DATA_DIR, 'orchestrator-sessions.json'), getOrchestratorSessionsPath()],
     // tasks/
     [path.join(DATA_DIR, 'active-tasks.json'), getActiveTasksPath()],
     [path.join(DATA_DIR, 'suspended-tasks.json'), getSuspendedTasksPath()],
@@ -314,10 +311,8 @@ export async function ensureDataDirV2Migrated(): Promise<void> {
     [path.join(DATA_DIR, 'fundraising'), path.join(DATA_DIR, 'knowledge', 'fundraising')],
     // workflows/
     [path.join(DATA_DIR, 'flows'), getFlowsDir()],
-    [path.join(DATA_DIR, 'orchestrations'), path.join(DATA_DIR, 'workflows', 'orchestrations')],
     // storage/
     [path.join(DATA_DIR, 'artifacts'), path.join(DATA_DIR, 'storage', 'artifacts')],
-    [path.join(DATA_DIR, 'bitable'), path.join(DATA_DIR, 'storage', 'bitable')],
     [path.join(DATA_DIR, 'skills'), getSkillsDir()],
     // project-prompts → prompts/projects
     [path.join(DATA_DIR, 'project-prompts'), getProjectPromptsDir()],
@@ -523,20 +518,6 @@ export function getWorktreePortsPath(): string {
 
 export function getTodosPath(): string {
   return path.join(DATA_DIR, 'tasks', 'todos.json');
-}
-
-export function getOrchestratorSessionsPath(): string {
-  return path.join(DATA_DIR, 'chat', 'orchestrator-sessions.json');
-}
-
-export function getAgentTeamsPath(): string {
-  return path.join(DATA_DIR, 'agents', 'teams.json');
-}
-
-/** 编排会话的跨 Worker 消息文件（JSONL 格式，追加写） */
-export function getOrchestratorMessagesPath(orchId: string): string {
-  const safeId = orchId.replace(/[^a-zA-Z0-9_-]/g, '');
-  return path.join(DATA_DIR, 'workflows', 'orchestrations', `${safeId}-messages.jsonl`);
 }
 
 export function getActiveTasksPath(): string {
@@ -1060,6 +1041,18 @@ export function getSchedulesPath(): string {
 
 export function getScheduleRunsPath(): string {
   return path.join(DATA_DIR, 'agents', 'schedule-runs.json');
+}
+
+export function getEventTriggersPath(): string {
+  return path.join(DATA_DIR, 'agents', 'event-triggers.json');
+}
+
+export function getEventTriggerRunsPath(): string {
+  return path.join(DATA_DIR, 'agents', 'event-trigger-runs.json');
+}
+
+export function getEventTriggerStatesPath(): string {
+  return path.join(DATA_DIR, 'agents', 'event-trigger-states.json');
 }
 
 /**

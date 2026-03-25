@@ -24,7 +24,6 @@ import type { TodosData, TodoLifecycle } from '@/types';
 export type ActiveTaskAgentType =
   | 'self-dev'
   | 'task-worker'
-  | 'orchestrator-worker'
   | 'agent-chat';
 
 export type ActiveTaskStatus = 'running' | 'completed' | 'failed';

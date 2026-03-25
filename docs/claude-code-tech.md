@@ -11,16 +11,6 @@
 | **Slash Commands** | `/command` 快捷指令，存放在 `.claude/commands/` 目录 |
 | **MCP (Model Context Protocol)** | 外部工具/服务器的标准化扩展协议，支持 OAuth、allowlist/denylist、`structuredContent` 等 |
 
-## Agent Teams（多代理协作）
-
-| 名词 | 说明 |
-|------|------|
-| **Agent Teams** | 实验性多代理编排功能，一个 Lead Agent 协调多个 Teammate 并行工作 |
-| **Lead / Teammate** | Lead 分配任务、综合结果；Teammate 独立工作，拥有独立上下文窗口 |
-| **Shared Task List** | 团队共享任务列表，支持依赖追踪，Teammate 可 claim 任务 |
-| **Teammate Messaging** | Teammate 之间可直接互发消息协调 |
-| **TeammateIdle / TaskCompleted** | Agent Teams 相关的 Hook 事件 |
-
 ## Worktree Isolation（工作树隔离）
 
 | 名词 | 说明 |
@@ -77,6 +67,5 @@ Claude Code **v2.1.50**（2026 年 2 月）
 
 - [Claude Code CHANGELOG](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md)
 - [Claude Code Overview](https://code.claude.com/docs/en/overview)
-- [Agent Teams 文档](https://code.claude.com/docs/en/agent-teams)
 - [Subagents 文档](https://code.claude.com/docs/en/sub-agents)
 - [Agent SDK Overview](https://platform.claude.com/docs/en/agent-sdk/overview)

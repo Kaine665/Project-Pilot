@@ -557,18 +557,11 @@ export default function SkillsPage() {
                   <div className="absolute right-0 top-full mt-1 w-52 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg z-50 py-1 overflow-hidden">
                     <div className="px-3 py-1.5 text-[10px] font-medium text-zinc-400 uppercase tracking-wider">下载</div>
                     <button
-                      onClick={() => handleExport('openclaw')}
+                      onClick={() => handleExport('standard')}
                       className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
                     >
                       <Download className="h-3 w-3 text-zinc-400" />
-                      OpenClaw 格式
-                    </button>
-                    <button
-                      onClick={() => handleExport('raw')}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-                    >
-                      <Download className="h-3 w-3 text-zinc-400" />
-                      原始 Markdown
+                      公开规范 SKILL.md
                     </button>
                     <button
                       onClick={() => handleExport('json')}
@@ -580,18 +573,11 @@ export default function SkillsPage() {
                     <div className="border-t border-zinc-100 dark:border-zinc-800 my-1" />
                     <div className="px-3 py-1.5 text-[10px] font-medium text-zinc-400 uppercase tracking-wider">复制到剪贴板</div>
                     <button
-                      onClick={() => handleCopyExport('openclaw')}
+                      onClick={() => handleCopyExport('standard')}
                       className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
                     >
                       <Copy className="h-3 w-3 text-zinc-400" />
-                      OpenClaw 格式
-                    </button>
-                    <button
-                      onClick={() => handleCopyExport('raw')}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-                    >
-                      <Copy className="h-3 w-3 text-zinc-400" />
-                      原始 Markdown
+                      公开规范 SKILL.md
                     </button>
                   </div>
                 )}
@@ -994,18 +980,11 @@ export default function SkillsPage() {
               {showBatchExportMenu && (
                 <div className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg z-50 py-1 overflow-hidden">
                   <button
-                    onClick={() => handleBatchExport('openclaw')}
+                    onClick={() => handleBatchExport('standard')}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
                   >
                     <Download className="h-3 w-3 text-zinc-400" />
-                    OpenClaw 格式
-                  </button>
-                  <button
-                    onClick={() => handleBatchExport('raw')}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-                  >
-                    <Download className="h-3 w-3 text-zinc-400" />
-                    原始 Markdown
+                    公开规范 SKILL.md
                   </button>
                   <button
                     onClick={() => handleBatchExport('json')}

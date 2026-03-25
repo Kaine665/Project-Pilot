@@ -15,8 +15,6 @@ Framework: Next.js 16 (App Router, file-based routing)
 | `/flows/docs` | docs index | flows layout |
 | `/flows/docs/[key]` | docs detail | flows layout |
 | `/flows/todos` | todos page | flows layout |
-| `/flows/bitable` | bitable page | flows layout |
-| `/flows/orchestrator` | orchestrator page | flows layout |
 | `/flows/schedules` | schedules page | flows layout |
 | `/flows/recycle-bin` | recycle bin page | flows layout |
 | `/flows/butler` | butler page | flows layout |

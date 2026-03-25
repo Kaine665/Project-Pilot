@@ -9,7 +9,7 @@ import {
 import { normalizeOpenAIFastMode } from '@/lib/openai-fast-mode';
 import { OPENAI_REASONING_EFFORTS } from '@/lib/openai-reasoning-effort';
 import type { ClaudeAuthMode, ProviderId, EffortLevel, OpenAIReasoningEffort, AppSettings, DangerCategory, DangerActionLevel, CustomProviderConfig, NotificationClickAction } from '@/types';
-import { DEFAULT_DANGER_SETTINGS, DEFAULT_NOTIFICATION_SETTINGS, BUILT_IN_PROVIDER_IDS } from '@/types';
+import { DEFAULT_DANGER_SETTINGS, DEFAULT_DEVELOPER_SETTINGS, DEFAULT_NOTIFICATION_SETTINGS, BUILT_IN_PROVIDER_IDS } from '@/types';
 
 const VALID_AUTH_MODES: ClaudeAuthMode[] = ['api_key', 'oauth'];
 const VALID_EFFORT_LEVELS: EffortLevel[] = ['low', 'medium', 'high'];
@@ -177,6 +177,22 @@ export async function POST(request: NextRequest) {
   // general 字段验证
   if (body.general?.telemetry !== undefined && typeof body.general.telemetry !== 'boolean') {
     return NextResponse.json({ error: 'telemetry must be a boolean' }, { status: 400 });
+  }
+
+  // developer 字段验证
+  if (body.developer !== undefined) {
+    if (typeof body.developer !== 'object' || body.developer === null) {
+      return NextResponse.json({ error: 'developer must be an object' }, { status: 400 });
+    }
+    if (body.developer.satelliteTasksEnabled !== undefined && typeof body.developer.satelliteTasksEnabled !== 'boolean') {
+      return NextResponse.json({ error: 'developer.satelliteTasksEnabled must be a boolean' }, { status: 400 });
+    }
+    if (body.developer.schedulesPageEnabled !== undefined && typeof body.developer.schedulesPageEnabled !== 'boolean') {
+      return NextResponse.json({ error: 'developer.schedulesPageEnabled must be a boolean' }, { status: 400 });
+    }
+    if (body.developer.taskTriggersPageEnabled !== undefined && typeof body.developer.taskTriggersPageEnabled !== 'boolean') {
+      return NextResponse.json({ error: 'developer.taskTriggersPageEnabled must be a boolean' }, { status: 400 });
+    }
   }
 
   // dangerDetector 字段验证
@@ -355,6 +371,12 @@ export async function POST(request: NextRequest) {
       general: {
         ...current.general,
         ...(body.general?.telemetry !== undefined && { telemetry: body.general.telemetry }),
+      },
+    }),
+    ...(body.developer !== undefined && {
+      developer: {
+        ...(current.developer ?? DEFAULT_DEVELOPER_SETTINGS),
+        ...body.developer,
       },
     }),
     ...(body.dangerDetector !== undefined && {

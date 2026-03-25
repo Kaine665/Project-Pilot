@@ -2,10 +2,9 @@
 
 ## Product Context
 
-- Product: ProjectPilot
-- Page being designed: `/flows/projects`
-- Product scope for this task: project management, agents dialogue, docs, skills, prompts, todos, schedules
-- Core positioning: the projects page is the project-level cockpit, not a generic task editor
+- **Product**: ProjectPilot — AI-powered project management and execution pilot
+- **Key pages**: Projects, Agents, Dimensions, Context, Docs, Todos, Schedules, Recycle Bin, Butler
+- **Target page for redesign**: Agents (`/flows/agents`) — Agent management + chat interface
 
 ## Current UI Reality
 

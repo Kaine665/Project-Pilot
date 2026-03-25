@@ -52,7 +52,7 @@ async function createAllSkillsZip(skills: SkillZipEntry[]): Promise<Buffer> {
 }
 
 /**
- * GET /api/skills/export-all?format=openclaw&scope=global&output=zip
+ * GET /api/skills/export-all?format=standard&scope=global&output=zip
  *
  * 批量导出所有（或指定 scope）Skill 为 ZIP 包。
  * - format 缺省时返回可用格式列表。

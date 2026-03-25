@@ -91,31 +91,6 @@
     "goToChat": "Go to Chat",
     "stayHere": "Stay Here"
   },
-  "bitable": {
-    "title": "Bitable",
-    "newBase": "New Base",
-    "createBase": "Create",
-    "baseName": "Base Name",
-    "baseNamePlaceholder": "Enter base name...",
-    "noBase": "No bases yet",
-    "createFirst": "Create your first base",
-    "confirmDeleteBase": "Delete this base? All data will be permanently removed.",
-    "newTable": "New Table",
-    "tableNamePlaceholder": "Enter table name...",
-    "noTable": "No tables yet",
-    "addField": "Add Field",
-    "fieldName": "Field Name",
-    "fieldType": "Field Type",
-    "addRecord": "Add Record",
-    "deleteSelected": "Delete Selected",
-    "cancelSelection": "Cancel",
-    "selectedCount": "{count} records selected",
-    "totalRecords": "{count} records",
-    "gridView": "Grid View",
-    "kanbanView": "Kanban View",
-    "unassigned": "Unassigned",
-    "emptyRecord": "Empty record"
-  },
   "tasks": {
     "title": "Task List",
     "newTask": "New Task",
@@ -261,6 +236,29 @@
     "color": "Theme Color",
     "tags": "Tags",
     "tagsPlaceholder": "Type and press Enter to add",
+    "managerBadge": "Projects Workspace",
+    "managerTitle": "Project Management Center",
+    "managerSubtitle": "Browse projects in the main area, create new entries, and jump directly into the active workspace without using the left sidebar as a project list.",
+    "totalProjectsLabel": "Total Projects",
+    "currentProjectLabel": "Current Project",
+    "noProjectSelected": "No project selected",
+    "searchPlaceholder": "Search by project name, key, path, repository, or tags...",
+    "allTechStacks": "All tech stacks",
+    "createProject": "New Project",
+    "createDialogTitle": "Create Project",
+    "createDialogDescription": "Register a new project and it will appear immediately in the focus cards below.",
+    "creatingProject": "Creating...",
+    "emptyStateTitle": "No matching projects",
+    "emptyStateDescription": "Try changing the search terms or create a new project directly in the main area.",
+    "cardsHint": "Scroll horizontally to focus a project card, then use the actions inside the card.",
+    "openProject": "Open Project",
+    "noDescription": "No description yet",
+    "lastUpdatedLabel": "Last Updated",
+    "cardDeleteConfirm": "Delete project \"{name}\" from the current list? This action will archive it.",
+    "workspaceLabel": "Workspace",
+    "workspaceSubtitle": "Inbox and project structure editing stay here, below the management cards.",
+    "hideInbox": "Hide Inbox",
+    "showInbox": "Show Inbox",
     "archiveProject": "Archive Project",
     "archiveProjectHint": "Archived projects are hidden from the list but data is preserved",
     "deleteProject": "Delete Project",
@@ -424,6 +422,148 @@
     "namePlaceholder": "Agent name",
     "confirmDelete": "Are you sure you want to delete agent \"{name}\"?"
   },
+  "agentsWorkspace": {
+    "workspace": {
+      "label": "Current Workspace",
+      "defaultProjectName": "ProjectPilot",
+      "defaultAgentName": "Self-Dev Agent",
+      "defaultAgentDescription": "{agentName} is ready. Pick a session from the inbox on the left, or start a new agent chat directly.",
+      "inboxSummary": "{count} sessions",
+      "projectKeyLabel": "Project Key",
+      "agentIdLabel": "Agent ID",
+      "newSession": "New Session",
+      "searchPlaceholder": "Search sessions, agents, or titles"
+    },
+    "session": {
+      "new": "New Session",
+      "archived": "Archived",
+      "yesterday": "Yesterday",
+      "emptyFiltered": "No matching sessions",
+      "emptyWithAgent": "No ongoing sessions with {agentName} yet",
+      "emptyHint": "Click the + button in the top right to start a new agent chat."
+    },
+    "agent": {
+      "settingsButton": "Agent Settings",
+      "settingsShort": "Settings",
+      "openSettings": "Open Agent Settings",
+      "deleteConfirm": "Move agent \"{name}\" to the recycle bin?",
+      "importButton": "Import Agent",
+      "importSuccess": "Imported agent \"{name}\"",
+      "importSuccessWithContexts": "Imported agent \"{name}\" and {count} contexts",
+      "importErrorWithReason": "Import failed: {reason}",
+      "importErrorInvalidFile": "Import failed: invalid file format"
+    },
+    "picker": {
+      "searchPlaceholder": "Search agents...",
+      "expandPanel": "Expand Panel",
+      "close": "Close",
+      "noMatch": "No matching agents",
+      "empty": "No agents",
+      "emptyInFilter": "No agents in this category",
+      "count": "{count} agents",
+      "group": {
+        "recent": "Recent",
+        "builtin": "Built-in",
+        "project": "Project",
+        "global": "Global"
+      },
+      "filter": {
+        "all": "All",
+        "recent": "Recent",
+        "builtin": "Built-in",
+        "project": "Project",
+        "global": "Global"
+      },
+      "keyboard": {
+        "navigate": "Navigate",
+        "select": "Select",
+        "close": "Close"
+      }
+    },
+    "projectWorkspace": {
+      "title": "Project Workspace",
+      "empty": "After selecting a project, this area will show the current project file structure.",
+      "tree": {
+        "root": "root",
+        "worktree": "worktree",
+        "ppHome": "pp home",
+        "sharedData": "shared data",
+        "promptRoot": "prompt root",
+        "agentPrompts": "agent prompts",
+        "active": "active",
+        "global": "global",
+        "project": "project"
+      }
+    },
+    "promptStack": {
+      "title": "Prompt Injection Stack",
+      "items": {
+        "global": {
+          "label": "Global Constraints",
+          "description": "Global constraints, operating rules, and safety boundaries shared by all agents."
+        },
+        "project": {
+          "label": "Project Constraints",
+          "labelWithKey": "{key} Project Constraints",
+          "description": "Project-level constraints and engineering context for the current project.",
+          "descriptionWithKey": "Project-level constraints, process rules, and context for {key}."
+        },
+        "agent": {
+          "description": "System prompt and default resources for the current agent."
+        },
+        "session": {
+          "label": "Runtime Session Prompt",
+          "labelWithTitle": "{title} (Runtime)",
+          "description": "A runtime prompt copy will be generated after the session starts.",
+          "descriptionActive": "Runtime prompt copy and transient memory state for the current session."
+        }
+      }
+    },
+    "promptTree": {
+      "global": {
+        "summary": "Global constraints, safety rules, and default prompts."
+      },
+      "project": {
+        "summary": "Project-level prompts, docs, and prompt blocks."
+      },
+      "agent": {
+        "summary": "Current agent prompts, skills, and private context."
+      },
+      "scope": {
+        "global": "Global",
+        "project": "Project",
+        "agent": "Agent"
+      },
+      "kind": {
+        "folder": "folder",
+        "block": "block",
+        "file": "file"
+      },
+      "mainBadge": "main"
+    },
+    "capabilities": {
+      "title": "System Capabilities",
+      "enabled": "Mounted",
+      "disabled": "Hidden",
+      "enabledAria": "{label} enabled",
+      "disabledAria": "{label} disabled",
+      "terminal": { "label": "Terminal", "hint": "Shell" },
+      "web": { "label": "Web", "hint": "Web" },
+      "files": { "label": "Files", "hint": "FS" },
+      "subAgent": { "label": "Sub Agents", "hint": "A2A" },
+      "todo": { "label": "Todos", "hint": "Todo" },
+      "data": { "label": "Storage", "hint": "Data" },
+      "promptPath": { "label": "Prompt Path", "hint": "Path" },
+      "skipReview": { "label": "Skip Review", "hint": "Skip" }
+    },
+    "budget": {
+      "title": "Prompt Budget",
+      "usage": "{percent}% of 128k",
+      "global": "Global",
+      "project": "Project",
+      "agent": "Agent"
+    }
+  },
   "context": {
     "title": "Context",
     "newEntry": "New Entry",
@@ -473,7 +613,7 @@
     "apiKeyHint": "Enter your API key. It will be stored locally.",
     "testConnection": "Test Connection",
     "testSuccess": "Connection successful",
-    "testFailed": "Connection failed",
+    "testFailed": "Test failed",
     "oauthStatus": "OAuth Status",
     "oauthAuthenticated": "Authenticated",
     "oauthNotAuthenticated": "Not authenticated",
@@ -636,6 +776,16 @@
     "dangerLevelCritical": "Terminate",
     "dangerLevelWarning": "Warn",
     "dangerLevelDisabled": "Off",
+    "developerTools": "Developer Tools",
+    "satelliteTasksEnabled": "Enable Satellite Tasks",
+    "satelliteTasksEnabledHint": "Master switch for post-run hooks such as title generation, health guard, knowledge extraction, and task card updates.",
+    "schedulesPageEnabled": "Show Scheduled Tasks",
+    "schedulesPageEnabledHint": "Controls whether the scheduled tasks entry and page are available in Flows. Direct access is also blocked when disabled.",
+    "taskTriggersPageEnabled": "Show Task Triggers",
+    "taskTriggersPageEnabledHint": "Controls whether the event-driven task trigger entry and page are available in Flows. Direct access is also blocked when disabled.",
+    "satelliteTasksInternalTitle": "Internal Automation",
+    "satelliteTasksInternalHint": "This area is for developer-side workflow hooks. Turning the switch off preserves task settings, but no satellite task will run until re-enabled.",
+    "openSatelliteTasks": "Open Satellite Task Dashboard",
     "titleGeneration": "Title Generation",
     "titleGenerationHint": "Automatically generates or updates session titles using a cheap AI model at turns 2, 5, 10, and 15.",
     "titleGenerationEnabled": "Enable Auto Title Generation",
@@ -650,80 +800,6 @@
     "titleGenerationRemove": "Remove",
     "titleGenerationCustomModel": "Custom...",
     "titleGenerationTest": "Test this entry",
-    "titleGenerationTestOk": "OK",
-    "testFailed": "Test failed"
-  },
-  "orchestrator": {
-    "title": "Agent Orchestration",
-    "teams": "Team Management",
-    "orchestrate": "Orchestrate",
-    "newTeam": "New Team",
-    "editTeam": "Edit Team",
-    "teamName": "Team Name",
-    "teamNamePlaceholder": "Enter team name",
-    "description": "Description",
-    "descriptionPlaceholder": "Enter team description...",
-    "members": "Members",
-    "addMember": "Add Member",
-    "removeMember": "Remove",
-    "role": "Role",
-    "rolePlaceholder": "e.g., Frontend Developer",
-    "responsibilities": "Responsibilities",
-    "responsibilitiesPlaceholder": "Describe this member's responsibilities...",
-    "conflictPolicy": "Conflict Policy",
-    "conflictFail": "Fail on Conflict",
-    "conflictAiResolve": "AI Auto-resolve",
-    "conflictManual": "Manual Resolve",
-    "resolver": "Conflict Resolver Agent",
-    "noTeams": "No teams yet",
-    "confirmDeleteTeam": "Are you sure you want to archive team \"{name}\"?",
-    "selectAgent": "Select Agent",
-    "launchOrch": "Launch Orchestration",
-    "prompt": "Task Description",
-    "promptPlaceholder": "Describe the task for the team...",
-    "selectTeam": "Select Team",
-    "noTeamSelected": "No team",
-    "phase": "Phase",
-    "phases": {
-      "pending": "Pending",
-      "splitting": "Splitting",
-      "spawning": "Spawning",
-      "executing": "Executing",
-      "synthesizing": "Synthesizing",
-      "merging": "Merging",
-      "completed": "Completed",
-      "failed": "Failed"
-    },
-    "confirmSplit": "Confirm Split",
-    "confirmMerge": "Confirm Merge",
-    "stop": "Stop",
-    "worker": "Worker",
-    "workers": "Workers",
-    "workerStatus": {
-      "pending": "Pending",
-      "running": "Running",
-      "completed": "Completed",
-      "failed": "Failed",
-      "stopped": "Stopped"
-    },
-    "synthesis": "Synthesis Result",
-    "noProject": "Please select a project first",
-    "splitPlan": "Split Plan",
-    "analysis": "Analysis",
-    "expectedOutcome": "Expected Outcome",
-    "complexity": "Complexity",
-    "dependencies": "Dependencies",
-    "noDependencies": "No dependencies",
-    "assignedAgent": "Assigned Agent",
-    "noHistory": "No orchestration history",
-    "history": "History",
-    "useExistingProject": "Use existing project",
-    "createNewProject": "Create new project",
-    "newProjectNamePlaceholder": "Enter new project name",
-    "launching": "Launching...",
-    "events": "Events",
-    "eventCount": "{count} events",
-    "connected": "Connected",
-    "disconnected": "Disconnected"
+    "titleGenerationTestOk": "OK"
   }
 }

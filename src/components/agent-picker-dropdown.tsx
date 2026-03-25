@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Search, Maximize2 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import type { Agent } from '@/types';
 import { AgentIcon } from '@/components/agent-form';
 
@@ -24,13 +25,13 @@ export function AgentPickerDropdown({
   activeProjectKey,
   recentAgentIds = [],
 }: AgentPickerDropdownProps) {
+  const t = useTranslations('agentsWorkspace.picker');
   const [query, setQuery] = useState('');
   const [highlightIdx, setHighlightIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Reset state when dropdown opens
   useEffect(() => {
     if (open) {
       setQuery('');
@@ -39,7 +40,6 @@ export function AgentPickerDropdown({
     }
   }, [open]);
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
@@ -51,7 +51,6 @@ export function AgentPickerDropdown({
     return () => document.removeEventListener('mousedown', handler);
   }, [open, onClose]);
 
-  // ── Categorize agents ──
   const groups = useMemo(() => {
     const recentSet = new Set(recentAgentIds.slice(0, 5));
     const recent: Agent[] = [];
@@ -59,104 +58,104 @@ export function AgentPickerDropdown({
     const project: Agent[] = [];
     const global: Agent[] = [];
 
-    for (const a of agents) {
-      if (recentSet.has(a.id)) recent.push(a);
-      if (a.id.startsWith('agent-builtin-')) {
-        builtin.push(a);
-      } else if (a.projectKey && a.projectKey === activeProjectKey) {
-        project.push(a);
+    for (const agent of agents) {
+      if (recentSet.has(agent.id)) recent.push(agent);
+      if (agent.id.startsWith('agent-builtin-')) {
+        builtin.push(agent);
+      } else if (agent.projectKey && agent.projectKey === activeProjectKey) {
+        project.push(agent);
       } else {
-        global.push(a);
+        global.push(agent);
       }
     }
 
     recent.sort((a, b) => recentAgentIds.indexOf(a.id) - recentAgentIds.indexOf(b.id));
 
     const result: { label: string; items: Agent[] }[] = [];
-    if (recent.length > 0) result.push({ label: '最近使用', items: recent });
-    if (builtin.length > 0) result.push({ label: '内置', items: builtin });
-    if (project.length > 0) result.push({ label: '项目专属', items: project });
-    if (global.length > 0) result.push({ label: '全局', items: global });
-
+    if (recent.length > 0) result.push({ label: t('group.recent'), items: recent });
+    if (builtin.length > 0) result.push({ label: t('group.builtin'), items: builtin });
+    if (project.length > 0) result.push({ label: t('group.project'), items: project });
+    if (global.length > 0) result.push({ label: t('group.global'), items: global });
     return result;
-  }, [agents, activeProjectKey, recentAgentIds]);
+  }, [activeProjectKey, agents, recentAgentIds, t]);
 
   const isSearching = query.trim().length > 0;
 
-  // Build flat list for grouped view (each occurrence gets its own index)
   const groupedFlat = useMemo(() => {
     const result: { agent: Agent; group: string }[] = [];
-    for (const g of groups) {
-      for (const a of g.items) {
-        result.push({ agent: a, group: g.label });
+    for (const group of groups) {
+      for (const agent of group.items) {
+        result.push({ agent, group: group.label });
       }
     }
     return result;
   }, [groups]);
 
-  // ── Filtered flat list (only for search mode) ──
   const searchResults = useMemo(() => {
     if (!isSearching) return [];
-    const q = query.toLowerCase();
-    return agents.filter(a =>
-      a.name.toLowerCase().includes(q) ||
-      (a.description ?? '').toLowerCase().includes(q) ||
-      a.id.toLowerCase().includes(q)
+    const normalized = query.toLowerCase();
+    return agents.filter((agent) =>
+      agent.name.toLowerCase().includes(normalized)
+      || (agent.description ?? '').toLowerCase().includes(normalized)
+      || agent.id.toLowerCase().includes(normalized),
     );
-  }, [agents, query, isSearching]);
+  }, [agents, isSearching, query]);
 
-  // Total items for keyboard nav
   const totalItems = isSearching ? searchResults.length : groupedFlat.length;
 
-  // Clamp highlight index
   useEffect(() => {
-    setHighlightIdx(i => Math.min(i, Math.max(0, totalItems - 1)));
+    setHighlightIdx((idx) => Math.min(idx, Math.max(0, totalItems - 1)));
   }, [totalItems]);
 
-  // Scroll highlighted into view
   useEffect(() => {
     const items = listRef.current?.querySelectorAll('[data-agent-item]');
     const el = items?.[highlightIdx] as HTMLElement | undefined;
     el?.scrollIntoView({ block: 'nearest' });
   }, [highlightIdx]);
 
-  // Get agent at highlight index
   const getAgentAt = useCallback((idx: number): Agent | undefined => {
     if (isSearching) return searchResults[idx];
     return groupedFlat[idx]?.agent;
-  }, [isSearching, searchResults, groupedFlat]);
+  }, [groupedFlat, isSearching, searchResults]);
 
-  // ── Keyboard navigation ──
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        setHighlightIdx(i => (i + 1) % Math.max(1, totalItems));
+        setHighlightIdx((idx) => (idx + 1) % Math.max(1, totalItems));
         break;
       case 'ArrowUp':
         e.preventDefault();
-        setHighlightIdx(i => (i - 1 + totalItems) % Math.max(1, totalItems));
+        setHighlightIdx((idx) => (idx - 1 + totalItems) % Math.max(1, totalItems));
         break;
-      case 'Enter':
+      case 'Enter': {
         e.preventDefault();
-        { const a = getAgentAt(highlightIdx);
-          if (a) { onSelect(a); onClose(); }
+        const agent = getAgentAt(highlightIdx);
+        if (agent) {
+          onSelect(agent);
+          onClose();
         }
         break;
+      }
       case 'Escape':
         e.preventDefault();
         onClose();
         break;
+      default:
+        break;
     }
-  }, [totalItems, highlightIdx, getAgentAt, onSelect, onClose]);
+  }, [getAgentAt, highlightIdx, onClose, onSelect, totalItems]);
 
   if (!open) return null;
 
-  const renderItem = (a: Agent, flatIdx: number, keyPrefix: string) => (
+  const renderItem = (agent: Agent, flatIdx: number, keyPrefix: string) => (
     <button
-      key={keyPrefix + '-' + a.id}
+      key={`${keyPrefix}-${agent.id}`}
       data-agent-item
-      onClick={() => { onSelect(a); onClose(); }}
+      onClick={() => {
+        onSelect(agent);
+        onClose();
+      }}
       onMouseEnter={() => setHighlightIdx(flatIdx)}
       className={`flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-left transition-colors ${
         flatIdx === highlightIdx
@@ -164,15 +163,15 @@ export function AgentPickerDropdown({
           : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
       }`}
     >
-      <AgentIcon iconKey={a.icon} className="h-4 w-4 shrink-0 text-zinc-400" />
+      <AgentIcon iconKey={agent.icon} className="h-4 w-4 shrink-0 text-zinc-400" />
       <span className="min-w-0 flex-1 truncate text-[13px] text-zinc-800 dark:text-zinc-200">
-        {a.name}
+        {agent.name}
       </span>
-      {a.projectKey && (
+      {agent.projectKey ? (
         <span className="shrink-0 text-[10px] text-zinc-400 dark:text-zinc-500">
-          {a.projectKey}
+          {agent.projectKey}
         </span>
-      )}
+      ) : null}
     </button>
   );
 
@@ -182,54 +181,53 @@ export function AgentPickerDropdown({
       className="absolute right-0 top-full z-50 mt-1 w-64 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
       onKeyDown={handleKeyDown}
     >
-      {/* Search */}
       <div className="flex items-center gap-2 border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
         <Search className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
         <input
           ref={inputRef}
           type="text"
           value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="搜索 Agent..."
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t('searchPlaceholder')}
           className="flex-1 bg-transparent text-[13px] text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"
         />
         <button
-          onClick={(e) => { e.stopPropagation(); onExpand(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onExpand();
+          }}
           className="rounded p-0.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-          title="展开为面板"
+          title={t('expandPanel')}
         >
           <Maximize2 className="h-3.5 w-3.5" />
         </button>
       </div>
 
-      {/* Agent list */}
-      <div ref={listRef} className="max-h-[320px] overflow-y-auto py-1 px-1">
+      <div ref={listRef} className="max-h-[320px] overflow-y-auto px-1 py-1">
         {isSearching ? (
-          // Flat search results
           searchResults.length === 0 ? (
             <div className="px-3 py-6 text-center text-xs text-zinc-400 dark:text-zinc-500">
-              没有匹配的 Agent
+              {t('noMatch')}
             </div>
           ) : (
-            searchResults.map((a, i) => renderItem(a, i, 'search'))
+            searchResults.map((agent, idx) => renderItem(agent, idx, 'search'))
           )
         ) : (
-          // Grouped view — each item gets a unique flat index
           groups.length === 0 ? (
             <div className="px-3 py-6 text-center text-xs text-zinc-400 dark:text-zinc-500">
-              暂无 Agent
+              {t('empty')}
             </div>
           ) : (
             (() => {
               let flatIdx = 0;
-              return groups.map(g => (
-                <div key={g.label}>
-                  <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                    {g.label}
+              return groups.map((group) => (
+                <div key={group.label}>
+                  <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                    {group.label}
                   </div>
-                  {g.items.map(a => {
+                  {group.items.map((agent) => {
                     const idx = flatIdx++;
-                    return renderItem(a, idx, g.label);
+                    return renderItem(agent, idx, group.label);
                   })}
                 </div>
               ));
@@ -238,17 +236,19 @@ export function AgentPickerDropdown({
         )}
       </div>
 
-      {/* Footer */}
       <div className="flex items-center justify-between border-t border-zinc-100 px-3 py-1.5 dark:border-zinc-800">
         <span className="text-[10px] text-zinc-400 dark:text-zinc-500">
-          {agents.length} 个 Agent
+          {t('count', { count: agents.length })}
         </span>
         <button
-          onClick={(e) => { e.stopPropagation(); onExpand(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onExpand();
+          }}
           className="flex items-center gap-1 text-[10px] text-zinc-400 transition-colors hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
         >
           <Maximize2 className="h-3 w-3" />
-          展开面板
+          {t('expandPanel')}
         </button>
       </div>
     </div>
