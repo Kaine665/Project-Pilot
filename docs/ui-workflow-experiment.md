@@ -149,3 +149,25 @@ npm run ui-workflow:capture -- 4000 baseline
 ## 6. 相关文档
 
 - [git-worktree.md](./git-worktree.md) — 仓库内 worktree 通用约定
+
+---
+
+## 7. 打开实验产物（链接）
+
+在 **Cursor / VS Code** 里打开本文件时，下面 **相对路径** 链接一般可 **Ctrl+单击** 直接打开图片或跳转文件：
+
+| 产物 | 链接 |
+|------|------|
+| 本文档 | [ui-workflow-experiment.md](./ui-workflow-experiment.md) |
+| 对照截图 | [baseline.png](../tmp/ui-workflow-experiment/baseline.png) |
+| 流程 A | [workflow-a.png](../tmp/ui-workflow-experiment/workflow-a.png) |
+| 流程 B | [workflow-b.png](../tmp/ui-workflow-experiment/workflow-b.png) |
+
+若在系统浏览器或「资源管理器地址栏」里打开，可用本机 **`file:///`** 地址（盘符与路径需与你的磁盘一致；以下为当前仓库常见绝对路径）：
+
+- 文档：`file:///D:/Desktop/ProgrammingProjects/personal-projects/03-In-Development/project-pilot/develop-static/docs/ui-workflow-experiment.md`
+- 对照图：`file:///D:/Desktop/ProgrammingProjects/personal-projects/03-In-Development/project-pilot/develop-static/tmp/ui-workflow-experiment/baseline.png`
+- 流程 A：`file:///D:/Desktop/ProgrammingProjects/personal-projects/03-In-Development/project-pilot/develop-static/tmp/ui-workflow-experiment/workflow-a.png`
+- 流程 B：`file:///D:/Desktop/ProgrammingProjects/personal-projects/03-In-Development/project-pilot/develop-static/tmp/ui-workflow-experiment/workflow-b.png`
+
+> **说明**：`file://` 链接在部分 Markdown 预览里会被安全策略拦截；优先用表格里的相对链接，或在资源管理器中粘贴上述路径（去掉 `file:///` 后把 `/` 改成 `\` 也可）。

@@ -115,26 +115,14 @@ npm run dev
 
 #### 数据目录
 
-ProjectPilot 默认把数据存到用户目录：
+**分层说明**（目录树目标/现状 vs 代码默认路径）：仓库根目录 **[`README.md`](../README.md#pp-data-directory)**。  
+本机 **`~/.project-pilot/README.md`** 与 **`数据文件夹现状.md`** 描述磁盘真实布局与迁移进度（不在仓库内）。
 
-- Windows: `C:\Users\<username>\.project-pilot\data\`
-- macOS: `/Users/<username>/.project-pilot/data/`
-- Linux: `/home/<username>/.project-pilot/data/`
-
-如需自定义：
-
-```bash
-PROJECT_PILOT_DATA_DIR=/path/to/custom/data
-```
-
-如果要从旧版本迁移项目内 `data/`：
-
-```bash
-npm run migrate:data
-```
+**引用记录**：`../README.md`；**对齐日期**：2026-03-26。
 
 ### 文档
 
+- [用户数据与目录规范（分层说明，仓库根）](../README.md#pp-data-directory)
 - [Agent Chat Architecture](docs/agent-chat-architecture.md)
 - [Context System](docs/context-system.md)
 - [Data Storage](docs/data-storage.md)
@@ -265,26 +253,14 @@ Open `http://localhost:4000`
 
 #### Data Directory
 
-ProjectPilot stores data in the user directory by default:
+**Layered docs** (on-disk layout vs code defaults): repository root **[`README.md`](../README.md#pp-data-directory)**.  
+On your machine, `~/.project-pilot/README.md` and `数据文件夹现状.md` describe the real tree and migration status (not in git).
 
-- Windows: `C:\Users\<username>\.project-pilot\data\`
-- macOS: `/Users/<username>/.project-pilot/data/`
-- Linux: `/home/<username>/.project-pilot/data/`
-
-Custom location:
-
-```bash
-PROJECT_PILOT_DATA_DIR=/path/to/custom/data
-```
-
-Migrate legacy project-local data:
-
-```bash
-npm run migrate:data
-```
+**Citation**: `../README.md`; **last aligned**: 2026-03-26.
 
 ### Documentation
 
+- [User data & directory layout (layered, repo root)](../README.md#pp-data-directory)
 - [Agent Chat Architecture](docs/agent-chat-architecture.md)
 - [Context System](docs/context-system.md)
 - [Data Storage](docs/data-storage.md)

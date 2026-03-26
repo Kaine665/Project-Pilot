@@ -43,7 +43,7 @@
 
 ## 数据存储
 
-- 所有用户数据在 `~/.project-pilot/data/`，不在项目目录内
+- 数据布局：本机 `~/.project-pilot/README.md` + **`数据文件夹现状.md`**；代码默认根与 `PROJECT_PILOT_DATA_DIR` 见仓库根 [`README.md`](../README.md#pp-data-directory)（`file-store` 默认 **`~/.project-pilot`**，不再默认 `data/` 子目录）。对齐 2026-03-26
 - 可通过 `PROJECT_PILOT_DATA_DIR` 环境变量自定义
 - JSON 文件读写有 50MB 大小限制
 - `writeJsonFile()` 自动创建父目录
