@@ -12,11 +12,9 @@
  *   npx tsx src/lib/todo-stale-checker.ts [--dry-run]
  */
 
-import { getTodosPath, readJsonFile, modifyJsonFile } from './file-store';
+import { modifyTodosMerged, readTodosMerged } from '@/lib/todo-file-store';
 import { listActiveTasks } from './active-tasks';
-import type { TodosData, TodoLifecycle } from '@/types';
-
-const DEFAULT: TodosData = { todos: [] };
+import type { TodoLifecycle } from '@/types';
 
 /** pending 超过多少天标记为 stale */
 const STALE_DAYS = 14;
@@ -41,7 +39,7 @@ export async function checkAndMarkStaleTodos(dryRun = false): Promise<StaleCheck
     activeTasks.filter(t => t.status === 'running').map(t => t.id),
   );
 
-  const data = await readJsonFile<TodosData>(getTodosPath(), DEFAULT);
+  const data = await readTodosMerged();
 
   // 收集需要修改的 todo IDs 和目标 lifecycle
   const changes: Array<{ id: string; newLifecycle: TodoLifecycle; reason: string }> = [];
@@ -88,7 +86,7 @@ export async function checkAndMarkStaleTodos(dryRun = false): Promise<StaleCheck
   // 执行变更
   if (!dryRun) {
     const changeMap = new Map(changes.map(c => [c.id, c]));
-    await modifyJsonFile<TodosData>(getTodosPath(), DEFAULT, (d) => ({
+    await modifyTodosMerged((d) => ({
       ...d,
       todos: d.todos.map((t) => {
         const change = changeMap.get(t.id);

@@ -1,4 +1,14 @@
-import { getAgentsPath, readJsonFile, writeJsonFile, ensureDataDirV2Migrated } from '@/lib/file-store';
+import {
+  getAgentsPath,
+  readJsonFile,
+  writeJsonFile,
+  ensureDataDirV2Migrated,
+} from '@/lib/file-store';
+import {
+  loadAgentsFromObjectModel,
+  saveAgentsToObjectModel,
+  shouldUseAgentsObjectModel,
+} from '@/lib/agents-object-model';
 import { DEFAULT_AGENTS, getDefaultAgents } from '@/lib/default-agents';
 import { mergeAndRepairAgentsData } from '@/lib/agent-metadata-repair';
 import {
@@ -92,9 +102,12 @@ export async function readAgentsData(): Promise<AgentsData> {
   // Ensure builtin defaults are loaded before merge
   await getDefaultAgents();
 
-  const { data, changed: mergedChanged } = await mergeAndRepairAgentsData(
-    await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] }),
-  );
+  const useOm = await shouldUseAgentsObjectModel();
+  const rawAgents: AgentsData = useOm
+    ? await loadAgentsFromObjectModel()
+    : await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
+
+  const { data, changed: mergedChanged } = await mergeAndRepairAgentsData(rawAgents);
   let changed = mergedChanged;
 
   for (const agent of data.agents) {
@@ -130,7 +143,11 @@ export async function writeAgentsData(data: AgentsData): Promise<void> {
     return;
   }
 
-  await writeJsonFile(getAgentsPath(), data);
+  if (await shouldUseAgentsObjectModel()) {
+    await saveAgentsToObjectModel(data);
+  } else {
+    await writeJsonFile(getAgentsPath(), data);
+  }
   invalidateAgentsCache();
 }
 
