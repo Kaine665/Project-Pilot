@@ -33,7 +33,9 @@
     "files": [
       "electron/dist/**/*",
       "electron/splash.html",
-      "dist/**/*"
+      "dist/**/*",
+      "config/dev-server.json",
+      "config/load-dev-server.cjs"
     ],
     "win": {
       "target": "nsis",

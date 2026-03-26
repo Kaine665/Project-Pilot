@@ -1,0 +1,12 @@
+{
+  "client": {
+    "port": 4000,
+    "host": "127.0.0.1",
+    "probeHost": "localhost"
+  },
+  "api": {
+    "port": 4500,
+    "host": "127.0.0.1",
+    "healthPath": "/health"
+  }
+}
