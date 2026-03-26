@@ -34,6 +34,17 @@
 - **叙事**：少依赖外部技能检索，以 **高密度工具界面** 为目标，直接微调 shadcn 语义变量（低圆角、冷色主色）。
 - **代码标记**：根容器 `exp-ui-wfb`，样式见该分支 `workflow-experiment-b.css`。
 
+### 1.4 为何有时三张截图「看起来一样」？
+
+**Agents 页大量使用了 Tailwind 硬编码色**（如 `bg-blue-50`、`text-zinc-800`），**没有**走 `bg-primary` / `text-muted-foreground` 等语义类。实验里即使改了 `:root` 子树上的 `--primary`、`--muted`，**主视觉仍可能几乎不变**。
+
+为让「流程 A / B」在截图里**一眼可辨**，实验分支在 `workflow-experiment-*.css` 中额外加了：
+
+- **左侧 6px 色条**（青绿 vs 冷紫）；
+- **右上角 `::after` 文案角标**（标明流程 A / B）。
+
+**Baseline** 无上述装饰。若你要对比「纯 token、无角标」的差异，需要把页面里的硬编码色逐步换成语义 token（或接受肉眼难以从截图区分）。
+
 ---
 
 ## 2. Worktree 操作（已创建时如何同步 / 清理）
