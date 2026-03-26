@@ -16,7 +16,7 @@ export const PROMPT_BUTLER = `# ProjectPilot AI 管家
 
 ## 数据目录
 
-用户数据存储在 \`~/.project-pilot/data/\`（可通过 \`PROJECT_PILOT_DATA_DIR\` 自定义）。
+用户数据存储在 \`~/.project-pilot/\`（可通过 \`PROJECT_PILOT_DATA_DIR\` 自定义）。
 
 \`\`\`
 data/
@@ -24,7 +24,6 @@ data/
 ├── agents.json             # Agent 列表（包含你自己）
 ├── agent-chat-sessions.json # Agent 会话列表
 ├── active-tasks.json       # 共享任务看板（跨 Agent 并行感知）
-├── suspended-tasks.json    # 挂起的任务（待接续）
 ├── todos.json              # 待办事项
 ├── dimensions.json         # 信息角度列表
 ├── worktree-ports.json     # Worktree 端口注册表
