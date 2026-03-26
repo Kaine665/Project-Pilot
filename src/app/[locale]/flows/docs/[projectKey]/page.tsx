@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'react-router';
 import { BookOpen, FileText, Globe, Layers3, Plus, Search, Trash2, X } from 'lucide-react';
-import { useRouter } from '@/i18n/routing';
+import { useRouter } from '@/client/i18n/routing';
 import { useProject } from '@/components/project-context';
 import type { ContextEntry, DocEntry, DocStatus } from '@/types';
 
@@ -45,7 +45,7 @@ function fromContext(entry: ContextEntry): Asset {
 
 export default function DocsProjectPage() {
   const params = useParams();
-  const searchParams = useSearchParams();
+  const [searchParams] = useSearchParams();
   const projectKey = params.projectKey as string;
   const router = useRouter();
   const { activeKey, setActiveKey } = useProject();

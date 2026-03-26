@@ -474,6 +474,7 @@ class EventTriggerManager {
         undefined,
         undefined,
         undefined,
+        undefined,
         'event',
         trigger.id,
       );

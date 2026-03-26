@@ -11,7 +11,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { useRouter } from '@/i18n/routing';
+import { useRouter } from '@/client/i18n/routing';
 import { Badge } from '@/components/ui/badge';
 import { useFlowData } from './flow-editor';
 import type {

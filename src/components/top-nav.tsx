@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useTranslations, useLocale } from 'next-intl';
+import { useTranslations, useLocale } from '@/client/i18n/use-translations';
 import { GitBranch, Settings, Sparkles, ChevronDown } from 'lucide-react';
-import { Link, usePathname, useRouter } from '@/i18n/routing';
+import { Link, usePathname, useRouter } from '@/client/i18n/routing';
 import { cn } from '@/lib/utils';
 import { LanguageSwitcher } from './language-switcher';
 import { useProject } from './project-context';

@@ -2,7 +2,7 @@
 
 import { memo, useState, useRef, useEffect } from 'react';
 import { ChevronDown, Plus, MessageSquare } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/client/i18n/use-translations';
 import type { SessionListItem } from '@/components/agent-chat-panel';
 
 interface SessionDropdownProps {

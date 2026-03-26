@@ -16,7 +16,9 @@ export interface SystemPromptLoaderContext extends LoaderContext {
   systemPromptText?: string;
   /** Absolute path to the prompt .md file — injected when exposePromptPath is enabled */
   promptFilePath?: string;
-  /** Absolute path to the runtime working copy — session-level isolation */
+  /** Absolute path to the session prompt override working copy — session-level isolation */
+  sessionPromptOverridePath?: string;
+  /** @deprecated Prefer sessionPromptOverridePath. */
   runtimePromptPath?: string;
 }
 
@@ -24,14 +26,20 @@ export class SystemPromptLoader implements ResourceLoader {
   readonly type = 'system-prompt' as const;
 
   async resolve(ref: ResourceRef, ctx: LoaderContext): Promise<ResolvedResource> {
-    const { systemPromptText, promptFilePath, runtimePromptPath } = ctx as SystemPromptLoaderContext;
+    const {
+      systemPromptText,
+      promptFilePath,
+      sessionPromptOverridePath,
+      runtimePromptPath,
+    } = ctx as SystemPromptLoaderContext;
+    const effectiveSessionPromptOverridePath = sessionPromptOverridePath ?? runtimePromptPath;
     let text = systemPromptText ?? '';
 
     // Append prompt file path if the agent opted in
     if (promptFilePath) {
-      if (runtimePromptPath) {
-        // 会话级工作副本：修改只影响本会话
-        text += `\n\n---\n\n> 你的系统提示词工作副本路径：\`${runtimePromptPath}\`\n> 这是本会话的独立副本。修改它只影响本会话（下次发消息时生效）。\n> 正式版路径：\`${promptFilePath}\`（修改正式版影响所有新会话）`;
+      if (effectiveSessionPromptOverridePath) {
+        // 会话级 prompt override：修改只影响本会话
+        text += `\n\n---\n\n> 你的会话级系统提示词覆盖文件路径：\`${effectiveSessionPromptOverridePath}\`\n> 这是本会话的独立副本。修改它只应影响本会话。\n> 正式版路径：\`${promptFilePath}\`（修改正式版影响所有新会话）`;
       } else {
         text += `\n\n---\n\n> 你的系统提示词文件路径：\`${promptFilePath}\`\n> 你可以通过 Read 工具查看或 Edit 工具修改它。修改后下次对话生效。`;
       }

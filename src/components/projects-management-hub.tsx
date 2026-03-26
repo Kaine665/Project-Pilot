@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/client/i18n/use-translations';
 import {
   ArrowRight,
   Archive,

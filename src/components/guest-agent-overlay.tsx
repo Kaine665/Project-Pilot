@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Send, Loader2, Square, ArrowLeft, UserPlus } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/client/i18n/use-translations';
 import { ChatBubble } from '@/components/chat-bubble';
 import type { Agent } from '@/types';
 import type { ChatMessage, ChatToolCall, ChatSSEEvent, ContentBlock } from '@/types';

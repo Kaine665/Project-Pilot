@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useTranslations, useLocale } from 'next-intl';
-import { useRouter, usePathname } from '@/i18n/routing';
+import { useTranslations, useLocale } from '@/client/i18n/use-translations';
+import { useRouter, usePathname } from '@/client/i18n/routing';
 import { TopNav } from '@/components/top-nav';
 import { Button } from '@/components/ui/button';
 import { Check, X, Loader2, Brain, Wrench, Palette, Database, Eye, Settings, ShieldAlert, Sparkles, Satellite } from 'lucide-react';
@@ -694,7 +694,10 @@ export default function SettingsPage() {
   };
 
   const switchLocale = (newLocale: string) => {
-    router.push(pathname, { locale: newLocale });
+    import('i18next').then((mod) => {
+      mod.default.changeLanguage(newLocale);
+    }).catch(() => {});
+    router.push(pathname);
   };
 
   const handleExport = async () => {

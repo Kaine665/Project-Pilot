@@ -9,7 +9,7 @@ import {
   Plus,
   X,
 } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/client/i18n/use-translations';
 import { Badge } from '@/components/ui/badge';
 import type {
   Section,
