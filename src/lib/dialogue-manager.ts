@@ -16,8 +16,7 @@ import {
   readJsonFile,
   writeJsonFile,
 } from '@/lib/file-store';
-import { sidecarFetch } from '@/lib/sidecar-bridge';
-import { generateSessionId } from '@/lib/chat-managers/agent-chat-manager';
+import { agentChatManager, generateSessionId } from '@/lib/chat-managers/agent-chat-manager';
 import { loadSession } from '@/lib/chat-managers/agent-chat-session-store';
 import type {
   AgentDialogue,
@@ -250,27 +249,27 @@ async function callAgentForDialogue(
 
   const sessionId = generateSessionId();
 
-  // 通过 sidecar 启动会话
-  const startRes = await sidecarFetch('/agent-chat/start', {
-    method: 'POST',
-    body: JSON.stringify({
-      sessionId,
-      agentId: agent.id,
-      message,
-      flowContext: dialogue.projectKey ? {
-        projectKey: dialogue.projectKey,
-        projectName: dialogue.projectKey,
-        flowDataPath: '',
-      } : undefined,
-      initialTitle: `[Dialogue R${round}] ${dialogue.title}`,
-      background: true,
-    }),
-  });
-
-  if (!startRes.ok) {
-    const err = await startRes.text();
-    throw new Error(`Failed to start agent session for ${speaker}: ${err}`);
-  }
+  const runId = await agentChatManager.start(
+    sessionId,
+    agent.id,
+    message,
+    dialogue.projectKey ? {
+      projectKey: dialogue.projectKey,
+      projectName: dialogue.projectKey,
+      flowDataPath: '',
+    } : undefined,
+    undefined,
+    `[Dialogue R${round}] ${dialogue.title}`,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    true,
+  );
 
   // 轮询等待完成
   const reply = await waitForSessionComplete(sessionId);
@@ -294,37 +293,25 @@ async function waitForSessionComplete(sessionId: string): Promise<string> {
   while (Date.now() - start < POLL_TIMEOUT_MS) {
     await sleep(POLL_INTERVAL_MS);
 
-    const res = await sidecarFetch(
-      `/agent-chat/status?sessionId=${encodeURIComponent(sessionId)}`,
-    );
-    if (!res.ok) continue;
+    const statusInfo = agentChatManager.getStatus(sessionId);
+    const status = statusInfo?.status ?? 'none';
 
-    const data = await res.json() as {
-      status: string;
-    };
-
-    if (data.status === 'running' || data.status === 'awaiting') {
+    if (status === 'running' || status === 'awaiting') {
       continue;
     }
 
-    if (data.status === 'failed' || data.status === 'stopped') {
-      throw new Error(`Agent session ${data.status}: ${sessionId}`);
+    if (status === 'failed' || status === 'stopped') {
+      throw new Error(`Agent session ${status}: ${sessionId}`);
     }
 
-    if (data.status === 'completed' || data.status === 'none') {
-      // 尝试从内存消息中提取
-      const snapshotRes = await sidecarFetch(
-        `/agent-chat/runtime-snapshot?sessionId=${encodeURIComponent(sessionId)}`,
-      );
-      if (snapshotRes.ok) {
-        const snapshot = await snapshotRes.json() as {
-          available?: boolean;
-          messages?: Array<{ role: string; content: string }>;
-        };
-        const runtimeMessages = snapshot.available ? (snapshot.messages ?? []) : [];
-        const lastAssistant = [...runtimeMessages].reverse().find(m => m.role === 'assistant');
+    if (status === 'completed' || status === 'none') {
+      const snapshot = agentChatManager.getRuntimeSnapshot(sessionId);
+      if (snapshot && snapshot.messages.length > 0) {
+        const lastAssistant = [...snapshot.messages].reverse().find(m => m.role === 'assistant');
         if (lastAssistant?.content) {
-          return lastAssistant.content;
+          return typeof lastAssistant.content === 'string'
+            ? lastAssistant.content
+            : JSON.stringify(lastAssistant.content);
         }
       }
 
@@ -340,7 +327,7 @@ async function waitForSessionComplete(sessionId: string): Promise<string> {
       }
 
       // 如果 status 是 none 且没有消息，可能还没开始，继续等
-      if (data.status === 'none') {
+      if (status === 'none') {
         continue;
       }
 
