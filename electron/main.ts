@@ -3,12 +3,12 @@ import type { NotificationConstructorOptions } from 'electron';
 import { ChildProcess } from 'child_process';
 import path from 'path';
 import { findAvailablePort } from './port-finder';
-import { startNextServer } from './server';
+import { startBackendServer } from './server';
 import { checkCliHealth } from './cli-check';
 
 const isDev = !!process.env.ELECTRON_DEV;
 const DEV_PORT = 4000;
-const APP_ENTRY_PATH = '/zh/flows/projects';
+const APP_ENTRY_PATH = '/flows/projects';
 
 let mainWindow: BrowserWindow | null = null;
 let serverProcess: ChildProcess | null = null;
@@ -138,17 +138,14 @@ function createMainWindow() {
 // ── 启动流程 ──────────────────────────────────────────
 app.whenReady().then(async () => {
   if (isDev) {
-    // Dev 模式：假�?Next.js dev server 已在外部运行
     serverPort = DEV_PORT;
     createMainWindow();
     return;
   }
 
-  // 生产模式：启动内�?standalone server
   let splash: BrowserWindow | null = null;
 
   try {
-    // 显示 splash
     splash = new BrowserWindow({
       width: 400,
       height: 300,
@@ -159,18 +156,14 @@ app.whenReady().then(async () => {
     });
     splash.loadFile(path.join(__dirname, 'splash.html'));
 
-    // 找端�?
     serverPort = await findAvailablePort(4000);
 
-    // 启动 server
-    serverProcess = await startNextServer(serverPort);
+    serverProcess = await startBackendServer(serverPort);
 
-    // �?splash，开主窗�?
     splash.close();
     splash = null;
     createMainWindow();
 
-    // 延迟检�?CLI
     setTimeout(() => {
       checkCliHealth(serverPort).catch(() => {});
     }, 3000);
@@ -179,7 +172,7 @@ app.whenReady().then(async () => {
     if (splash) splash.close();
     dialog.showErrorBox(
       '启动失败',
-      `Next.js 服务器启动失败：\n${err instanceof Error ? err.message : String(err)}\n\n请尝试重新安装或联系开发者。`
+      `Hono 后端服务器启动失败：\n${err instanceof Error ? err.message : String(err)}\n\n请尝试重新安装或联系开发者。`
     );
     app.quit();
   }

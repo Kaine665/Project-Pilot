@@ -38,7 +38,7 @@ async function hasReusableDevServer() {
     return false;
   }
 
-  return probe(`http://127.0.0.1:${DEV_PORT}/api/settings/health`);
+  return probe(`http://127.0.0.1:${DEV_PORT}/health`);
 }
 
 function run(command, args, extraEnv = {}) {
@@ -84,7 +84,13 @@ if (reuseExisting) {
   run(getCommand("electron"), ["."], { ELECTRON_DEV: "1" });
 } else {
   console.log(
-    `[electron-dev] No reusable dev server detected on port ${DEV_PORT}, starting Next.js and Electron together`,
+    `[electron-dev] No reusable dev server detected on port ${DEV_PORT}, starting Vite + Hono and Electron together`,
   );
-  run(getCommand("npm"), ["run", "electron:dev:base"]);
+  run(getCommand("npx"), [
+    "concurrently",
+    "--kill-others",
+    `"vite"`,
+    `"bun run --tsconfig tsconfig.json src/server/index.ts"`,
+    `"wait-on tcp:127.0.0.1:${DEV_PORT} && cross-env ELECTRON_DEV=1 electron ."`,
+  ]);
 }
