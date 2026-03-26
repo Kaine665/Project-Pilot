@@ -1,0 +1,29 @@
+/**
+ * 对 Agents 页截图，用于 UI 工作流程实验归档。
+ * 用法：先在本 worktree 启动 npm run dev，再执行
+ *   node tmp/ui-workflow-experiment-capture.mjs [port] [label]
+ * 例：node tmp/ui-workflow-experiment-capture.mjs 4000 workflow-a
+ */
+import { chromium } from "playwright";
+import { mkdir } from "fs/promises";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const port = process.argv[2] ?? "4000";
+const label = process.argv[3] ?? "capture";
+const outDir = join(__dirname, "..", "tmp", "ui-workflow-experiment");
+const url = `http://127.0.0.1:${port}/zh/flows/agents`;
+
+await mkdir(outDir, { recursive: true });
+
+const browser = await chromium.launch({ headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+await page.goto(url, { waitUntil: "networkidle", timeout: 120000 });
+await page.waitForTimeout(2000);
+
+const safe = String(label).replace(/[^a-zA-Z0-9_-]/g, "_");
+const path = join(outDir, `${safe}.png`);
+await page.screenshot({ path, fullPage: true });
+console.log("Wrote", path);
+await browser.close();
