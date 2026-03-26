@@ -21,7 +21,8 @@
     "electron:build": "cross-env NODE_ENV=production npm run build && npm run electron:compile && electron-builder --win",
     "electron:start": "electron .",
     "ui-workflow:capture": "node tmp/ui-workflow-experiment-capture.mjs",
-    "ui-workflow:train": "powershell -NoProfile -ExecutionPolicy Bypass -File tmp/run-ui-workflow-training.ps1"
+    "ui-workflow:train": "node tmp/run-ui-workflow-training.mjs",
+    "ui-workflow:train:ps1": "powershell -NoProfile -ExecutionPolicy Bypass -File tmp/run-ui-workflow-training.ps1"
   },
   "build": {
     "appId": "com.projectpilot.app",
