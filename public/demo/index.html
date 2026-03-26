@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ProjectPilot Demo</title>
+    <meta
+      name="description"
+      content="ProjectPilot demo: multi-agent chat, prompt orchestration, and todo tracking in one workspace."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #09111f;
+        --panel: rgba(12, 22, 39, 0.78);
+        --panel-strong: rgba(17, 28, 48, 0.92);
+        --line: rgba(255, 255, 255, 0.12);
+        --text: #f3f7ff;
+        --muted: rgba(243, 247, 255, 0.72);
+        --cyan: #68e1fd;
+        --blue: #78a6ff;
+        --gold: #ffd66b;
+        --shadow: 0 30px 90px rgba(0, 0, 0, 0.38);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Manrope", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(104, 225, 253, 0.16), transparent 32%),
+          radial-gradient(circle at top right, rgba(120, 166, 255, 0.18), transparent 28%),
+          linear-gradient(180deg, #0a1220 0%, #08101b 100%);
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .shell {
+        width: min(1180px, calc(100vw - 40px));
+        margin: 0 auto;
+        padding: 28px 0 60px;
+      }
+
+      .topline {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--muted);
+        font-size: 13px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .topline::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: linear-gradient(135deg, var(--cyan), var(--blue));
+        box-shadow: 0 0 20px rgba(104, 225, 253, 0.8);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+        gap: 28px;
+        align-items: center;
+        padding-top: 22px;
+      }
+
+      h1 {
+        margin: 18px 0 16px;
+        font-size: clamp(42px, 6vw, 82px);
+        line-height: 0.95;
+        letter-spacing: -0.06em;
+      }
+
+      .lede {
+        max-width: 640px;
+        margin: 0 0 28px;
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1.7;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 50px;
+        padding: 0 20px;
+        border-radius: 14px;
+        border: 1px solid transparent;
+        font-weight: 700;
+        text-decoration: none;
+        transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+      }
+
+      .button:hover {
+        transform: translateY(-2px);
+      }
+
+      .button-primary {
+        color: #05101e;
+        background: linear-gradient(135deg, var(--cyan), #a5f3fc);
+        box-shadow: 0 12px 40px rgba(104, 225, 253, 0.24);
+      }
+
+      .button-secondary {
+        border-color: var(--line);
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .preview {
+        position: relative;
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: 26px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .preview::before,
+      .preview::after {
+        content: "";
+        position: absolute;
+        inset: auto;
+        width: 220px;
+        height: 220px;
+        border-radius: 999px;
+        filter: blur(70px);
+        opacity: 0.45;
+        pointer-events: none;
+      }
+
+      .preview::before {
+        top: -40px;
+        right: -40px;
+        background: rgba(104, 225, 253, 0.34);
+      }
+
+      .preview::after {
+        bottom: -70px;
+        left: -70px;
+        background: rgba(120, 166, 255, 0.34);
+      }
+
+      .preview-video {
+        position: relative;
+        width: 100%;
+        display: block;
+        border-radius: 18px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+        z-index: 1;
+      }
+
+      .chips {
+        position: absolute;
+        inset: 18px 18px auto auto;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        z-index: 2;
+        pointer-events: none;
+      }
+
+      .chip {
+        padding: 10px 12px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 14px;
+        background: rgba(5, 12, 24, 0.7);
+        backdrop-filter: blur(12px);
+        color: #f8fbff;
+        font-size: 12px;
+        font-family: "IBM Plex Mono", monospace;
+        animation: float 5.4s ease-in-out infinite;
+      }
+
+      .chip:nth-child(2) {
+        animation-delay: 1s;
+      }
+
+      .chip:nth-child(3) {
+        animation-delay: 2s;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 20px;
+      }
+
+      .stat {
+        padding: 16px 18px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: rgba(7, 15, 28, 0.72);
+      }
+
+      .stat-label {
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .stat-value {
+        margin-top: 6px;
+        font-size: 26px;
+        font-weight: 800;
+        letter-spacing: -0.04em;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 18px;
+        margin-top: 26px;
+      }
+
+      .card {
+        padding: 22px;
+        border-radius: 22px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        backdrop-filter: blur(10px);
+      }
+
+      .card-kicker {
+        display: inline-block;
+        margin-bottom: 14px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--gold);
+      }
+
+      .card h2 {
+        margin: 0 0 10px;
+        font-size: 22px;
+        letter-spacing: -0.04em;
+      }
+
+      .card p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.75;
+      }
+
+      .gallery {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 18px;
+      }
+
+      .gallery img {
+        width: 100%;
+        display: block;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
+      }
+
+      .footer {
+        margin-top: 26px;
+        padding: 16px 20px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--panel-strong);
+        color: var(--muted);
+      }
+
+      .footer strong {
+        color: var(--text);
+      }
+
+      @keyframes float {
+        0%, 100% {
+          transform: translateY(0);
+        }
+
+        50% {
+          transform: translateY(-8px);
+        }
+      }
+
+      @media (max-width: 980px) {
+        .hero,
+        .grid,
+        .gallery,
+        .stats {
+          grid-template-columns: 1fr;
+        }
+
+        .shell {
+          width: min(100vw - 28px, 1180px);
+          padding-top: 20px;
+        }
+
+        .preview {
+          order: -1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <span class="topline">ProjectPilot Demo</span>
+
+      <section class="hero">
+        <div>
+          <h1>Move work forward with people and agents in one workspace.</h1>
+          <p class="lede">
+            ProjectPilot combines chat, prompt rules, docs, memory, and todo execution into one operating
+            surface. It is not another AI chatbox. It is a work system.
+          </p>
+
+          <div class="actions">
+            <a class="button button-primary" href="./projectpilot-demo.mp4">Download the demo video</a>
+            <a class="button button-secondary" href="./projectpilot-chat-workspace.png">View the workspace shot</a>
+          </div>
+
+          <div class="stats">
+            <div class="stat">
+              <div class="stat-label">Surface</div>
+              <div class="stat-value">Chat + Tasks</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Memory</div>
+              <div class="stat-value">Docs + Context</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Mode</div>
+              <div class="stat-value">Human x Agent</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="preview">
+          <div class="chips">
+            <div class="chip">A2A / A2P / P2P</div>
+            <div class="chip">Prompt blocks + skills</div>
+            <div class="chip">Shared todo lifecycle</div>
+          </div>
+
+          <video
+            class="preview-video"
+            src="./projectpilot-demo.mp4"
+            poster="./projectpilot-chat-workspace.png"
+            autoplay
+            muted
+            loop
+            playsinline
+            controls
+          ></video>
+        </div>
+      </section>
+
+      <section class="grid">
+        <article class="card">
+          <span class="card-kicker">01</span>
+          <h2>Chat that turns into execution</h2>
+          <p>
+            Run conversations with agents, keep context alive across sessions, and push work instead of collecting
+            isolated answers.
+          </p>
+        </article>
+
+        <article class="card">
+          <span class="card-kicker">02</span>
+          <h2>Prompt infrastructure not prompt chaos</h2>
+          <p>
+            Blend global rules, project rules, docs, and skills into a repeatable system that agents can actually
+            use.
+          </p>
+        </article>
+
+        <article class="card">
+          <span class="card-kicker">03</span>
+          <h2>Todo state with accountability</h2>
+          <p>
+            Claim tasks, track stale work, bind active execution to todos, and keep the team aligned on what is
+            moving.
+          </p>
+        </article>
+      </section>
+
+      <section class="gallery">
+        <img src="./projectpilot-chat-workspace.png" alt="ProjectPilot chat workspace" />
+        <img src="./projectpilot-prompts-overview.png" alt="ProjectPilot prompts overview" />
+        <img src="./projectpilot-todo-board.png" alt="ProjectPilot todo board" />
+      </section>
+
+      <section class="footer">
+        <strong>Note:</strong> this page is intentionally self-contained so it can be shipped as a lightweight demo
+        artifact alongside the repository.
+      </section>
+    </main>
+  </body>
+</html>
