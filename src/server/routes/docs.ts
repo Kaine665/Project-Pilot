@@ -2,11 +2,9 @@ import { Hono } from 'hono';
 import { promises as fs } from 'fs';
 import {
   getDesignDocsDir,
-  getDesignDocsIndexPath,
   getDesignDocFilePath,
-  readJsonFile,
-  writeJsonFile,
 } from '@/lib/file-store';
+import { readDocsIndexFromDocuments, saveDocsIndexToDocuments } from '@/lib/documents-store';
 import { badRequest, notFound } from '@/lib/http-error';
 import type { DocEntry, DocsIndexData, DocStatus, CategoryDef } from '@/types';
 
@@ -15,11 +13,15 @@ const app = new Hono();
 const DEFAULT_INDEX: DocsIndexData = { projects: {} };
 
 async function readIndex(): Promise<DocsIndexData> {
-  return readJsonFile<DocsIndexData>(getDesignDocsIndexPath(), DEFAULT_INDEX);
+  const data = await readDocsIndexFromDocuments();
+  if (data.projects && Object.keys(data.projects).length > 0) {
+    return data;
+  }
+  return DEFAULT_INDEX;
 }
 
 async function writeIndex(data: DocsIndexData): Promise<void> {
-  await writeJsonFile(getDesignDocsIndexPath(), data);
+  await saveDocsIndexToDocuments(data);
 }
 
 function findEntry(data: DocsIndexData, id: string) {
@@ -130,7 +132,7 @@ app.post('/', async (c) => {
 
 app.get('/tags', async (c) => {
   const projectKey = c.req.query('project');
-  const data = await readJsonFile<DocsIndexData>(getDesignDocsIndexPath(), DEFAULT_INDEX);
+  const data = await readIndex();
 
   const tagCounts = new Map<string, number>();
   const projectKeys = projectKey ? [projectKey] : Object.keys(data.projects);
@@ -166,7 +168,7 @@ app.post('/batch', async (c) => {
       return c.json({ error: 'action and non-empty ids[] are required' }, 400);
     }
 
-    const data = await readJsonFile<DocsIndexData>(getDesignDocsIndexPath(), DEFAULT_INDEX);
+    const data = await readIndex();
     const now = new Date().toISOString();
     const idSet = new Set(ids as string[]);
     let updated = 0;
@@ -247,7 +249,7 @@ app.post('/batch', async (c) => {
         );
     }
 
-    await writeJsonFile(getDesignDocsIndexPath(), data);
+    await writeIndex(data);
     return c.json({ ok: true, updated });
   } catch (error) {
     console.error('Batch operation failed:', error);
@@ -261,7 +263,7 @@ app.post('/batch', async (c) => {
 
 app.get('/categories', async (c) => {
   const projectKey = c.req.query('project');
-  const data = await readJsonFile<DocsIndexData>(getDesignDocsIndexPath(), DEFAULT_INDEX);
+  const data = await readIndex();
   const categories = data.categories ?? [];
 
   if (projectKey) {
@@ -283,7 +285,7 @@ app.post('/categories', async (c) => {
       return c.json({ error: 'name is required' }, 400);
     }
 
-    const data = await readJsonFile<DocsIndexData>(getDesignDocsIndexPath(), DEFAULT_INDEX);
+    const data = await readIndex();
     if (!data.categories) data.categories = [];
 
     const duplicate = data.categories.find(
@@ -305,7 +307,7 @@ app.post('/categories', async (c) => {
     };
 
     data.categories.push(category);
-    await writeJsonFile(getDesignDocsIndexPath(), data);
+    await writeIndex(data);
 
     return c.json({ ok: true, category });
   } catch (error) {
@@ -321,7 +323,7 @@ app.post('/categories', async (c) => {
 app.patch('/categories/:id', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json();
-  const data = await readJsonFile<DocsIndexData>(getDesignDocsIndexPath(), DEFAULT_INDEX);
+  const data = await readIndex();
   const categories = data.categories ?? [];
   const category = categories.find((cat) => cat.id === id);
 
@@ -355,13 +357,13 @@ app.patch('/categories/:id', async (c) => {
 
   category.updatedAt = new Date().toISOString();
 
-  await writeJsonFile(getDesignDocsIndexPath(), data);
+  await writeIndex(data);
   return c.json({ ok: true, category });
 });
 
 app.delete('/categories/:id', async (c) => {
   const id = c.req.param('id');
-  const data = await readJsonFile<DocsIndexData>(getDesignDocsIndexPath(), DEFAULT_INDEX);
+  const data = await readIndex();
   const categories = data.categories ?? [];
   const idx = categories.findIndex((cat) => cat.id === id);
 
@@ -382,7 +384,7 @@ app.delete('/categories/:id', async (c) => {
     }
   }
 
-  await writeJsonFile(getDesignDocsIndexPath(), data);
+  await writeIndex(data);
   return c.json({ ok: true });
 });
 
@@ -392,7 +394,7 @@ app.delete('/categories/:id', async (c) => {
 
 app.get('/:id', async (c) => {
   const id = c.req.param('id');
-  const data = await readJsonFile<DocsIndexData>(getDesignDocsIndexPath(), DEFAULT_INDEX);
+  const data = await readIndex();
   const found = findEntry(data, id);
   if (!found) throw notFound('Doc not found');
 
@@ -407,7 +409,7 @@ app.get('/:id', async (c) => {
 app.patch('/:id', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json();
-  const data = await readJsonFile<DocsIndexData>(getDesignDocsIndexPath(), DEFAULT_INDEX);
+  const data = await readIndex();
   const found = findEntry(data, id);
   if (!found) throw notFound('Doc not found');
 
@@ -473,13 +475,13 @@ app.patch('/:id', async (c) => {
     await fs.writeFile(getDesignDocFilePath(entry.fileName), body.content, 'utf-8');
   }
 
-  await writeJsonFile(getDesignDocsIndexPath(), data);
+  await writeIndex(data);
   return c.json({ ok: true, entry });
 });
 
 app.delete('/:id', async (c) => {
   const id = c.req.param('id');
-  const data = await readJsonFile<DocsIndexData>(getDesignDocsIndexPath(), DEFAULT_INDEX);
+  const data = await readIndex();
   const found = findEntry(data, id);
   if (!found) throw notFound('Doc not found');
 
@@ -513,7 +515,7 @@ app.delete('/:id', async (c) => {
   if (found.entries.length === 0) {
     delete data.projects[found.projectKey];
   }
-  await writeJsonFile(getDesignDocsIndexPath(), data);
+  await writeIndex(data);
 
   return c.json({ ok: true });
 });

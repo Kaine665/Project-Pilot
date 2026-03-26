@@ -1,25 +1,24 @@
 import { Hono } from 'hono';
 import { promises as fs } from 'fs';
 import {
-  getContextIndexPath,
   getContextDir,
   getContextFilePath,
-  readJsonFile,
-  writeJsonFile,
 } from '@/lib/file-store';
+import {
+  readContextIndexFromDocuments,
+  saveContextIndexToDocuments,
+} from '@/lib/documents-store';
 import { badRequest, notFound, conflict } from '@/lib/http-error';
 import type { ContextEntry, ContextIndexData } from '@/types';
 
 const app = new Hono();
 
-const DEFAULT_INDEX: ContextIndexData = { entries: [] };
-
 async function readIndex(): Promise<ContextIndexData> {
-  return readJsonFile<ContextIndexData>(getContextIndexPath(), DEFAULT_INDEX);
+  return readContextIndexFromDocuments();
 }
 
 async function writeIndex(data: ContextIndexData): Promise<void> {
-  await writeJsonFile(getContextIndexPath(), data);
+  await saveContextIndexToDocuments(data);
 }
 
 export function generateContextSummary(content: string, format: 'json' | 'markdown' | 'text'): string {
@@ -132,7 +131,7 @@ app.post('/', async (c) => {
 
 app.get('/:id', async (c) => {
   const id = c.req.param('id');
-  const data = await readJsonFile<ContextIndexData>(getContextIndexPath(), DEFAULT_INDEX);
+  const data = await readIndex();
   const entry = data.entries.find((e) => e.id === id);
   if (!entry) throw notFound('Entry not found');
 
@@ -148,7 +147,7 @@ app.get('/:id', async (c) => {
 app.patch('/:id', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json();
-  const data = await readJsonFile<ContextIndexData>(getContextIndexPath(), DEFAULT_INDEX);
+  const data = await readIndex();
   const entry = data.entries.find((e) => e.id === id);
   if (!entry) throw notFound('Entry not found');
 
@@ -235,13 +234,13 @@ app.patch('/:id', async (c) => {
     }
   }
 
-  await writeJsonFile(getContextIndexPath(), data);
+  await writeIndex(data);
   return c.json({ ok: true, entry });
 });
 
 app.delete('/:id', async (c) => {
   const id = c.req.param('id');
-  const data = await readJsonFile<ContextIndexData>(getContextIndexPath(), DEFAULT_INDEX);
+  const data = await readIndex();
   const idx = data.entries.findIndex((e) => e.id === id);
   if (idx === -1) throw notFound('Entry not found');
 
@@ -252,7 +251,7 @@ app.delete('/:id', async (c) => {
   } catch { /* ignore */ }
 
   data.entries.splice(idx, 1);
-  await writeJsonFile(getContextIndexPath(), data);
+  await writeIndex(data);
 
   return c.json({ ok: true });
 });
