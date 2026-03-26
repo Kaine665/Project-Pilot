@@ -249,3 +249,7 @@ git worktree list                      # 查看所有 worktree
 git worktree remove <path>            # 删除 worktree
 git worktree prune                    # 清理无效引用
 ```
+
+## 另见
+
+- [UI 工作流程对比实验（Agents）](./ui-workflow-experiment.md) — 用多个 worktree 并行试不同设计流程终点并截图评估。
