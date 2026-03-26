@@ -1,16 +1,20 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Bot, X, Maximize2,
   Terminal, FileText, Globe, Users, ShieldOff, ListTodo, Eye, Check,
   Database, Brain, Code, Zap, Search, Shield, Wrench, BookOpen, HardDrive,
   type LucideIcon,
 } from 'lucide-react';
-import type { Agent, AgentCapabilities, ContextEntry, ProviderId } from '@/types';
+import type {
+  Agent, AgentCapabilities, ContextEntry, OpenAIReasoningEffort, ProviderId,
+} from '@/types';
 import type { ProjectEntry } from '@/components/project-context';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
+import { resolveAgentAvatarSrc } from '@/lib/agent-avatar';
+import { cn } from '@/lib/utils';
 
 // ── Icon picker presets ──
 
@@ -37,6 +41,40 @@ ICON_MAP['sparkles'] = Bot;
 export function AgentIcon({ iconKey, className }: { iconKey?: string; className?: string }) {
   const Icon = (iconKey && ICON_MAP[iconKey]) || Bot;
   return <Icon className={className} />;
+}
+
+/** 卡通/职业风静态头像（/public/agents）；加载失败时回退 Lucide 图标 */
+export function AgentAvatar({
+  slug,
+  iconKey,
+  className,
+  alt,
+}: {
+  slug?: string | null;
+  iconKey?: string | null;
+  className?: string;
+  alt?: string;
+}) {
+  const src = useMemo(() => resolveAgentAvatarSrc(slug, iconKey), [slug, iconKey]);
+  const [failed, setFailed] = useState(false);
+  const onError = useCallback(() => setFailed(true), []);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  if (failed) {
+    return <AgentIcon iconKey={iconKey ?? undefined} className={className} />;
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt ?? ''}
+      className={cn('pointer-events-none select-none object-cover', className)}
+      onError={onError}
+    />
+  );
 }
 
 // ── Capability items config ──
@@ -72,6 +110,7 @@ export type FormData = {
   projectKey: string; // '' = 全局
   defaultProvider: ProviderId | ''; // '' = 继承全局设置
   defaultModel: string;             // '' = 继承全局设置
+  defaultOpenAIReasoningEffort: OpenAIReasoningEffort | '';
   contextStrategy: 'additive' | 'exclusive';
 };
 
@@ -84,6 +123,7 @@ export const emptyForm: FormData = {
   projectKey: '',
   defaultProvider: '',
   defaultModel: '',
+  defaultOpenAIReasoningEffort: '',
   contextStrategy: 'additive',
 };
 
@@ -102,6 +142,7 @@ export function agentToForm(a: Agent): FormData {
     projectKey: a.projectKey ?? '',
     defaultProvider: a.defaultProvider ?? '',
     defaultModel: a.defaultModel ?? '',
+    defaultOpenAIReasoningEffort: a.defaultOpenAIReasoningEffort ?? '',
     contextStrategy: a.contextStrategy ?? 'additive',
   };
 }
@@ -313,7 +354,7 @@ export function SettingsForm({
               图标
             </label>
             <div className="grid grid-cols-5 gap-3">
-              {AGENT_ICON_OPTIONS.map(({ key, icon: Icon, label }) => {
+              {AGENT_ICON_OPTIONS.map(({ key, label }) => {
                 const selected = form.icon === key || (!form.icon && key === 'bot');
                 return (
                   <button
@@ -327,7 +368,7 @@ export function SettingsForm({
                         : 'border-zinc-200 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:text-zinc-300'
                     }`}
                   >
-                    <Icon className="h-6 w-6" />
+                    <AgentAvatar iconKey={key} className="h-9 w-9 rounded-lg" />
                     <span className="truncate w-full text-center">{label}</span>
                   </button>
                 );
@@ -583,6 +624,7 @@ export function SettingsForm({
                   ...f,
                   defaultProvider: e.target.value as ProviderId | '',
                   defaultModel: '',
+                  defaultOpenAIReasoningEffort: '',
                 }))}
                 className="h-11 w-36 shrink-0 rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
               >
@@ -592,16 +634,30 @@ export function SettingsForm({
                 ))}
               </select>
               {form.defaultProvider ? (
+                <div className="flex-1 space-y-2">
+                  <input
+                    list="agent-default-model-options"
+                    value={form.defaultModel}
+                    onChange={e => setForm(f => ({ ...f, defaultModel: e.target.value }))}
+                    placeholder="鐣欑┖缁ф壙鍏ㄥ眬锛屾垨鐩存帴杈撳叆妯″瀷 ID"
+                    className="h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+                  />
+                  <datalist id="agent-default-model-options">
+                    {getProviderPreset(form.defaultProvider as ProviderId).models.map(m => (
+                      <option key={m.id} value={m.id}>{m.label || m.id}</option>
+                    ))}
+                  </datalist>
                 <select
                   value={form.defaultModel}
                   onChange={e => setForm(f => ({ ...f, defaultModel: e.target.value }))}
-                  className="h-11 flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+                  className="h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
                 >
                   <option value="">继承全局</option>
                   {getProviderPreset(form.defaultProvider as ProviderId).models.map(m => (
                     <option key={m.id} value={m.id}>{m.label || m.id}</option>
                   ))}
                 </select>
+                </div>
               ) : (
                 <input
                   disabled
@@ -610,10 +666,45 @@ export function SettingsForm({
                 />
               )}
             </div>
-            {form.defaultProvider && form.defaultModel && (
+            {form.defaultProvider && (
               <p className="mt-1.5 text-xs text-zinc-500">
-                {form.defaultProvider} / {form.defaultModel}
+                {form.defaultProvider} / {form.defaultModel || '继承全局默认'}
               </p>
+            )}
+            {form.defaultProvider === 'openai' && (
+              <div className="mt-3">
+                <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  OpenAI Reasoning
+                </label>
+                <div className="grid grid-cols-5 gap-2">
+                  {([
+                    { value: 'minimal' as OpenAIReasoningEffort, label: 'Minimal' },
+                    { value: 'low' as OpenAIReasoningEffort, label: 'Low' },
+                    { value: 'medium' as OpenAIReasoningEffort, label: 'Medium' },
+                    { value: 'high' as OpenAIReasoningEffort, label: 'High' },
+                    { value: 'xhigh' as OpenAIReasoningEffort, label: 'XHigh' },
+                  ]).map((opt) => {
+                    const active = form.defaultOpenAIReasoningEffort === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setForm(f => ({
+                          ...f,
+                          defaultOpenAIReasoningEffort: f.defaultOpenAIReasoningEffort === opt.value ? '' : opt.value,
+                        }))}
+                        className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                          active
+                            ? 'border-zinc-900 bg-zinc-100 text-zinc-900 dark:border-zinc-100 dark:bg-zinc-800 dark:text-zinc-100'
+                            : 'border-zinc-200 text-zinc-500 hover:border-zinc-400 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-zinc-500'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             )}
           </div>
 

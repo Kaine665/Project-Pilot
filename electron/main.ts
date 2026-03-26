@@ -1,17 +1,29 @@
 import { app, BrowserWindow, dialog, Menu, ipcMain, shell, Notification } from 'electron';
-import { ChildProcess } from 'child_process';
+import type { NotificationConstructorOptions } from 'electron';
+import { ChildProcess, execSync } from 'child_process';
 import path from 'path';
 import { findAvailablePort } from './port-finder';
-import { startNextServer } from './server';
+import { startBackendServer } from './server';
 import { checkCliHealth } from './cli-check';
 
 const isDev = !!process.env.ELECTRON_DEV;
-const DEV_PORT = 4000;
-const APP_ENTRY_PATH = '/zh/flows/projects';
+const APP_ENTRY_PATH = '/flows/projects';
+
+/** develop-static 根目录（main 编译在 electron/dist 下） */
+const projectRoot = path.join(__dirname, '..', '..');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { loadDevServerConfig } = require(path.join(
+  projectRoot,
+  'config',
+  'load-dev-server.cjs',
+)) as { loadDevServerConfig: (root: string) => { clientPort: number; clientLoadOrigin: string } };
 
 let mainWindow: BrowserWindow | null = null;
 let serverProcess: ChildProcess | null = null;
-let serverPort: number = DEV_PORT;
+let backendShutdownDone = false;
+let serverPort = loadDevServerConfig(projectRoot).clientPort;
+/** 主窗口 loadURL 使用的 origin（开发态来自 config/dev-server.json） */
+let windowLoadOrigin = `http://127.0.0.1:${serverPort}`;
 
 // ── 单实例锁 ──────────────────────────────────────────
 const gotLock = app.requestSingleInstanceLock();
@@ -60,40 +72,39 @@ ipcMain.handle(
       icon?: string;
       tag?: string;
       sessionId?: string;
+      requireInteraction?: boolean;
+      focusAppOnClick?: boolean;
     }
   ) => {
     try {
-      const notificationOptions: any = {
+      const notificationOptions: NotificationConstructorOptions & {
+        requireInteraction?: boolean;
+      } = {
         title: options.title,
         body: options.body,
         icon: options.icon,
-        // Phase 3: 持久化 - 使通知在系统通知中心中保持可见
-        // 用户需要手动关闭，而不是自动消失
-        requireInteraction: true,
+        requireInteraction: options.requireInteraction ?? true,
       };
 
       const notification = new Notification(notificationOptions);
 
-      // Phase 3: 点击处理 - 点击通知时聚焦应用并导航到会话
-      (notification as any).onclick = () => {
-        // 聚焦主窗口
-        if (mainWindow) {
+      notification.on('click', () => {
+        if (options.focusAppOnClick !== false && mainWindow) {
           if (mainWindow.isMinimized()) mainWindow.restore();
           mainWindow.focus();
         }
 
-        // 发送事件到渲染进程，告知用户点击了通知
-        // 渲染进程可以据此导航到对应会话
-        event.sender.send('notification-clicked', {
-          sessionId: options.sessionId,
-          timestamp: Date.now(),
-        });
-      };
+        if (options.sessionId) {
+          event.sender.send('notification-clicked', {
+            sessionId: options.sessionId,
+            timestamp: Date.now(),
+          });
+        }
+      });
 
-      // Phase 3: 关闭处理 - 跟踪通知关闭状态（用于分析）
-      (notification as any).onclose = () => {
+      notification.on('close', () => {
         console.debug(`[Notification] 用户关闭通知: ${options.title}`);
-      };
+      });
 
       notification.show();
       return true;
@@ -119,11 +130,19 @@ function createMainWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
+      // 开发态加载 Vite：需允许 eval/inline，否则脚本不执行 → 白屏（生产仍为 true）
+      webSecurity: !isDev,
     },
   });
   mainWindow.removeMenu();
 
-  mainWindow.loadURL(`http://127.0.0.1:${serverPort}${APP_ENTRY_PATH}`);
+  if (isDev) {
+    mainWindow.webContents.on('did-fail-load', (_e, code, desc, validatedURL) => {
+      console.error('[electron] did-fail-load', code, desc, validatedURL);
+    });
+  }
+
+  mainWindow.loadURL(`${windowLoadOrigin}${APP_ENTRY_PATH}`);
 
   mainWindow.once('ready-to-show', () => {
     if (!mainWindow) return;
@@ -138,17 +157,16 @@ function createMainWindow() {
 // ── 启动流程 ──────────────────────────────────────────
 app.whenReady().then(async () => {
   if (isDev) {
-    // Dev 模式：假�?Next.js dev server 已在外部运行
-    serverPort = DEV_PORT;
+    const devCfg = loadDevServerConfig(projectRoot);
+    serverPort = devCfg.clientPort;
+    windowLoadOrigin = devCfg.clientLoadOrigin;
     createMainWindow();
     return;
   }
 
-  // 生产模式：启动内�?standalone server
   let splash: BrowserWindow | null = null;
 
   try {
-    // 显示 splash
     splash = new BrowserWindow({
       width: 400,
       height: 300,
@@ -159,18 +177,16 @@ app.whenReady().then(async () => {
     });
     splash.loadFile(path.join(__dirname, 'splash.html'));
 
-    // 找端�?
-    serverPort = await findAvailablePort(4000);
+    const devDefaults = loadDevServerConfig(projectRoot);
+    serverPort = await findAvailablePort(devDefaults.clientPort);
 
-    // 启动 server
-    serverProcess = await startNextServer(serverPort);
+    serverProcess = await startBackendServer(serverPort);
 
-    // �?splash，开主窗�?
     splash.close();
     splash = null;
+    windowLoadOrigin = `http://127.0.0.1:${serverPort}`;
     createMainWindow();
 
-    // 延迟检�?CLI
     setTimeout(() => {
       checkCliHealth(serverPort).catch(() => {});
     }, 3000);
@@ -179,7 +195,7 @@ app.whenReady().then(async () => {
     if (splash) splash.close();
     dialog.showErrorBox(
       '启动失败',
-      `Next.js 服务器启动失败：\n${err instanceof Error ? err.message : String(err)}\n\n请尝试重新安装或联系开发者。`
+      `Hono 后端服务器启动失败：\n${err instanceof Error ? err.message : String(err)}\n\n请尝试重新安装或联系开发者。`
     );
     app.quit();
   }
@@ -195,9 +211,32 @@ app.on('before-quit', () => {
   gracefulShutdown();
 });
 
+/**
+ * 结束内嵌 Hono 进程；Windows 上 child.kill 常杀不干净子进程，用 taskkill /T /F 清进程树。
+ */
+function killChildProcessTree(child: ChildProcess | null): void {
+  if (!child?.pid) return;
+  const pid = child.pid;
+  try {
+    if (process.platform === 'win32') {
+      execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore', windowsHide: true });
+    } else {
+      child.kill('SIGTERM');
+    }
+  } catch {
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      /* 已退出 */
+    }
+  }
+}
+
 function gracefulShutdown() {
+  if (backendShutdownDone) return;
+  backendShutdownDone = true;
   if (serverProcess) {
-    serverProcess.kill();
+    killChildProcessTree(serverProcess);
     serverProcess = null;
   }
 }

@@ -12,10 +12,11 @@
  */
 
 import { getAppWorkingDir } from '@/lib/app-paths';
-import { getPromptFilePath, getContextIndexPath, getContextDir, getTodosPath, readJsonFile } from '@/lib/file-store';
+import { getPromptFilePath, getContextIndexPath, getContextDir, readJsonFile } from '@/lib/file-store';
+import { readTodosMerged } from '@/lib/todo-file-store';
 import { matchCodeCards, buildCodeCardIndex } from '@/lib/code-card-matcher';
 import { listRunningTasks } from '@/lib/active-tasks';
-import type { ContextIndexData, TodosData } from '@/types';
+import type { ContextIndexData } from '@/types';
 import { resolveSystemPrompt, createRuntimePromptCopy } from '@/lib/agent-prompt-store';
 import { resolveSkillsForSession } from '@/lib/skill-store';
 import { getSettings } from '@/lib/settings-manager';
@@ -23,7 +24,7 @@ import { createAgentRunner, type IAgentRunner } from './agent-runner';
 import { detectDangerousCommand } from '@/lib/danger-detector';
 import type { ChatSSEEvent, ContentBlock, Agent, AgentCapabilities, ProviderId } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_DANGER_SETTINGS } from '@/types';
-import type { AgentChatSession, SessionConfig, SessionCheckpoint } from '@/types/agent-chat';
+import type { AgentChatSession, SessionConfig, SessionCheckpoint, SessionSourceType } from '@/types/agent-chat';
 import type { ResourceRef, InlineTextRef, FlowContextRef, ReferenceTurnsRef } from '@/types/resource';
 import { resourceRegistry } from '@/lib/resource-registry';
 import { formatConversationHistory } from './conversation-history';
@@ -34,11 +35,11 @@ import { estimateTokens } from '@/lib/token-estimate';
 import { migrateAgentToResources } from '@/lib/resource-migration';
 import { updateAgentStatus } from '@/lib/agents-store';
 import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
-import { runSatelliteTasks } from '@/lib/satellite-tasks';
-import '@/lib/satellite-tasks'; // side-effect: registers all satellite tasks
-import type { SatelliteContext } from '@/lib/satellite-tasks';
-import type { RunStatus, RunStatusInfo } from './types';
+import { repairStoredTextIfNeeded } from '@/lib/text-repair-server';
+import type { RunStatus, RunStatusInfo, SessionExecution } from './types';
 import { appendUsageRecord } from '@/lib/usage-store';
+import { normalizeOpenAIFastMode } from '@/lib/openai-fast-mode';
+import { normalizeOpenAIReasoningEffort } from '@/lib/openai-reasoning-effort';
 
 // Re-export store functions so existing callers don't break during migration
 export { generateSessionId } from './agent-chat-session-store';
@@ -49,11 +50,9 @@ import {
   loadAgent,
   eagerlySaveUserTurn,
   persistSessionToDisk,
-  incrementGuardRetryCountOnDisk,
   deleteSessionFromDisk,
   updateConfigOnDisk,
   writeStreamingDraft,
-  deleteStreamingDraft,
 } from './agent-chat-session-store';
 
 // ── Types ──
@@ -68,7 +67,8 @@ export interface ImageAttachment {
 export interface FlowContext {
   projectKey: string;
   projectName: string;
-  flowDataPath: string;
+  /** @deprecated 已无服务端 flow 文件 */
+  flowDataPath?: string;
 }
 
 /** ChatToolCall 类型（与 UI 事件对齐） */
@@ -86,6 +86,9 @@ export interface AgentChatRun {
   agentId: string;
   projectKey?: string;
   sessionTitle?: string;
+  sourceType?: SessionSourceType;
+  sourceId?: string;
+  todoId?: string;
 
   /** 当前运行的 SDK runner（统一 Claude Agent SDK / Codex SDK 抽象） */
   runner: IAgentRunner | null;
@@ -128,6 +131,7 @@ export interface AgentChatRun {
   _tokenInputs: number;
   _tokenOutputs: number;
   _contextWindow?: number;
+  _awaitingSubAgents?: SessionExecution['awaiting'];
 
   /**
    * Resolves when consumeRunnerStream() (including finalizeRun) has completed.
@@ -173,32 +177,37 @@ class AgentChatManager {
     providerOverride?: ProviderId,
     modelOverride?: string,
     effortOverride?: string,
+    fastModeOverride?: boolean,
     ephemeral?: boolean,
     _depth?: number,
-    background?: boolean,
+    _background?: boolean,
+    sourceType?: SessionSourceType,
+    sourceId?: string,
+    todoId?: string,
   ): Promise<string> {
     const agent = await loadAgent(agentId);
+    void _depth;
+    void _background;
 
-    let existing = this.runs.get(sessionId);
+    const existingRun = this.runs.get(sessionId);
+    const diskSession = existingRun ? null : await loadSession(sessionId);
 
-    // Hydrate from disk if not in memory
-    if (!existing) {
-      const diskSession = await loadSession(sessionId);
-      if (diskSession) {
-        existing = this.hydrateFromDisk(diskSession);
-        this.runs.set(sessionId, existing);
-      }
-    }
-
-    if (existing?.status === 'running') {
+    if (existingRun?.status === 'running') {
       throw new Error('This session is already running');
     }
 
-    const messages = existing?.messages ? [...existing.messages] : [];
+    const existingMessages = existingRun?.messages ?? diskSession?.messages ?? [];
+    const messages = [...existingMessages];
     const dataUrls = images?.map(img => `data:${img.mediaType};base64,${img.data}`);
     messages.push({ role: 'user', content: message, images: dataUrls?.length ? dataUrls : undefined });
 
-    const sessionConfig = initialConfig ?? existing?.config;
+    const sessionConfig = initialConfig ?? existingRun?.config ?? diskSession?.config;
+    const existingProjectKey = existingRun?.projectKey ?? diskSession?.projectKey;
+    const existingSessionTitle = existingRun?.sessionTitle ?? diskSession?.title;
+    const existingParentSessionId = existingRun?.parentSessionId ?? diskSession?.parentSessionId;
+    const existingClaudeSessionId = existingRun?.claudeSessionId ?? diskSession?.claudeSessionId;
+    const existingCheckpoint = existingRun?.checkpoint ?? diskSession?.checkpoint;
+    const existingGuardRetryCount = existingRun?._guardRetryCount ?? diskSession?.guardRetryCount;
 
     // ── Resolve provider / model with priority chain ──
     const resolvedProvider = providerOverride
@@ -209,31 +218,50 @@ class AgentChatManager {
       || sessionConfig?.model
       || agent.defaultModel
       || undefined;
+    const resolvedOpenAIEffort = normalizeOpenAIReasoningEffort(
+      effortOverride
+      || sessionConfig?.openaiReasoningEffort
+      || agent.defaultOpenAIReasoningEffort,
+    );
+    const settings = await getSettings();
+    const hasExplicitOpenAIFastMode =
+      fastModeOverride !== undefined || sessionConfig?.openaiFastMode !== undefined;
+    const resolvedOpenAIFastMode = normalizeOpenAIFastMode(
+      fastModeOverride
+      ?? sessionConfig?.openaiFastMode
+      ?? settings.claude.openaiFastMode
+      ?? false,
+    ) ?? false;
 
     // 切换 provider/model 后，旧的 resume session 可能不兼容（常见于同会话切换渠道）。
     // 这种情况下必须放弃 resume，避免 Claude SDK 直接 error_during_execution / code 1。
-    const prevProvider = existing?.config?.provider;
-    const prevModel = existing?.config?.model;
-    const hasResumeId = !!existing?.claudeSessionId;
-    const lastRole = existing?.messages?.[existing.messages.length - 1]?.role;
+    const prevProvider = existingRun?.config?.provider ?? diskSession?.config?.provider;
+    const prevModel = existingRun?.config?.model ?? diskSession?.config?.model;
+    const hasResumeId = !!existingClaudeSessionId;
+    const lastRole = existingMessages[existingMessages.length - 1]?.role;
     const previousTurnIncomplete = lastRole === 'user';
     const providerChanged =
       hasResumeId && !!prevProvider && !!resolvedProvider && prevProvider !== resolvedProvider;
     const modelChanged =
       hasResumeId && !!prevModel && !!resolvedModel && prevModel !== resolvedModel;
     const isResume = hasResumeId && !providerChanged && !modelChanged && !previousTurnIncomplete;
-    const resumeSessionId = isResume ? existing?.claudeSessionId : undefined;
+    const resumeSessionId = isResume ? existingClaudeSessionId : undefined;
 
     // Persist resolved provider/model into session config
     const persistedConfig: SessionConfig = {
       ...sessionConfig,
       ...(resolvedProvider ? { provider: resolvedProvider } : {}),
       ...(resolvedModel ? { model: resolvedModel } : {}),
+      ...(resolvedProvider === 'openai' && resolvedOpenAIEffort
+        ? { openaiReasoningEffort: resolvedOpenAIEffort }
+        : {}),
+      ...(resolvedProvider === 'openai' && (hasExplicitOpenAIFastMode || resolvedOpenAIFastMode)
+        ? { openaiFastMode: resolvedOpenAIFastMode }
+        : {}),
     };
 
     // OpenAI 协议的自定义供应商暂不支持 Agent Chat（仅内置 openai 支持 Codex CLI）
     if (resolvedProvider?.startsWith('custom-')) {
-      const settings = await getSettings();
       const cp = settings.claude.customProviders?.find((c) => c.id === resolvedProvider);
       if (cp?.apiProtocol === 'openai') {
         throw new Error(
@@ -243,13 +271,12 @@ class AgentChatManager {
     }
 
     // Build prompt
-    const sessionProjectKey = flowContext?.projectKey ?? existing?.projectKey;
+    const sessionProjectKey = flowContext?.projectKey ?? existingProjectKey;
 
     // 当 resume 不可用但存在历史消息时，将历史对话注入 prompt
     // 这样即使 SDK 会话是全新的，AI 也能知道之前聊过什么
-    const existingMessages = existing?.messages ?? [];
     const conversationHistory = (!resumeSessionId && existingMessages.length > 0)
-      ? formatConversationHistory(existingMessages, existing?.checkpoint ?? undefined)
+      ? formatConversationHistory(existingMessages, existingCheckpoint ?? undefined)
       : undefined;
 
     if (conversationHistory && !resumeSessionId && existingMessages.length > 0) {
@@ -271,27 +298,32 @@ class AgentChatManager {
       await eagerlySaveUserTurn({
         sessionId,
         agentId,
-        projectKey: flowContext?.projectKey ?? existing?.projectKey,
-        sessionTitle: existing?.sessionTitle ?? initialTitle,
+        projectKey: flowContext?.projectKey ?? existingProjectKey,
+        sessionTitle: existingSessionTitle ?? initialTitle,
+        sourceType: sourceType ?? diskSession?.sourceType ?? 'manual',
+        sourceId: sourceId ?? diskSession?.sourceId,
+        todoId: todoId ?? diskSession?.todoId,
         messages,
         claudeSessionId: resumeSessionId,
         config: persistedConfig,
-        parentSessionId: parentSessionId ?? existing?.parentSessionId,
+        parentSessionId: parentSessionId ?? existingParentSessionId,
         importedTurnIndices: undefined,
-        background: background || undefined,
       });
     }
 
     // ── Create run ──
     const runId = `run-${sessionId}-${Date.now()}`;
-    const run: AgentChatRun = {
-      runId,
-      sessionId,
-      agentId,
-      projectKey: flowContext?.projectKey ?? existing?.projectKey,
-      sessionTitle: existing?.sessionTitle ?? initialTitle,
-      runner: null,
-      status: 'running',
+      const run: AgentChatRun = {
+        runId,
+        sessionId,
+        agentId,
+        projectKey: flowContext?.projectKey ?? existingProjectKey,
+        sessionTitle: existingSessionTitle ?? initialTitle,
+        sourceType: sourceType ?? diskSession?.sourceType ?? 'manual',
+        sourceId: sourceId ?? diskSession?.sourceId,
+        todoId: todoId ?? diskSession?.todoId,
+        runner: null,
+        status: 'running',
       startedAt: Date.now(),
       events: [],
       listeners: new Set(),
@@ -301,9 +333,9 @@ class AgentChatManager {
       claudeSessionId: resumeSessionId,
       messages,
       config: persistedConfig,
-      parentSessionId: parentSessionId ?? existing?.parentSessionId,
+      parentSessionId: parentSessionId ?? existingParentSessionId,
       _images: images,
-      _guardRetryCount: existing?._guardRetryCount,
+      _guardRetryCount: existingGuardRetryCount,
       _ephemeral: ephemeral,
       _tokenInputs: 0,
       _tokenOutputs: 0,
@@ -332,7 +364,8 @@ class AgentChatManager {
         provider: resolvedProvider ?? 'anthropic',
         capabilities: effectiveCaps,
         model: resolvedModel,
-        effortOverride,
+        effortOverride: resolvedOpenAIEffort,
+        fastModeOverride: resolvedOpenAIFastMode,
         resumeSessionId,
         cwd: getAppWorkingDir(),
       });
@@ -385,13 +418,15 @@ class AgentChatManager {
 
     const agent = await loadAgent(agentId);
 
-    const existing = this.runs.get(guestSessionId);
-    if (existing?.status === 'running') {
+    const existingRun = this.runs.get(guestSessionId);
+    const diskSession = existingRun ? null : await loadSession(guestSessionId);
+    if (existingRun?.status === 'running') {
       throw new Error('This guest session is already running');
     }
 
-    const isResume = !!existing?.claudeSessionId;
-    const messages = existing?.messages ? [...existing.messages] : [];
+    const existingMessages = existingRun?.messages ?? diskSession?.messages ?? [];
+    const isResume = !!(existingRun?.claudeSessionId ?? diskSession?.claudeSessionId);
+    const messages = [...existingMessages];
     messages.push({ role: 'user', content: message });
 
     const promptContent = await buildGuestAgentPrompt(agent, message, selectedTurns);
@@ -408,7 +443,8 @@ class AgentChatManager {
       runId,
       sessionId: guestSessionId,
       agentId,
-      sessionTitle: existing?.sessionTitle,
+      projectKey: diskSession?.projectKey ?? hostSession.projectKey,
+      sessionTitle: existingRun?.sessionTitle ?? diskSession?.title,
       runner: null,
       status: 'running',
       startedAt: Date.now(),
@@ -417,10 +453,13 @@ class AgentChatManager {
       assistantText: '',
       contentBlocks: [],
       toolCalls: [],
-      claudeSessionId: existing?.claudeSessionId,
+      claudeSessionId: existingRun?.claudeSessionId ?? diskSession?.claudeSessionId,
       messages,
       parentSessionId,
       importedTurnIndices: turnIndices,
+      checkpoint: diskSession?.checkpoint,
+      config: diskSession?.config,
+      _guardRetryCount: diskSession?.guardRetryCount,
       _tokenInputs: 0,
       _tokenOutputs: 0,
     };
@@ -441,7 +480,7 @@ class AgentChatManager {
         provider: resolvedProvider,
         capabilities: agent.capabilities,
         model: agent.defaultModel,
-        resumeSessionId: isResume ? existing?.claudeSessionId : undefined,
+        resumeSessionId: isResume ? (existingRun?.claudeSessionId ?? diskSession?.claudeSessionId) : undefined,
         cwd: getAppWorkingDir(),
       });
       run.runner = runner;
@@ -525,6 +564,34 @@ class AgentChatManager {
     const run = this.runs.get(sessionId);
     if (!run) return [];
     return run.messages;
+  }
+
+  getRuntimeSnapshot(sessionId: string): {
+    status: RunStatus;
+    runId: string;
+    startedAt: string;
+    eventCount: number;
+    errorMessage?: string;
+    messages: Array<{
+      role: 'user' | 'assistant';
+      content: string;
+      images?: string[];
+      contentBlocks?: ContentBlock[];
+    }>;
+  } | null {
+    const run = this.runs.get(sessionId);
+    if (!run) return null;
+    const lastError = run.events.filter((e): e is { type: 'error'; message: string } =>
+      e.type === 'error' && 'message' in e
+    ).pop();
+    return {
+      status: run.status,
+      runId: run.runId,
+      startedAt: new Date(run.startedAt).toISOString(),
+      eventCount: run.events.length,
+      errorMessage: lastError?.message,
+      messages: run.messages.map(message => ({ ...message })),
+    };
   }
 
   getRunningForAgent(agentId: string): string | null {
@@ -621,7 +688,15 @@ class AgentChatManager {
 
     // Process all agent actions: parse tags, execute side-effects, strip tags
     if (run.assistantText) {
-      const actionCtx = {
+      const actionCtx: {
+        sessionId: string;
+        agentId: string;
+        projectKey?: string;
+        emit: (event: ChatSSEEvent) => void;
+        setSessionTitle: (title: string) => void;
+        setCheckpoint: (checkpoint: SessionCheckpoint) => void;
+        _awaitingSubAgents?: SessionExecution['awaiting'];
+      } = {
         sessionId: run.sessionId,
         agentId: run.agentId,
         projectKey: run.projectKey,
@@ -645,7 +720,7 @@ class AgentChatManager {
         contentBlocks: cleanedBlocks.length > 0 ? cleanedBlocks : undefined,
       });
 
-      // Fallback title (non-AI, sync) — satellite task will generate a better one later
+      // Fallback title (non-AI, sync)
       if (!run.sessionTitle) {
         const firstUserMsg = run.messages.find(m => m.role === 'user')?.content;
         const defaultTitle = run.parentSessionId ? '旁听会话' : '新会话';
@@ -653,6 +728,11 @@ class AgentChatManager {
       }
 
       this.trackAndEmit(run, { type: 'session_title_set', title: run.sessionTitle });
+
+      if (actionCtx._awaitingSubAgents) {
+        run._awaitingSubAgents = actionCtx._awaitingSubAgents;
+        run.status = 'awaiting';
+      }
     }
 
     if (run.status === 'running') {
@@ -717,20 +797,13 @@ class AgentChatManager {
       }).catch(() => {});
     }
 
-    this.trackAndEmit(run, { type: 'done' });
-
-    // Fire-and-forget: run all registered satellite tasks (title, health guard, task card, etc.)
-    // The scheduler emits 'stream_end' after all tasks complete, which is the signal that
-    // closes the SSE connection. This allows satellite SSE events (e.g. task_card_updated)
-    // to reach the frontend before the connection closes.
-    if (!run._ephemeral) {
-      this.runSatelliteTasks(run).catch((err) => {
-        console.error(`${LOG_PREFIX} Satellite tasks error:`, err);
-      });
-    } else {
-      // Ephemeral runs skip satellite tasks — emit stream_end immediately so the SSE closes.
-      this.trackAndEmit(run, { type: 'stream_end' });
+    if (run.status === 'awaiting') {
+      this.trackAndEmit(run, { type: 'awaiting_sub_agents' });
+      return;
     }
+
+    this.trackAndEmit(run, { type: 'done' });
+    this.trackAndEmit(run, { type: 'stream_end' });
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -829,13 +902,17 @@ class AgentChatManager {
 
   private async persistAfterClose(run: AgentChatRun, _aborted: boolean): Promise<void> {
     if (run._ephemeral) return;
+    void _aborted;
 
     const now = new Date().toISOString();
     const session: AgentChatSession = {
       id: run.sessionId,
       agentId: run.agentId,
       projectKey: run.projectKey,
-      title: run.sessionTitle ?? '新会话',
+      title: repairStoredTextIfNeeded(run.sessionTitle) ?? '新会话',
+      sourceType: run.sourceType,
+      sourceId: run.sourceId,
+      todoId: run.todoId,
       messages: run.messages,
       claudeSessionId: run.claudeSessionId,
       createdAt: new Date(run.startedAt).toISOString(),
@@ -846,105 +923,44 @@ class AgentChatManager {
       importedTurnIndices: run.importedTurnIndices,
       checkpoint: run.checkpoint,
     };
-    await persistSessionToDisk(session);
-  }
-
-  /**
-   * Build a SatelliteContext and run all registered satellite tasks.
-   * Called fire-and-forget after emit 'done'.
-   */
-  private async runSatelliteTasks(run: AgentChatRun): Promise<void> {
-    const ctx: SatelliteContext = {
-      sessionId: run.sessionId,
-      agentId: run.agentId,
-      projectKey: run.projectKey,
-      messages: run.messages.map(m => ({ role: m.role, content: m.content })),
-      assistantText: run.assistantText,
-      assistantTurnCount: run.messages.filter(m => m.role === 'assistant').length,
-      runStatus: run.status as RunStatus,
-      guardRetryCount: run._guardRetryCount ?? 0,
-      sessionTitle: run.sessionTitle,
-
-      emit: (event: ChatSSEEvent) => this.trackAndEmit(run, event),
-
-      setSessionTitle: (title: string) => {
-        run.sessionTitle = title;
-        this.trackAndEmit(run, { type: 'session_title_set', title });
-        // Re-persist updated title to disk (fire-and-forget)
-        persistSessionToDisk({
-          id: run.sessionId,
-          agentId: run.agentId,
-          projectKey: run.projectKey,
-          title,
-          messages: run.messages,
-          claudeSessionId: run.claudeSessionId,
-          createdAt: new Date(run.startedAt).toISOString(),
-          updatedAt: new Date().toISOString(),
-          config: run.config,
-          guardRetryCount: run._guardRetryCount,
-          parentSessionId: run.parentSessionId,
-          importedTurnIndices: run.importedTurnIndices,
-          checkpoint: run.checkpoint,
-        }).catch(() => {});
-      },
-
-      resumeSession: (message: string) => {
-        // Defer until after all satellite tasks complete
-        setTimeout(async () => {
-          try {
-            const memRun = this.runs.get(run.sessionId);
-            // Race condition: user may have already started a new message
-            if (memRun?.status === 'running') {
-              console.log(`${LOG_PREFIX} Session ${run.sessionId} already running (user retried), skip resume`);
-              return;
-            }
-            if (memRun) {
-              memRun._guardRetryCount = (memRun._guardRetryCount ?? 0) + 1;
-            }
-            await incrementGuardRetryCountOnDisk(run.sessionId);
-
-            await this.start(run.sessionId, run.agentId, message);
-            console.log(`${LOG_PREFIX} Satellite task resumed session ${run.sessionId}`);
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            if (msg.includes('already running')) {
-              console.log(`${LOG_PREFIX} Session ${run.sessionId} already running (race), skip resume`);
-            } else {
-              console.error(`${LOG_PREFIX} Satellite resume failed:`, err);
-            }
-          }
-        }, 0);
-      },
-    };
-
-    await runSatelliteTasks(ctx);
+    await persistSessionToDisk(session, this.buildExecutionSummary(run));
   }
 
   // ═══════════════════════════════════════════════════════════════════════
   // Private helpers
   // ═══════════════════════════════════════════════════════════════════════
 
-  private hydrateFromDisk(diskSession: AgentChatSession): AgentChatRun {
+  private buildExecutionSummary(run: AgentChatRun): SessionExecution {
+    const lastError = [...run.events]
+      .reverse()
+      .find((event): event is Extract<ChatSSEEvent, { type: 'error' }> => event.type === 'error');
+
+    const tokenUsage = (run._tokenInputs > 0 || run._tokenOutputs > 0 || run._contextWindow)
+      ? {
+          inputTokens: run._tokenInputs,
+          outputTokens: run._tokenOutputs,
+          contextWindow: run._contextWindow,
+        }
+      : undefined;
+
+    const executionStatus: SessionExecution['status'] = run.status === 'awaiting'
+      ? 'awaiting'
+      : run.status === 'failed'
+        ? 'failed'
+        : run.status === 'stopped'
+          ? 'stopped'
+          : 'completed';
+
     return {
-      runId: '',
-      sessionId: diskSession.id,
-      agentId: diskSession.agentId,
-      projectKey: diskSession.projectKey,
-      runner: null,
-      status: 'completed',
-      events: [],
-      listeners: new Set(),
-      startedAt: new Date(diskSession.createdAt).getTime(),
-      assistantText: '',
-      contentBlocks: [],
-      toolCalls: [],
-      claudeSessionId: diskSession.claudeSessionId,
-      sessionTitle: diskSession.title,
-      messages: [...diskSession.messages],
-      config: diskSession.config,
-      _guardRetryCount: diskSession.guardRetryCount,
-      _tokenInputs: 0,
-      _tokenOutputs: 0,
+      runId: run.runId,
+      status: executionStatus,
+      startedAt: new Date(run.startedAt).toISOString(),
+      completedAt: new Date(run.completedAt ?? Date.now()).toISOString(),
+      errorMessage: lastError?.message,
+      stopReason: executionStatus === 'stopped' ? 'aborted' : undefined,
+      tokenUsage,
+      eventCount: run.events.length,
+      awaiting: executionStatus === 'awaiting' ? run._awaitingSubAgents : undefined,
     };
   }
 
@@ -1085,7 +1101,7 @@ async function buildResourcePrompt(
 
   // ── Phase 2: Merge contextRefs from active todos assigned to this agent ──
   {
-    const todosData = await readJsonFile<TodosData>(getTodosPath(), { todos: [] });
+    const todosData = await readTodosMerged();
     const activeTodos = todosData.todos.filter(t =>
       t.status === 'in_progress' &&
       t.agentId === agent.id &&
@@ -1198,7 +1214,7 @@ async function buildAgentChatPromptWithFlowContext(
     label: '项目上下文',
     projectKey,
     projectName,
-    flowDataPath,
+    ...(flowDataPath && { flowDataPath }),
   };
 
   const resourcePrompt = await buildResourcePrompt(agent, [flowRef], sessionConfig, sessionId, projectKey);

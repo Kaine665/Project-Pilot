@@ -23,31 +23,65 @@ import { appendFileSync, mkdirSync } from 'fs';
 import path from 'path';
 import {
   getAgentChatSessionsPath,
+  getAgentChatSessionAdjunctsPath,
   getAgentChatMessagesDir,
   getAgentChatMessagePath,
-  getAgentsPath,
   readJsonFile,
   modifyJsonFile,
   parseJsonSafe,
 } from '@/lib/file-store';
 import { deleteRuntimePromptCopy } from '@/lib/agent-prompt-store';
-import type { Agent, AgentsData, ContentBlock } from '@/types';
+import { looksLikeCorruptedStoredText, repairStoredTextIfNeeded } from '@/lib/text-repair-server';
+import type { Agent, ContentBlock } from '@/types';
 import type {
   AgentChatSession,
   AgentChatSessionsData,
   ChatMessage,
-  PendingUserQueueState,
+  DeferredInputBufferState,
   SessionConfig,
   SessionMeta,
 } from '@/types/agent-chat';
 import { getDefaultAgents } from '@/lib/default-agents';
+import { getAgentById } from '@/lib/agents-store';
+import type { SessionExecution } from './types';
 
 // ── Constants ──
 
 const DEFAULT_SESSIONS_DATA: AgentChatSessionsData = { sessions: [] };
+const DEFAULT_ADJUNCTS_DATA: AgentChatSessionAdjunctsData = { sessions: {} };
+
+interface LegacyAwaitingSubAgents {
+  sessionIds: string[];
+  registeredAt: number;
+  timeoutMs: number;
+}
+
+interface LegacySessionExecution extends Partial<SessionExecution> {
+  awaitingSubAgents?: LegacyAwaitingSubAgents;
+}
+
+interface LegacySessionMeta extends Omit<SessionMeta, 'execution'> {
+  pendingUserQueue?: DeferredInputBufferState;
+  background?: boolean;
+  depth?: number;
+  execution?: LegacySessionExecution;
+}
+
+interface LegacyAgentChatSessionsData {
+  sessions: LegacySessionMeta[];
+}
+
+interface AgentChatSessionAdjunctEntry {
+  deferredInputBuffer?: DeferredInputBufferState;
+}
+
+interface AgentChatSessionAdjunctsData {
+  sessions: Record<string, AgentChatSessionAdjunctEntry>;
+}
 
 // ── Migration flag ──
 let _migrationDone = false;
+let _indexNormalized = false;
 
 // ── Sessions index cache (reduce repeated full-file reads) ──
 // Now the index is much smaller (no messages), so caching is even more effective.
@@ -55,10 +89,153 @@ let _indexCache: AgentChatSessionsData | null = null;
 let _indexCacheTs = 0;
 const INDEX_CACHE_TTL = 500; // 500ms
 
+function cloneDeferredInputBuffer(
+  queue?: DeferredInputBufferState,
+): DeferredInputBufferState | undefined {
+  if (!queue || queue.items.length === 0) return undefined;
+  return {
+    items: queue.items.map((item) => ({
+      text: item.text,
+      images: item.images?.length ? [...item.images] : undefined,
+    })),
+    expanded: queue.expanded,
+  };
+}
+
+function sanitizeExecution(
+  sessionId: string,
+  execution?: LegacySessionExecution,
+): SessionExecution | undefined {
+  if (!execution || !execution.status || !execution.startedAt) {
+    return undefined;
+  }
+
+  const awaiting = execution.awaiting ?? (
+    execution.awaitingSubAgents
+      ? {
+          waiting: true as const,
+          subAgentSessionIds: [...execution.awaitingSubAgents.sessionIds],
+          registeredAt: execution.awaitingSubAgents.registeredAt,
+          timeoutMs: execution.awaitingSubAgents.timeoutMs,
+        }
+      : undefined
+  );
+
+  return {
+    runId: execution.runId ?? `persisted-${sessionId}`,
+    status: execution.status,
+    startedAt: execution.startedAt,
+    completedAt: execution.completedAt ?? execution.startedAt,
+    errorMessage: repairStoredTextIfNeeded(execution.errorMessage),
+    stopReason: execution.stopReason,
+    resultSummary: execution.resultSummary ?? execution.result?.summary,
+    result: execution.result,
+    tokenUsage: execution.tokenUsage,
+    eventCount: execution.eventCount ?? 0,
+    awaiting,
+  };
+}
+
+function sanitizeSessionMeta(meta: LegacySessionMeta): SessionMeta {
+  const repairedTitle = repairStoredTextIfNeeded(meta.title) ?? meta.title;
+  const normalized: SessionMeta = {
+    id: meta.id,
+    agentId: meta.agentId,
+    projectKey: meta.projectKey,
+    title: repairedTitle,
+    sourceType: meta.sourceType,
+    sourceId: meta.sourceId,
+    todoId: meta.todoId,
+    claudeSessionId: meta.claudeSessionId,
+    createdAt: meta.createdAt,
+    updatedAt: meta.updatedAt,
+    unreadCount: meta.unreadCount,
+    archived: meta.archived,
+    config: meta.config,
+    guardRetryCount: meta.guardRetryCount,
+    parentSessionId: meta.parentSessionId,
+    importedTurnIndices: meta.importedTurnIndices,
+    checkpoint: meta.checkpoint,
+    messageCount: meta.messageCount,
+  };
+
+  const execution = sanitizeExecution(meta.id, meta.execution);
+  if (execution) {
+    normalized.execution = execution;
+  }
+
+  return normalized;
+}
+
+function needsSessionNormalization(meta: LegacySessionMeta): boolean {
+  return Boolean(
+    looksLikeCorruptedStoredText(meta.title)
+      || looksLikeCorruptedStoredText(meta.execution?.errorMessage)
+      || meta.pendingUserQueue
+      || meta.background !== undefined
+      || meta.depth !== undefined
+      || meta.execution?.awaitingSubAgents,
+  );
+}
+
+async function normalizeIndexIfNeeded(): Promise<void> {
+  if (_indexNormalized) return;
+
+  const raw = await readJsonFile<LegacyAgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+  );
+
+  const deferredInputBufferBySession: Record<string, AgentChatSessionAdjunctEntry> = {};
+  let changed = false;
+
+  const normalizedSessions = raw.sessions.map((session) => {
+    const deferredInputBuffer = cloneDeferredInputBuffer(session.pendingUserQueue);
+    if (deferredInputBuffer) {
+      deferredInputBufferBySession[session.id] = { deferredInputBuffer };
+      changed = true;
+    }
+    if (needsSessionNormalization(session)) {
+      changed = true;
+    }
+    return sanitizeSessionMeta(session);
+  });
+
+  if (Object.keys(deferredInputBufferBySession).length > 0) {
+    await modifyJsonFile<AgentChatSessionAdjunctsData>(
+      getAgentChatSessionAdjunctsPath(),
+      DEFAULT_ADJUNCTS_DATA,
+      (data) => {
+        for (const [sessionId, entry] of Object.entries(deferredInputBufferBySession)) {
+          const existing = data.sessions[sessionId]?.deferredInputBuffer;
+          if (!existing && entry.deferredInputBuffer) {
+            data.sessions[sessionId] = { deferredInputBuffer: entry.deferredInputBuffer };
+          }
+        }
+        return data;
+      },
+    );
+  }
+
+  if (changed) {
+    await modifyJsonFile<AgentChatSessionsData>(
+      getAgentChatSessionsPath(),
+      DEFAULT_SESSIONS_DATA,
+      () => ({ sessions: normalizedSessions }),
+    );
+    invalidateIndexCache();
+  }
+
+  _indexNormalized = true;
+}
+
 async function getIndexData(): Promise<AgentChatSessionsData> {
   // Ensure migration has run at least once
   if (!_migrationDone) {
     await migrateIfNeeded();
+  }
+  if (!_indexNormalized) {
+    await normalizeIndexIfNeeded();
   }
 
   const now = Date.now();
@@ -76,6 +253,14 @@ async function getIndexData(): Promise<AgentChatSessionsData> {
 function invalidateIndexCache(): void {
   _indexCache = null;
   _indexCacheTs = 0;
+  _indexNormalized = false;
+}
+
+async function getAdjunctData(): Promise<AgentChatSessionAdjunctsData> {
+  return readJsonFile<AgentChatSessionAdjunctsData>(
+    getAgentChatSessionAdjunctsPath(),
+    DEFAULT_ADJUNCTS_DATA,
+  );
 }
 
 // ── JSONL Message I/O ──
@@ -106,20 +291,6 @@ export async function readMessages(sessionId: string): Promise<ChatMessage[]> {
     }
     throw err;
   }
-}
-
-/**
- * Append a single message to the session's JSONL file.
- * Uses synchronous appendFileSync to ensure the write is committed before returning.
- */
-function appendMessage(sessionId: string, message: ChatMessage): void {
-  const filePath = getAgentChatMessagePath(sessionId);
-  const dir = getAgentChatMessagesDir();
-  try {
-    mkdirSync(dir, { recursive: true });
-  } catch { /* already exists */ }
-  const line = JSON.stringify(message) + '\n';
-  appendFileSync(filePath, line, 'utf-8');
 }
 
 /**
@@ -164,6 +335,17 @@ async function deleteMessageFile(sessionId: string): Promise<void> {
   await fs.unlink(filePath).catch(() => {});
 }
 
+async function deleteSessionAdjuncts(sessionId: string): Promise<void> {
+  await modifyJsonFile<AgentChatSessionAdjunctsData>(
+    getAgentChatSessionAdjunctsPath(),
+    DEFAULT_ADJUNCTS_DATA,
+    (data) => {
+      delete data.sessions[sessionId];
+      return data;
+    },
+  );
+}
+
 // ── Streaming Draft (crash recovery) ──
 
 /**
@@ -205,7 +387,7 @@ function stripActionTags(text: string): string {
     .replace(/<save-doc[^>]*>[\s\S]*?<\/save-doc>/g, '')
     .replace(/<save-knowledge[^>]*>[\s\S]*?<\/save-knowledge>/g, '')
     .replace(/<suspend-task[^>]*>[\s\S]*?<\/suspend-task>/g, '')
-    .replace(/<complete-suspended-task[^>]*/g, '')
+    .replace(/<complete-suspended-task[^/]*\/>\s*/g, '')
     .trim();
 }
 
@@ -244,11 +426,10 @@ async function migrateIfNeeded(): Promise<void> {
 
   // Strip messages from index and write back
   const cleanedSessions: SessionMeta[] = data.sessions.map(s => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { messages: _msgs, ...meta } = s;
+    const { messages, ...meta } = s;
     return {
       ...meta,
-      messageCount: meta.messageCount ?? (Array.isArray(_msgs) ? _msgs.length : 0),
+      messageCount: meta.messageCount ?? (Array.isArray(messages) ? messages.length : 0),
     };
   });
 
@@ -401,10 +582,39 @@ export async function updateConfigOnDisk(sessionId: string, config: SessionConfi
   return found;
 }
 
-export async function updatePendingUserQueueOnDisk(
+export async function loadDeferredInputBuffer(
   sessionId: string,
-  queue: PendingUserQueueState,
+): Promise<DeferredInputBufferState | undefined> {
+  const data = await getAdjunctData();
+  return cloneDeferredInputBuffer(data.sessions[sessionId]?.deferredInputBuffer);
+}
+
+export const loadPendingUserQueueOnDisk = loadDeferredInputBuffer;
+
+export async function updateDeferredInputBufferOnDisk(
+  sessionId: string,
+  queue: DeferredInputBufferState,
 ): Promise<boolean> {
+  const data = await getIndexData();
+  if (!data.sessions.some((session) => session.id === sessionId)) {
+    return false;
+  }
+
+  const deferredInputBuffer = cloneDeferredInputBuffer(queue);
+
+  await modifyJsonFile<AgentChatSessionAdjunctsData>(
+    getAgentChatSessionAdjunctsPath(),
+    DEFAULT_ADJUNCTS_DATA,
+    (data) => {
+      if (deferredInputBuffer) {
+        data.sessions[sessionId] = { deferredInputBuffer };
+      } else {
+        delete data.sessions[sessionId];
+      }
+      return data;
+    },
+  );
+
   let found = false;
   await modifyJsonFile<AgentChatSessionsData>(
     getAgentChatSessionsPath(),
@@ -412,15 +622,6 @@ export async function updatePendingUserQueueOnDisk(
     (data) => {
       const session = data.sessions.find(s => s.id === sessionId);
       if (session) {
-        session.pendingUserQueue = queue.items.length > 0
-          ? {
-              items: queue.items.map(item => ({
-                text: item.text,
-                images: item.images?.length ? [...item.images] : undefined,
-              })),
-              expanded: queue.expanded,
-            }
-          : undefined;
         session.updatedAt = new Date().toISOString();
         found = true;
       }
@@ -429,6 +630,68 @@ export async function updatePendingUserQueueOnDisk(
   );
   invalidateIndexCache();
   return found;
+}
+
+export const updatePendingUserQueueOnDisk = updateDeferredInputBufferOnDisk;
+
+function resolveMessageIndex(
+  messageIndex: number,
+  diskLen: number,
+  frontendMessageCount?: number,
+): number {
+  let effectiveIndex = messageIndex;
+  if (frontendMessageCount !== undefined && frontendMessageCount !== diskLen) {
+    const fromEnd = frontendMessageCount - 1 - messageIndex;
+    effectiveIndex = Math.max(0, diskLen - 1 - fromEnd);
+  }
+  return Math.min(effectiveIndex, diskLen - 1);
+}
+
+export async function updateUserMessageContentOnDisk(
+  sessionId: string,
+  messageIndex: number,
+  content: string,
+  frontendMessageCount?: number,
+): Promise<'ok' | 'not_found' | 'out_of_range' | 'not_user' | 'empty'> {
+  const data = await getIndexData();
+  if (!data.sessions.some((session) => session.id === sessionId)) {
+    return 'not_found';
+  }
+
+  const messages = await readMessages(sessionId);
+  if (messages.length === 0) return 'out_of_range';
+
+  const effectiveIndex = resolveMessageIndex(messageIndex, messages.length, frontendMessageCount);
+  const target = messages[effectiveIndex];
+  if (!target) return 'out_of_range';
+  if (target.role !== 'user') return 'not_user';
+
+  const nextContent = content.trim();
+  if (!nextContent && (!target.images || target.images.length === 0)) {
+    return 'empty';
+  }
+
+  target.content = nextContent;
+  if (target.contentBlocks?.some((block) => block.type === 'text')) {
+    target.contentBlocks = [{ type: 'text', text: nextContent }];
+  }
+
+  await writeAllMessages(sessionId, messages);
+
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (indexData) => {
+      const session = indexData.sessions.find((entry) => entry.id === sessionId);
+      if (session) {
+        session.updatedAt = new Date().toISOString();
+      }
+      return indexData;
+    },
+  );
+  invalidateIndexCache();
+
+  return 'ok';
 }
 
 export async function deleteSessionFromDisk(sessionId: string): Promise<boolean> {
@@ -452,6 +715,7 @@ export async function deleteSessionFromDisk(sessionId: string): Promise<boolean>
 
   // Delete the JSONL message file
   await deleteMessageFile(sessionId);
+  await deleteSessionAdjuncts(sessionId);
 
   if (found && deletedAgentId) {
     await deleteRuntimePromptCopy(deletedAgentId, sessionId).catch(() => {});
@@ -471,13 +735,8 @@ export async function branchSession(
     throw new Error('Message index out of range');
   }
 
-  let effectiveIndex = branchAtIndex;
   const diskLen = source.messages.length;
-  if (frontendMessageCount !== undefined && frontendMessageCount !== diskLen) {
-    const fromEnd = frontendMessageCount - 1 - branchAtIndex;
-    effectiveIndex = Math.max(0, diskLen - 1 - fromEnd);
-  }
-  effectiveIndex = Math.min(effectiveIndex, diskLen - 1);
+  const effectiveIndex = resolveMessageIndex(branchAtIndex, diskLen, frontendMessageCount);
 
   if (diskLen === 0) {
     throw new Error('Source session has no messages');
@@ -495,7 +754,7 @@ export async function branchSession(
     id: newId,
     agentId: source.agentId,
     projectKey: source.projectKey,
-    title: `\u{1F33F} ${source.title}`,
+    title: `\u{1F33F} ${repairStoredTextIfNeeded(source.title) ?? source.title}`,
     createdAt: now,
     updatedAt: now,
     config: source.config,
@@ -529,12 +788,14 @@ export async function eagerlySaveUserTurn(opts: {
   agentId: string;
   projectKey?: string;
   sessionTitle?: string;
+  sourceType?: AgentChatSession['sourceType'];
+  sourceId?: string;
+  todoId?: string;
   messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }>;
   claudeSessionId?: string;
   config?: SessionConfig;
   parentSessionId?: string;
   importedTurnIndices?: number[];
-  background?: boolean;
 }): Promise<void> {
   const now = new Date().toISOString();
 
@@ -559,13 +820,20 @@ export async function eagerlySaveUserTurn(opts: {
         if (incomingLen > existingLen) {
           data.sessions[idx].updatedAt = now;
           data.sessions[idx].messageCount = incomingLen;
+          data.sessions[idx].sourceType = opts.sourceType ?? data.sessions[idx].sourceType;
+          data.sessions[idx].sourceId = opts.sourceId ?? data.sessions[idx].sourceId;
+          data.sessions[idx].todoId = opts.todoId ?? data.sessions[idx].todoId;
         }
-      } else {
-        data.sessions.push({
-          id: opts.sessionId,
-          agentId: opts.agentId,
-          projectKey: opts.projectKey,
-          title: opts.sessionTitle ?? '\u65B0\u4F1A\u8BDD',
+        } else {
+          const normalizedTitle = repairStoredTextIfNeeded(opts.sessionTitle) ?? '\u65B0\u4F1A\u8BDD';
+          data.sessions.push({
+            id: opts.sessionId,
+            agentId: opts.agentId,
+            projectKey: opts.projectKey,
+            title: normalizedTitle,
+          sourceType: opts.sourceType,
+          sourceId: opts.sourceId,
+          todoId: opts.todoId,
           claudeSessionId: opts.claudeSessionId,
           createdAt: now,
           updatedAt: now,
@@ -574,8 +842,6 @@ export async function eagerlySaveUserTurn(opts: {
           importedTurnIndices: opts.importedTurnIndices,
           unreadCount: 0,
           messageCount: incomingLen,
-          pendingUserQueue: undefined,
-          background: opts.background || undefined,
         });
       }
       return data;
@@ -607,13 +873,9 @@ export async function persistSessionToDisk(
       const { messages: _msgs, ...incomingMeta } = session;
       const meta: SessionMeta = {
         ...incomingMeta,
+        title: repairStoredTextIfNeeded(incomingMeta.title) ?? incomingMeta.title,
         messageCount: session.messages.length,
       };
-
-      // Write execution record (unified state source for sub-agent callers)
-      if (execution) {
-        meta.execution = execution;
-      }
 
       if (idx >= 0) {
         // Preserve fields from existing index entry
@@ -621,11 +883,14 @@ export async function persistSessionToDisk(
         meta.archived = data.sessions[idx].archived;
         meta.config = meta.config ?? data.sessions[idx].config;
         meta.guardRetryCount = meta.guardRetryCount ?? data.sessions[idx].guardRetryCount;
-        meta.pendingUserQueue = meta.pendingUserQueue ?? data.sessions[idx].pendingUserQueue;
         meta.unreadCount = (data.sessions[idx].unreadCount || 0) + 1;
+        meta.execution = execution ?? data.sessions[idx].execution;
         data.sessions[idx] = meta;
       } else {
         meta.unreadCount = 1;
+        if (execution) {
+          meta.execution = execution;
+        }
         data.sessions.push(meta);
       }
       return data;
@@ -722,11 +987,12 @@ export async function importSessionsWithMessages(
   }
 
   // Build metadata entries (without messages)
-  const metas: SessionMeta[] = sessions.map(s => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { messages: _msgs, ...meta } = s;
-    return { ...meta, messageCount: s.messages?.length ?? 0 };
-  });
+  const metas: SessionMeta[] = sessions.map((session) =>
+    sanitizeSessionMeta({
+      ...session,
+      messageCount: session.messages?.length ?? 0,
+    } as LegacySessionMeta),
+  );
 
   // Merge into index
   await modifyJsonFile<AgentChatSessionsData>(
@@ -751,19 +1017,13 @@ export async function importSessionsWithMessages(
 
 // ── Agent Loading ──
 
-let _agentsCache: AgentsData | null = null;
-let _agentsCacheTs = 0;
-const AGENTS_CACHE_TTL = 30_000;
-
+/**
+ * Resolve agent for chat runtime. Uses the same source as /api/agents (registry + object model + merge/repair),
+ * not a raw agents.json read — otherwise custom agents stored only under agents/definitions/ fail with 404.
+ */
 export async function loadAgent(agentId: string): Promise<Agent> {
-  const now = Date.now();
-  if (!_agentsCache || now - _agentsCacheTs > AGENTS_CACHE_TTL) {
-    _agentsCache = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
-    _agentsCacheTs = now;
-  }
-  const agentsData = _agentsCache;
-  const agent = agentsData.agents.find(a => a.id === agentId && !a.archived);
-  if (!agent) {
+  const agent = await getAgentById(agentId, { includePrompt: true });
+  if (!agent || agent.archived) {
     const { HttpError } = await import('@/lib/http-error');
     throw new HttpError('Agent not found or archived', 404);
   }

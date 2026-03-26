@@ -1,118 +1,211 @@
 /**
  * 音频播放管理器
- * - 使用 Web Audio API 生成系统提示音（Windows 自带）
- * - 支持音量控制、重试机制
+ * - 支持多种内置合成音色
+ * - 支持用户上传的短音频文件（Data URL）
+ * - 自定义文件播放失败时自动回退到内置音色
  */
 
+import type {
+  BuiltInNotificationSoundId,
+  NotificationSoundSource,
+} from '@/types';
+import { BUILT_IN_NOTIFICATION_TONES } from '@/lib/notification/notification-sound-presets';
+
 export interface PlayOptions {
-  volume?: number; // 0-1
+  volume?: number;
   maxRetries?: number;
+}
+
+export interface SoundPlaybackConfig {
+  soundSource?: NotificationSoundSource;
+  builtinSound?: BuiltInNotificationSoundId;
+  customSoundDataUrl?: string;
 }
 
 export class AudioPlayer {
   private audioContext: AudioContext | null = null;
+  private preloadedCustomAudio: HTMLAudioElement | null = null;
+  private preloadedCustomAudioSrc: string | null = null;
 
-  /**
-   * 初始化 AudioContext（延迟初始化）
-   */
   private getAudioContext(): AudioContext {
     if (this.audioContext) {
       return this.audioContext;
     }
 
-    if (typeof window === 'undefined' || typeof AudioContext === 'undefined') {
+    if (typeof window === 'undefined' || typeof window.AudioContext === 'undefined') {
       throw new Error('Web Audio API 不可用');
     }
 
-    // 使用全局 AudioContext（如果存在）或创建新的
-    this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    this.audioContext = new (window.AudioContext || (window as typeof window & {
+      webkitAudioContext?: typeof AudioContext;
+    }).webkitAudioContext!)();
     return this.audioContext;
   }
 
-  /**
-   * 使用 Web Audio API 生成简单提示音（类似 Windows 通知音）
-   * 生成两个频率的音调序列，形成典型的通知声音效果
-   */
   async playSound(
-    _soundPath: string,
-    options: PlayOptions = {}
+    config: SoundPlaybackConfig,
+    options: PlayOptions = {},
   ): Promise<void> {
     const { volume = 0.5, maxRetries = 2 } = options;
 
-    // 服务端环境检查
     if (typeof window === 'undefined') {
-      console.debug('[AudioPlayer] 服务端环境，跳过播放');
       return;
     }
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        const ctx = this.getAudioContext();
-
-        // 确保 AudioContext 处于运行状态
-        if (ctx.state === 'suspended') {
-          await ctx.resume();
+        if (config.soundSource === 'custom' && config.customSoundDataUrl) {
+          await this.playCustomAudio(config.customSoundDataUrl, volume);
+          return;
         }
 
-        // 创建音量控制
-        const gainNode = ctx.createGain();
-        gainNode.gain.value = Math.max(0, Math.min(1, volume));
-        gainNode.connect(ctx.destination);
-
-        // 生成两段提示音：
-        // 1. 短的高频音（800Hz，200ms）
-        // 2. 短的低频音（1200Hz，150ms）
-        const now = ctx.currentTime;
-        const duration1 = 0.2;
-        const duration2 = 0.15;
-        const silence = 0.05;
-
-        // 第一段音频
-        const osc1 = ctx.createOscillator();
-        osc1.frequency.value = 800;
-        osc1.type = 'sine';
-        osc1.connect(gainNode);
-        osc1.start(now);
-        osc1.stop(now + duration1);
-
-        // 第二段音频（有间隔）
-        const osc2 = ctx.createOscillator();
-        osc2.frequency.value = 1200;
-        osc2.type = 'sine';
-        osc2.connect(gainNode);
-        osc2.start(now + duration1 + silence);
-        osc2.stop(now + duration1 + silence + duration2);
-
-        // 等待播放完成
-        const totalDuration = duration1 + silence + duration2;
-        await new Promise((resolve) => {
-          setTimeout(resolve, totalDuration * 1000);
-        });
-
+        await this.playBuiltInTone(config.builtinSound ?? 'classic', volume);
         return;
       } catch (error) {
-        if (attempt === maxRetries - 1) {
-          console.error('[AudioPlayer] 音频播放失败:', error);
-        } else {
-          // 重试
-          await new Promise((r) => setTimeout(r, 50));
+        const shouldFallbackToBuiltin =
+          config.soundSource === 'custom' && !!config.customSoundDataUrl;
+
+        if (shouldFallbackToBuiltin) {
+          console.warn('[AudioPlayer] 自定义通知音频播放失败，回退到内置音色:', error);
+          await this.playBuiltInTone(config.builtinSound ?? 'classic', volume);
+          return;
         }
+
+        if (attempt === maxRetries - 1) {
+          throw error;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 50));
       }
     }
   }
 
-  /**
-   * 预加载（Web Audio API 不需要预加载）
-   */
-  async preload(_soundPath: string): Promise<void> {
-    // Web Audio API 生成音频，无需预加载
-    console.debug('[AudioPlayer] Web Audio API 无需预加载');
+  async preload(config: SoundPlaybackConfig): Promise<void> {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (config.soundSource !== 'custom' || !config.customSoundDataUrl) {
+      this.clearPreloadedCustomAudio();
+      return;
+    }
+
+    if (this.preloadedCustomAudioSrc === config.customSoundDataUrl) {
+      return;
+    }
+
+    this.clearPreloadedCustomAudio();
+
+    const audio = new Audio(config.customSoundDataUrl);
+    audio.preload = 'auto';
+    audio.load();
+
+    this.preloadedCustomAudio = audio;
+    this.preloadedCustomAudioSrc = config.customSoundDataUrl;
   }
 
-  /**
-   * 清理资源
-   */
   cleanup(): void {
-    // AudioContext 无需手动清理（全局共享）
+    this.clearPreloadedCustomAudio();
   }
+
+  private clearPreloadedCustomAudio(): void {
+    if (this.preloadedCustomAudio) {
+      this.preloadedCustomAudio.pause();
+      this.preloadedCustomAudio.src = '';
+      this.preloadedCustomAudio = null;
+    }
+    this.preloadedCustomAudioSrc = null;
+  }
+
+  private async playCustomAudio(src: string, volume: number): Promise<void> {
+    const audio = new Audio(src);
+    audio.preload = 'auto';
+    audio.volume = clampVolume(volume);
+
+    await waitForAudioPlayback(audio);
+  }
+
+  private async playBuiltInTone(
+    presetId: BuiltInNotificationSoundId,
+    volume: number,
+  ): Promise<void> {
+    const ctx = this.getAudioContext();
+
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
+
+    const gainNode = ctx.createGain();
+    gainNode.gain.value = clampVolume(volume);
+    gainNode.connect(ctx.destination);
+
+    const preset = BUILT_IN_NOTIFICATION_TONES[presetId] ?? BUILT_IN_NOTIFICATION_TONES.classic;
+    let cursor = ctx.currentTime;
+
+    for (const step of preset) {
+      const osc = ctx.createOscillator();
+      const stepGain = ctx.createGain();
+      const duration = step.durationMs / 1000;
+      const baseGain = gainNode.gain.value * (step.gain ?? 1);
+
+      osc.type = step.type ?? 'sine';
+      osc.frequency.value = step.frequency;
+      osc.connect(stepGain);
+      stepGain.connect(gainNode);
+
+      stepGain.gain.setValueAtTime(0.0001, cursor);
+      stepGain.gain.exponentialRampToValueAtTime(Math.max(baseGain, 0.0001), cursor + 0.01);
+      stepGain.gain.exponentialRampToValueAtTime(0.0001, cursor + duration);
+
+      osc.start(cursor);
+      osc.stop(cursor + duration);
+
+      cursor += duration + ((step.gapAfterMs ?? 0) / 1000);
+    }
+
+    const totalMs = Math.max(0, (cursor - ctx.currentTime) * 1000);
+    await new Promise((resolve) => setTimeout(resolve, totalMs));
+  }
+}
+
+function clampVolume(volume: number): number {
+  if (!Number.isFinite(volume)) return 0.5;
+  return Math.min(1, Math.max(0, volume));
+}
+
+async function waitForAudioPlayback(audio: HTMLAudioElement): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      audio.removeEventListener('ended', handleEnded);
+      audio.removeEventListener('error', handleError);
+      audio.removeEventListener('abort', handleAbort);
+    };
+
+    const handleEnded = () => {
+      cleanup();
+      resolve();
+    };
+
+    const handleError = () => {
+      cleanup();
+      reject(audio.error ?? new Error('Custom sound playback failed'));
+    };
+
+    const handleAbort = () => {
+      cleanup();
+      reject(new Error('Custom sound playback aborted'));
+    };
+
+    audio.addEventListener('ended', handleEnded, { once: true });
+    audio.addEventListener('error', handleError, { once: true });
+    audio.addEventListener('abort', handleAbort, { once: true });
+
+    audio.play().catch((error) => {
+      cleanup();
+      reject(error);
+    });
+  }).finally(() => {
+    audio.pause();
+    audio.currentTime = 0;
+  });
 }

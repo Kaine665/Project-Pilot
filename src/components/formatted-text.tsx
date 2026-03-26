@@ -94,7 +94,7 @@ export const FormattedText = memo(function FormattedText({
   onActionRestore,
 }: FormattedTextProps) {
   // ── Action tags detection — render as ActionCard components ──
-  if (hasActionTags(text) || (isStreaming && /<(?:save-doc|save-knowledge|suspend-task|save-checkpoint|await-sub-agents)\s/.test(text))) {
+  if (hasActionTags(text) || (isStreaming && /<(?:save-doc|save-knowledge|save-checkpoint|await-sub-agents)\s/.test(text))) {
     const segments = parseActionTags(text, isStreaming);
 
     // If we found action segments, render mixed content

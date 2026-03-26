@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from '@/i18n/routing';
+import { useSearchParams } from '@/client/i18n/routing';
+import { useRouter } from '@/client/i18n/routing';
 
 export default function DocsIndexPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
@@ -14,13 +16,14 @@ export default function DocsIndexPage() {
         const data = await res.json();
         const projects = (data.projects ?? []).filter((p: { archived?: boolean }) => !p.archived);
         if (projects.length > 0) {
-          router.replace(`/flows/docs/${projects[0].key}`);
+          const qs = searchParams.toString();
+          router.replace(qs ? `/flows/docs/${projects[0].key}?${qs}` : `/flows/docs/${projects[0].key}`);
           return;
         }
       } catch { /* ignore */ }
       setChecked(true);
     })();
-  }, [router]);
+  }, [router, searchParams]);
 
   if (!checked) return null;
 

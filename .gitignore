@@ -19,6 +19,7 @@
 
 # production
 /build
+/dist
 
 # misc
 .DS_Store
@@ -59,3 +60,6 @@ openclaw/
 
 # SuperDesign artifacts
 .superdesign/
+
+# 第三方技能完整仓库应放在 ~/.project-pilot/skills/_vendor/ ，勿提交仓库内拷贝
+tmp/imported-skills/

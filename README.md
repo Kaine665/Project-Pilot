@@ -115,19 +115,21 @@ npm run dev
 
 #### 数据目录
 
-ProjectPilot 默认把数据存到用户目录：
+**分层说明**：磁盘上的目录树目标与迁移进度以本机 `~/.project-pilot/README.md` 与 `数据文件夹现状.md` 为准（不在仓库内）。仓库内的路径约定、摘录与索引见 [数据存储](docs/data-storage.md)（**对齐日期**：2026-03-26）。
 
-- Windows: `C:\Users\<username>\.project-pilot\data\`
-- macOS: `/Users/<username>/.project-pilot/data/`
-- Linux: `/home/<username>/.project-pilot/data/`
+未设置 `PROJECT_PILOT_DATA_DIR` 时，代码默认数据根一般为用户目录下的 `~/.project-pilot`（各业务子路径由 `file-store` 解析；历史文档中常见 `.../.project-pilot/data/` 等写法，细节以 [数据存储](docs/data-storage.md) 为准）：
 
-如需自定义：
+- Windows: `%USERPROFILE%\.project-pilot\`
+- macOS: `/Users/<username>/.project-pilot/`
+- Linux: `/home/<username>/.project-pilot/`
+
+如需自定义数据根：
 
 ```bash
-PROJECT_PILOT_DATA_DIR=/path/to/custom/data
+PROJECT_PILOT_DATA_DIR=/path/to/custom/root
 ```
 
-如果要从旧版本迁移项目内 `data/`：
+从旧版本迁移项目内 `data/`：
 
 ```bash
 npm run migrate:data
@@ -135,9 +137,9 @@ npm run migrate:data
 
 ### 文档
 
+- [数据存储](docs/data-storage.md)
 - [Agent Chat Architecture](docs/agent-chat-architecture.md)
 - [Context System](docs/context-system.md)
-- [Data Storage](docs/data-storage.md)
 - [AI Task Workflow](docs/ai-task-workflow.md)
 - [Artifact Retry](docs/artifact-retry.md)
 - [Frontend Design](docs/frontend-design.md)
@@ -265,19 +267,21 @@ Open `http://localhost:4000`
 
 #### Data Directory
 
-ProjectPilot stores data in the user directory by default:
+**Layered authority**: on your machine, `~/.project-pilot/README.md` and `数据文件夹现状.md` describe the target tree and migration status (not in git). In-repo path notes and excerpts: [Data storage](docs/data-storage.md) (**last aligned**: 2026-03-26).
 
-- Windows: `C:\Users\<username>\.project-pilot\data\`
-- macOS: `/Users/<username>/.project-pilot/data/`
-- Linux: `/home/<username>/.project-pilot/data/`
+By default (when `PROJECT_PILOT_DATA_DIR` is unset), the app resolves a data root under your user profile, typically `~/.project-pilot` with domain-specific subpaths from `file-store` (older docs may show `.../.project-pilot/data/`; see [Data storage](docs/data-storage.md)):
 
-Custom location:
+- Windows: `%USERPROFILE%\.project-pilot\`
+- macOS: `/Users/<username>/.project-pilot/`
+- Linux: `/home/<username>/.project-pilot/`
+
+Custom root:
 
 ```bash
-PROJECT_PILOT_DATA_DIR=/path/to/custom/data
+PROJECT_PILOT_DATA_DIR=/path/to/custom/root
 ```
 
-Migrate legacy project-local data:
+Migrate legacy project-local `data/`:
 
 ```bash
 npm run migrate:data
@@ -285,6 +289,7 @@ npm run migrate:data
 
 ### Documentation
 
+- [Data storage](docs/data-storage.md)
 - [Agent Chat Architecture](docs/agent-chat-architecture.md)
 - [Context System](docs/context-system.md)
 - [Data Storage](docs/data-storage.md)

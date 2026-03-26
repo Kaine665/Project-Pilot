@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="zh" class="">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ProjectPilot</title>
+  <script>
+    (function(){
+      try {
+        var t = localStorage.getItem('theme') || 'system';
+        var d = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (d) document.documentElement.classList.add('dark');
+      } catch(e) {}
+    })();
+  </script>
+</head>
+<body class="font-sans antialiased" style="font-family: 'Inter Variable', sans-serif;">
+  <div id="root"></div>
+  <script type="module" src="/src/client/main.tsx"></script>
+</body>
+</html>

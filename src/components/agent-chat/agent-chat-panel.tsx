@@ -1,13 +1,15 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo, useReducer, startTransition } from 'react';
-import { Bot, Sparkles, PanelRight, Settings } from 'lucide-react';
-import { useTranslations } from 'next-intl';
-import { useRouter } from '@/i18n/routing';
+import { Sparkles, PanelRight, Settings } from 'lucide-react';
+import { useTranslations } from '@/client/i18n/use-translations';
+import { useRouter } from '@/client/i18n/routing';
 import { ChatInput } from '@/components/chat-input';
 import { ChatNotificationBanners } from '@/components/chat-notification-banners';
 import { useNotificationManager } from '@/hooks/use-notification-manager';
 import { useModelConfig } from '@/hooks/use-model-config';
+import { AgentAvatar } from '@/components/agent-form';
+import { resolveAgentAvatarSrc } from '@/lib/agent-avatar';
 import { SaveKnowledgeDialog } from '@/components/save-knowledge-dialog';
 import { GuestAgentOverlay } from '@/components/guest-agent-overlay';
 import { SessionConfigPanel } from '@/components/session-config-panel';
@@ -23,21 +25,26 @@ import type { SessionNavLink } from '@/components/agent-session-utils';
 import { buildSessionUrl } from '@/components/agent-session-utils';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import { imageAttachmentFromDataUrl } from '@/lib/image-assets';
+import { repairTextIfNeeded } from '@/lib/text-repair';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
-import type { PendingUserQueueItem, PendingUserQueueState, SessionConfig } from '@/types/agent-chat';
+import type { DeferredInputBufferItem, DeferredInputBufferState, SessionConfig } from '@/types/agent-chat';
 import type { ChatMessage, ChatToolCall, ContentBlock } from '@/types';
 
 import type { AgentChatPanelProps, IndexedSSEEvent } from './types';
-import { PROVIDER_LABELS, stripSessionTitleTag, clonePendingQueueItems } from './types';
+import { PROVIDER_LABELS, stripSessionTitleTag, cloneDeferredInputBufferItems } from './types';
 import { chatReducer, chatInitialState } from './chat-reducer';
 import { sessionReducer, upsertSessionListItem, patchSessionListItem } from './session-reducer';
 import type { SessionState } from './session-reducer';
 import { ChatMessageList } from './chat-message-list';
 import { ChatQueueOverlay } from './chat-queue-overlay';
+import { ChatScrollTimeline } from './chat-scroll-timeline';
 import { ChatSessionHeader } from './chat-session-header';
 import { ChatSessionSidebar } from './chat-session-sidebar';
 import { TaskCardBanner } from './task-card-banner';
-import { buildCacheKey, cachePanelState, popCachedState } from './agent-session-cache';
+import { AgentChatPanelView } from './agent-chat-panel-view';
+import { buildCacheKey } from './agent-session-cache';
+import { usePanelCacheSnapshot } from './use-panel-cache-snapshot';
+import { useSessionBootstrap } from './use-session-bootstrap';
 
 export function AgentChatPanel({
   agent,
@@ -47,6 +54,8 @@ export function AgentChatPanel({
   projectKey,
   cachedAgents,
   cachedSettings,
+  workspaceMode = false,
+  draftCacheSlot,
 }: AgentChatPanelProps) {
   const t = useTranslations();
   const router = useRouter();
@@ -54,9 +63,15 @@ export function AgentChatPanel({
   const isFull = variant === 'full';
 
   // Cache key for surviving SPA route changes
+  // Workspace: keep cache key stable when parent promotes draft → real session id (same panel slot).
   const cacheKey = useMemo(
-    () => buildCacheKey(agent.id, projectKey, initialSessionId),
-    [agent.id, projectKey, initialSessionId],
+    () => buildCacheKey(
+      agent.id,
+      projectKey,
+      workspaceMode ? null : initialSessionId,
+      workspaceMode ? (draftCacheSlot ?? null) : null,
+    ),
+    [agent.id, projectKey, initialSessionId, workspaceMode, draftCacheSlot],
   );
 
   // Resolve project path for folder explorer
@@ -66,6 +81,11 @@ export function AgentChatPanel({
     const entry = projects.find(p => p.key === projectKey);
     return entry?.path ?? undefined;
   }, [projectKey, projects]);
+
+  const assistantAvatarSrc = useMemo(
+    () => resolveAgentAvatarSrc(agent.slug, agent.icon),
+    [agent.slug, agent.icon],
+  );
 
   // Insert file path reference into chat input via CustomEvent
   const handleInsertFilePath = useCallback((filePath: string) => {
@@ -82,7 +102,7 @@ export function AgentChatPanel({
   // Session management
   const defaultSessionTitle = hasProject ? t('chat.newSession') : 'New Session';
   const [session, sessionDispatch] = useReducer(sessionReducer, {
-    id: null,
+    id: initialSessionId ?? null,
     title: defaultSessionTitle,
     list: [],
     config: {},
@@ -95,7 +115,15 @@ export function AgentChatPanel({
 
   // Provider / model routing (extracted to useModelConfig hook)
   const modelConfig = useModelConfig(agent, projectKey, cachedSettings);
-  const { provider: chatProvider, model: chatModel, options: chatModelOptions, effort: chatEffort, contextWindow, promptEstimate } = modelConfig;
+  const {
+    provider: chatProvider,
+    model: chatModel,
+    options: chatModelOptions,
+    effort: chatEffort,
+    fastMode: chatFastMode,
+    contextWindow,
+    promptEstimate,
+  } = modelConfig;
   const setChatProvider = modelConfig.setProvider;
   const setChatModel = modelConfig.setModel;
   const setChatEffort = modelConfig.setEffort;
@@ -109,9 +137,6 @@ export function AgentChatPanel({
 
   // Design doc saved notifications (auto-path)
   const [docsSaved, setDocsSaved] = useState<Array<{ docId: string; title: string; projectKey: string }>>([]);
-
-  // Topic completion detection
-  const [topicCompletion, setTopicCompletion] = useState<{ completed: boolean; confidence: number; summary: string } | null>(null);
 
   // Task card
   const [taskCard, setTaskCard] = useState<import('@/lib/task-card-store').TaskCard | null>(null);
@@ -131,6 +156,7 @@ export function AgentChatPanel({
   const [showConfig, setShowConfig] = useState(false);
   const [showFolderExplorer, setShowFolderExplorer] = useState(false);
   const [showRuntimePanel, setShowRuntimePanel] = useState(false);
+  const [currentMessageId, setCurrentMessageId] = useState<string | null>(null);
 
   // Plan viewer
   const [planContent, setPlanContent] = useState<string | null>(null);
@@ -155,15 +181,17 @@ export function AgentChatPanel({
   const lastEventIdxRef = useRef<number>(-1);
   const finalizingRef = useRef(false);
   const streamTargetSessionRef = useRef<string | null>(null);
-  const sessionIdRef = useRef<string | null>(null);
+  const streamStartedAtRef = useRef<number | null>(null);
+  const sessionIdRef = useRef<string | null>(initialSessionId ?? null);
+  const sessionTitleRef = useRef<string>(defaultSessionTitle);
   const initTokenRef = useRef(0);
   const doSendRef = useRef<(text: string, images?: string[]) => void>(() => {});
   const isStreamingRef = useRef(false);
   const messagesRef = useRef<ChatMessage[]>([]);
   const pendingAnswerRef = useRef<{ answer: string; targetSessionId: string } | null>(null);
-  const pendingUserMessagesRef = useRef<PendingUserQueueItem[]>([]);
+  const pendingUserMessagesRef = useRef<DeferredInputBufferItem[]>([]);
   const [pendingUserQueueCount, setPendingUserQueueCount] = useState(0);
-  const [pendingUserMessages, setPendingUserMessages] = useState<PendingUserQueueItem[]>([]);
+  const [pendingUserMessages, setPendingUserMessages] = useState<DeferredInputBufferItem[]>([]);
   const [queueExpanded, setQueueExpanded] = useState(true);
 
   // Sync sessionId to both reducer state and ref atomically
@@ -180,29 +208,34 @@ export function AgentChatPanel({
     messagesRef.current = chat.messages;
   }, [chat.messages]);
 
+  // Keep sessionTitleRef in sync so finalizeStream can read it without being a dep (avoids useSessionBootstrap loop)
+  useEffect(() => {
+    sessionTitleRef.current = sessionTitle;
+  }, [sessionTitle]);
+
   const persistPendingUserQueue = useCallback((
     targetSessionId: string,
-    items: PendingUserQueueItem[],
+    items: DeferredInputBufferItem[],
     expanded: boolean = queueExpanded,
   ) => {
     fetch(`/api/agent-chat/sessions/${targetSessionId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        action: 'updatePendingUserQueue',
+        action: 'updateDeferredInputBuffer',
         queue: {
-          items: clonePendingQueueItems(items),
+          items: cloneDeferredInputBufferItems(items),
           expanded: expanded ? undefined : false,
-        } satisfies PendingUserQueueState,
+        } satisfies DeferredInputBufferState,
       }),
     }).catch(() => {});
   }, [queueExpanded]);
 
   const replacePendingUserQueue = useCallback((
-    items: PendingUserQueueItem[],
+    items: DeferredInputBufferItem[],
     options?: { persist?: boolean; sessionId?: string | null; expanded?: boolean },
   ) => {
-    const nextItems = clonePendingQueueItems(items);
+    const nextItems = cloneDeferredInputBufferItems(items);
     pendingUserMessagesRef.current = nextItems;
     setPendingUserMessages(nextItems);
     setPendingUserQueueCount(nextItems.length);
@@ -234,28 +267,19 @@ export function AgentChatPanel({
   // Cache panel state on unmount (SPA navigation) so we can restore instantly on remount.
   // Backend runner is NOT stopped — the user is still in the app and may come back.
   // The beforeunload handler below handles actual page/tab close.
-  const cacheKeyRef = useRef(cacheKey);
-  cacheKeyRef.current = cacheKey;
-  const sessionRef = useRef(session);
-  sessionRef.current = session;
+  usePanelCacheSnapshot({
+    cacheKey,
+    sessionIdRef,
+    isStreamingRef,
+    showConfig,
+    showFolderExplorer,
+    showRuntimePanel,
+    queueExpanded,
+  });
 
   useEffect(() => {
     return () => {
-      // Snapshot current state into the module-level cache
-      const s = sessionRef.current;
-      cachePanelState(cacheKeyRef.current, {
-        messages: messagesRef.current,
-        isStreaming: isStreamingRef.current,
-        sessionId: sessionIdRef.current,
-        sessionTitle: s.title,
-        sessionList: s.list,
-        sessionConfig: s.config,
-        parentSession: s.parentSession,
-        childSessions: s.childSessions,
-        cachedAt: Date.now(),
-      });
-
-      // Disconnect SSE (frontend only) — backend keeps running
+      // Disconnect SSE (frontend only) - backend keeps running
       streamAbortRef.current?.abort();
       pendingAnswerRef.current = null;
       pendingUserMessagesRef.current = [];
@@ -327,6 +351,7 @@ export function AgentChatPanel({
   );
   const effortOptions = useMemo(
     () => [
+      { value: 'minimal', label: 'Minimal' },
       { value: 'low', label: 'Low' },
       { value: 'medium', label: 'Medium' },
       { value: 'high', label: 'High' },
@@ -441,26 +466,39 @@ export function AgentChatPanel({
       if (!res.ok) return;
       if (token !== undefined && initTokenRef.current !== token) return;
       const data = await res.json();
-      let messages: Array<{ role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }> = data.messages ?? [];
+      let messages: Array<{
+        role: 'user' | 'assistant';
+        content: string;
+        images?: string[];
+        contentBlocks?: ContentBlock[];
+      }> = data.messages ?? [];
 
       // Defensive: if disk data ends with a user message, check in-memory status
       if (messages.length > 0 && messages[messages.length - 1].role === 'user') {
         try {
-          const statusRes = await fetch(`/api/agent-chat/status?sessionId=${sid}`, { cache: 'no-store' });
-          if (statusRes.ok) {
-            const statusData = await statusRes.json();
-            if (Array.isArray(statusData.messages) && statusData.messages.length > messages.length) {
-              messages = statusData.messages;
+          const snapshotRes = await fetch(
+            `/api/agent-chat/runtime-snapshot?sessionId=${sid}`,
+            { cache: 'no-store' },
+          );
+          if (snapshotRes.ok) {
+            const snapshotData = await snapshotRes.json();
+            if (
+              snapshotData.available
+              && Array.isArray(snapshotData.messages)
+              && snapshotData.messages.length > messages.length
+            ) {
+              messages = snapshotData.messages;
             }
           }
         } catch { /* ignore fallback failure */ }
       }
 
       const restored: ChatMessage[] = messages.map(
-        (m: { role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }, i: number) => ({
+        (m: { role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }, i: number) => ({
           id: `restored-${i}`,
           role: m.role,
           content: m.content,
+          images: m.images,
           contentBlocks: m.contentBlocks,
           timestamp: '',
         }),
@@ -469,9 +507,11 @@ export function AgentChatPanel({
       sessionDispatch({ type: 'SET_TITLE', title: data.title ?? 'New Session' });
       const loadedConfig = data.config ?? {};
       sessionDispatch({ type: 'SET_CONFIG', config: loadedConfig });
-      const loadedQueueState = data.pendingUserQueue as PendingUserQueueState | undefined;
+      const loadedQueueState = (
+        data.adjuncts?.deferredInputBuffer
+      ) as DeferredInputBufferState | undefined;
       const loadedQueue = Array.isArray(loadedQueueState?.items)
-        ? clonePendingQueueItems(loadedQueueState.items)
+        ? cloneDeferredInputBufferItems(loadedQueueState.items)
         : [];
       replacePendingUserQueue(loadedQueue);
       setQueueExpanded(loadedQueueState?.expanded !== false);
@@ -489,7 +529,7 @@ export function AgentChatPanel({
     } catch {
       // ignore
     }
-  }, [loadSessionNavLinks, replacePendingUserQueue]);
+  }, [loadSessionNavLinks, replacePendingUserQueue, modelConfig]);
 
   // Finalize streaming -> commit assistant message
   const finalizeStream = useCallback(() => {
@@ -510,8 +550,9 @@ export function AgentChatPanel({
 
     chatDispatch({ type: 'STREAM_END' });
 
+    const cleanedText = stripSessionTitleTag(fullText);
+
     if (!isStaleStream && (fullText || toolCalls.length > 0)) {
-      const cleanedText = stripSessionTitleTag(fullText);
       const assistantMsg: ChatMessage = {
         id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         role: 'assistant',
@@ -572,17 +613,23 @@ export function AgentChatPanel({
     // Send completion notification
     const completedSid = isStaleStream ? streamTarget : currentSid;
     if (completedSid && (fullText || toolCalls.length > 0)) {
+      const durationMs = streamStartedAtRef.current
+        ? Math.max(0, Date.now() - streamStartedAtRef.current)
+        : undefined;
       notifyCompletion({
         agentName: agent.name || agent.id,
         sessionId: completedSid,
-        sessionTitle: sessionTitle || 'Untitled Session',
+        sessionTitle: sessionTitleRef.current || 'Untitled Session',
+        messagePreview: cleanedText,
+        durationMs,
         navigateToSession: () => {
           const sessionUrl = buildSessionUrl(agent.id, completedSid);
           router.push(sessionUrl);
         },
       }).catch(err => console.error('通知发送失败:', err));
     }
-  }, [agent.id, agent.name, projectKey, fetchSessionList, onSessionChange, flushQueuedUserMessage, router, sessionTitle, notifyCompletion]);
+    streamStartedAtRef.current = null;
+  }, [agent.id, agent.name, projectKey, fetchSessionList, onSessionChange, flushQueuedUserMessage, router, notifyCompletion, clearSessionRunning]);
 
   // Connect to SSE stream
   const connectToStream = useCallback((targetSessionId: string, since: number) => {
@@ -748,16 +795,6 @@ export function AgentChatPanel({
               chatDispatch({ type: 'STREAM_ERROR', message: event.message ?? 'Stream error' });
               break;
 
-            case 'topic_completion':
-              if (event.completed) {
-                setTopicCompletion({ completed: event.completed, confidence: event.confidence, summary: event.summary });
-              }
-              break;
-
-            case 'task_card_updated':
-              setTaskCard(event.card);
-              break;
-
             case 'awaiting_sub_agents':
               sessionDispatch({ type: 'UPDATE_LIST', updater: (prev) =>
                 prev.map((s) =>
@@ -769,11 +806,7 @@ export function AgentChatPanel({
               break;
 
             case 'done':
-              // AI response is complete. Finalize the streaming UI immediately so the
-              // user sees the response without waiting for satellite tasks to finish.
-              // The SSE connection stays open until 'stream_end' (emitted after all
-              // satellite tasks complete) — this lets events like 'task_card_updated'
-              // arrive and update the UI in real-time.
+              // AI response is complete; finalize streaming UI. Connection closes after `stream_end`.
               if (rafIdRef.current) {
                 cancelAnimationFrame(rafIdRef.current);
                 rafIdRef.current = 0;
@@ -782,9 +815,7 @@ export function AgentChatPanel({
               break;
 
             case 'stream_end':
-              // All satellite tasks have completed. The sidecar will close the SSE
-              // connection after emitting this event. No UI action needed here —
-              // finalizeStream() was already called on 'done'.
+              // SSE 正常结束；UI 已在 `done` 时 finalize。
               break;
           }
         }
@@ -812,10 +843,13 @@ export function AgentChatPanel({
         // Abort may come from handleAbort's fallback force-close OR stale connection detection.
         // Check if backend is still running — if so, reconnect instead of giving up.
         if (isStreamingRef.current && sessionIdRef.current === targetSessionId) {
-          fetch(`/api/agent-chat/status?sessionId=${targetSessionId}`, { cache: 'no-store' })
+          fetch(`/api/agent-chat/runtime-snapshot?sessionId=${targetSessionId}`, { cache: 'no-store' })
             .then(r => r.json())
             .then(data => {
-              if (data.status === 'running' && sessionIdRef.current === targetSessionId) {
+              if (
+                (data.status === 'running' || data.status === 'awaiting')
+                && sessionIdRef.current === targetSessionId
+              ) {
                 console.info(`[SSE] Backend still running for ${targetSessionId}, reconnecting from idx ${lastEventIdxRef.current + 1}`);
                 connectToStream(targetSessionId, lastEventIdxRef.current + 1);
               } else {
@@ -832,7 +866,7 @@ export function AgentChatPanel({
       chatDispatch({ type: 'STREAM_ERROR', message: `Stream connection failed: ${(err as Error).message}` });
       finalizeStream();
     });
-  }, [finalizeStream]);
+  }, [finalizeStream, onSessionChange]);
 
   // Reset state helper
   const resetState = useCallback(() => {
@@ -857,150 +891,33 @@ export function AgentChatPanel({
     }
   }, [hasProject, t, setSessionIdSync]);
 
-  // Initialize: restore from cache (instant) or load sessions from server
-  useEffect(() => {
-    let cancelled = false;
-    const token = ++initTokenRef.current;
-    const isStale = () => cancelled || initTokenRef.current !== token;
-
-    // ── Try restoring from cache first (SPA route-back scenario) ──
-    // Guard: don't trust cache entries with empty messages when we have a real
-    // session to load. This prevents React Strict Mode's double-mount from
-    // poisoning the cache — the first mount's cleanup saves empty state (async
-    // fetch not yet complete), and the second mount would restore that empty cache
-    // and skip the server load entirely.
-    const cached = popCachedState(cacheKey);
-    if (cached && (cached.messages.length > 0 || !initialSessionId)) {
-      // Instantly restore UI state — no flash, no loading
-      chatDispatch({ type: 'SET_MESSAGES', messages: cached.messages });
-      setSessionIdSync(cached.sessionId);
-      sessionDispatch({ type: 'SET_TITLE', title: cached.sessionTitle });
-      sessionDispatch({ type: 'UPDATE_LIST', updater: () => cached.sessionList });
-      sessionDispatch({ type: 'SET_CONFIG', config: cached.sessionConfig });
-      sessionDispatch({ type: 'SET_NAV', parent: cached.parentSession, children: cached.childSessions });
-
-      // If the session was streaming, check backend and reconnect SSE
-      if (cached.isStreaming && cached.sessionId) {
-        const sid = cached.sessionId;
-        (async () => {
-          try {
-            const res = await fetch(`/api/agent-chat/status?sessionId=${sid}`, { cache: 'no-store' });
-            if (isStale()) return;
-            const data = await res.json();
-            if (data.status === 'running') {
-              markSessionRunning(sid, data.startedAt);
-              chatDispatch({ type: 'SEND_START' });
-              blocksRef.current = [];
-              fullTextRef.current = '';
-              toolCallsRef.current = [];
-              connectToStream(sid, 0);
-            } else {
-              // Backend finished while we were away — clear running indicator
-              clearSessionRunning(sid);
-            }
-          } catch { /* ignore */ }
-        })();
-      }
-    } else {
-      // ── No cache — full initialization from server ──
-      resetState();
-
-      if (hasProject && !projectKey) return;
-      if (!hasProject && initialSessionId === null) return;
-
-      const reconnectRunning = (sid: string, statusData: {
-        messages?: Array<{ role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }>;
-        startedAt?: string;
-      }) => {
-        if (Array.isArray(statusData.messages) && statusData.messages.length > 0) {
-          const restored: ChatMessage[] = statusData.messages.map(
-            (m: { role: 'user' | 'assistant'; content: string; contentBlocks?: ContentBlock[] }, i: number) => ({
-              id: `restored-${i}`,
-              role: m.role,
-              content: m.content,
-              contentBlocks: m.contentBlocks,
-              timestamp: '',
-            }),
-          );
-          chatDispatch({ type: 'SET_MESSAGES', messages: restored });
-        }
-        markSessionRunning(sid, statusData.startedAt);
-        chatDispatch({ type: 'SEND_START' });
-        blocksRef.current = [];
-        fullTextRef.current = '';
-        toolCallsRef.current = [];
-        connectToStream(sid, 0);
-      };
-
-      (async () => {
-        // Fast path: agents page with specific session
-        if (!hasProject && initialSessionId) {
-          setSessionIdSync(initialSessionId);
-          const [, statusRes] = await Promise.all([
-            loadSessionData(initialSessionId, token),
-            fetch(`/api/agent-chat/status?sessionId=${initialSessionId}`, { cache: 'no-store' }),
-          ]);
-          if (isStale()) return;
-          try {
-            const statusData = await statusRes.json();
-            if (statusData.status === 'running') {
-              reconnectRunning(initialSessionId, statusData);
-            }
-          } catch { /* ignore status parse failure */ }
-          return;
-        }
-
-        // Standard path: butler/project mode
-        const sessions = await fetchSessionList(agent.id, projectKey);
-        if (isStale()) return;
-
-        if (sessions.length > 0) {
-          const latest = sessions[0];
-          setSessionIdSync(latest.id);
-          sessionDispatch({ type: 'SET_TITLE', title: latest.title });
-          const [, statusRes] = await Promise.all([
-            loadSessionData(latest.id, token),
-            fetch(`/api/agent-chat/status?sessionId=${latest.id}`, { cache: 'no-store' }),
-          ]);
-          if (isStale()) return;
-          try {
-            const statusData = await statusRes.json();
-            if (statusData.status === 'running') {
-              reconnectRunning(latest.id, statusData);
-              return;
-            }
-          } catch { /* ignore */ }
-
-          for (let i = 1; i < sessions.length; i++) {
-            if (isStale()) return;
-            const sid = sessions[i].id;
-            const res = await fetch(`/api/agent-chat/status?sessionId=${sid}`, { cache: 'no-store' });
-            const data = await res.json();
-            if (!isStale() && data.status === 'running') {
-              setSessionIdSync(sid);
-              sessionDispatch({ type: 'SET_TITLE', title: sessions[i].title });
-              await loadSessionData(sid, token);
-              if (isStale()) return;
-              reconnectRunning(sid, data);
-              break;
-            }
-          }
-        }
-      })();
-    }
-
-    return () => {
-      cancelled = true;
-      if (initTokenRef.current === token) {
-        initTokenRef.current += 1;
-      }
-      if (streamAbortRef.current) {
-        streamAbortRef.current.abort();
-        streamAbortRef.current = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agent.id, projectKey]);
+  useSessionBootstrap({
+    agentId: agent.id,
+    projectKey,
+    initialSessionId,
+    hasProject,
+    workspaceMode,
+    cacheKey,
+    sessionIdRef,
+    messagesRef,
+    initTokenRef,
+    streamAbortRef,
+    setShowConfig,
+    setShowFolderExplorer,
+    setShowRuntimePanel,
+    setQueueExpanded,
+    resetState,
+    fetchSessionList,
+    setSessionIdSync,
+    loadSessionData,
+    sessionDispatch,
+    markSessionRunning,
+    chatDispatch,
+    blocksRef,
+    fullTextRef,
+    toolCallsRef,
+    connectToStream,
+  });
 
   useEffect(() => {
     if (!sessionId || isStreaming || pendingUserQueueCount === 0) return;
@@ -1015,13 +932,44 @@ export function AgentChatPanel({
   // Smart auto-scroll
   const [autoScroll, setAutoScroll] = useState(true);
   const scrollRafRef = useRef<number>(0);
+  const updateActiveMessageId = useCallback(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const nodes = Array.from(container.querySelectorAll<HTMLElement>('[data-chat-message-id]'));
+    if (nodes.length === 0) {
+      setCurrentMessageId(null);
+      return;
+    }
+
+    const anchorY = container.getBoundingClientRect().top + Math.min(96, container.clientHeight * 0.25);
+    let nextMessageId = nodes[nodes.length - 1]?.dataset.chatMessageId ?? null;
+    let bestAbove = -Infinity;
+    let bestBelow = Infinity;
+
+    for (const node of nodes) {
+      const messageId = node.dataset.chatMessageId;
+      if (!messageId) continue;
+      const offset = node.getBoundingClientRect().top - anchorY;
+      if (offset <= 0 && offset > bestAbove) {
+        bestAbove = offset;
+        nextMessageId = messageId;
+      } else if (bestAbove === -Infinity && offset > 0 && offset < bestBelow) {
+        bestBelow = offset;
+        nextMessageId = messageId;
+      }
+    }
+
+    setCurrentMessageId((prev) => (prev === nextMessageId ? prev : nextMessageId));
+  }, []);
 
   const handleChatScroll = useCallback(() => {
     if (!scrollRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
     const isNearBottom = scrollHeight - scrollTop - clientHeight < 40;
     setAutoScroll(isNearBottom);
-  }, []);
+    updateActiveMessageId();
+  }, [updateActiveMessageId]);
 
   useEffect(() => {
     if (!autoScroll) return;
@@ -1031,8 +979,35 @@ export function AgentChatPanel({
       if (scrollRef.current) {
         scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
       }
+      updateActiveMessageId();
     });
-  }, [messages, streamingBlocks, autoScroll]);
+  }, [messages, streamingBlocks, autoScroll, updateActiveMessageId]);
+
+  useEffect(() => {
+    const rafId = requestAnimationFrame(() => {
+      updateActiveMessageId();
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [messages, streamingBlocks, isStreaming, updateActiveMessageId]);
+
+  const handleSelectTimelineMessage = useCallback((messageId: string) => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const target = Array.from(container.querySelectorAll<HTMLElement>('[data-chat-message-id]'))
+      .find((node) => node.dataset.chatMessageId === messageId);
+
+    if (!target) return;
+
+    setAutoScroll(false);
+    setCurrentMessageId(messageId);
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    target.classList.add('ring-2', 'ring-blue-400', 'ring-offset-2', 'ring-offset-white', 'dark:ring-offset-zinc-950');
+    window.setTimeout(() => {
+      target.classList.remove('ring-2', 'ring-blue-400', 'ring-offset-2', 'ring-offset-white', 'dark:ring-offset-zinc-950');
+    }, 1400);
+  }, []);
 
   // Send message
   const doSend = useCallback(async (text: string, images?: string[]) => {
@@ -1055,10 +1030,12 @@ export function AgentChatPanel({
 
     chatDispatch({ type: 'UPDATE_MESSAGES', updater: (prev) => {
       const last = prev[prev.length - 1];
-      if (last?.role === 'user' && last.content === userMsg.content) {
-        return [...prev.slice(0, -1), userMsg];
-      }
-      return [...prev, userMsg];
+      const next =
+        last?.role === 'user' && last.content === userMsg.content
+          ? [...prev.slice(0, -1), userMsg]
+          : [...prev, userMsg];
+      messagesRef.current = next;
+      return next;
     } });
     setAutoScroll(true);
     chatDispatch({ type: 'SEND_START' });
@@ -1067,7 +1044,7 @@ export function AgentChatPanel({
     toolCallsRef.current = [];
     lastEventIdxRef.current = -1;
 
-    let targetSessionId = sessionId;
+    let targetSessionId = sessionIdRef.current ?? sessionId ?? initialSessionId ?? null;
     if (!targetSessionId) {
       targetSessionId = `agent-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const quickTitle = text.trim().slice(0, 10) || (hasProject ? t('chat.newSession') : 'New Session');
@@ -1082,9 +1059,11 @@ export function AgentChatPanel({
       onSessionChange?.(newItem);
     }
 
+    const runStartedAt = new Date().toISOString();
+    streamStartedAtRef.current = Date.parse(runStartedAt);
     markSessionRunning(
       targetSessionId,
-      new Date().toISOString(),
+      runStartedAt,
       text.trim().slice(0, 10) || sessionTitle,
     );
 
@@ -1117,6 +1096,7 @@ export function AgentChatPanel({
           providerOverride: chatProvider,
           modelOverride: chatModel || undefined,
           effortOverride: chatProvider === 'openai' ? chatEffort : undefined,
+          fastModeOverride: chatProvider === 'openai' ? chatFastMode : undefined,
           images: imageAttachments.length > 0 ? imageAttachments : undefined,
           initialTitle: text.trim().slice(0, 10) || undefined,
           config: (() => {
@@ -1124,8 +1104,15 @@ export function AgentChatPanel({
               ...sessionConfig,
               provider: chatProvider,
               model: chatModel || undefined,
+              openaiReasoningEffort: chatProvider === 'openai' ? chatEffort : undefined,
+              openaiFastMode: chatProvider === 'openai' ? chatFastMode : undefined,
             };
-            const hasAny = configWithModel.contextIds?.length || configWithModel.supplementaryPrompt?.trim() || configWithModel.provider || configWithModel.model;
+            const hasAny = configWithModel.contextIds?.length
+              || configWithModel.supplementaryPrompt?.trim()
+              || configWithModel.provider
+              || configWithModel.model
+              || configWithModel.openaiReasoningEffort
+              || configWithModel.openaiFastMode;
             return hasAny ? configWithModel : undefined;
           })(),
         }),
@@ -1148,7 +1135,7 @@ export function AgentChatPanel({
       chatDispatch({ type: 'STREAM_END' });
       clearSessionRunning(targetSessionId);
     }
-  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, chatProvider, chatModel, chatEffort, connectToStream, onSessionChange, t, sessionConfig, setSessionIdSync, persistPendingUserQueue, sessionTitle, markSessionRunning, clearSessionRunning]);
+  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, chatProvider, chatModel, chatEffort, chatFastMode, connectToStream, onSessionChange, t, sessionConfig, setSessionIdSync, persistPendingUserQueue, sessionTitle, markSessionRunning, clearSessionRunning]);
 
   useEffect(() => {
     doSendRef.current = doSend;
@@ -1204,7 +1191,7 @@ export function AgentChatPanel({
   }, [messages.length, isStreaming]);
 
   // ChatInput submit handler
-  const handleChatInputSubmit = useCallback((text: string, images: string[], _files: Array<{ name: string; content: string }>) => {
+  const handleChatInputSubmit = useCallback((text: string, images: string[]) => {
     const hasPayload = !!text.trim() || images.length > 0;
     if (!hasPayload) return;
 
@@ -1312,7 +1299,7 @@ export function AgentChatPanel({
         // ignore
       }
     }
-  }, [sessionId]);
+  }, [sessionId, modelConfig]);
 
   const handleNewSession = useCallback(() => {
     if (isStreaming) return;
@@ -1333,7 +1320,7 @@ export function AgentChatPanel({
     fullTextRef.current = '';
     toolCallsRef.current = [];
     modelConfig.resetToAgentDefaults(agent);
-  }, [isStreaming, hasProject, t, setSessionIdSync, agent, replacePendingUserQueue]);
+  }, [isStreaming, hasProject, t, agent, replacePendingUserQueue, modelConfig]);
 
   const handleResumeCheckpoint = useCallback(() => {
     const checkpoint = checkpointRef.current;
@@ -1378,7 +1365,7 @@ export function AgentChatPanel({
       }).catch(() => {});
     }
     await loadSessionData(target.id, token);
-  }, [isStreaming, loadSessionData, setSessionIdSync, replacePendingUserQueue]);
+  }, [isStreaming, loadSessionData, replacePendingUserQueue]);
 
   const handleSaveAsKnowledge = useCallback((_messageId: string, content: string) => {
     setSaveDialogContent(content);
@@ -1391,6 +1378,60 @@ export function AgentChatPanel({
 
   const handleDeleteMessage = useCallback((messageId: string) => {
     chatDispatch({ type: 'UPDATE_MESSAGES', updater: prev => prev.filter(m => m.id !== messageId) });
+  }, []);
+
+  const handleEditMessage = useCallback(async (messageId: string, nextContent: string) => {
+    const currentMessages = messagesRef.current;
+    const messageIndex = currentMessages.findIndex((message) => message.id === messageId);
+    if (messageIndex < 0) return false;
+
+    const targetMessage = currentMessages[messageIndex];
+    if (!targetMessage || targetMessage.role !== 'user') return false;
+
+    const normalizedContent = nextContent.trim();
+    if (!normalizedContent && (!targetMessage.images || targetMessage.images.length === 0)) {
+      return false;
+    }
+
+    const applyLocalUpdate = () => {
+      chatDispatch({
+        type: 'UPDATE_MESSAGES',
+        updater: (prev) => prev.map((message) => {
+          if (message.id !== messageId) return message;
+          return {
+            ...message,
+            content: normalizedContent,
+            contentBlocks: message.contentBlocks?.some((block) => block.type === 'text')
+              ? [{ type: 'text', text: normalizedContent }]
+              : message.contentBlocks,
+          };
+        }),
+      });
+    };
+
+    const currentSessionId = sessionIdRef.current;
+    if (!currentSessionId) {
+      applyLocalUpdate();
+      return true;
+    }
+
+    try {
+      const response = await fetch(`/api/agent-chat/sessions/${currentSessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'updateUserMessage',
+          messageIndex,
+          frontendMessageCount: currentMessages.length,
+          content: normalizedContent,
+        }),
+      });
+      if (!response.ok) return false;
+      applyLocalUpdate();
+      return true;
+    } catch {
+      return false;
+    }
   }, []);
 
   const handleBranch = useCallback(async (messageId: string) => {
@@ -1443,7 +1484,7 @@ export function AgentChatPanel({
     } catch {
       // ignore
     }
-  }, [loadSessionData, setSessionIdSync, onSessionChange]);
+  }, [loadSessionData, onSessionChange]);
 
   const handleRegenerate = useCallback(() => {
     if (isStreamingRef.current) return;
@@ -1482,7 +1523,6 @@ export function AgentChatPanel({
       setTimeout(() => el.classList.remove('ring-2', 'ring-offset-1', 'ring-yellow-400'), 1500);
     }
   }, []);
-  const handleDismissTopicCompletion = useCallback(() => setTopicCompletion(null), []);
   const handleSelectGuest = useCallback((a: Agent) => setGuestAgent(a), []);
 
   const handleViewPlan = useCallback((content: string) => {
@@ -1497,11 +1537,11 @@ export function AgentChatPanel({
     setIsPlanOpen(false);
   }, []);
 
-  const handleActionReject = useCallback((_tag: ParsedActionTag) => {
+  const handleActionReject = useCallback(() => {
     // For now, just visual — future: call API to undo the action
   }, []);
 
-  const handleActionRestore = useCallback((_tag: ParsedActionTag) => {
+  const handleActionRestore = useCallback(() => {
     // For now, just visual — future: call API to re-execute the action
   }, []);
 
@@ -1564,10 +1604,8 @@ export function AgentChatPanel({
     <ChatNotificationBanners
       knowledgeDrafts={knowledgeDrafts}
       docsSaved={docsSaved}
-      topicCompletion={topicCompletion}
       onDismissKnowledge={handleDismissKnowledge}
       onDismissDocs={handleDismissDocs}
-      onDismissTopicCompletion={handleDismissTopicCompletion}
       onScrollToAction={handleScrollToAction}
       checkpointSaved={checkpointSaved}
       onResumeCheckpoint={handleResumeCheckpoint}
@@ -1650,27 +1688,29 @@ export function AgentChatPanel({
     errorMsg,
     inPlanMode,
     thinkingText,
+    assistantAvatarSrc,
     onSaveAsKnowledge: handleSaveAsKnowledge,
     onDelete: handleDeleteMessage,
     onRegenerate: handleRegenerate,
     onBranch: handleBranch,
+    onEdit: handleEditMessage,
     onRetry: handleRetry,
     onViewPlan: handleViewPlan,
     onFileClick: handleFileClick,
     onCompressOpen: () => setCompressDialogOpen(true),
     onCompressDismiss: () => setCompressDismissed(true),
+    enableUserMessageEdit: !hasProject,
+    showUserMessageBranch: hasProject,
     onActionPreview: handleActionPreview,
     onActionReject: handleActionReject,
     onActionRestore: handleActionRestore,
   };
 
-  // ── Plain mode (agents page, no variant/projectKey) ──
-  if (!hasProject) {
-    return (
-      <div className="flex h-full">
-      <div className="flex h-full flex-1 flex-col min-w-0">
-        {/* Plain mode toolbar */}
-        <div className="flex items-center justify-end gap-0.5 px-3 py-1.5 border-b border-zinc-100 dark:border-zinc-800">
+  const plainToolbar = (
+    workspaceMode
+      ? null
+      : (
+        <div className="flex items-center justify-end gap-0.5 border-b border-zinc-100 px-3 py-1.5 dark:border-zinc-800">
           <button
             type="button"
             onClick={() => setShowConfig(v => !v)}
@@ -1679,7 +1719,6 @@ export function AgentChatPanel({
                 ? 'text-blue-500 dark:text-blue-400'
                 : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
             }`}
-            title="会话配置"
           >
             <Settings className="h-3.5 w-3.5" />
           </button>
@@ -1691,202 +1730,188 @@ export function AgentChatPanel({
                 ? 'text-blue-500 dark:text-blue-400'
                 : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
             }`}
-            title="运行时面板"
           >
             <PanelRight className="h-3.5 w-3.5" />
           </button>
         </div>
+      )
+  );
 
-        {/* Messages + Queue overlay */}
-        <div className="relative flex-1 min-h-0">
-          <div
-            ref={scrollRef}
-            onScroll={handleChatScroll}
-            className={`h-full space-y-3 overflow-y-auto p-4 ${isStreaming && pendingUserMessages.length > 0 ? 'pb-44' : ''}`}
-          >
-            {messages.length === 0 && !isStreaming ? (
-              <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
-                <Bot className="h-10 w-10 stroke-1" />
-                <p className="text-sm">Send a message to {agent.name} to start chatting.</p>
-              </div>
-            ) : (
-              <ChatMessageList
-                {...messageListProps}
-                showCompressHint={messages.length > 20 && !compressDismissed && !isStreaming}
-              />
-            )}
-          </div>
+  const agentDisplayName = repairTextIfNeeded(agent.name) ?? agent.name;
 
-          {isStreaming && pendingUserMessages.length > 0 && (
-            <ChatQueueOverlay
-              pendingMessages={pendingUserMessages}
-              expanded={queueExpanded}
-              onToggleExpanded={updateQueueExpanded}
-              onSendNow={handleSendNow}
-              onRemove={handleRemoveFromQueue}
-            />
-          )}
-        </div>
-
-        {notificationBanners}
-
-        {/* Input area */}
-        <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
-          <ChatInput
-            {...chatInputProps}
-            placeholder={`Send a message to ${agent.name}...`}
-          />
-        </div>
-
-        {dialogs}
+  const plainEmptyState = (
+    <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-zinc-400 dark:text-zinc-500">
+      <div className="h-14 w-14 overflow-hidden rounded-2xl bg-zinc-100 dark:bg-zinc-800">
+        <AgentAvatar slug={agent.slug} iconKey={agent.icon} className="h-full w-full object-cover" />
       </div>
-      {configDrawer}
-      {runtimeDrawer}
-      {/* Right-side folder explorer */}
-      <div
-        className={`shrink-0 overflow-hidden border-l border-zinc-200 transition-[width] duration-200 ease-in-out dark:border-zinc-800 ${
-          showFolderExplorer ? 'w-[280px]' : 'w-0 border-l-0'
-        }`}
-      >
-        <div className="h-full w-[280px]">
-          <FolderExplorerPanel
-            onClose={() => setShowFolderExplorer(false)}
-            onInsertPath={handleInsertFilePath}
-            initialPath={projectPath}
-          />
-        </div>
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">{agentDisplayName}</p>
+        <p className="max-w-sm text-sm">
+          {workspaceMode ? `向 ${agentDisplayName} 发一条消息，开始当前工作区会话。` : `向 ${agentDisplayName} 发一条消息，开始对话。`}
+        </p>
       </div>
-      {planPanel}
-      {actionPanel}
-      </div>
-    );
-  }
-
-  // ── Project/Butler mode ──
-
-  if (!projectKey) {
-    return (
-      <div className="flex h-full items-center justify-center p-4 text-center">
-        <p className="text-xs text-zinc-400">{t('projects.selectFirst')}</p>
-      </div>
-    );
-  }
-
-  const chatArea = (
-    <div className="flex h-full">
-    <div className="relative flex h-full flex-1 flex-col min-w-0">
-      <ChatSessionHeader
-        isFull={isFull}
-        sessionId={sessionId}
-        sessionTitle={sessionTitle}
-        sessionList={sessionList}
-        sessionClockNow={sessionClockNow}
-        sessionConfig={sessionConfig}
-        isStreaming={isStreaming}
-        showConfig={showConfig}
-        parentSession={parentSession}
-        childSessions={childSessions}
-        showChildList={showChildList}
-        messages={messages}
-        sessionDispatch={sessionDispatch}
-        onSwitchSession={handleSwitchSession}
-        onNewSession={handleNewSession}
-        onDelete={handleDelete}
-        onToggleConfig={() => setShowConfig(v => !v)}
-        onCompressOpen={() => setCompressDialogOpen(true)}
-        showRuntimePanel={showRuntimePanel}
-        onToggleRuntimePanel={() => setShowRuntimePanel(v => !v)}
-      />
-
-      {/* Messages + Queue overlay */}
-      <div className="relative flex-1 min-h-0">
-        <div
-          ref={scrollRef}
-          onScroll={handleChatScroll}
-          className={`h-full space-y-3 overflow-y-auto p-3 ${isStreaming && pendingUserMessages.length > 0 ? 'pb-44' : ''}`}
-        >
-        {/* Task Card Banner */}
-        {taskCard && <TaskCardBanner card={taskCard} />}
-
-        {messages.length === 0 && !isStreaming ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
-            <Sparkles className="h-8 w-8 stroke-1" />
-            <p className="text-xs">{t('chat.plannerHint')}</p>
-          </div>
-        ) : (
-          <ChatMessageList
-            {...messageListProps}
-            showCompressHint={messages.length >= 20 && !compressDismissed && !isStreaming}
-          />
-        )}
-        </div>
-
-        {isStreaming && pendingUserMessages.length > 0 && (
-          <ChatQueueOverlay
-            pendingMessages={pendingUserMessages}
-            expanded={queueExpanded}
-            onToggleExpanded={updateQueueExpanded}
-            onSendNow={handleSendNow}
-            onRemove={handleRemoveFromQueue}
-          />
-        )}
-      </div>
-
-      {/* Input area */}
-      <div className="border-t border-zinc-100 p-2 dark:border-zinc-800">
-        <ChatInput
-          {...chatInputProps}
-          placeholder={t('chat.plannerPlaceholder')}
-          minHeight={isFull ? '120px' : '200px'}
-          fullWidth
-        />
-      </div>
-
-      {/* Notifications */}
-      {!isStreaming && (
-        <ChatNotificationBanners
-          knowledgeDrafts={knowledgeDrafts}
-          docsSaved={docsSaved}
-          topicCompletion={topicCompletion}
-          onDismissKnowledge={handleDismissKnowledge}
-          onDismissDocs={handleDismissDocs}
-          onDismissTopicCompletion={handleDismissTopicCompletion}
-          onScrollToAction={handleScrollToAction}
-          checkpointSaved={checkpointSaved}
-          onResumeCheckpoint={handleResumeCheckpoint}
-          onDismissCheckpoint={handleDismissCheckpoint}
-          className="mx-2 mb-1"
-        />
-      )}
-
-      {dialogs}
-    </div>
-    {configDrawer}
-    {runtimeDrawer}
-    {planPanel}
-    {actionPanel}
     </div>
   );
 
-  // Full mode: session sidebar + chat area
-  if (isFull) {
-    return (
-      <div className="flex h-full w-full">
-        <ChatSessionSidebar
-          sessionList={sessionList}
-          currentSessionId={sessionId}
-          sessionClockNow={sessionClockNow}
-          isStreaming={isStreaming}
-          onSwitchSession={handleSwitchSession}
-          onNewSession={handleNewSession}
-        />
-        <div className="flex-1 min-w-0">
-          {chatArea}
-        </div>
-      </div>
-    );
-  }
+  const plainMessageList = (
+    <ChatMessageList
+      {...messageListProps}
+      showCompressHint={messages.length > 20 && !compressDismissed && !isStreaming}
+    />
+  );
 
-  // Sidebar mode
-  return chatArea;
+  const plainInput = (
+    <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
+      <ChatInput
+        {...chatInputProps}
+        placeholder={`发送消息给 ${agentDisplayName}...`}
+      />
+    </div>
+  );
+
+  const projectHeader = workspaceMode ? null : (
+    <ChatSessionHeader
+      isFull={isFull}
+      sessionId={sessionId}
+      sessionTitle={sessionTitle}
+      sessionList={sessionList}
+      sessionClockNow={sessionClockNow}
+      sessionConfig={sessionConfig}
+      isStreaming={isStreaming}
+      showConfig={showConfig}
+      parentSession={parentSession}
+      childSessions={childSessions}
+      showChildList={showChildList}
+      messages={messages}
+      sessionDispatch={sessionDispatch}
+      onSwitchSession={handleSwitchSession}
+      onNewSession={handleNewSession}
+      onDelete={handleDelete}
+      onToggleConfig={() => setShowConfig(v => !v)}
+      onCompressOpen={() => setCompressDialogOpen(true)}
+      showRuntimePanel={showRuntimePanel}
+      onToggleRuntimePanel={() => setShowRuntimePanel(v => !v)}
+    />
+  );
+
+  const projectTaskBanner = taskCard ? <TaskCardBanner card={taskCard} /> : null;
+
+  const projectEmptyState = workspaceMode ? (
+    <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center text-zinc-400 dark:text-zinc-500">
+      <div className="h-16 w-16 overflow-hidden rounded-[24px] bg-zinc-100 dark:bg-zinc-800">
+        <AgentAvatar slug={agent.slug} iconKey={agent.icon} className="h-full w-full object-cover" />
+      </div>
+      <div className="space-y-1.5">
+        <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">{agentDisplayName}</p>
+        <p className="max-w-sm text-sm leading-6">
+          向 {agentDisplayName} 发一条消息，开始当前工作区会话。
+        </p>
+      </div>
+    </div>
+  ) : (
+    <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
+      <Sparkles className="h-8 w-8 stroke-1" />
+      <p className="text-xs">{t('chat.plannerHint')}</p>
+    </div>
+  );
+
+  const projectMessageList = (
+    <ChatMessageList
+      {...messageListProps}
+      showCompressHint={messages.length >= 20 && !compressDismissed && !isStreaming}
+    />
+  );
+
+  const projectInput = (
+    <div className="border-t border-zinc-100 p-2 dark:border-zinc-800">
+      <ChatInput
+        {...chatInputProps}
+        placeholder={workspaceMode ? `继续向 ${agentDisplayName} 发送消息...` : t('chat.plannerPlaceholder')}
+        minHeight={isFull ? '120px' : '200px'}
+        fullWidth
+      />
+    </div>
+  );
+
+  const queueOverlay = (
+    <ChatQueueOverlay
+      pendingMessages={pendingUserMessages}
+      expanded={queueExpanded}
+      onToggleExpanded={updateQueueExpanded}
+      onSendNow={handleSendNow}
+      onRemove={handleRemoveFromQueue}
+    />
+  );
+
+  const timeline = (
+    <ChatScrollTimeline
+      messages={messages}
+      isStreaming={isStreaming}
+      streamingBlocks={streamingBlocks}
+      currentMessageId={currentMessageId}
+      onSelectMessage={handleSelectTimelineMessage}
+    />
+  );
+
+  const folderExplorer = (
+    <div
+      className={`shrink-0 overflow-hidden border-l border-zinc-200 transition-[width] duration-200 ease-in-out dark:border-zinc-800 ${
+        showFolderExplorer ? 'w-[280px]' : 'w-0 border-l-0'
+      }`}
+    >
+      <div className="h-full w-[280px]">
+        <FolderExplorerPanel
+          onClose={() => setShowFolderExplorer(false)}
+          onInsertPath={handleInsertFilePath}
+          initialPath={projectPath}
+        />
+      </div>
+    </div>
+  );
+
+  const sidebar = (
+    <ChatSessionSidebar
+      sessionList={sessionList}
+      currentSessionId={sessionId}
+      sessionClockNow={sessionClockNow}
+      isStreaming={isStreaming}
+      onSwitchSession={handleSwitchSession}
+      onNewSession={handleNewSession}
+    />
+  );
+
+  return (
+    <AgentChatPanelView
+      hasProject={hasProject}
+      isFull={isFull}
+      projectKey={projectKey}
+      selectProjectHint={t('projects.selectFirst')}
+      scrollRef={scrollRef}
+      onChatScroll={handleChatScroll}
+      hasPendingQueue={isStreaming && pendingUserMessages.length > 0}
+      plainScrollClassName={workspaceMode ? 'px-5 py-5' : 'px-4 py-4 pr-24'}
+      projectScrollClassName="px-3 py-3 pr-22"
+      plainToolbar={plainToolbar}
+      showPlainEmptyState={messages.length === 0 && !isStreaming}
+      plainEmptyState={plainEmptyState}
+      plainMessageList={plainMessageList}
+      plainInput={plainInput}
+      projectHeader={projectHeader}
+      projectTaskBanner={projectTaskBanner}
+      showProjectEmptyState={messages.length === 0 && !isStreaming}
+      projectEmptyState={projectEmptyState}
+      projectMessageList={projectMessageList}
+      projectInput={projectInput}
+      timeline={workspaceMode ? null : timeline}
+      queueOverlay={queueOverlay}
+      notificationBanners={notificationBanners}
+      dialogs={dialogs}
+      configDrawer={workspaceMode ? null : configDrawer}
+      runtimeDrawer={workspaceMode ? null : runtimeDrawer}
+      folderExplorer={workspaceMode ? null : folderExplorer}
+      planPanel={planPanel}
+      actionPanel={actionPanel}
+      sidebar={workspaceMode ? null : sidebar}
+    />
+  );
 }

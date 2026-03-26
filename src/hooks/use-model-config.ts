@@ -1,15 +1,26 @@
 import { useState, useEffect, useRef } from 'react';
 import { getProviderPreset, getModelContextWindow } from '@/lib/provider-registry';
+import { normalizeOpenAIFastMode } from '@/lib/openai-fast-mode';
+import {
+  DEFAULT_OPENAI_REASONING_EFFORT,
+  isOpenAIReasoningEffort,
+} from '@/lib/openai-reasoning-effort';
 import type { ProviderId, OpenAIReasoningEffort, Agent } from '@/types';
 import type { SessionConfig } from '@/types/agent-chat';
 
 type ModelSelectOption = { value: string; label: string };
+
+const INITIAL_PROVIDER: ProviderId = 'anthropic';
+const INITIAL_PRESET = getProviderPreset(INITIAL_PROVIDER);
+const INITIAL_OPTIONS = INITIAL_PRESET.models.map((m) => ({ value: m.id, label: m.label || m.id }));
+const INITIAL_MODEL = INITIAL_OPTIONS[0]?.value || '';
 
 interface CachedSettings {
   provider: ProviderId;
   model: string;
   modelOptions: ModelSelectOption[];
   effort: OpenAIReasoningEffort;
+  fastMode: boolean;
 }
 
 export interface UseModelConfigReturn {
@@ -17,60 +28,107 @@ export interface UseModelConfigReturn {
   model: string;
   options: ModelSelectOption[];
   effort: OpenAIReasoningEffort;
+  fastMode: boolean;
   contextWindow: number;
   promptEstimate: number;
   setProvider: (p: ProviderId) => void;
   setModel: (m: string) => void;
   setOptions: (o: ModelSelectOption[]) => void;
   setEffort: (e: OpenAIReasoningEffort) => void;
-  /** Apply session config overrides (provider/model) */
+  setFastMode: (enabled: boolean) => void;
   applySessionConfig: (config: SessionConfig) => void;
-  /** Reset model to agent defaults */
   resetToAgentDefaults: (agent: Agent) => void;
 }
 
 const OPENAI_MODELS_CACHE_TTL = 5 * 60 * 1000;
 
-/**
- * Manages provider/model/effort selection, including:
- * - Loading from global settings or cached values
- * - Updating model options when provider changes (+ OpenAI dynamic fetch)
- * - Tracking contextWindow based on selected model
- * - Fetching prompt estimate based on agent/project
- */
+function resolveOpenAIDefaultEffort(
+  defaultOpenAIReasoningEffort: OpenAIReasoningEffort | undefined,
+  provider: ProviderId,
+  globalEffort: OpenAIReasoningEffort,
+): OpenAIReasoningEffort {
+  if (provider === 'openai' && defaultOpenAIReasoningEffort) {
+    return defaultOpenAIReasoningEffort;
+  }
+  return globalEffort;
+}
+
+function buildProviderOptions(provider: ProviderId, model: string): ModelSelectOption[] {
+  const preset = getProviderPreset(provider);
+  const optionMap = new Map<string, string>();
+  for (const entry of preset.models) {
+    optionMap.set(entry.id, entry.label || entry.id);
+  }
+  if (model && !optionMap.has(model)) {
+    optionMap.set(model, model);
+  }
+  return Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
+}
+
 export function useModelConfig(
   agent: Agent,
   projectKey: string | null | undefined,
   cachedSettings?: CachedSettings,
 ): UseModelConfigReturn {
-  const [provider, setProvider] = useState<ProviderId>('anthropic');
-  const [model, setModel] = useState('claude-sonnet-4-5-20250929');
-  const [options, setOptions] = useState<ModelSelectOption[]>([
-    { value: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5' },
-  ]);
-  const [effort, setEffort] = useState<OpenAIReasoningEffort>('xhigh');
-  const [contextWindow, setContextWindow] = useState(200000);
+  const [provider, setProvider] = useState<ProviderId>(INITIAL_PROVIDER);
+  const [model, setModel] = useState(INITIAL_MODEL);
+  const [options, setOptions] = useState<ModelSelectOption[]>(INITIAL_OPTIONS);
+  const [effort, setEffort] = useState<OpenAIReasoningEffort>(DEFAULT_OPENAI_REASONING_EFFORT);
+  const [fastMode, setFastMode] = useState<boolean>(cachedSettings?.fastMode ?? false);
+  const [globalEffort, setGlobalEffort] = useState<OpenAIReasoningEffort>(
+    cachedSettings?.effort ?? DEFAULT_OPENAI_REASONING_EFFORT,
+  );
+  const [globalFastMode, setGlobalFastMode] = useState<boolean>(cachedSettings?.fastMode ?? false);
+  const [contextWindow, setContextWindow] = useState(getModelContextWindow(INITIAL_MODEL));
   const [promptEstimate, setPromptEstimate] = useState(0);
+  const agentDefaultProvider = agent.defaultProvider;
+  const agentDefaultModel = agent.defaultModel;
+  const agentDefaultOpenAIReasoningEffort = agent.defaultOpenAIReasoningEffort;
 
-  // OpenAI model list cache (5min TTL)
   const openaiModelsCacheRef = useRef<{ options: ModelSelectOption[]; cachedAt: number } | null>(null);
 
-  // Effect 1: Load provider/model from global settings (skip if cachedSettings provided)
   useEffect(() => {
+    let cancelled = false;
+
+    const applyLoadedSettings = (loaded: CachedSettings) => {
+      const loadedProvider = loaded.provider;
+      const loadedModel = loaded.model;
+      const loadedOptions = loaded.modelOptions;
+      const loadedEffort = loaded.effort;
+      const loadedFastMode = loaded.fastMode;
+      const effectiveProvider = agentDefaultProvider ?? loadedProvider;
+
+      setGlobalEffort(loadedEffort);
+      setGlobalFastMode(loadedFastMode);
+
+      if (agentDefaultProvider) {
+        const agentOptions = buildProviderOptions(agentDefaultProvider, agentDefaultModel || '');
+        const agentModel = agentDefaultModel || agentOptions[0]?.value || loadedModel;
+        setProvider(agentDefaultProvider);
+        setOptions(agentOptions.length > 0 ? agentOptions : loadedOptions);
+        setModel(agentModel);
+      } else {
+        setProvider(loadedProvider);
+        setOptions(loadedOptions);
+        setModel(loadedModel);
+      }
+
+      setEffort(resolveOpenAIDefaultEffort(agentDefaultOpenAIReasoningEffort, effectiveProvider, loadedEffort));
+      setFastMode(effectiveProvider === 'openai' ? loadedFastMode : false);
+    };
+
     if (cachedSettings) {
-      setProvider(cachedSettings.provider);
-      setModel(cachedSettings.model);
-      setOptions(cachedSettings.modelOptions);
-      setEffort(cachedSettings.effort);
+      applyLoadedSettings(cachedSettings);
       return;
     }
-    let cancelled = false;
+
     (async () => {
       try {
         const res = await fetch('/api/settings', { cache: 'no-store' });
         if (!res.ok) return;
         const data = await res.json();
         if (cancelled) return;
+
         const claude = data?.claude ?? {};
         const loadedProvider = (claude.provider as ProviderId) || 'anthropic';
         const providerModelsMap = (claude.providerModels && typeof claude.providerModels === 'object')
@@ -79,72 +137,75 @@ export function useModelConfig(
         const providerModelLib = (claude.providerModelLibrary && typeof claude.providerModelLibrary === 'object')
           ? claude.providerModelLibrary as Partial<Record<ProviderId, string[]>>
           : {};
-        // Build model options for loaded provider
+
+        const resolveConfiguredModel = (providerId: ProviderId): string => {
+          const scoped = (providerModelsMap[providerId] || '').trim();
+          if (scoped) return scoped;
+          if (providerId === loadedProvider) return (claude.model || '').trim();
+          return '';
+        };
+
         const preset = getProviderPreset(loadedProvider);
         const optionMap = new Map<string, string>();
-        for (const m of preset.models) optionMap.set(m.id, m.label || m.id);
-        const libModels = Array.isArray(providerModelLib[loadedProvider]) ? providerModelLib[loadedProvider] : [];
-        for (const raw of libModels) {
+        for (const entry of preset.models) {
+          optionMap.set(entry.id, entry.label || entry.id);
+        }
+        const library = Array.isArray(providerModelLib[loadedProvider]) ? providerModelLib[loadedProvider] : [];
+        for (const raw of library) {
           const id = typeof raw === 'string' ? raw.trim() : '';
-          if (id && !optionMap.has(id)) optionMap.set(id, id);
+          if (id && !optionMap.has(id)) {
+            optionMap.set(id, id);
+          }
         }
-        const fallbackModel = (providerModelsMap[loadedProvider] || claude.model || '').trim();
-        if (fallbackModel && !optionMap.has(fallbackModel)) optionMap.set(fallbackModel, fallbackModel);
-        const builtOptions = Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
-        const selected = builtOptions.some((o) => o.value === fallbackModel) ? fallbackModel : (builtOptions[0]?.value || '');
-        // Apply agent default model (overrides global settings, can be overridden by session config)
-        const effectiveProvider = agent.defaultProvider ?? loadedProvider;
-        if (agent.defaultProvider) {
-          const agentPreset = getProviderPreset(agent.defaultProvider);
-          const agentOptionMap = new Map<string, string>();
-          for (const m of agentPreset.models) agentOptionMap.set(m.id, m.label || m.id);
-          const agentDefaultModel = agent.defaultModel ?? '';
-          if (agentDefaultModel && !agentOptionMap.has(agentDefaultModel)) agentOptionMap.set(agentDefaultModel, agentDefaultModel);
-          const agentOptions = Array.from(agentOptionMap.entries()).map(([value, label]) => ({ value, label }));
-          const agentSelected = agentOptions.some(o => o.value === agentDefaultModel)
-            ? agentDefaultModel
-            : agentOptions[0]?.value || '';
-          setProvider(effectiveProvider);
-          setOptions(agentOptions.length > 0 ? agentOptions : builtOptions);
-          setModel(agentSelected || selected);
-        } else {
-          setProvider(loadedProvider);
-          setOptions(builtOptions);
-          setModel(selected);
+        const fallbackModel = resolveConfiguredModel(loadedProvider);
+        if (fallbackModel && !optionMap.has(fallbackModel)) {
+          optionMap.set(fallbackModel, fallbackModel);
         }
-        // Load OpenAI reasoning effort
-        const VALID_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
-        const savedEffort = claude.openaiReasoningEffort;
-        if (typeof savedEffort === 'string' && VALID_EFFORTS.includes(savedEffort as OpenAIReasoningEffort)) {
-          setEffort(savedEffort as OpenAIReasoningEffort);
-        }
+        const modelOptions = Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
+        const selectedModel = modelOptions.some((entry) => entry.value === fallbackModel)
+          ? fallbackModel
+          : (modelOptions[0]?.value || '');
+        const savedEffort = isOpenAIReasoningEffort(claude.openaiReasoningEffort)
+          ? claude.openaiReasoningEffort
+          : DEFAULT_OPENAI_REASONING_EFFORT;
+        const savedFastMode = normalizeOpenAIFastMode(claude.openaiFastMode) ?? false;
+
+        applyLoadedSettings({
+          provider: loadedProvider,
+          model: selectedModel,
+          modelOptions,
+          effort: savedEffort,
+          fastMode: savedFastMode,
+        });
       } catch {
         // ignore
       }
     })();
-    return () => { cancelled = true; };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Effect 2: Update model options when provider changes (+ fetch OpenAI catalog)
+    return () => { cancelled = true; };
+  }, [
+    agentDefaultProvider,
+    agentDefaultModel,
+    agentDefaultOpenAIReasoningEffort,
+    cachedSettings,
+  ]);
+
   useEffect(() => {
     let cancelled = false;
-    const preset = getProviderPreset(provider);
-    const staticOptions = preset.models.map((m) => ({ value: m.id, label: m.label || m.id }));
+    const staticOptions = buildProviderOptions(provider, model);
 
     if (provider === 'openai') {
       setOptions(staticOptions);
-      if (!staticOptions.some((o) => o.value === model)) {
+      if (!staticOptions.some((entry) => entry.value === model)) {
         setModel(staticOptions[0]?.value || '');
       }
 
-      // Check cache
       const cache = openaiModelsCacheRef.current;
       if (cache && Date.now() - cache.cachedAt < OPENAI_MODELS_CACHE_TTL) {
         setOptions(cache.options);
         return () => { cancelled = true; };
       }
 
-      // Fetch dynamic model catalog
       (async () => {
         try {
           const res = await fetch('/api/settings/openai-models', { cache: 'no-store' });
@@ -152,12 +213,15 @@ export function useModelConfig(
           if (cancelled) return;
           if (res.ok && data?.ok && Array.isArray(data.models)) {
             const merged = [...staticOptions];
-            const knownIds = new Set(merged.map((o) => o.value));
-            for (const r of data.models) {
-              if (r && typeof r === 'object' && typeof r.id === 'string') {
-                const id = r.id.trim();
+            const knownIds = new Set(merged.map((entry) => entry.value));
+            for (const row of data.models) {
+              if (row && typeof row === 'object' && typeof row.id === 'string') {
+                const id = row.id.trim();
                 if (id && !knownIds.has(id)) {
-                  merged.push({ value: id, label: typeof r.displayName === 'string' ? r.displayName : id });
+                  merged.push({
+                    value: id,
+                    label: typeof row.displayName === 'string' ? row.displayName : id,
+                  });
                   knownIds.add(id);
                 }
               }
@@ -171,23 +235,26 @@ export function useModelConfig(
           // ignore
         }
       })();
-    } else {
-      if (staticOptions.length > 0) {
-        setOptions(staticOptions);
-        if (!staticOptions.some((o) => o.value === model)) {
-          setModel(staticOptions[0].value);
-        }
+    } else if (staticOptions.length > 0) {
+      setOptions(staticOptions);
+      if (!model) {
+        setModel(staticOptions[0].value);
       }
     }
+
     return () => { cancelled = true; };
   }, [provider]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Effect 3: Update contextWindow when model changes
   useEffect(() => {
-    setContextWindow(getModelContextWindow(model || 'claude-sonnet-4-6'));
+    setContextWindow(getModelContextWindow(model));
   }, [model]);
 
-  // Effect 4: Fetch prompt estimate when agent/project changes
+  useEffect(() => {
+    if (provider !== 'openai' && fastMode) {
+      setFastMode(false);
+    }
+  }, [provider, fastMode]);
+
   useEffect(() => {
     let cancelled = false;
     const params = new URLSearchParams({ agentId: agent.id });
@@ -207,32 +274,51 @@ export function useModelConfig(
     })();
 
     return () => { cancelled = true; };
-  }, [agent.id, projectKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [agent.id, projectKey]);
 
-  /** Apply session config overrides for provider/model */
   const applySessionConfig = (config: SessionConfig) => {
-    if (!config.provider) return;
-    setProvider(config.provider);
-    const cfgPreset = getProviderPreset(config.provider);
-    const cfgOptionMap = new Map<string, string>();
-    for (const m of cfgPreset.models) cfgOptionMap.set(m.id, m.label || m.id);
-    if (config.model && !cfgOptionMap.has(config.model)) cfgOptionMap.set(config.model, config.model);
-    const cfgOptions = Array.from(cfgOptionMap.entries()).map(([value, label]) => ({ value, label }));
-    if (cfgOptions.length > 0) setOptions(cfgOptions);
-    if (config.model) setModel(config.model);
+    const nextProvider = config.provider ?? agentDefaultProvider ?? provider;
+    const defaultEffort = agentDefaultOpenAIReasoningEffort;
+    if (config.provider) {
+      setProvider(config.provider);
+    }
+
+    const cfgOptions = buildProviderOptions(nextProvider, config.model || '');
+    if (cfgOptions.length > 0) {
+      setOptions(cfgOptions);
+    }
+    if (config.model) {
+      setModel(config.model);
+    }
+    if (nextProvider === 'openai') {
+      setEffort(config.openaiReasoningEffort ?? resolveOpenAIDefaultEffort(defaultEffort, nextProvider, globalEffort));
+      setFastMode(config.openaiFastMode ?? globalFastMode);
+    } else {
+      setFastMode(false);
+    }
   };
 
-  /** Reset to agent default provider/model */
-  const resetToAgentDefaults = (a: Agent) => {
-    if (!a.defaultProvider) return;
-    setProvider(a.defaultProvider);
-    const agentPreset = getProviderPreset(a.defaultProvider);
-    const agentOptions = agentPreset.models.map(m => ({ value: m.id, label: m.label || m.id }));
-    if (agentOptions.length > 0) setOptions(agentOptions);
-    if (a.defaultModel) {
-      setModel(a.defaultModel);
+  const resetToAgentDefaults = (nextAgent: Agent) => {
+    if (!nextAgent.defaultProvider) return;
+    setProvider(nextAgent.defaultProvider);
+    const agentOptions = buildProviderOptions(nextAgent.defaultProvider, nextAgent.defaultModel || '');
+    if (agentOptions.length > 0) {
+      setOptions(agentOptions);
+    }
+    if (nextAgent.defaultModel) {
+      setModel(nextAgent.defaultModel);
     } else if (agentOptions.length > 0) {
       setModel(agentOptions[0].value);
+    }
+    if (nextAgent.defaultProvider === 'openai') {
+      setEffort(resolveOpenAIDefaultEffort(
+        nextAgent.defaultOpenAIReasoningEffort,
+        nextAgent.defaultProvider,
+        globalEffort,
+      ));
+      setFastMode(globalFastMode);
+    } else {
+      setFastMode(false);
     }
   };
 
@@ -241,12 +327,14 @@ export function useModelConfig(
     model,
     options,
     effort,
+    fastMode,
     contextWindow,
     promptEstimate,
     setProvider,
     setModel,
     setOptions,
     setEffort,
+    setFastMode,
     applySessionConfig,
     resetToAgentDefaults,
   };

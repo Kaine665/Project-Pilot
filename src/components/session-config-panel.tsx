@@ -2,11 +2,26 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { X, Check, ChevronDown, Search, FileText, BookOpen, Cpu, Code, Shield, Zap } from 'lucide-react';
-import type { Agent, AgentCapabilities, ContextEntry, ProviderId } from '@/types';
+import type { Agent, AgentCapabilities, ContextEntry, OpenAIReasoningEffort, ProviderId } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import type { SessionConfig } from '@/types/agent-chat';
 import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
 import { CAPABILITY_ITEMS } from '@/components/agent-form';
+
+/** 仅用于 useEffect 依赖：避免父组件每次渲染传入新 config 引用导致无限同步循环 */
+function sessionConfigSyncKey(config: SessionConfig): string {
+  return JSON.stringify({
+    contextIds: config.contextIds ?? [],
+    skillNames: config.skillNames ?? [],
+    supplementaryPrompt: config.supplementaryPrompt ?? '',
+    provider: config.provider ?? '',
+    model: config.model ?? '',
+    openaiReasoningEffort: config.openaiReasoningEffort ?? '',
+    openaiFastMode: config.openaiFastMode ?? '',
+    systemPrompt: config.systemPrompt ?? '',
+    capabilities: config.capabilities ?? {},
+  });
+}
 
 interface SessionConfigPanelProps {
   sessionId: string;
@@ -35,6 +50,8 @@ export function SessionConfigPanel({
   const [supplementaryPrompt, setSupplementaryPrompt] = useState(config.supplementaryPrompt ?? '');
   const [sessionProvider, setSessionProvider] = useState<ProviderId | ''>(config.provider ?? '');
   const [sessionModel, setSessionModel] = useState(config.model ?? '');
+  const [sessionOpenAIEffort, setSessionOpenAIEffort] = useState<OpenAIReasoningEffort | ''>(config.openaiReasoningEffort ?? '');
+  const [sessionOpenAIFastMode, setSessionOpenAIFastMode] = useState<boolean | ''>(config.openaiFastMode ?? '');
   const [systemPromptOverride, setSystemPromptOverride] = useState(config.systemPrompt ?? '');
   const [capsOverride, setCapsOverride] = useState<Partial<AgentCapabilities>>(config.capabilities ?? {});
   const [contextEntries, setContextEntries] = useState<ContextEntry[]>([]);
@@ -51,6 +68,7 @@ export function SessionConfigPanel({
 
   // Agent 的有效能力基线
   const baseCaps = useMemo(() => ({ ...DEFAULT_AGENT_CAPABILITIES, ...agentCapabilities }), [agentCapabilities]);
+  const effectiveSessionProvider = (sessionProvider || agent?.defaultProvider || '') as ProviderId | '';
 
   // Auto-resize textarea
   const autoResize = useCallback(() => {
@@ -82,16 +100,20 @@ export function SessionConfigPanel({
     })();
   }, []);
 
-  // Reset form when config changes (session switch)
+  // Reset form when config changes (session switch). 依赖内容快照而非 config 引用，避免父组件每帧新对象导致死循环。
+  const configKey = sessionConfigSyncKey(config);
   useEffect(() => {
     setContextIds(config.contextIds ?? []);
     setSkillNames(config.skillNames ?? []);
     setSupplementaryPrompt(config.supplementaryPrompt ?? '');
     setSessionProvider(config.provider ?? '');
     setSessionModel(config.model ?? '');
+    setSessionOpenAIEffort(config.openaiReasoningEffort ?? '');
+    setSessionOpenAIFastMode(config.openaiFastMode ?? '');
     setSystemPromptOverride(config.systemPrompt ?? '');
     setCapsOverride(config.capabilities ?? {});
-  }, [config, sessionId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- 用 configKey 代替 config 引用，避免父组件每帧新对象导致死循环
+  }, [sessionId, configKey]);
 
   // Auto-resize on content change
   useEffect(() => { autoResize(); }, [supplementaryPrompt, autoResize]);
@@ -144,10 +166,12 @@ export function SessionConfigPanel({
     const promptChanged = supplementaryPrompt !== origPrompt;
     const providerChanged = sessionProvider !== (config.provider ?? '');
     const modelChanged = sessionModel !== (config.model ?? '');
+    const effortChanged = sessionOpenAIEffort !== (config.openaiReasoningEffort ?? '');
+    const fastModeChanged = sessionOpenAIFastMode !== (config.openaiFastMode ?? '');
     const sysPromptChanged = systemPromptOverride !== (config.systemPrompt ?? '');
     const capsChanged = JSON.stringify(capsOverride) !== JSON.stringify(config.capabilities ?? {});
-    return idsChanged || skillsChanged || promptChanged || providerChanged || modelChanged || sysPromptChanged || capsChanged;
-  }, [contextIds, skillNames, supplementaryPrompt, sessionProvider, sessionModel, systemPromptOverride, capsOverride, config]);
+    return idsChanged || skillsChanged || promptChanged || providerChanged || modelChanged || effortChanged || fastModeChanged || sysPromptChanged || capsChanged;
+  }, [contextIds, skillNames, supplementaryPrompt, sessionProvider, sessionModel, sessionOpenAIEffort, sessionOpenAIFastMode, systemPromptOverride, capsOverride, config]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -157,6 +181,12 @@ export function SessionConfigPanel({
     if (supplementaryPrompt.trim()) newConfig.supplementaryPrompt = supplementaryPrompt.trim();
     if (sessionProvider) newConfig.provider = sessionProvider as ProviderId;
     if (sessionModel.trim()) newConfig.model = sessionModel.trim();
+    if (effectiveSessionProvider === 'openai' && sessionOpenAIEffort) {
+      newConfig.openaiReasoningEffort = sessionOpenAIEffort;
+    }
+    if (effectiveSessionProvider === 'openai' && sessionOpenAIFastMode !== '') {
+      newConfig.openaiFastMode = sessionOpenAIFastMode;
+    }
     if (systemPromptOverride.trim()) newConfig.systemPrompt = systemPromptOverride.trim();
     if (Object.keys(capsOverride).length > 0) newConfig.capabilities = capsOverride;
     onSave(newConfig);
@@ -210,8 +240,13 @@ export function SessionConfigPanel({
             <select
               value={sessionProvider}
               onChange={e => {
-                setSessionProvider(e.target.value as ProviderId | '');
+                const nextProvider = e.target.value as ProviderId | '';
+                setSessionProvider(nextProvider);
                 setSessionModel('');
+                if (nextProvider && nextProvider !== 'openai') {
+                  setSessionOpenAIEffort('');
+                  setSessionOpenAIFastMode('');
+                }
               }}
               className="h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500"
             >
@@ -237,6 +272,61 @@ export function SessionConfigPanel({
                 placeholder={agent?.defaultModel ? `继承 Agent 默认: ${agent.defaultModel}` : '先选择供应商'}
                 className="h-11 w-full rounded-lg border border-zinc-200 px-3 py-2.5 text-sm text-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/50"
               />
+            )}
+            {effectiveSessionProvider === 'openai' && (
+              <div className="space-y-3">
+                <div>
+                  <div className="mb-2 text-xs font-medium text-zinc-500">Codex Fast Mode</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      { value: '' as const, label: '继承' },
+                      { value: false, label: '关闭' },
+                      { value: true, label: '开启' },
+                    ]).map((opt) => (
+                      <button
+                        key={String(opt.value)}
+                        type="button"
+                        onClick={() => setSessionOpenAIFastMode(opt.value)}
+                        className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                          sessionOpenAIFastMode === opt.value
+                            ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-300'
+                            : 'border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs text-zinc-400">
+                    仅在 OpenAI OAuth + GPT-5.4 生效。开启后使用官方 Fast mode，而不是推理档位。
+                  </p>
+                </div>
+                <div className="grid grid-cols-5 gap-2">
+                  {([
+                    { value: 'minimal' as OpenAIReasoningEffort, label: 'Minimal' },
+                    { value: 'low' as OpenAIReasoningEffort, label: 'Low' },
+                    { value: 'medium' as OpenAIReasoningEffort, label: 'Medium' },
+                    { value: 'high' as OpenAIReasoningEffort, label: 'High' },
+                    { value: 'xhigh' as OpenAIReasoningEffort, label: 'XHigh' },
+                  ]).map((opt) => {
+                    const active = sessionOpenAIEffort === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setSessionOpenAIEffort(prev => (prev === opt.value ? '' : opt.value))}
+                        className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                          active
+                            ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-300'
+                            : 'border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             )}
           </div>
           <p className="mt-2 text-xs text-zinc-400">

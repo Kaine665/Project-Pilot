@@ -1,21 +1,22 @@
 /**
- * Agent systemPrompt 外置文件 I/O + 版本管理 + 运行时副本。
+ * Agent systemPrompt 外置文件 I/O + 版本管理 + 会话级 prompt override。
  *
  * 每个 agent 的 systemPrompt 存储在 prompts/{agentId}.md，
  * agents.json 只保留元数据，不再内联 systemPrompt。
  *
  * 版本历史：prompts/{agentId}.history/v_YYMMDD_HHmmss.md（最多 20 份）
- * 运行时副本：prompts/{agentId}.runtime/{sessionId}.md（会话级隔离）
+ * 会话级 prompt override 兼容路径：prompts/runtime/{agentId}/{sessionId}.md
  */
 
 import { promises as fs } from 'fs';
 import path from 'path';
 import {
+  getLegacySessionPromptOverridePath,
   getPromptsDir,
   getPromptFilePath,
   getPromptHistoryDir,
-  getPromptRuntimeDir,
-  getPromptRuntimePath,
+  getSessionPromptOverrideDir,
+  getSessionPromptOverridePath,
 } from './file-store';
 import { readBuiltinPrompt } from './builtin-defaults';
 
@@ -59,7 +60,7 @@ export async function writePromptFile(agentId: string, content: string): Promise
 
 /**
  * 删除 agent 的 prompt 文件。
- * 同时清理 .history/ 和 .runtime/ 目录。
+ * 同时清理 .history/ 和 session prompt override 目录。
  * 文件不存在时静默成功。
  */
 export async function deletePromptFile(agentId: string): Promise<void> {
@@ -70,8 +71,8 @@ export async function deletePromptFile(agentId: string): Promise<void> {
       throw error;
     }
   }
-  // 清理 .history/ 和 .runtime/ 目录
-  for (const dir of [getPromptHistoryDir(agentId), getPromptRuntimeDir(agentId)]) {
+  // 清理 .history/ 和会话级 prompt override 目录
+  for (const dir of [getPromptHistoryDir(agentId), getSessionPromptOverrideDir(agentId)]) {
     try {
       await fs.rm(dir, { recursive: true, force: true });
     } catch {
@@ -187,15 +188,19 @@ export async function revertToVersion(
   return true;
 }
 
-// ── 运行时副本 ──
+// ── 会话级 prompt override ──
 
 /**
- * 创建会话级运行时工作副本。
- * 将正式版复制到 .runtime/{sessionId}.md，返回副本路径。
+ * 创建会话级 prompt override 工作副本。
+ * 将正式版复制到兼容路径 prompts/runtime/{agentId}/{sessionId}.md，返回副本路径。
+ *
+ * 注意：
+ * - 这里目前仍沿用历史物理路径，以避免打断现有行为。
+ * - 这层语义应理解为 "session prompt override"，而不是独立的 runtime prompt 产品概念。
  * 用户数据目录不存在时 fallback 到仓库 defaults。
  * 都不存在时返回 undefined。
  */
-export async function createRuntimePromptCopy(
+export async function createSessionPromptOverride(
   agentId: string,
   sessionId: string,
 ): Promise<string | undefined> {
@@ -203,26 +208,41 @@ export async function createRuntimePromptCopy(
   const content = await readPromptFile(agentId) ?? await readBuiltinPrompt(agentId);
   if (content === undefined) return undefined;
 
-  const runtimeDir = getPromptRuntimeDir(agentId);
-  const runtimePath = getPromptRuntimePath(agentId, sessionId);
-  await fs.mkdir(runtimeDir, { recursive: true });
-  await fs.writeFile(runtimePath, content, 'utf-8');
-  return runtimePath;
+  const overridePath = getSessionPromptOverridePath(agentId, sessionId);
+  await fs.mkdir(path.dirname(overridePath), { recursive: true });
+  await fs.writeFile(overridePath, content, 'utf-8');
+  return overridePath;
 }
 
 /**
- * 删除会话级运行时工作副本。
+ * 删除会话级 prompt override 工作副本。
  * 文件不存在时静默成功。
  */
-export async function deleteRuntimePromptCopy(
+export async function deleteSessionPromptOverride(
   agentId: string,
   sessionId: string,
 ): Promise<void> {
-  try {
-    await fs.unlink(getPromptRuntimePath(agentId, sessionId));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw error;
+  const paths = [
+    getSessionPromptOverridePath(agentId, sessionId),
+    getLegacySessionPromptOverridePath(agentId, sessionId),
+  ];
+  for (const p of paths) {
+    try {
+      await fs.unlink(p);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error;
+      }
     }
   }
 }
+
+/**
+ * @deprecated Prefer createSessionPromptOverride().
+ */
+export const createRuntimePromptCopy = createSessionPromptOverride;
+
+/**
+ * @deprecated Prefer deleteSessionPromptOverride().
+ */
+export const deleteRuntimePromptCopy = deleteSessionPromptOverride;

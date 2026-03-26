@@ -26,13 +26,13 @@ export class FlowContextLoader implements ResourceLoader {
       return { ref, content: '', ok: false };
     }
 
+    const legacyPathLine = flowDataPath
+      ? `\n\n（旧版）项目 Flow JSON 路径：${flowDataPath}（产品已下线，请勿依赖该文件。）`
+      : '';
+
     const content = `你正在协助管理项目「${projectName}」（key: ${projectKey}）。
 
-项目数据文件位置：${flowDataPath}
-
-该文件是 JSON 格式，结构为 { "sections": [...] }，每个 section 包含 id、name、description、items 数组。每个 item 包含 id、content、status（todo/doing/done）、description、children（嵌套子项）等字段。
-
-你可以直接读取和修改这个文件来管理项目结构。修改后确保 JSON 格式正确。`;
+项目注册信息位于用户数据目录下的 projects/index.json；不再使用 per-project Flow 看板 JSON。若需任务与上下文，请使用待办、会话与文档域。${legacyPathLine}`;
 
     return {
       ref,

@@ -9,14 +9,15 @@
 
 import type { ResourceLoader, LoaderContext } from '../resource-loader';
 import type { ResourceRef, ResolvedResource } from '@/types/resource';
-import { getDesignDocsIndexPath, getDesignDocFilePath, readJsonFile } from '@/lib/file-store';
+import { getDesignDocFilePath } from '@/lib/file-store';
+import { readDocsIndexFromDocuments } from '@/lib/documents-store';
 import type { DocsIndexData, DocEntry } from '@/types';
 
 export class DesignDocsIndexLoader implements ResourceLoader {
   readonly type = 'design-docs-index' as const;
 
   async resolve(ref: ResourceRef, _ctx: LoaderContext): Promise<ResolvedResource> {
-    const data = await readJsonFile<DocsIndexData>(getDesignDocsIndexPath(), { projects: {} });
+    const data: DocsIndexData = await readDocsIndexFromDocuments();
 
     // 过滤掉 deprecated 状态的文档——已废弃文档不注入 AI prompt
     const activeProjects: Record<string, DocEntry[]> = {};

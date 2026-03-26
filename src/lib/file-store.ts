@@ -1,11 +1,19 @@
 /**
  * JSON 文件读写工具（简化版，无文件锁）
- * ProjectPilot 数据存储在用户目录：
- * - Windows: C:\Users\<username>\.project-pilot\data\
- * - macOS: /Users/<username>/.project-pilot/data/
- * - Linux: /home/<username>/.project-pilot/data/
  *
- * 可通过环境变量 PROJECT_PILOT_DATA_DIR 自定义位置
+ * 默认 DATA_DIR（未设置 PROJECT_PILOT_DATA_DIR 时）：
+ *   ~/.project-pilot/（Windows: %USERPROFILE%\.project-pilot\）
+ *
+ * 目录树的目标形态与迁移进度不在此文件定义；见本机：
+ *   ~/.project-pilot/README.md
+ *   ~/.project-pilot/数据文件夹现状.md
+ * 仓库文档：工作区根 README.md#pp-data-directory
+ *
+ * 技能相关：
+ *   - 生效中的技能：`{DATA_DIR}/skills/_global|_projects|_agents/`
+ *   - 第三方完整仓库（git clone 等）：`{DATA_DIR}/skills/_vendor/<name>/`（勿放在仓库内 `tmp/`）
+ *
+ * 可通过环境变量 PROJECT_PILOT_DATA_DIR 覆盖默认根路径。
  */
 
 import { promises as fs } from 'fs';
@@ -17,13 +25,83 @@ import os from 'os';
  * Some editors (Notepad, VS Code in rare cases) prepend BOM to files,
  * causing JSON.parse to fail with "Unexpected token".
  */
-export function parseJsonSafe<T>(raw: string): T {
-  const cleaned = raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw;
-  return JSON.parse(cleaned);
+function extractFirstJsonDocument(raw: string): string | null {
+  const trimmed = raw.trimStart();
+  if (!trimmed) return null;
+
+  const firstChar = trimmed[0];
+  if (firstChar !== '{' && firstChar !== '[') {
+    return null;
+  }
+
+  const stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const char = trimmed[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === '{' || char === '[') {
+      stack.push(char);
+      continue;
+    }
+
+    if (char === '}' || char === ']') {
+      const opening = stack.pop();
+      if (!opening) return null;
+      if ((opening === '{' && char !== '}') || (opening === '[' && char !== ']')) {
+        return null;
+      }
+      if (stack.length === 0) {
+        return trimmed.slice(0, index + 1);
+      }
+    }
+  }
+
+  return null;
 }
 
-// 默认存到用户目录的隐藏文件夹
-const DEFAULT_DATA_DIR = path.join(os.homedir(), '.project-pilot', 'data');
+export function parseJsonSafe<T>(raw: string): T {
+  const cleaned = raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw;
+  try {
+    return JSON.parse(cleaned);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) {
+      throw error;
+    }
+
+    const recovered = extractFirstJsonDocument(cleaned);
+    if (recovered && recovered !== cleaned) {
+      return JSON.parse(recovered) as T;
+    }
+
+    throw error;
+  }
+}
+
+/** 产品数据根固定为 ~/.project-pilot，不再使用 ~/.project-pilot/data/ 作为默认 DATA_DIR。 */
+function resolveDefaultDataDir(): string {
+  return path.join(os.homedir(), '.project-pilot');
+}
+
+// 未设置 PROJECT_PILOT_DATA_DIR 时即上值。projects/index.json 等在 ensureProjectsMigrated 下创建。
+const DEFAULT_DATA_DIR = resolveDefaultDataDir();
 
 // 支持环境变量自定义（用于测试或特殊部署场景）
 const DATA_DIR = process.env.PROJECT_PILOT_DATA_DIR || DEFAULT_DATA_DIR;
@@ -32,178 +110,354 @@ export function getDataDir(): string {
   return DATA_DIR;
 }
 
+/** 旧版扁平 projects.json（仅迁移读取） */
 export function getProjectsPath(): string {
   return path.join(DATA_DIR, 'projects.json');
 }
 
-export function getFlowsDir(): string {
+/** projects 域目录：projects/index.json、inboxes/ 等 */
+export function getProjectsDomainDir(): string {
+  return path.join(DATA_DIR, 'projects');
+}
+
+export function getProjectsIndexPath(): string {
+  return path.join(getProjectsDomainDir(), 'index.json');
+}
+
+const PROJECTS_INDEX_VERSION = 1;
+
+/** 已废弃：Flow 看板 per-project JSON 目录（清理/备份时仍可能访问） */
+export function getLegacyFlowsDir(): string {
   return path.join(DATA_DIR, 'workflows', 'flows');
 }
 
-export function getFlowIndexPath(): string {
-  return path.join(DATA_DIR, 'workflows', 'flows', '_index.json');
+/** @deprecated 无 Flow 产品能力，保留别名避免旧代码引用报错 */
+export function getFlowsDir(): string {
+  return getLegacyFlowsDir();
 }
 
+/** @deprecated */
+export function getFlowIndexPath(): string {
+  return path.join(getLegacyFlowsDir(), '_index.json');
+}
+
+/** @deprecated Per-project flow JSON 已移除 */
 export function getFlowDataPath(projectKey: string): string {
   const safe = projectKey.replace(/[^a-zA-Z0-9_-]/g, '');
-
-  // 🔒 Security: prevent empty filename or invalid project keys
   if (!safe || safe.length < 1 || safe.length > 100) {
     throw new Error(`Invalid project key: ${projectKey}`);
   }
-
-  return path.join(DATA_DIR, 'workflows', 'flows', `${safe}.json`);
+  return path.join(getLegacyFlowsDir(), `${safe}.json`);
 }
-
-/** 旧版 flow 数据目录（源码内） */
-const LEGACY_FLOWS_DIR = path.join(process.cwd(), 'src', 'data', 'flows');
 
 let _flowsMigrated = false;
 
 /**
  * 首次启动时创建所有数据子目录。
- * 幂等操作，仅在 ensureFlowsMigrated() 首次调用时执行。
  */
 async function ensureDataDirInitialized(): Promise<void> {
   const dirs = [
-    // agents/
+    path.join(DATA_DIR, 'config'),
+    getProjectsDomainDir(),
+    path.join(getProjectsDomainDir(), 'inboxes'),
     path.join(DATA_DIR, 'agents'),
+    path.join(DATA_DIR, 'agents', 'definitions'),
+    path.join(DATA_DIR, 'agents', 'bindings'),
+    path.join(DATA_DIR, 'agents', 'statuses'),
+    path.join(DATA_DIR, 'agents', 'schedules'),
+    path.join(DATA_DIR, 'agents', 'schedule-runs'),
+    path.join(DATA_DIR, 'agents', 'teams'),
+    path.join(DATA_DIR, 'agents', 'catalog'),
     getAgentDataDir(),
-    // chat/
+    path.join(DATA_DIR, 'documents', 'entries'),
+    path.join(DATA_DIR, 'documents', 'content'),
+    path.join(DATA_DIR, 'sessions', 'prompt-overrides'),
+    path.join(DATA_DIR, 'chat'),
     getAgentChatMessagesDir(),
-    // tasks/
+    getAgentChatSessionAdjunctsDir(),
     path.join(DATA_DIR, 'tasks'),
-    // prompts/
+    path.join(DATA_DIR, 'todos', 'entries'),
     path.join(DATA_DIR, 'prompts', 'agents'),
     path.join(DATA_DIR, 'prompts', 'history'),
     path.join(DATA_DIR, 'prompts', 'runtime'),
     path.join(DATA_DIR, 'prompts', 'blocks'),
     getProjectPromptsDir(),
-    // knowledge/
     getContextDir(),
     getDesignDocsDir(),
-    // workflows/
-    getFlowsDir(),
-    path.join(DATA_DIR, 'workflows', 'orchestrations'),
-    // storage/
+    getDialoguesDir(),
+    path.join(DATA_DIR, 'workflows'),
+    getArtifactsDir(),
     getSkillsDir(),
-    // usage/
+    getSkillsVendorDir(),
     path.join(DATA_DIR, 'usage'),
-    // top-level
+    path.join(DATA_DIR, '_next', 'runs', 'by-id'),
+    path.join(DATA_DIR, '_next', 'runs', 'latest-by-session'),
     path.join(DATA_DIR, '_snapshots'),
   ];
   await Promise.all(dirs.map(d => fs.mkdir(d, { recursive: true })));
+  await migrateLegacyAgentsDataToWorkspacesOnce();
 }
 
 /**
- * 懒迁移：如果用户目录没有 flows 数据但源码目录有，自动复制过去。
- * 仅在首次调用时执行，后续调用直接返回。
- * 同时确保所有数据子目录已创建。
+ * 旧版曾使用 agents/data/<id>/，规范为 agents/workspaces/<agentId>/（见 ~/.project-pilot/agents/README.md）。
+ * 仅执行一次：将 agents/data/* 迁入 agents/workspaces/*（目标已存在则跳过该项）。
+ */
+async function migrateLegacyAgentsDataToWorkspacesOnce(): Promise<void> {
+  const marker = path.join(DATA_DIR, 'agents', '.migrated-agents-data-to-workspaces');
+  try {
+    await fs.access(marker);
+    return;
+  } catch {
+    /* proceed */
+  }
+
+  const legacyRoot = path.join(DATA_DIR, 'agents', 'data');
+  const targetRoot = path.join(DATA_DIR, 'agents', 'workspaces');
+  await fs.mkdir(targetRoot, { recursive: true });
+
+  try {
+    const names = await fs.readdir(legacyRoot);
+    for (const name of names) {
+      const from = path.join(legacyRoot, name);
+      const to = path.join(targetRoot, name);
+      try {
+        await fs.access(to);
+        continue;
+      } catch {
+        /* target 不存在，可迁入 */
+      }
+      try {
+        await fs.rename(from, to);
+      } catch {
+        /* 单项失败不阻塞整体 */
+      }
+    }
+  } catch {
+    /* legacyRoot 不存在 */
+  }
+
+  await fs.writeFile(marker, new Date().toISOString(), 'utf-8');
+}
+
+/**
+ * @deprecated Flow 域已下线；仅保证目录存在。
  */
 export async function ensureFlowsMigrated(): Promise<void> {
   if (_flowsMigrated) return;
   _flowsMigrated = true;
-
-  // 确保所有数据子目录存在
   await ensureDataDirInitialized();
-
-  const destDir = getFlowsDir();
-  const destIndex = getFlowIndexPath();
-
-  try {
-    await fs.stat(destIndex);
-    // 目标已存在，无需迁移
-    return;
-  } catch {
-    // 目标不存在，继续迁移
-  }
-
-  const srcIndex = path.join(LEGACY_FLOWS_DIR, '_index.json');
-  try {
-    await fs.stat(srcIndex);
-  } catch {
-    // 源也不存在，首次使用，创建空索引
-    await fs.mkdir(destDir, { recursive: true });
-    await fs.writeFile(destIndex, JSON.stringify({ projects: [] }, null, 2), 'utf-8');
-    return;
-  }
-
-  // 复制所有 flow 文件
-  await fs.mkdir(destDir, { recursive: true });
-  const files = await fs.readdir(LEGACY_FLOWS_DIR);
-  for (const file of files) {
-    if (file.endsWith('.json')) {
-      const src = path.join(LEGACY_FLOWS_DIR, file);
-      const dest = path.join(destDir, file);
-      await fs.copyFile(src, dest);
-    }
-  }
 }
 
+type DiskProjectRow = Record<string, unknown>;
 
-// ── projects.json → _index.json 迁移 ──
-// 将旧版 projects.json 的字段合并到 flows/_index.json 中
+function normalizeDiskProjectRow(row: DiskProjectRow): import('@/types').ProjectEntry | null {
+  const idRaw = (typeof row.id === 'string' && row.id) || (typeof row.key === 'string' && row.key) || '';
+  const safe = idRaw.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe) return null;
+  const name = typeof row.name === 'string' && row.name.trim() ? row.name : safe;
+  const {
+    id: _i,
+    key: _k,
+    techStack: _t,
+    ...rest
+  } = row as unknown as import('@/types').ProjectEntry & { id?: string };
+  return {
+    ...(rest as Omit<import('@/types').ProjectEntry, 'key' | 'name'>),
+    key: safe,
+    name,
+  };
+}
+
+function projectEntryToDisk(p: import('@/types').ProjectEntry): DiskProjectRow {
+  const id = p.key.replace(/[^a-zA-Z0-9_-]/g, '') || p.key;
+  const {
+    key: _key,
+    techStack: _tech,
+    ...rest
+  } = p;
+  return { id, ...rest };
+}
+
+interface ProjectsIndexOnDisk {
+  version?: number;
+  projects?: DiskProjectRow[];
+  _migrated_to_projects_domain?: boolean;
+}
 
 let _projectsMigrated = false;
 
 /**
- * 将 projects.json 中的 ProjectConfig 数据合并到 flows/_index.json 的 ProjectEntry 中。
- * 仅执行一次：检查 _index.json 中是否已有 `_migrated_projects_v2` 标记。
+ * 合并 legacy：projects/index.json ← 旧 workflows/flows/_index.json + 扁平 projects.json。
  */
 export async function ensureProjectsMigrated(): Promise<void> {
   if (_projectsMigrated) return;
   _projectsMigrated = true;
 
-  // 确保 flows 迁移先执行
-  await ensureFlowsMigrated();
+  await ensureDataDirInitialized();
 
-  const indexPath = getFlowIndexPath();
+  const destPath = getProjectsIndexPath();
+  const legacyFlowIndex = getFlowIndexPath();
   const projectsPath = getProjectsPath();
 
-  // 读取当前索引
-  const index = await readJsonFile<import('@/types').ProjectIndex>(indexPath, { projects: [] });
-
-  // 检查是否已迁移过（用 _migrated 标记字段）
-  if ((index as unknown as Record<string, unknown>)._migrated_projects_v2) return;
-
-  // 读取旧版 projects.json
-  let oldProjects: Record<string, import('@/types').ProjectConfig> = {};
+  // 文件不存在则写入占位（version 0、无 _migrated_to_projects_domain），避免「靠是否存在猜目录」且保证后续必落盘
   try {
-    const data = await readJsonFile<import('@/types').ProjectsData>(projectsPath, { projects: {} });
-    oldProjects = data.projects;
+    await fs.access(destPath);
   } catch {
-    // 旧文件不存在或读取失败，跳过
+    await writeJsonFile(destPath, { version: 0, projects: [] });
   }
 
-  if (Object.keys(oldProjects).length === 0) {
-    // 没有旧数据，仅标记已迁移
-    await writeJsonFile(indexPath, { ...index, _migrated_projects_v2: true });
+  let disk = await readJsonFile<ProjectsIndexOnDisk>(destPath, {
+    version: 0,
+    projects: [],
+  });
+
+  if (disk._migrated_to_projects_domain && (disk.version ?? 0) >= PROJECTS_INDEX_VERSION) {
     return;
   }
 
-  const existingKeys = new Set(index.projects.map(p => p.key));
+  const merged: import('@/types').ProjectEntry[] = [];
+  const seen = new Set<string>();
+
+  const pushUnique = (e: import('@/types').ProjectEntry | null) => {
+    if (!e) return;
+    if (seen.has(e.key)) return;
+    seen.add(e.key);
+    merged.push(e);
+  };
+
+  for (const row of disk.projects ?? []) {
+    pushUnique(normalizeDiskProjectRow(row));
+  }
+
+  const fromFlow = await readJsonFile<import('@/types').ProjectIndex>(legacyFlowIndex, { projects: [] });
+  for (const p of fromFlow.projects) {
+    pushUnique(normalizeDiskProjectRow(p as unknown as DiskProjectRow));
+  }
+
+  let oldProjects: Record<string, import('@/types').ProjectConfig> = {};
+  try {
+    const pdata = await readJsonFile<import('@/types').ProjectsData>(projectsPath, { projects: {} });
+    oldProjects = pdata.projects;
+  } catch {
+    /* ok */
+  }
 
   for (const [key, config] of Object.entries(oldProjects)) {
-    const existing = index.projects.find(p => p.key === key);
-    if (existing) {
-      // 已存在的项目：补充缺失字段
-      if (!existing.path && config.path) existing.path = config.path;
-      if (!existing.techStack && config.type) existing.techStack = config.type as import('@/types').ProjectTechStack;
-      if (!existing.description && config.description) existing.description = config.description;
-      if (!existing.location) existing.location = 'local';
-      if (config.defaultBranch && !existing.repository?.defaultBranch) {
-        existing.repository = { ...existing.repository, defaultBranch: config.defaultBranch };
+    const safe = key.replace(/[^a-zA-Z0-9_-]/g, '');
+    if (!safe) continue;
+    if (seen.has(safe)) {
+      const existing = merged.find(m => m.key === safe);
+      if (existing) {
+        if (!existing.path && config.path) existing.path = config.path;
+        if (!existing.description && config.description) existing.description = config.description;
+        if (!existing.location) existing.location = 'local';
+        if (config.defaultBranch && !existing.repository?.defaultBranch) {
+          existing.repository = { ...existing.repository, defaultBranch: config.defaultBranch };
+        }
+        if ((config.webCommand || config.webUrl) && !existing.devServer) {
+          existing.devServer = {
+            ...(config.webCommand && { command: config.webCommand }),
+            ...(config.webUrl && { url: config.webUrl }),
+          };
+        }
       }
-      if ((config.webCommand || config.webUrl) && !existing.devServer) {
-        existing.devServer = {
+      continue;
+    }
+    const entry: import('@/types').ProjectEntry = {
+      key: safe,
+      name: config.name,
+      path: config.path,
+      location: 'local',
+      techStack: config.type as import('@/types').ProjectTechStack,
+      ...(config.description && { description: config.description }),
+      ...(config.defaultBranch && { repository: { defaultBranch: config.defaultBranch } }),
+      ...((config.webCommand || config.webUrl) && {
+        devServer: {
           ...(config.webCommand && { command: config.webCommand }),
           ...(config.webUrl && { url: config.webUrl }),
-        };
+        },
+      }),
+      createdAt: new Date().toISOString(),
+    };
+    pushUnique(entry);
+  }
+
+  await writeJsonFile(destPath, {
+    version: PROJECTS_INDEX_VERSION,
+    projects: merged.map(projectEntryToDisk),
+    _migrated_to_projects_domain: true,
+  });
+}
+
+let _legacyDataSubdirProjectsMerged = false;
+
+/**
+ * 默认数据根从 `~/.project-pilot/data` 迁到 `~/.project-pilot` 后，若主 `projects/index.json`
+ * 仍为空，尝试从遗留子目录合并一次（幂等），避免项目管理中心读不到旧注册表。
+ */
+async function ensureLegacyDataSubdirProjectsMerged(): Promise<void> {
+  if (_legacyDataSubdirProjectsMerged) return;
+
+  const currentPath = getProjectsIndexPath();
+  let current: ProjectsIndexOnDisk;
+  try {
+    current = await readJsonFile<ProjectsIndexOnDisk>(currentPath, { projects: [] });
+  } catch {
+    _legacyDataSubdirProjectsMerged = true;
+    return;
+  }
+
+  const existingCount = (current.projects ?? []).filter((row) => normalizeDiskProjectRow(row) !== null).length;
+  if (existingCount > 0) {
+    _legacyDataSubdirProjectsMerged = true;
+    return;
+  }
+
+  const merged: import('@/types').ProjectEntry[] = [];
+  const seen = new Set<string>();
+  const pushUnique = (e: import('@/types').ProjectEntry | null) => {
+    if (!e) return;
+    if (seen.has(e.key)) return;
+    seen.add(e.key);
+    merged.push(e);
+  };
+
+  const nestedIndex = path.join(DATA_DIR, 'data', 'projects', 'index.json');
+  try {
+    const alt = await readJsonFile<ProjectsIndexOnDisk>(nestedIndex, { projects: [] });
+    for (const row of alt.projects ?? []) {
+      pushUnique(normalizeDiskProjectRow(row));
+    }
+  } catch {
+    /* ok */
+  }
+
+  const nestedFlat = path.join(DATA_DIR, 'data', 'projects.json');
+  try {
+    const pdata = await readJsonFile<import('@/types').ProjectsData>(nestedFlat, { projects: {} });
+    for (const [key, config] of Object.entries(pdata.projects)) {
+      const safe = key.replace(/[^a-zA-Z0-9_-]/g, '');
+      if (!safe) continue;
+      if (seen.has(safe)) {
+        const existing = merged.find((m) => m.key === safe);
+        if (existing) {
+          if (!existing.path && config.path) existing.path = config.path;
+          if (!existing.description && config.description) existing.description = config.description;
+          if (!existing.location) existing.location = 'local';
+          if (config.defaultBranch && !existing.repository?.defaultBranch) {
+            existing.repository = { ...existing.repository, defaultBranch: config.defaultBranch };
+          }
+          if ((config.webCommand || config.webUrl) && !existing.devServer) {
+            existing.devServer = {
+              ...(config.webCommand && { command: config.webCommand }),
+              ...(config.webUrl && { url: config.webUrl }),
+            };
+          }
+        }
+        continue;
       }
-    } else {
-      // 新项目：从旧系统迁移过来
       const entry: import('@/types').ProjectEntry = {
-        key,
+        key: safe,
         name: config.name,
         path: config.path,
         location: 'local',
@@ -218,12 +472,42 @@ export async function ensureProjectsMigrated(): Promise<void> {
         }),
         createdAt: new Date().toISOString(),
       };
-      index.projects.push(entry);
+      pushUnique(entry);
     }
+  } catch {
+    /* ok */
   }
 
-  // 标记已迁移并写入
-  await writeJsonFile(indexPath, { ...index, _migrated_projects_v2: true });
+  if (merged.length === 0) {
+    _legacyDataSubdirProjectsMerged = true;
+    return;
+  }
+
+  await writeJsonFile(currentPath, {
+    version: PROJECTS_INDEX_VERSION,
+    projects: merged.map(projectEntryToDisk),
+    _migrated_to_projects_domain: true,
+  });
+  _legacyDataSubdirProjectsMerged = true;
+}
+
+export async function readProjectIndex(): Promise<import('@/types').ProjectIndex> {
+  await ensureDataDirV2Migrated();
+  await ensureLegacyDataSubdirProjectsMerged();
+  const raw = await readJsonFile<ProjectsIndexOnDisk>(getProjectsIndexPath(), { projects: [] });
+  const projects = (raw.projects ?? [])
+    .map((row) => normalizeDiskProjectRow(row))
+    .filter((e): e is import('@/types').ProjectEntry => e !== null);
+  return { projects };
+}
+
+export async function writeProjectIndex(index: import('@/types').ProjectIndex): Promise<void> {
+  await ensureDataDirV2Migrated();
+  await writeJsonFile(getProjectsIndexPath(), {
+    version: PROJECTS_INDEX_VERSION,
+    projects: index.projects.map(projectEntryToDisk),
+    _migrated_to_projects_domain: true,
+  });
 }
 
 // ── V2 目录结构迁移 ──
@@ -242,11 +526,14 @@ let _v2Migrated = false;
  * 3. Phase B：写标记文件
  * 4. Phase C：删除旧文件（best-effort）
  *
- * 对 prompts/.runtime/ 目录，旧结构是 prompts/{agentId}.runtime/，
- * 新结构是 prompts/runtime/{agentId}/。
+ * 对 session prompt override 目录，兼容旧结构 prompts/{agentId}.runtime/，
+ * 当前兼容路径仍是 prompts/runtime/{agentId}/。
  */
 export async function ensureDataDirV2Migrated(): Promise<void> {
-  if (_v2Migrated) return;
+  if (_v2Migrated) {
+    await ensureLegacyNestedDataHoisted();
+    return;
+  }
   _v2Migrated = true;
 
   // 先确保 V1 迁移完成
@@ -255,6 +542,7 @@ export async function ensureDataDirV2Migrated(): Promise<void> {
   // 检查是否已迁移
   try {
     await fs.stat(V2_MIGRATION_MARKER);
+    await ensureLegacyNestedDataHoisted();
     return; // 已迁移
   } catch {
     // 未迁移，继续
@@ -267,6 +555,7 @@ export async function ensureDataDirV2Migrated(): Promise<void> {
   } catch {
     // 旧结构也不存在 → 全新安装，直接标记完成
     await fs.writeFile(V2_MIGRATION_MARKER, new Date().toISOString(), 'utf-8');
+    await ensureLegacyNestedDataHoisted();
     return;
   }
 
@@ -278,17 +567,13 @@ export async function ensureDataDirV2Migrated(): Promise<void> {
   const jsonMoves: [string, string][] = [
     // agents/
     [path.join(DATA_DIR, 'agents.json'), getAgentsPath()],
-    [path.join(DATA_DIR, 'agent-teams.json'), getAgentTeamsPath()],
     [path.join(DATA_DIR, 'agent-schedules.json'), getSchedulesPath()],
     [path.join(DATA_DIR, 'agent-schedule-runs.json'), getScheduleRunsPath()],
     // chat/
     [path.join(DATA_DIR, 'agent-chat-sessions.json'), getAgentChatSessionsPath()],
-    [path.join(DATA_DIR, 'orchestrator-sessions.json'), getOrchestratorSessionsPath()],
     // tasks/
     [path.join(DATA_DIR, 'active-tasks.json'), getActiveTasksPath()],
-    [path.join(DATA_DIR, 'suspended-tasks.json'), getSuspendedTasksPath()],
     [path.join(DATA_DIR, 'todos.json'), getTodosPath()],
-    [path.join(DATA_DIR, 'satellite-tasks-config.json'), path.join(DATA_DIR, 'tasks', 'satellite-config.json')],
     // workflows/
     [path.join(DATA_DIR, 'worktree-ports.json'), getWorktreePortsPath()],
     // prompts/
@@ -304,19 +589,12 @@ export async function ensureDataDirV2Migrated(): Promise<void> {
     [path.join(DATA_DIR, 'agent-chat-messages'), getAgentChatMessagesDir()],
     // tasks/
     [path.join(DATA_DIR, 'task-artifacts'), path.join(DATA_DIR, 'tasks', 'artifacts')],
-    [path.join(DATA_DIR, 'satellite-task-runs'), path.join(DATA_DIR, 'tasks', 'satellite-runs')],
     // knowledge/
     [path.join(DATA_DIR, 'context'), getContextDir()],
     [path.join(DATA_DIR, 'design-docs'), getDesignDocsDir()],
     [path.join(DATA_DIR, 'docs'), path.join(DATA_DIR, 'knowledge', 'docs')],
     [path.join(DATA_DIR, 'fundraising'), path.join(DATA_DIR, 'knowledge', 'fundraising')],
-    // workflows/
-    [path.join(DATA_DIR, 'flows'), getFlowsDir()],
-    [path.join(DATA_DIR, 'orchestrations'), path.join(DATA_DIR, 'workflows', 'orchestrations')],
-    // storage/
-    [path.join(DATA_DIR, 'artifacts'), path.join(DATA_DIR, 'storage', 'artifacts')],
-    [path.join(DATA_DIR, 'bitable'), path.join(DATA_DIR, 'storage', 'bitable')],
-    [path.join(DATA_DIR, 'skills'), getSkillsDir()],
+    // 产物目录保持 `{DATA_DIR}/artifacts/`，不再迁入历史嵌套目录下的 artifacts（见 ensureLegacyNestedDataHoisted）
     // project-prompts → prompts/projects
     [path.join(DATA_DIR, 'project-prompts'), getProjectPromptsDir()],
   ];
@@ -358,7 +636,7 @@ export async function ensureDataDirV2Migrated(): Promise<void> {
     }
   } catch { /* ok */ }
 
-  // 特殊处理：prompt runtime（prompts/{agentId}.runtime/ → prompts/runtime/{agentId}/）
+  // 特殊处理：session prompt override（prompts/{agentId}.runtime/ → prompts/runtime/{agentId}/）
   try {
     const promptsRoot = path.join(DATA_DIR, 'prompts');
     const entries = await fs.readdir(promptsRoot, { withFileTypes: true });
@@ -402,6 +680,7 @@ export async function ensureDataDirV2Migrated(): Promise<void> {
   } catch { /* ok */ }
 
   console.log('[migration-v2] 数据目录 V2 迁移完成');
+  await ensureLegacyNestedDataHoisted();
 }
 
 /**
@@ -477,8 +756,78 @@ async function _migrateCopyDir(src: string, dest: string): Promise<void> {
   }
 }
 
+/** 文件名保留历史，避免已迁移用户重复执行合并逻辑 */
+const LEGACY_NESTED_DATA_HOIST_MARKER = path.join(DATA_DIR, '.pp-hoisted-legacy-storage');
+let _legacyNestedDataHoistChecked = false;
+
+/** 旧版曾把部分数据放在 `{DATA_DIR}/storage/` 下；当前规范为根下 `artifacts/`、`skills/`。 */
+const LEGACY_DATA_NEST_DIR = 'storage' as const;
+
+/**
+ * 将历史嵌套目录下的 `artifacts`、`skills` 合并到规范路径 `{DATA_DIR}/artifacts`、`{DATA_DIR}/skills`，
+ * 并在为空时移除该嵌套目录（若仍有未识别子项则打日志，由用户手动处理）。
+ * 幂等；写标记文件避免每次启动重复扫描。
+ */
+export async function ensureLegacyNestedDataHoisted(): Promise<void> {
+  if (_legacyNestedDataHoistChecked) return;
+  _legacyNestedDataHoistChecked = true;
+
+  try {
+    await fs.access(LEGACY_NESTED_DATA_HOIST_MARKER);
+    return;
+  } catch {
+    /* proceed */
+  }
+
+  const nestedRoot = path.join(DATA_DIR, LEGACY_DATA_NEST_DIR);
+
+  try {
+    await fs.access(nestedRoot);
+  } catch {
+    await fs.writeFile(LEGACY_NESTED_DATA_HOIST_MARKER, new Date().toISOString(), 'utf-8').catch(() => {});
+    return;
+  }
+
+  const hoists: { src: string; dest: string; label: string }[] = [
+    { src: path.join(nestedRoot, 'artifacts'), dest: getArtifactsDir(), label: 'artifacts' },
+    { src: path.join(nestedRoot, 'skills'), dest: getSkillsDir(), label: 'skills' },
+  ];
+
+  for (const { src, dest, label } of hoists) {
+    try {
+      await fs.stat(src);
+    } catch {
+      continue;
+    }
+    if (path.resolve(src) === path.resolve(dest)) continue;
+
+    await fs.mkdir(dest, { recursive: true });
+    await _migrateCopyDir(src, dest);
+    await fs.rm(src, { recursive: true, force: true }).catch(() => {});
+    console.log(`[migration] 已合并历史嵌套目录中的 ${label}/ → ${label}/`);
+  }
+
+  try {
+    const left = await fs.readdir(nestedRoot);
+    if (left.length === 0) {
+      await fs.rm(nestedRoot, { recursive: false });
+    } else if (left.length > 0) {
+      console.warn(
+        `[migration] ${nestedRoot} 仍有未识别子项 (${left.join(', ')}); 请手动检查后删除该目录`,
+      );
+    }
+  } catch {
+    /* 嵌套目录已不存在 */
+  }
+
+  await fs.writeFile(LEGACY_NESTED_DATA_HOIST_MARKER, new Date().toISOString(), 'utf-8').catch(() => {});
+}
+
+/** @deprecated 请使用 ensureLegacyNestedDataHoisted */
+export const ensureLegacyStorageHoisted = ensureLegacyNestedDataHoisted;
+
 export function getSettingsPath(): string {
-  return path.join(DATA_DIR, 'settings.json');
+  return path.join(DATA_DIR, 'config', 'settings.json');
 }
 
 export function getAgentsPath(): string {
@@ -486,11 +835,67 @@ export function getAgentsPath(): string {
 }
 
 export function getDimensionsPath(): string {
-  return path.join(DATA_DIR, 'dimensions.json');
+  return path.join(DATA_DIR, 'config', 'dimensions.json');
+}
+
+export function getAgentsDefinitionsDir(): string {
+  return path.join(DATA_DIR, 'agents', 'definitions');
+}
+
+export function getAgentsBindingsDir(): string {
+  return path.join(DATA_DIR, 'agents', 'bindings');
+}
+
+export function getAgentsStatusesDir(): string {
+  return path.join(DATA_DIR, 'agents', 'statuses');
+}
+
+export function getDocumentsEntriesDir(): string {
+  return path.join(DATA_DIR, 'documents', 'entries');
+}
+
+export function getDocumentsContentDir(): string {
+  return path.join(DATA_DIR, 'documents', 'content');
+}
+
+export function getDocumentsIndexPath(): string {
+  return path.join(DATA_DIR, 'documents', 'index.json');
+}
+
+export function getSchedulesDir(): string {
+  return path.join(DATA_DIR, 'agents', 'schedules');
+}
+
+export function getScheduleRunsDir(): string {
+  return path.join(DATA_DIR, 'agents', 'schedule-runs');
+}
+
+/**
+ * 新布局：会话级 prompt 覆盖位于 sessions/prompt-overrides/
+ * 与 prompts/runtime/ 并存时，读写逻辑应同时尝试两者（见 agent-prompt-store）。
+ */
+export function getLegacySessionPromptOverridePath(agentId: string, sessionId: string): string {
+  const safeAgent = agentId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safeAgent || safeAgent.length < 1 || safeAgent.length > 100) {
+    throw new Error(`Invalid agent id: ${agentId}`);
+  }
+  const safeSession = sessionId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safeSession || safeSession.length < 1 || safeSession.length > 200) {
+    throw new Error(`Invalid session id: ${sessionId}`);
+  }
+  return path.join(DATA_DIR, 'sessions', 'prompt-overrides', safeAgent, `${safeSession}.md`);
 }
 
 export function getAgentChatSessionsPath(): string {
   return path.join(DATA_DIR, 'chat', 'sessions.json');
+}
+
+export function getAgentChatSessionAdjunctsDir(): string {
+  return path.join(DATA_DIR, 'chat', 'adjuncts');
+}
+
+export function getAgentChatSessionAdjunctsPath(): string {
+  return path.join(getAgentChatSessionAdjunctsDir(), 'sessions.json');
 }
 
 /** 每个会话的消息 JSONL 文件目录 */
@@ -507,6 +912,30 @@ export function getAgentChatMessagePath(sessionId: string): string {
   return path.join(DATA_DIR, 'chat', 'messages', `${safe}.jsonl`);
 }
 
+export function getRunsByIdDir(): string {
+  return path.join(DATA_DIR, '_next', 'runs', 'by-id');
+}
+
+export function getRunByIdPath(runId: string): string {
+  const safe = runId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 200) {
+    throw new Error(`Invalid run id: ${runId}`);
+  }
+  return path.join(getRunsByIdDir(), `${safe}.json`);
+}
+
+export function getLatestRunsBySessionDir(): string {
+  return path.join(DATA_DIR, '_next', 'runs', 'latest-by-session');
+}
+
+export function getLatestRunBySessionPath(sessionId: string): string {
+  const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 200) {
+    throw new Error(`Invalid session id: ${sessionId}`);
+  }
+  return path.join(getLatestRunsBySessionDir(), `${safe}.json`);
+}
+
 export function getWorktreePortsPath(): string {
   return path.join(DATA_DIR, 'workflows', 'worktree-ports.json');
 }
@@ -515,26 +944,18 @@ export function getTodosPath(): string {
   return path.join(DATA_DIR, 'tasks', 'todos.json');
 }
 
-export function getOrchestratorSessionsPath(): string {
-  return path.join(DATA_DIR, 'chat', 'orchestrator-sessions.json');
-}
-
-export function getAgentTeamsPath(): string {
-  return path.join(DATA_DIR, 'agents', 'teams.json');
-}
-
-/** 编排会话的跨 Worker 消息文件（JSONL 格式，追加写） */
-export function getOrchestratorMessagesPath(orchId: string): string {
-  const safeId = orchId.replace(/[^a-zA-Z0-9_-]/g, '');
-  return path.join(DATA_DIR, 'workflows', 'orchestrations', `${safeId}-messages.jsonl`);
+/** 单条待办 JSON：`todos/entries/<todoId>.json`（与聚合文件 `tasks/todos.json` 并存，读取时合并，分文件优先） */
+export function getTodosEntriesDir(): string {
+  return path.join(DATA_DIR, 'todos', 'entries');
 }
 
 export function getActiveTasksPath(): string {
   return path.join(DATA_DIR, 'tasks', 'active.json');
 }
 
-export function getSuspendedTasksPath(): string {
-  return path.join(DATA_DIR, 'tasks', 'suspended.json');
+/** 通用执行产物目录：`{DATA_DIR}/artifacts/`（不再使用 `storage/artifacts`） */
+export function getArtifactsDir(): string {
+  return path.join(DATA_DIR, 'artifacts');
 }
 
 // ── Prompt 文件路径函数 ──
@@ -559,7 +980,12 @@ export function getPromptHistoryDir(agentId: string): string {
   return path.join(DATA_DIR, 'prompts', 'history', safe);
 }
 
-export function getPromptRuntimeDir(agentId: string): string {
+/**
+ * Session prompt override compatibility directory.
+ * Note: the current physical path still lives under prompts/runtime/ for backward compatibility,
+ * but the product meaning is "session prompt override", not a standalone runtime-prompt domain.
+ */
+export function getSessionPromptOverrideDir(agentId: string): string {
   const safe = agentId.replace(/[^a-zA-Z0-9_-]/g, '');
   if (!safe || safe.length < 1 || safe.length > 100) {
     throw new Error(`Invalid agent id: ${agentId}`);
@@ -567,7 +993,11 @@ export function getPromptRuntimeDir(agentId: string): string {
   return path.join(DATA_DIR, 'prompts', 'runtime', safe);
 }
 
-export function getPromptRuntimePath(agentId: string, sessionId: string): string {
+/**
+ * Session prompt override compatibility file path.
+ * Physical path currently remains under prompts/runtime/{agentId}/{sessionId}.md.
+ */
+export function getSessionPromptOverridePath(agentId: string, sessionId: string): string {
   const safeAgent = agentId.replace(/[^a-zA-Z0-9_-]/g, '');
   if (!safeAgent || safeAgent.length < 1 || safeAgent.length > 100) {
     throw new Error(`Invalid agent id: ${agentId}`);
@@ -577,6 +1007,22 @@ export function getPromptRuntimePath(agentId: string, sessionId: string): string
     throw new Error(`Invalid session id: ${sessionId}`);
   }
   return path.join(DATA_DIR, 'prompts', 'runtime', safeAgent, `${safeSession}.md`);
+}
+
+/**
+ * @deprecated Prefer getSessionPromptOverrideDir().
+ * Kept for compatibility while the codebase migrates away from the old "runtime prompt" wording.
+ */
+export function getPromptRuntimeDir(agentId: string): string {
+  return getSessionPromptOverrideDir(agentId);
+}
+
+/**
+ * @deprecated Prefer getSessionPromptOverridePath().
+ * Kept for compatibility while the codebase migrates away from the old "runtime prompt" wording.
+ */
+export function getPromptRuntimePath(agentId: string, sessionId: string): string {
+  return getSessionPromptOverridePath(agentId, sessionId);
 }
 
 export function getGlobalPromptPath(): string {
@@ -736,6 +1182,7 @@ function getSnapshotTargets(): Map<string, string> {
   return new Map([
     [getAgentsPath(), 'agents-registry'],
     [getAgentChatSessionsPath(), 'chat-sessions'],
+    [getAgentChatSessionAdjunctsPath(), 'chat-session-adjuncts'],
   ]);
 }
 
@@ -936,9 +1383,17 @@ function sanitizeId(id: string): string {
   return safe;
 }
 
-/** skills 根目录 */
+/** Skills 根目录：`{DATA_DIR}/skills/`（其下有 `_global`、`_projects`、`_agents`、`_vendor`） */
 export function getSkillsDir(): string {
-  return path.join(DATA_DIR, 'storage', 'skills');
+  return path.join(DATA_DIR, 'skills');
+}
+
+/**
+ * 第三方 / 上游完整技能仓库目录（例如 `git clone` 的整树）。
+ * 与 `_global` 下单技能目录区分：此处仅作源码/参考，不自动参与 Agent 技能解析；需要时复制或迁移到 `_global/<name>/`。
+ */
+export function getSkillsVendorDir(): string {
+  return path.join(getSkillsDir(), '_vendor');
 }
 
 /** 根据 scope 获取 skills 所在目录 */
@@ -971,33 +1426,39 @@ export function getSkillDir(skillName: string, scope: SkillScope = DEFAULT_SKILL
 export const SKILL_SUBDIRS = ['scripts', 'references', 'assets'] as const;
 export type SkillSubdir = (typeof SKILL_SUBDIRS)[number];
 
-// ── Agent Data Store 路径函数 ──
-// 每个 Agent 的私有数据目录：agents/data/{agentId}/
-// Agent 通过 bash 自由读写，danger-detector 对此目录白名单放行
+// ── Agent 私有工作空间路径（规范：~/.project-pilot/agents/README.md → agents/workspaces/<agentId>/）──
+// getAgentDataPath 等名称沿用旧 API，实际路径已对齐 workspaces。
 
-export function getAgentDataDir(): string {
-  return path.join(DATA_DIR, 'agents', 'data');
-}
-
-export function getAgentDataPath(agentId: string): string {
+function safeAgentIdSegment(agentId: string): string {
   const safe = agentId.replace(/[^a-zA-Z0-9_-]/g, '');
   if (!safe || safe.length < 1 || safe.length > 100) {
     throw new Error(`Invalid agent id: ${agentId}`);
   }
-  return path.join(DATA_DIR, 'agents', 'data', safe);
+  return safe;
+}
+
+/** 各 Agent 工作区父目录：agents/workspaces/ */
+export function getAgentDataDir(): string {
+  return path.join(DATA_DIR, 'agents', 'workspaces');
+}
+
+/** 旧版错误路径 agents/data/<id>/，仅用于解析已存在目录 */
+export function getLegacyAgentDataPath(agentId: string): string {
+  return path.join(DATA_DIR, 'agents', 'data', safeAgentIdSegment(agentId));
+}
+
+/** 某一 Agent 的私有工作区根目录 */
+export function getAgentDataPath(agentId: string): string {
+  return path.join(getAgentDataDir(), safeAgentIdSegment(agentId));
 }
 
 export function getAgentDataFilePath(agentId: string, fileName: string): string {
-  const safe = agentId.replace(/[^a-zA-Z0-9_-]/g, '');
-  if (!safe || safe.length < 1 || safe.length > 100) {
-    throw new Error(`Invalid agent id: ${agentId}`);
-  }
   // 🔒 Security: prevent path traversal
   const safeFile = path.basename(fileName);
   if (!safeFile || safeFile !== fileName || safeFile.includes('..')) {
     throw new Error(`Invalid file name: ${fileName}`);
   }
-  return path.join(DATA_DIR, 'agents', 'data', safe, safeFile);
+  return path.join(getAgentDataPath(agentId), safeFile);
 }
 
 // ── Inbox 路径函数 ──
@@ -1010,17 +1471,52 @@ export function getInboxPath(projectKey: string): string {
     throw new Error(`Invalid project key: ${projectKey}`);
   }
 
-  return path.join(DATA_DIR, 'workflows', 'flows', `${safe}_inbox.json`);
+  return path.join(getProjectsDomainDir(), 'inboxes', `${safe}.json`);
 }
 
-/** 读取项目收件箱数据，不存在时返回空列表 */
+function getLegacyInboxPath(projectKey: string): string {
+  const safe = projectKey.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 100) {
+    throw new Error(`Invalid project key: ${projectKey}`);
+  }
+  return path.join(getLegacyFlowsDir(), `${safe}_inbox.json`);
+}
+
+/** 读取项目收件箱数据，不存在时返回空列表（自动从旧 workflows/flows/*_inbox.json 迁一次） */
 export async function readInbox(projectKey: string): Promise<import('@/types').ProjectInbox> {
-  return readJsonFile<import('@/types').ProjectInbox>(getInboxPath(projectKey), { items: [] });
+  const nextPath = getInboxPath(projectKey);
+  const data = await readJsonFile<import('@/types').ProjectInbox>(nextPath, { items: [] });
+  if (data.items.length > 0) return data;
+  const legacyPath = getLegacyInboxPath(projectKey);
+  const legacy = await readJsonFile<import('@/types').ProjectInbox>(legacyPath, { items: [] });
+  if (legacy.items.length > 0) {
+    await writeJsonFile(nextPath, legacy);
+    await fs.unlink(legacyPath).catch(() => {});
+  }
+  return legacy;
 }
 
 /** 写入项目收件箱数据（原子写入） */
 export async function writeInbox(projectKey: string, data: import('@/types').ProjectInbox): Promise<void> {
   await writeJsonFile(getInboxPath(projectKey), data);
+}
+
+// ── Agent Dialogues 路径函数 ──
+
+export function getDialoguesDir(): string {
+  return path.join(DATA_DIR, 'dialogues');
+}
+
+export function getDialoguesIndexPath(): string {
+  return path.join(DATA_DIR, 'dialogues', '_index.json');
+}
+
+export function getDialoguePath(dialogueId: string): string {
+  const safe = dialogueId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length > 100) {
+    throw new Error(`Invalid dialogue ID: ${dialogueId}`);
+  }
+  return path.join(DATA_DIR, 'dialogues', `${safe}.json`);
 }
 
 // ── Agent Schedules 路径函数 ──
@@ -1031,6 +1527,18 @@ export function getSchedulesPath(): string {
 
 export function getScheduleRunsPath(): string {
   return path.join(DATA_DIR, 'agents', 'schedule-runs.json');
+}
+
+export function getEventTriggersPath(): string {
+  return path.join(DATA_DIR, 'agents', 'event-triggers.json');
+}
+
+export function getEventTriggerRunsPath(): string {
+  return path.join(DATA_DIR, 'agents', 'event-trigger-runs.json');
+}
+
+export function getEventTriggerStatesPath(): string {
+  return path.join(DATA_DIR, 'agents', 'event-trigger-states.json');
 }
 
 /**

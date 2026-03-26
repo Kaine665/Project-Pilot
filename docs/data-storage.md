@@ -1,20 +1,24 @@
 # 数据存储位置
 
+> **分层权威**：磁盘布局与迁移以本机 **`~/.project-pilot/数据文件夹现状.md`**（及同目录 `README.md`）为准；环境变量与当前代码默认根以仓库根 **[`README.md`](../../README.md#pp-data-directory)** + `file-store.ts` 为准。  
+> **本文定位**：历史/摘录式的子目录树与路径函数索引，可能与「本机已迁移树」不一致。  
+> **对齐日期**：2026-03-26。引用：`../../README.md`。
+
 ## 概述
 
-ProjectPilot 的用户数据默认存储在**用户目录**，与代码分离，符合软件分发规范。
+ProjectPilot 的用户数据默认存储在**用户目录**，与代码分离，符合软件分发规范。具体路径与自定义方式见根 `README`，勿以本节为并列权威。
 
 ## 数据位置
 
-### 默认位置
+### 默认位置（摘录：代码 `file-store` 默认根；本机树见 `数据文件夹现状.md`）
 
 - **Windows**: `C:\Users\<用户名>\.project-pilot\data\`
 - **macOS**: `/Users/<用户名>/.project-pilot/data/`
 - **Linux**: `/home/<用户名>/.project-pilot/data/`
 
-### 自定义位置
+### 自定义位置（摘录）
 
-可通过环境变量 `PROJECT_PILOT_DATA_DIR` 自定义数据目录：
+可通过环境变量 `PROJECT_PILOT_DATA_DIR` 自定义数据目录；完整说明见根 `README`。
 
 ```bash
 # .env 文件
@@ -25,7 +29,7 @@ PROJECT_PILOT_DATA_DIR=/path/to/custom/data/dir
 
 ### 从旧版本（v0.1.0 之前）迁移
 
-旧版本数据存储在项目根目录的 `data/` 文件夹，需要手动迁移：
+旧版本数据存储在项目根目录的 `data/` 文件夹；迁移命令与执行目录见根 `README`。摘录：
 
 ```bash
 npm run migrate:data

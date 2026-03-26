@@ -1,56 +1,33 @@
-# ProjectPilot Design System
+# ProjectPilot / develop-static — Design system (SuperDesign)
 
-## Product Context
+## Product context
 
-- **Product**: ProjectPilot — AI-powered project management and execution pilot
-- **Key pages**: Projects, Agents, Dimensions, Context, Docs, Todos, Bitable, Orchestrator, Schedules, Recycle Bin, Butler
-- **Target page for redesign**: Agents (`/flows/agents`) — Agent management + chat interface
+- **Product**: ProjectPilot (PP) — desktop-first workspace for projects, agents, docs, and context assets.
+- **This screen**: **文档** (`/flows/docs/:projectKey`) — unified library for **设计文档** and **上下文** assets: search, type/scope filters, list + detail/editor split, stats hero, project selector.
+- **Shell**: `TopNav` + narrow icon **sidebar** (`w-13`) + `main` scroll area; optional right **Butler** panel (360px).
 
-## Key Features (Agents Page)
+## Visual language (must not drift)
 
-- **Conversations tab**: Session list grouped by day, new session button (agent picker), archive toggle
-- **Agents tab**: Agent list with create/import, agent cards (name, description, built-in/global badges)
-- **Right panel**: Chat (AgentChatPanel) or Settings form, or empty state
-- **Multi-session**: Multiple chat sessions can be opened, switched via sidebar
+- **Font**: `system-ui, -apple-system, sans-serif` (see `globals.css` body).
+- **Radius**: large soft cards — `rounded-2xl` / `rounded-3xl` on panels; inputs `rounded-2xl`.
+- **Neutrals**: zinc scale — `zinc-50`…`zinc-950`, borders `border-zinc-200` / `dark:border-zinc-800`.
+- **Accents**: doc type **violet**, context type **sky** (badges on list rows). Destructive actions **rose**.
+- **Semantic CSS variables** (Tailwind v4 `@theme`): `--color-ai`, `--color-user`, etc. — use for AI assistant chip only where relevant; docs page is mostly zinc + violet/sky.
 
-## Branding & Styling
+## Layout conventions
 
-### Colors
-- **Primary grays**: Zinc scale (50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950)
-- **Primary action**: zinc-900 / zinc-100 (dark/light)
-- **Built-in badge**: blue-50 / blue-600 (light), blue-900/30 / blue-400 (dark)
-- **Global badge**: amber-50 / amber-600 (light), amber-900/30 / amber-400 (dark)
-- **Destructive**: red-500, red-50 hover
-- **AI accent**: purple (color-ai: #7c3aed, color-ai-subtle: #f5f3ff)
+- **Page container**: `max-w-[1380px] mx-auto`, `px-6 py-8`, vertical `gap-6`.
+- **Hero section**: single top card with title, subtitle, project `<select>`, two primary actions (新建设计文档 / 新建上下文), four stat tiles in a row.
+- **Below**: two-column grid `xl:grid-cols-[minmax(0,1.1fr)_minmax(380px,0.9fr)]` — left list, right editor or empty state.
+- **List rows**: full-width buttons, `rounded-2xl`, selected row inverts to `bg-zinc-950 text-white` (dark mode: `bg-zinc-100 text-zinc-950`).
+- **Density**: marketing-style padding (`p-5`/`p-6`); **not** IDE-dense (redesign target may increase density).
 
-### Typography
-- **Font**: Inter (--font-inter)
-- **Body**: font-sans antialiased
-- **Sizes**: text-xs (10px, 12px), text-sm (14px), text-lg
+## Components (reference)
 
-### Spacing
-- **Radius**: --radius 0.625rem, rounded-md (6px), rounded-lg (8px)
-- **Padding**: px-2, px-3, px-4, py-1.5, py-2, py-2.5, py-3
-- **Gap**: gap-1, gap-1.5, gap-2, gap-2.5, gap-3
+- **SidebarIconButton**: 40×40, `rounded-lg`, active = filled zinc inverse.
+- **TopNav**: `border-b`, `px-6 py-3`, segment nav pills.
+- Docs page uses mostly native `<button>`, `<input>`, `<select>`, `<textarea>` with Tailwind — no heavy shadcn on this page.
 
-### Layout
-- **Sidebar width**: w-72 (288px) for agents page left sidebar
-- **Icon strip**: w-13 (52px)
-- **Border**: border-zinc-200 dark:border-zinc-800
+## Redesign goal (for iteration prompts)
 
-### Components
-- **Buttons**: rounded-md, p-1.5 for icon buttons, transition-colors
-- **Inputs**: rounded-md border border-zinc-300, focus:ring-1 focus:ring-zinc-500
-- **Cards**: rounded-lg border border-zinc-200 shadow-sm
-- **Badges**: rounded-full px-1.5 py-0.5 text-[10px] font-medium
-
-## Motion
-- transition-colors for hover/active states
-- No heavy animations on agents page
-
-## Constraints for Iteration
-- Use ONLY Inter font
-- Use ONLY zinc/blue/amber/red palette as defined
-- Keep sidebar + main panel structure
-- Preserve Conversations | Agents tab structure
-- Do NOT introduce serif fonts, neon colors, or purple gradients outside design system
+Explore **desktop application** patterns: fixed chrome, **master–detail** or **three-pane**, optional **toolbar**, **resizable** panes (visual suggestion), higher information density, less “landing page” hero — while **keeping** the existing color tokens and font stack above.

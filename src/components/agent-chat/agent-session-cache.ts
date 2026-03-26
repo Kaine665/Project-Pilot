@@ -1,31 +1,26 @@
 /**
- * Module-level cache for AgentChatPanel state.
+ * Module-level cache for AgentChatPanel view state.
  *
- * When a panel unmounts due to SPA route navigation (not page close),
- * its state is cached here. On remount, the panel can instantly restore
- * the cached state (no flash) and then reconnect the SSE stream.
+ * This cache must never become a shadow session store. It only keeps enough
+ * panel-local state to survive SPA route changes while the canonical session
+ * data is reloaded from the server on remount.
  *
- * Cache entries are keyed by a composite of agentId + projectKey + initialSessionId.
+ * Cache entries are keyed by agentId + projectKey + session anchor.
+ * For explicit new chats (initialSessionId === null), an optional draftSlot disambiguates
+ * multiple draft panels (e.g. Agents workspace) so one tab cannot restore another's session.
  * Entries auto-expire after 5 minutes (stale data is worse than a re-fetch).
  */
 
-import type { ChatMessage, ContentBlock } from '@/types';
-import type { SessionConfig } from '@/types/agent-chat';
-import type { SessionListItem } from './types';
-import type { SessionNavLink } from '@/components/agent-session-utils';
-
 export interface CachedPanelState {
-  // Chat state
-  messages: ChatMessage[];
-  isStreaming: boolean;
-
-  // Session state
+  // Session selection anchor
   sessionId: string | null;
-  sessionTitle: string;
-  sessionList: SessionListItem[];
-  sessionConfig: SessionConfig;
-  parentSession: SessionNavLink | null;
-  childSessions: SessionNavLink[];
+  shouldReconnect: boolean;
+
+  // Pure panel-local view state
+  showConfig: boolean;
+  showFolderExplorer: boolean;
+  showRuntimePanel: boolean;
+  queueExpanded: boolean;
 
   // Metadata
   cachedAt: number;
@@ -43,8 +38,18 @@ export function buildCacheKey(
   agentId: string,
   projectKey?: string | null,
   initialSessionId?: string | null,
+  /** When there is no fixed session id yet, separates draft panels (Agents workspace tabs). */
+  draftSlot?: string | number | null,
 ): string {
-  return `${agentId}::${projectKey ?? ''}::${initialSessionId ?? ''}`;
+  const pk = projectKey ?? '';
+  if (initialSessionId != null && initialSessionId !== '') {
+    return `${agentId}::${pk}::${initialSessionId}`;
+  }
+  const slot =
+    draftSlot !== undefined && draftSlot !== null && `${draftSlot}` !== ''
+      ? String(draftSlot)
+      : 'default';
+  return `${agentId}::${pk}::@draft@${slot}`;
 }
 
 /**

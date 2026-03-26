@@ -16,6 +16,7 @@ import {
   Search,
 } from 'lucide-react';
 import { useProject } from '@/components/project-context';
+import { getModelContextWindow } from '@/lib/provider-registry';
 import type { Agent } from '@/types';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -85,7 +86,7 @@ export default function PromptsPage() {
   const [enabledMap, setEnabledMap] = useState<Record<string, boolean>>({});
 
   // Context window — 从 prompt-info API 获取实际值，默认 200k（Claude 系列）
-  const [contextWindow, setContextWindow] = useState(200000);
+  const [contextWindow, setContextWindow] = useState(() => getModelContextWindow(''));
 
   // ── Fetch agents ──
   useEffect(() => {

@@ -5,7 +5,7 @@
  * 支持项目级和全局两种作用域。
  *
  * 数据存储：
- *   ~/.project-pilot/data/shared-memory/
+ *   {DATA_DIR}/shared-memory/（默认 ~/.project-pilot/ 下，以 file-store 为准）
  *     ├── _global.json           # 全局共享记忆
  *     └── {projectKey}.json      # 项目级共享记忆
  *
@@ -47,7 +47,7 @@ const EMPTY_DATA: SharedMemoryData = { entries: [] };
 // ── 路径 ──
 
 function getSharedMemoryDir(): string {
-  return path.join(getDataDir(), 'storage', 'shared-memory');
+  return path.join(getDataDir(), 'shared-memory');
 }
 
 function getSharedMemoryPath(projectKey?: string): string {

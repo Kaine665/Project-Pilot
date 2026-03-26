@@ -2,8 +2,8 @@
  * GlobalPromptLoader — resolves the global prompt injected into every agent.
  *
  * Resolution order:
- *   1. Segmented mode: ~/.project-pilot/data/prompts/global.d/ (if _index.json exists)
- *   2. Single file: ~/.project-pilot/data/prompts/global.md
+ *   1. Segmented mode: {DATA_DIR}/prompts/global.d/ (if _index.json exists)
+ *   2. Single file: {DATA_DIR}/prompts/global.md
  *   3. Builtin defaults: src/data/defaults/prompts/_global.md
  *
  * All missing → ok: false (silent skip).

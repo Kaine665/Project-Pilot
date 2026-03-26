@@ -22,9 +22,6 @@ export type ResourceType =
   | 'session-title-instructions'  // Static: session title generation instructions
   | 'flow-context'                // Project flow context (for flow-bound chats)
   | 'reference-turns'             // Imported conversation turns (guest agent)
-  | 'suspended-tasks'             // Cross-session suspended tasks board
-  | 'suspend-task-instructions'   // Static: suspend task action instructions
-  | 'complete-suspended-task-instructions' // Static: complete suspended task (tag-only, no instructions)
   | 'shared-memory'                // Agent shared memory (blackboard)
   | 'global-prompt'                // Global prompt injected into every agent
   | 'project-prompt'               // Project-level prompt injected when projectKey is set
@@ -51,7 +48,6 @@ export interface ResourceRef {
    * - shared-memory: '_shared'
    * - flow-context: '_snapshot'
    * - reference-turns: '_imported'
-   * - suspended-tasks: '_suspended'
    * - global-prompt: '_global'
    * - project-prompt: '_project'
    * - prompt-block: blockId (maps to prompts/blocks/{blockId}.md)
@@ -82,7 +78,8 @@ export interface FlowContextRef extends ResourceRef {
   type: 'flow-context';
   projectKey: string;
   projectName: string;
-  flowDataPath: string;
+  /** @deprecated 已无 per-project flow JSON；保留字段以兼容旧会话元数据 */
+  flowDataPath?: string;
 }
 
 /** Reference turns ref — carries imported conversation turns */

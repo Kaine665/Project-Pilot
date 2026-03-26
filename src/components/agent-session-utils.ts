@@ -6,6 +6,8 @@ export interface AllSessionItem {
   updatedAt: string;
   agentId: string;
   agentName: string;
+  /** 内置 Agent 的 slug，用于头像等展示 */
+  agentSlug?: string;
   agentIcon?: string;
   unreadCount?: number;
   archived?: boolean;

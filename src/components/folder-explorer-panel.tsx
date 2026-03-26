@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { useTranslations } from '@/client/i18n/use-translations';
 import {
   FolderOpen, Folder, X, Loader2, Copy, ArrowUp,
   ChevronRight, ChevronDown, ExternalLink, Maximize2,
-  Plus, FilePlus, FolderPlus, Pencil, Trash2, AtSign,
+  FilePlus, FolderPlus, Pencil, Trash2, AtSign,
   GitBranch, FileText, ArrowLeft, RefreshCw,
 } from 'lucide-react';
 import { FileTypeIcon } from '@/components/file-type-icon';
@@ -40,6 +41,10 @@ interface FolderExplorerPanelProps {
   onInsertPath?: (path: string) => void;
   /** Auto-open this path on mount */
   initialPath?: string;
+  initialResolveMode?: 'data';
+  embedded?: boolean;
+  /** When set with embedded + data resolve: no arbitrary path / folder picker; only retry this root */
+  lockToInitialDataPath?: boolean;
 }
 
 // ── Context Menu State ──
@@ -59,8 +64,9 @@ interface InlineInputState {
 
 // ── API helpers ──
 
-async function fetchDir(dirPath: string): Promise<{ path: string; entries: DirEntry[] }> {
-  const res = await fetch(`/api/fs/list-dir?path=${encodeURIComponent(dirPath)}`, { cache: 'no-store' });
+async function fetchDir(dirPath: string, resolveMode?: 'data'): Promise<{ path: string; entries: DirEntry[] }> {
+  const suffix = resolveMode ? `&resolve=${resolveMode}` : '';
+  const res = await fetch(`/api/fs/list-dir?path=${encodeURIComponent(dirPath)}${suffix}`, { cache: 'no-store' });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
   return { path: data.path, entries: data.entries ?? [] };
@@ -177,7 +183,19 @@ function pathDirname(p: string): string {
 // ─── MAIN COMPONENT ───
 // ══════════════════════════════════════════
 
-export function FolderExplorerPanel({ onClose, onInsertPath, initialPath }: FolderExplorerPanelProps) {
+export function FolderExplorerPanel({
+  onClose,
+  onInsertPath,
+  initialPath,
+  initialResolveMode,
+  embedded = false,
+  lockToInitialDataPath = false,
+}: FolderExplorerPanelProps) {
+  const tAgentsWs = useTranslations('agentsWorkspace');
+  const tChat = useTranslations('chat');
+  const isDataRootLocked = Boolean(
+    embedded && lockToInitialDataPath && initialPath && initialResolveMode === 'data',
+  );
   const [rootPath, setRootPath] = useState<string | null>(null);
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [loading, setLoading] = useState(false);
@@ -186,7 +204,12 @@ export function FolderExplorerPanel({ onClose, onInsertPath, initialPath }: Fold
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null);
 
   // File preview
-  const [viewingFile, setViewingFile] = useState<{ path: string; name: string; content: string } | null>(null);
+  const [viewingFile, setViewingFile] = useState<{
+    path: string;
+    name: string;
+    content: string | null;
+    previewError?: string | null;
+  } | null>(null);
   const [fileLoading, setFileLoading] = useState(false);
   const [expandedView, setExpandedView] = useState(false);
 
@@ -203,6 +226,10 @@ export function FolderExplorerPanel({ onClose, onInsertPath, initialPath }: Fold
   const [deleteConfirm, setDeleteConfirm] = useState<{ path: string; name: string; isDir: boolean } | null>(null);
 
   const panelRef = useRef<HTMLDivElement>(null);
+  const closePreview = useCallback(() => {
+    setViewingFile(null);
+    setExpandedView(false);
+  }, []);
 
   // Close context menu on click outside
   useEffect(() => {
@@ -228,38 +255,44 @@ export function FolderExplorerPanel({ onClose, onInsertPath, initialPath }: Fold
   // Close expanded file preview on Escape
   useEffect(() => {
     if (!expandedView) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setExpandedView(false); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closePreview();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [expandedView]);
+  }, [closePreview, expandedView]);
 
   // ── Load directory ──
-  const loadRoot = useCallback(async (dirPath: string) => {
+  const loadRoot = useCallback(async (dirPath: string, resolveMode?: 'data') => {
     setLoading(true);
     setError(null);
     setSelectedPaths(new Set());
     try {
-      const { entries } = await fetchDir(dirPath);
-      setRootPath(dirPath);
+      const { path: resolvedPath, entries } = await fetchDir(dirPath, resolveMode);
+      setRootPath(resolvedPath);
+      setPathInput(resolvedPath);
       setTree(entries.map((e) => ({
         name: e.name, path: e.path, isDirectory: e.isDirectory,
         expanded: false, loaded: false,
       })));
-      // Load git info in parallel
-      fetchGitInfo(dirPath).then(setGitInfo).catch(() => setGitInfo(null));
+      if (embedded) {
+        setGitInfo(null);
+      } else {
+        fetchGitInfo(resolvedPath).then(setGitInfo).catch(() => setGitInfo(null));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load directory');
       setTree([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [embedded]);
 
   // Auto-open initialPath
   useEffect(() => {
-    if (initialPath) loadRoot(initialPath);
+    if (initialPath) loadRoot(initialPath, initialResolveMode);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialPath]);
+  }, [initialPath, initialResolveMode]);
 
   // ── Expand/collapse directory ──
   const handleExpand = useCallback(async (node: TreeNode) => {
@@ -291,13 +324,27 @@ export function FolderExplorerPanel({ onClose, onInsertPath, initialPath }: Fold
     setError(null);
     try {
       const data = await apiReadFile(filePath);
-      setViewingFile({ path: data.path, name: fileName, content: data.content });
+      setViewingFile({
+        path: data.path,
+        name: fileName,
+        content: data.content,
+        previewError: null,
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Read failed');
+      const message = err instanceof Error ? err.message : 'Read failed';
+      setViewingFile({
+        path: filePath,
+        name: fileName,
+        content: null,
+        previewError: message,
+      });
     } finally {
+      if (embedded) {
+        setExpandedView(true);
+      }
       setFileLoading(false);
     }
-  }, []);
+  }, [embedded]);
 
   // ── Go up ──
   const handleGoUp = useCallback(() => {
@@ -547,6 +594,7 @@ export function FolderExplorerPanel({ onClose, onInsertPath, initialPath }: Fold
     return (
       <div className="select-none">
         <div
+          data-fs-tree-row
           className={`group flex items-center gap-0.5 rounded px-1 py-[3px] text-xs cursor-pointer transition-colors
             ${isSelected
               ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200'
@@ -605,8 +653,8 @@ export function FolderExplorerPanel({ onClose, onInsertPath, initialPath }: Fold
             </span>
           )}
 
-          {/* Hover action buttons */}
-          {!isRenaming && (
+          {/* Hover action buttons（嵌入式侧栏以右键菜单为主，不显示行内按钮） */}
+          {!isRenaming && !embedded && (
             <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
               {onInsertPath && (
                 <button
@@ -654,7 +702,15 @@ export function FolderExplorerPanel({ onClose, onInsertPath, initialPath }: Fold
               <TreeItem key={child.path} node={child} depth={depth + 1} />
             ))}
             {node.children.length === 0 && !inlineInput && (
-              <div className="py-0.5 text-[11px] italic text-zinc-400" style={{ paddingLeft: (depth + 1) * 16 + 24 }}>
+              <div
+                className="py-0.5 text-[11px] italic text-zinc-400"
+                style={{ paddingLeft: (depth + 1) * 16 + 24 }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setContextMenu({ x: e.clientX, y: e.clientY, node });
+                }}
+              >
                 Empty
               </div>
             )}
@@ -667,6 +723,8 @@ export function FolderExplorerPanel({ onClose, onInsertPath, initialPath }: Fold
   // ══════════════════════════════════════════
   // ─── CONTEXT MENU ───
   // ══════════════════════════════════════════
+
+  const isContextTargetRoot = Boolean(rootPath && contextMenu?.node.path === rootPath);
 
   const contextMenuEl = contextMenu && (
     <div
@@ -703,15 +761,19 @@ export function FolderExplorerPanel({ onClose, onInsertPath, initialPath }: Fold
         icon={FolderPlus} label="New Folder" shortcut=""
         onClick={() => handleContextMenuAction('new-folder', contextMenu.node)}
       />
-      <div className="my-1 border-t border-zinc-100 dark:border-zinc-700" />
-      <ContextMenuItem
-        icon={Pencil} label="Rename" shortcut="F2"
-        onClick={() => handleContextMenuAction('rename', contextMenu.node)}
-      />
-      <ContextMenuItem
-        icon={Trash2} label="Delete" shortcut="Del" danger
-        onClick={() => handleContextMenuAction('delete', contextMenu.node)}
-      />
+      {!isContextTargetRoot ? (
+        <>
+          <div className="my-1 border-t border-zinc-100 dark:border-zinc-700" />
+          <ContextMenuItem
+            icon={Pencil} label="Rename" shortcut="F2"
+            onClick={() => handleContextMenuAction('rename', contextMenu.node)}
+          />
+          <ContextMenuItem
+            icon={Trash2} label="Delete" shortcut="Del" danger
+            onClick={() => handleContextMenuAction('delete', contextMenu.node)}
+          />
+        </>
+      ) : null}
     </div>
   );
 
@@ -746,17 +808,92 @@ export function FolderExplorerPanel({ onClose, onInsertPath, initialPath }: Fold
     </div>
   );
 
+  const embeddedPreviewDialog = embedded && expandedView && viewingFile && (
+    <div className="fixed inset-0 z-[220] flex items-center justify-center bg-slate-950/38 p-5 backdrop-blur-[2px]" onClick={closePreview}>
+      <div
+        className="flex h-[min(88vh,900px)] w-[min(92vw,1240px)] flex-col overflow-hidden rounded-[28px] border border-[#e6ddcf] bg-[#fffdfa] shadow-[0_32px_120px_rgba(15,23,42,0.20)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-[#ece4d6] px-6 py-5">
+          <div className="min-w-0 flex items-center gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#f4e8d8] text-[#d97745]">
+              <FileTypeIcon filename={viewingFile.name} className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-3">
+                <div className="truncate text-lg font-semibold text-slate-900">{viewingFile.name}</div>
+              </div>
+              <div className="mt-1 truncate text-sm text-[#8c7d68]" title={viewingFile.path}>
+                {viewingFile.path}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await apiOpenFile(viewingFile.path);
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : 'Open failed');
+                }
+              }}
+              className="inline-flex items-center gap-2 rounded-2xl bg-[#171312] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#2b2421]"
+            >
+              <Pencil className="h-4 w-4" />
+              编辑
+            </button>
+            <button
+              type="button"
+              onClick={closePreview}
+              className="rounded-2xl border border-[#d8ccbb] bg-[#f3ede3] px-4 py-2 text-sm font-semibold text-[#493f32] transition-colors hover:bg-[#ece3d6]"
+            >
+              关闭
+            </button>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-auto bg-[#fffdfa]">
+          {viewingFile.previewError ? (
+            <div className="flex h-full items-center justify-center p-8">
+              <div className="w-full max-w-xl rounded-3xl border border-[#eadfd0] bg-white px-6 py-8 text-center shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
+                <div className="text-base font-semibold text-slate-900">
+                  Unsupported file type for preview
+                </div>
+                <div className="mt-2 text-sm text-[#8c7d68]">
+                  {viewingFile.previewError}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="min-w-max border-t border-[#f4ede2] bg-[#fffdfa] px-0 py-6">
+              <pre className="overflow-auto px-6 font-mono text-[13px] leading-8 text-slate-700">
+                {viewingFile.content}
+              </pre>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   // ══════════════════════════════════════════
   // ─── FILE PREVIEW ───
   // ══════════════════════════════════════════
 
-  if (viewingFile) {
+  if (viewingFile && !embedded) {
     return (
-      <div ref={panelRef} className="flex h-full flex-col border-l border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+      <div
+        ref={panelRef}
+        className={`flex h-full flex-col bg-white dark:bg-zinc-950 ${
+          embedded ? '' : 'border-l border-zinc-200 dark:border-zinc-800'
+        }`}
+      >
         <div className="flex items-center gap-1.5 border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
           <button
             type="button"
-            onClick={() => { setViewingFile(null); setExpandedView(false); }}
+            onClick={closePreview}
             className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
             title="Back"
           >
@@ -795,24 +932,40 @@ export function FolderExplorerPanel({ onClose, onInsertPath, initialPath }: Fold
             </button>
           </div>
         </div>
-        <pre className="flex-1 overflow-auto p-2 font-mono text-[11px] leading-relaxed text-zinc-700 dark:text-zinc-300">
-          {viewingFile.content}
-        </pre>
+        {viewingFile.previewError ? (
+          <div className="flex flex-1 items-center justify-center p-6 text-center">
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-4 text-sm text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+              {viewingFile.previewError}
+            </div>
+          </div>
+        ) : (
+          <pre className="flex-1 overflow-auto p-2 font-mono text-[11px] leading-relaxed text-zinc-700 dark:text-zinc-300">
+            {viewingFile.content}
+          </pre>
+        )}
         {expandedView && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setExpandedView(false)}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={closePreview}>
             <div className="flex max-h-[90vh] max-w-[90vw] flex-col rounded-lg border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-2 dark:border-zinc-700">
                 <div className="flex items-center gap-2">
                   <FileTypeIcon filename={viewingFile.name} className="h-4 w-4" />
                   <span className="truncate font-mono text-sm text-zinc-700 dark:text-zinc-300">{viewingFile.name}</span>
                 </div>
-                <button type="button" onClick={() => setExpandedView(false)} className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
+                <button type="button" onClick={closePreview} className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              <pre className="max-h-[80vh] flex-1 overflow-auto p-4 font-mono text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
-                {viewingFile.content}
-              </pre>
+              {viewingFile.previewError ? (
+                <div className="flex min-h-[240px] items-center justify-center p-6 text-center">
+                  <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-4 text-sm text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                    {viewingFile.previewError}
+                  </div>
+                </div>
+              ) : (
+                <pre className="max-h-[80vh] flex-1 overflow-auto p-4 font-mono text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
+                  {viewingFile.content}
+                </pre>
+              )}
             </div>
           </div>
         )}
@@ -827,52 +980,55 @@ export function FolderExplorerPanel({ onClose, onInsertPath, initialPath }: Fold
   return (
     <div
       ref={panelRef}
-      className="flex h-full flex-col border-l border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950"
+      className={`flex h-full flex-col bg-white dark:bg-zinc-950 ${
+        embedded ? '' : 'border-l border-zinc-200 dark:border-zinc-800'
+      }`}
       tabIndex={0}
       onKeyDown={handlePanelKeyDown}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
-        <div className="flex items-center gap-2">
-          <FolderOpen className="h-4 w-4 text-zinc-500" />
-          <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Workspace</span>
+      {!embedded && (
+        <div className="flex items-center justify-between border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
+          <div className="flex items-center gap-2">
+            <FolderOpen className="h-4 w-4 text-zinc-500" />
+            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Workspace</span>
+          </div>
+          <div className="flex items-center gap-1">
+            {rootPath && (
+              <>
+                <button type="button" onClick={handleRefresh} className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" title="Refresh">
+                  <RefreshCw className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInlineInput({ type: 'new-file', parentPath: rootPath });
+                  }}
+                  className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                  title="New File"
+                >
+                  <FilePlus className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInlineInput({ type: 'new-folder', parentPath: rootPath });
+                  }}
+                  className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                  title="New Folder"
+                >
+                  <FolderPlus className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
+            <button type="button" onClick={onClose} className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" title="Close">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-1">
-          {rootPath && (
-            <>
-              <button type="button" onClick={handleRefresh} className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" title="Refresh">
-                <RefreshCw className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setInlineInput({ type: 'new-file', parentPath: rootPath });
-                }}
-                className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                title="New File"
-              >
-                <FilePlus className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setInlineInput({ type: 'new-folder', parentPath: rootPath });
-                }}
-                className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                title="New Folder"
-              >
-                <FolderPlus className="h-3.5 w-3.5" />
-              </button>
-            </>
-          )}
-          <button type="button" onClick={onClose} className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" title="Close">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
+      )}
 
-      {/* Path input area (only when no root loaded) */}
-      {!rootPath && (
+      {/* Path input area (only when no root loaded and not locked to agent data root) */}
+      {!rootPath && !isDataRootLocked && (
         <div className="space-y-2 border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
           <div className="flex gap-1.5">
             <input
@@ -904,8 +1060,8 @@ export function FolderExplorerPanel({ onClose, onInsertPath, initialPath }: Fold
         </div>
       )}
 
-      {/* Project info card */}
-      {rootPath && gitInfo && (
+      {/* Project info（非嵌入式：当前路径摘要 + Git；嵌入式侧栏直接展示下方树，不重复占一行） */}
+      {rootPath && gitInfo && !embedded && (
         <div className="border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
           <div className="flex items-center gap-2">
             <div className="flex h-7 w-7 items-center justify-center rounded-md bg-zinc-100 dark:bg-zinc-800">
@@ -937,13 +1093,51 @@ export function FolderExplorerPanel({ onClose, onInsertPath, initialPath }: Fold
       {/* Error banner */}
       {error && (
         <div className="mx-3 mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
-          {error}
+          {isDataRootLocked ? (
+            <span className="mb-1 block font-medium text-amber-800 dark:text-amber-300">
+              {tAgentsWs('projectWorkspace.loadFailed')}
+            </span>
+          ) : null}
+          <span>{error}</span>
+          {isDataRootLocked && initialPath ? (
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                loadRoot(initialPath, initialResolveMode);
+              }}
+              className="ml-2 font-medium text-amber-800 underline hover:text-amber-950 dark:text-amber-300 dark:hover:text-amber-100"
+            >
+              {tChat('retry')}
+            </button>
+          ) : null}
           <button type="button" onClick={() => setError(null)} className="ml-2 text-amber-500 hover:text-amber-700">&times;</button>
         </div>
       )}
 
-      {/* Tree area */}
-      <div className="flex-1 overflow-y-auto p-1">
+      {/* Tree area — 空白处右键 = 针对根目录（新建文件/夹等），不选「重命名/删除根」 */}
+      <div
+        className="flex-1 overflow-y-auto p-1"
+        onContextMenu={(e) => {
+          if (!rootPath || loading || fileLoading) return;
+          const t = e.target as HTMLElement;
+          if (t.closest('[data-fs-tree-row]')) return;
+          e.preventDefault();
+          e.stopPropagation();
+          setContextMenu({
+            x: e.clientX,
+            y: e.clientY,
+            node: {
+              name: '',
+              path: rootPath,
+              isDirectory: true,
+              expanded: true,
+              loaded: true,
+              children: tree,
+            },
+          });
+        }}
+      >
         {loading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
@@ -952,7 +1146,7 @@ export function FolderExplorerPanel({ onClose, onInsertPath, initialPath }: Fold
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
           </div>
-        ) : tree.length === 0 && !rootPath ? (
+        ) : tree.length === 0 && !rootPath && !isDataRootLocked ? (
           <div className="py-8 text-center text-xs text-zinc-400 dark:text-zinc-500">
             <FolderOpen className="mx-auto mb-2 h-8 w-8 text-zinc-300 dark:text-zinc-600" />
             <p>Open a folder to browse files</p>
@@ -991,6 +1185,9 @@ export function FolderExplorerPanel({ onClose, onInsertPath, initialPath }: Fold
 
       {/* Delete confirmation dialog */}
       {deleteDialog}
+
+      {/* Embedded preview dialog */}
+      {embeddedPreviewDialog}
     </div>
   );
 }

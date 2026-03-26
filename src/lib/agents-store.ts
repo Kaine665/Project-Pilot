@@ -1,4 +1,14 @@
-import { getAgentsPath, readJsonFile, writeJsonFile, ensureDataDirV2Migrated } from '@/lib/file-store';
+import {
+  getAgentsPath,
+  readJsonFile,
+  writeJsonFile,
+  ensureDataDirV2Migrated,
+} from '@/lib/file-store';
+import {
+  loadAgentsFromObjectModel,
+  saveAgentsToObjectModel,
+  shouldUseAgentsObjectModel,
+} from '@/lib/agents-object-model';
 import { DEFAULT_AGENTS, getDefaultAgents } from '@/lib/default-agents';
 import { mergeAndRepairAgentsData } from '@/lib/agent-metadata-repair';
 import {
@@ -8,7 +18,9 @@ import {
   writePromptFile,
 } from '@/lib/agent-prompt-store';
 import { getSettings } from '@/lib/settings-manager';
-import type { Agent, AgentCapabilities, AgentStatus, AgentsData } from '@/types';
+import type {
+  Agent, AgentCapabilities, AgentStatus, AgentsData, OpenAIReasoningEffort,
+} from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import type { ResourceRef } from '@/types/resource';
 
@@ -33,6 +45,7 @@ export interface AgentMutationInput {
   triggerHints?: string[];
   defaultProvider?: Agent['defaultProvider'];
   defaultModel?: string;
+  defaultOpenAIReasoningEffort?: OpenAIReasoningEffort | null;
   contextStrategy?: 'additive' | 'exclusive';
 }
 
@@ -49,6 +62,7 @@ export interface CreateAgentInput extends Required<Pick<AgentMutationInput, 'nam
   triggerHints?: string[];
   defaultProvider?: Agent['defaultProvider'];
   defaultModel?: string;
+  defaultOpenAIReasoningEffort?: OpenAIReasoningEffort | null;
   contextStrategy?: 'additive' | 'exclusive';
 }
 
@@ -88,9 +102,12 @@ export async function readAgentsData(): Promise<AgentsData> {
   // Ensure builtin defaults are loaded before merge
   await getDefaultAgents();
 
-  const { data, changed: mergedChanged } = await mergeAndRepairAgentsData(
-    await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] }),
-  );
+  const useOm = await shouldUseAgentsObjectModel();
+  const rawAgents: AgentsData = useOm
+    ? await loadAgentsFromObjectModel()
+    : await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
+
+  const { data, changed: mergedChanged } = await mergeAndRepairAgentsData(rawAgents);
   let changed = mergedChanged;
 
   for (const agent of data.agents) {
@@ -126,7 +143,11 @@ export async function writeAgentsData(data: AgentsData): Promise<void> {
     return;
   }
 
-  await writeJsonFile(getAgentsPath(), data);
+  if (await shouldUseAgentsObjectModel()) {
+    await saveAgentsToObjectModel(data);
+  } else {
+    await writeJsonFile(getAgentsPath(), data);
+  }
   invalidateAgentsCache();
 }
 
@@ -211,6 +232,7 @@ export async function createAgent(input: CreateAgentInput): Promise<Agent> {
     projectKey: normalizeOptionalString(input.projectKey),
     defaultProvider: input.defaultProvider || undefined,
     defaultModel: normalizeOptionalString(input.defaultModel),
+    defaultOpenAIReasoningEffort: input.defaultOpenAIReasoningEffort ?? undefined,
     contextStrategy: input.contextStrategy || undefined,
     createdAt: now,
     updatedAt: now,
@@ -249,6 +271,16 @@ export async function updateAgent(id: string, input: AgentMutationInput): Promis
   if (input.projectKey !== undefined) agent.projectKey = normalizeOptionalString(input.projectKey);
   if (input.defaultProvider !== undefined) agent.defaultProvider = input.defaultProvider || undefined;
   if (input.defaultModel !== undefined) agent.defaultModel = normalizeOptionalString(input.defaultModel);
+  if (input.defaultProvider !== undefined && input.defaultProvider !== 'openai') {
+    delete agent.defaultOpenAIReasoningEffort;
+  }
+  if (input.defaultOpenAIReasoningEffort !== undefined) {
+    if (input.defaultOpenAIReasoningEffort === null) {
+      delete agent.defaultOpenAIReasoningEffort;
+    } else {
+      agent.defaultOpenAIReasoningEffort = input.defaultOpenAIReasoningEffort;
+    }
+  }
   if (input.contextStrategy !== undefined) agent.contextStrategy = input.contextStrategy || undefined;
 
   if (input.systemPrompt !== undefined) {

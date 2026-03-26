@@ -1,6 +1,5 @@
 import type { Agent, ProviderId, OpenAIReasoningEffort, ChatSSEEvent } from '@/types';
-import type { PendingUserQueueItem, SessionConfig } from '@/types/agent-chat';
-import type { SessionNavLink } from '@/components/agent-session-utils';
+import type { DeferredInputBufferItem } from '@/types/agent-chat';
 
 // ── Exported types ──
 
@@ -32,7 +31,15 @@ export interface AgentChatPanelProps {
     model: string;
     modelOptions: ModelSelectOption[];
     effort: OpenAIReasoningEffort;
+    fastMode: boolean;
   };
+  /** Workspace mode hides legacy runtime/config chrome so the parent page owns the three-column shell. */
+  workspaceMode?: boolean;
+  /**
+   * When `initialSessionId` is null, scopes SPA panel cache so each draft tab is isolated.
+   * Pass a stable per-tab id from the parent (e.g. panel key).
+   */
+  draftCacheSlot?: string | number | null;
 }
 
 export type IndexedSSEEvent = ChatSSEEvent & { _idx: number };
@@ -59,7 +66,9 @@ export function stripSessionTitleTag(text: string): string {
   return text.replace(/<session-title>[\s\S]*?<\/session-title>\s*/, '');
 }
 
-export function clonePendingQueueItems(items: PendingUserQueueItem[]): PendingUserQueueItem[] {
+export function cloneDeferredInputBufferItems(
+  items: DeferredInputBufferItem[],
+): DeferredInputBufferItem[] {
   return items.map((item) => ({
     text: item.text,
     images: item.images?.length ? [...item.images] : undefined,

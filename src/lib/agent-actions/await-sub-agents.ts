@@ -60,18 +60,28 @@ export const awaitSubAgentsAction: AgentAction<AwaitSubAgentsTagData> = {
   },
 
   async execute(data: AwaitSubAgentsTagData, ctx: ActionContext): Promise<void> {
+    const registeredAt = Date.now();
+    const awaiting = {
+      waiting: true as const,
+      subAgentSessionIds: [...data.sessionIds],
+      registeredAt,
+      timeoutMs: WATCHER_DEFAULT_TIMEOUT_MS,
+    };
+
     // Register watch entry
     subAgentWatcher.register({
       parentSessionId: ctx.sessionId,
       parentAgentId: ctx.agentId,
       parentProjectKey: ctx.projectKey,
       targetSessionIds: data.sessionIds,
-      registeredAt: Date.now(),
+      registeredAt,
       timeoutMs: WATCHER_DEFAULT_TIMEOUT_MS,
     });
 
     // Set flag on context so finalizeRun knows to enter awaiting state
-    (ctx as ActionContext & { _awaitingSubAgents?: boolean })._awaitingSubAgents = true;
+    (ctx as ActionContext & {
+      _awaitingSubAgents?: typeof awaiting;
+    })._awaitingSubAgents = awaiting;
 
     console.log(
       `[await-sub-agents] Registered watcher: parent=${ctx.sessionId}, targets=[${data.sessionIds.join(',')}]`,

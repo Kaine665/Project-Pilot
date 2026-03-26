@@ -9,7 +9,7 @@ import {
   useEffect,
   useMemo,
 } from 'react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/client/i18n/use-translations';
 import type {
   FlowData,
   Section,
@@ -30,6 +30,7 @@ import {
   reorderArray,
   reorderChildItems,
 } from '@/lib/flow-tree-helpers';
+import { loadLocalFlowData, saveLocalFlowData } from '@/lib/flow-local-ephemeral';
 
 /** Highlight target passed from URL params when navigating back from task agent */
 export interface HighlightTarget {
@@ -298,14 +299,11 @@ export function FlowEditor({ projectKey, projectName, projectDescription, projec
 
   const isSaving = useRef(false);
 
-  // Load data
+  // Load：仅浏览器 localStorage（产品已下线服务端 Flow JSON）
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/data?project=${projectKey}`)
-      .then(res => res.ok ? res.json() : EMPTY_DATA)
-      .then(d => setData({ ...EMPTY_DATA, ...d }))
-      .catch(() => setData(EMPTY_DATA))
-      .finally(() => setLoading(false));
+    setData(loadLocalFlowData(projectKey));
+    setLoading(false);
   }, [projectKey]);
 
   const persist = useCallback((newData: FlowData) => {
@@ -313,29 +311,11 @@ export function FlowEditor({ projectKey, projectName, projectDescription, projec
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       isSaving.current = true;
-      fetch(`/api/data?project=${projectKey}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newData),
-      }).finally(() => {
-        setTimeout(() => { isSaving.current = false; }, 300);
-      });
+      saveLocalFlowData(projectKey, newData);
+      setTimeout(() => {
+        isSaving.current = false;
+      }, 300);
     }, 500);
-  }, [projectKey]);
-
-  // SSE
-  useEffect(() => {
-    const es = new EventSource(`/api/data/stream?project=${projectKey}`);
-    es.onmessage = (event) => {
-      if (isSaving.current) return;
-      try {
-        const newData: FlowData = JSON.parse(event.data);
-        setData(newData);
-      } catch {
-        // ignore
-      }
-    };
-    return () => es.close();
   }, [projectKey]);
 
   // --- Actions (memoized) ---

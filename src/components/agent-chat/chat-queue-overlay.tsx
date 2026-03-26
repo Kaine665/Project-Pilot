@@ -1,10 +1,10 @@
 'use client';
 
 import { Layers, ChevronUp, ChevronDown, ArrowUp, Trash2 } from 'lucide-react';
-import type { PendingUserQueueItem } from '@/types/agent-chat';
+import type { DeferredInputBufferItem } from '@/types/agent-chat';
 
 export interface ChatQueueOverlayProps {
-  pendingMessages: PendingUserQueueItem[];
+  pendingMessages: DeferredInputBufferItem[];
   expanded: boolean;
   onToggleExpanded: (expanded: boolean) => void;
   onSendNow: (index: number) => void;

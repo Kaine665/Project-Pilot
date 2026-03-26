@@ -255,6 +255,11 @@ components:
           type: string
           description: Default model ID for new sessions
           example: "claude-sonnet-4-20250514"
+        defaultOpenAIReasoningEffort:
+          type: string
+          description: Default OpenAI reasoning tier for new sessions
+          enum: [minimal, low, medium, high, xhigh]
+          nullable: true
         archived:
           type: boolean
           description: True if agent has been soft-deleted
@@ -301,7 +306,7 @@ components:
         type:
           type: string
           description: Resource type determining which loader handles it
-          enum: [context, system-prompt, todo-list, inline-text, knowledge-instructions, doc-save-instructions, session-title-instructions, context-index, active-tasks, global-prompt, project-prompt, suspended-tasks, design-docs-index, agent-data-store]
+          enum: [context, system-prompt, todo-list, inline-text, knowledge-instructions, doc-save-instructions, session-title-instructions, context-index, active-tasks, global-prompt, project-prompt, design-docs-index, agent-data-store]
         id:
           type: string
           description: Resource identifier (semantics depend on type)
@@ -350,6 +355,10 @@ components:
           enum: [anthropic, openai, gemini, deepseek, openrouter]
         defaultModel:
           type: string
+        defaultOpenAIReasoningEffort:
+          type: string
+          enum: [minimal, low, medium, high, xhigh]
+          nullable: true
 
     AgentMatchInput:
       type: object

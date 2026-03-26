@@ -1,6 +1,7 @@
 // ==================== Session（AI 会话） ====================
 
 import type { FlowTaskContext } from './flow-context';
+import type { SessionSourceType } from './agent-chat';
 import type { ResourceRef } from './resource';
 
 /**
@@ -121,7 +122,8 @@ export interface ProviderCredential {
 export type EffortLevel = 'low' | 'medium' | 'high';
 
 /** OpenAI 推理努力等级（Codex 支持 xhigh） */
-export type OpenAIReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
+export type OpenAIReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+export type OpenAIServiceTier = 'fast';
 
 /** Claude Code 配置 */
 export interface ClaudeSettings {
@@ -154,6 +156,8 @@ export interface ClaudeSettings {
   providerBaseUrls?: Partial<Record<ProviderId, string>>;
   /** OpenAI 推理努力等级 */
   openaiReasoningEffort?: OpenAIReasoningEffort;
+  /** OpenAI Codex Fast Mode（仅 ChatGPT 登录 + GPT-5.4 生效） */
+  openaiFastMode?: boolean;
   /** 用户添加的自定义供应商列表（规范 schema） */
   customProviders?: CustomProviderConfig[];
 }
@@ -163,6 +167,18 @@ export interface GeneralSettings {
   /** 是否启用遥测（默认 false，当前版本无遥测） */
   telemetry?: boolean;
 }
+
+export interface DeveloperSettings {
+  /** 是否显示定时任务入口与页面 */
+  schedulesPageEnabled?: boolean;
+  /** 是否显示事件驱动任务触发入口与页面 */
+  taskTriggersPageEnabled?: boolean;
+}
+
+export const DEFAULT_DEVELOPER_SETTINGS: DeveloperSettings = {
+  schedulesPageEnabled: true,
+  taskTriggersPageEnabled: true,
+};
 
 /** 会话标题自动生成配置 */
 export interface TitleGenerationChainEntry {
@@ -182,6 +198,19 @@ export const DEFAULT_TITLE_GENERATION: TitleGenerationSettings = {
   chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }],
 };
 
+export const BUILT_IN_NOTIFICATION_SOUND_IDS = [
+  'classic',
+  'glass',
+  'soft',
+  'pulse',
+] as const;
+
+export type BuiltInNotificationSoundId =
+  (typeof BUILT_IN_NOTIFICATION_SOUND_IDS)[number];
+
+export type NotificationSoundSource = 'builtin' | 'custom';
+export type NotificationClickAction = 'open_session' | 'focus_app' | 'none';
+
 /** 通知和音频设置 */
 export interface NotificationSettings {
   /** 是否启用桌面通知（默认 true） */
@@ -192,6 +221,26 @@ export interface NotificationSettings {
   soundVolume?: number;
   /** 仅在窗口失焦时通知（默认 false，始终通知） */
   onlyWhenUnfocused?: boolean;
+  /** 通知音频来源 */
+  soundSource?: NotificationSoundSource;
+  /** 内置音色 ID */
+  builtinSound?: BuiltInNotificationSoundId;
+  /** 自定义音频文件的 Data URL */
+  customSoundDataUrl?: string;
+  /** 自定义音频文件名，仅用于 UI 展示 */
+  customSoundName?: string;
+  /** 通知标题模板 */
+  titleTemplate?: string;
+  /** 通知正文模板 */
+  bodyTemplate?: string;
+  /** 任务至少运行多久才发送通知 */
+  minDurationMs?: number;
+  /** 同一会话的通知去重窗口 */
+  dedupeWindowMs?: number;
+  /** 点击系统通知后的行为 */
+  clickAction?: NotificationClickAction;
+  /** 是否要求通知在系统通知中心保留，直到用户手动关闭 */
+  requireInteraction?: boolean;
 }
 
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
@@ -199,12 +248,21 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   soundEnabled: true,
   soundVolume: 0.5,
   onlyWhenUnfocused: false,
+  soundSource: 'builtin',
+  builtinSound: 'classic',
+  titleTemplate: '{agentName} 已完成',
+  bodyTemplate: '会话“{sessionTitle}”已收到新回复',
+  minDurationMs: 0,
+  dedupeWindowMs: 500,
+  clickAction: 'open_session',
+  requireInteraction: true,
 };
 
 /** 全局应用设置 */
 export interface AppSettings {
   claude: ClaudeSettings;
   general?: GeneralSettings;
+  developer?: DeveloperSettings;
   /** 危险命令检测配置（各分类的检测级别） */
   dangerDetector?: DangerDetectorSettings;
   /** 会话标题自动生成配置 */
@@ -220,6 +278,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     authMode: 'api_key',
     model: 'claude-sonnet-4-6',
   },
+  developer: DEFAULT_DEVELOPER_SETTINGS,
   notifications: DEFAULT_NOTIFICATION_SETTINGS,
   version: 1,
 };
@@ -289,20 +348,14 @@ export type ChatSSEEvent =
   | { type: 'session_title_set'; title: string }
   | { type: 'knowledge_draft_created'; entryId: string; label: string }
   | { type: 'doc_created'; docId: string; title: string; projectKey: string }
-  | { type: 'task_suspended'; taskId: string; title: string }
-  | { type: 'task_completed'; taskId: string }
   /** 会话检查点已生成（提示前端可显示续接按钮） */
   | { type: 'checkpoint_saved'; checkpoint: import('@/types/agent-chat').SessionCheckpoint }
   /** 模型 token 用量（来自 SDK result.modelUsage 或 streaming message_start/message_delta） */
   | { type: 'token_usage'; inputTokens: number; outputTokens: number; contextWindow?: number; final?: boolean }
   | { type: 'error'; message: string }
   | { type: 'awaiting_sub_agents' }
-  /** 卫星任务：主题完成检测结果 */
-  | { type: 'topic_completion'; completed: boolean; confidence: number; summary: string }
-  /** 卫星任务：任务卡片已更新 */
-  | { type: 'task_card_updated'; card: import('@/lib/task-card-store').TaskCard }
   | { type: 'done' }
-  /** 所有卫星任务完成，SSE 连接可以关闭。前端收到 'done' 后即可更新 UI，收到此事件后 SSE 才真正结束。 */
+  /** SSE 流结束信号；前端在 `done` 后已可更新 UI，收到本事件后连接关闭。 */
   | { type: 'stream_end' };
 
 // ==================== Agent ====================
@@ -323,7 +376,7 @@ export interface AgentCapabilities {
   todoRead: boolean;
   /** Expose the prompt file path in the system prompt so the AI can read/edit its own instructions */
   exposePromptPath: boolean;
-  /** Grant agent read/write access to its private data store (agent-data/{agentId}/) */
+  /** Grant agent read/write access to its private workspace (agents/workspaces/{agentId}/) */
   dataStore: boolean;
 }
 
@@ -382,6 +435,8 @@ export interface Agent {
   defaultProvider?: ProviderId;
   /** 默认模型 ID（创建新会话时预选）。留空则继承全局设置。 */
   defaultModel?: string;
+  /** OpenAI 榛樿鎺ㄧ悊妗ｄ綅锛屼粎鍦?provider=openai 鏃剁敓鏁堛€?*/
+  defaultOpenAIReasoningEffort?: OpenAIReasoningEffort;
   /**
    * 引用的 prompt 片段 ID 列表，按顺序拼接到主 prompt 之后。
    * 片段存储在 data/prompts/blocks/{blockId}.md
@@ -531,35 +586,6 @@ export interface TodosData {
   todos: TodoItem[];
 }
 
-// ==================== Suspended Tasks（跨会话任务交接） ====================
-
-export type SuspendedTaskStatus = 'suspended' | 'resumed' | 'completed';
-
-export interface SuspendedTask {
-  id: string;                    // suspend-{timestamp}-{random}
-  title: string;                 // 任务简述
-  projectKey?: string;           // 关联项目
-  agentId: string;               // 挂起时的 Agent
-  sessionId: string;             // 挂起时的会话 ID
-
-  // 交接内容（Agent 生成）
-  progress: string;              // 当前进度
-  blockReason: string;           // 阻塞原因
-  nextSteps: string;             // 恢复建议 / 下一步
-  context?: string;              // 补充上下文（相关文件、分支等）
-
-  // 状态
-  status: SuspendedTaskStatus;
-  suspendedAt: string;
-  resumedAt?: string;
-  resumedBy?: string;            // 接续的会话 ID
-  completedAt?: string;
-}
-
-export interface SuspendedTasksData {
-  tasks: SuspendedTask[];
-}
-
 // ==================== Flow Project ====================
 
 /** 项目所在位置类型 */
@@ -677,13 +703,6 @@ export interface DocsIndexData {
   categories?: CategoryDef[];
 }
 
-// ==================== Orchestrator ====================
-
-export type {
-  OrchestratorPhase, SplitPlan, WorkerTask, WorkerResult,
-  OrchestratorSession, OrchestratorSessionsData, OrchestratorSSEEvent,
-} from './orchestrator';
-
 // ==================== Inbox（收件箱） ====================
 
 /** 收件箱条目 —— 未结构化的快速记录 */
@@ -705,17 +724,23 @@ export interface ProjectInbox {
 
 // ==================== Agent Schedules（定时运行） ====================
 
+export type ScheduleTargetType = 'agent_message' | 'todo';
+
 /**
  * Agent 定时运行配置。
  * 每条记录对应一个"每到 cron 时间就启动一次 Agent 会话"的规则。
  */
 export interface AgentSchedule {
   id: string;           // sched-{timestamp}-{random4}
-  agentId: string;      // 关联的 Agent ID
+  /** 触发目标类型，默认 message */
+  targetType?: ScheduleTargetType;
+  agentId?: string;     // 关联的 Agent ID（message 必填；todo 为快照）
+  /** 当 targetType=todo 时，定时触发的 Todo ID */
+  todoId?: string;
   /** cron 表达式，标准 5 段格式（分 时 日 月 周）*/
   cron: string;
-  /** 启动时发送的初始消息 */
-  message: string;
+  /** 启动时发送的初始消息（targetType=message 时使用） */
+  message?: string;
   /** 可选：绑定的项目 key（会加载项目流程数据） */
   projectKey?: string;
   /** 是否启用，默认 true */
@@ -740,6 +765,9 @@ export interface ScheduleRunRecord {
   scheduleId: string;   // 关联的 AgentSchedule ID
   sessionId: string;    // 创建的 Agent 会话 ID
   trigger: 'cron' | 'manual';  // 触发方式
+  sourceType: SessionSourceType;
+  sourceId: string;
+  todoId?: string;
   startedAt: string;    // ISO timestamp
   status: 'started' | 'completed' | 'failed';
   error?: string;       // 失败时的错误信息
@@ -747,6 +775,49 @@ export interface ScheduleRunRecord {
 
 export interface ScheduleRunsData {
   runs: ScheduleRunRecord[];
+}
+
+// ==================== Agent Dialogue（轮流对话） ====================
+
+export type DialogueStatus = 'pending' | 'running' | 'completed' | 'stopped' | 'error';
+export type DialogueTerminationMode = 'max_rounds' | 'consensus' | 'manual';
+
+/**
+ * Agent 轮流对话记录。
+ * 两个 Agent 围绕主题交替发言，共享完整对话历史。
+ */
+export interface AgentDialogue {
+  id: string;                    // dialogue-{timestamp}
+  title: string;                 // 对话主题
+  description?: string;          // 对话背景/目标描述
+  agentA: { id: string; name: string };
+  agentB: { id: string; name: string };
+  status: DialogueStatus;
+  maxRounds: number;             // 最大轮数，默认 10
+  currentRound: number;          // 当前轮次
+  terminationMode: DialogueTerminationMode;
+  messages: DialogueMessage[];
+  projectKey?: string;
+  createdAt: string;
+  completedAt?: string;
+  error?: string;                // 出错时的错误信息
+}
+
+export interface DialogueMessage {
+  round: number;                 // 第几轮（A+B 算一轮）
+  speaker: 'agentA' | 'agentB';
+  agentId: string;
+  content: string;               // Agent 的回复内容
+  sessionId: string;             // 对应的 PP 会话 ID
+  timestamp: string;
+  tokenUsage?: number;           // 本轮 token 消耗（可选）
+}
+
+/** 列表用的轻量摘要（不含 messages） */
+export type AgentDialogueSummary = Omit<AgentDialogue, 'messages'>;
+
+export interface DialoguesIndexData {
+  dialogues: AgentDialogueSummary[];
 }
 
 // ==================== Segmented Prompts ====================
