@@ -17,14 +17,15 @@ const label = process.argv[3] ?? "capture";
 const urlPath =
   process.argv[4] ?? process.env.PP_UI_CAPTURE_PATH ?? "/flows/agents";
 const outDir = join(__dirname, "..", "tmp", "ui-workflow-experiment");
-const url = `http://127.0.0.1:${port}${urlPath.startsWith("/") ? urlPath : `/${urlPath}`}`;
+const host = process.env.PP_UI_CAPTURE_HOST ?? "127.0.0.1";
+const url = `http://${host}:${port}${urlPath.startsWith("/") ? urlPath : `/${urlPath}`}`;
 
 await mkdir(outDir, { recursive: true });
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-await page.goto(url, { waitUntil: "networkidle", timeout: 120000 });
-await page.waitForTimeout(2000);
+await page.goto(url, { waitUntil: "load", timeout: 120000 });
+await page.waitForTimeout(2500);
 
 const safe = String(label).replace(/[^a-zA-Z0-9_-]/g, "_");
 const outFile = join(outDir, `${safe}.png`);

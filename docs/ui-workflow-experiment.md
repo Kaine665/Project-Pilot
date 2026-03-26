@@ -10,7 +10,7 @@
 | 项 | 内容 |
 |----|------|
 | **研究问题** | 在相同功能与布局前提下，不同「设计工作流程」导致的 **Agents 工作区** 观感与可读性差异，是否值得固定某一种流程。 |
-| **控制变量** | 路由与功能：`/[locale]/flows/agents`；视口：建议固定 1440×900；数据：同一 `~/.project-pilot/data`（或同一套 demo 数据）。 |
+| **控制变量** | 路由与功能：`/[locale]/flows/agents`；视口：建议固定 1440×900；数据：同一运行环境（代码默认根见根 **[`README.md`](../../README.md#pp-data-directory)**；本机真实树见 `~/.project-pilot/数据文件夹现状.md`）或同一套 demo 数据。**对齐**：2026-03-26。 |
 | **自变量** | 分支 / worktree 所代表的 **流程叙事** 及其 **终点 token**（本实验用 CSS 变量落在页面根容器上，仅影响 Agents 子树继承的语义色）。 |
 | **因变量** | 截图；可选：评审量表得分；可选：WCAG 对比度抽检（浏览器插件 / axe）。 |
 | **样本量** | 本预设含 **对照 + 2 条流程**；扩展时可增加 `exp/ui-workflow-c-*` worktree。 |
@@ -48,6 +48,8 @@ git worktree list
 git worktree add -b exp/ui-workflow-a-agents ../exp-ui-workflow-a-agents develop-static
 git worktree add -b exp/ui-workflow-b-agents ../exp-ui-workflow-b-agents develop-static
 ```
+
+**依赖安装**：每个实验 worktree 有**独立目录**，首次训练前需分别进入 `exp-ui-workflow-a-agents`、`exp-ui-workflow-b-agents` 执行 `npm install`。`dev` 脚本应与主 `develop-static` 一致（当前后端为 `bun ./src/server/index.ts`；错误的 `bun run --tsconfig tsconfig.json …` 会导致 Bun 报错且 Vite 找不到本地 `vite`）。
 
 **结束实验后移除**（先合并或丢弃分支上的改动，再执行）：
 
