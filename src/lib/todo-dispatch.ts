@@ -97,6 +97,7 @@ export async function dispatchTodoToAgent(
     undefined,
     undefined,
     undefined,
+    undefined,
     options.sourceType ?? 'todo',
     options.sourceId ?? todoId,
     todoId,

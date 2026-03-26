@@ -13,7 +13,7 @@ import {
   Trash2,
   User,
 } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/client/i18n/use-translations';
 import { FormattedText } from '@/components/formatted-text';
 import { ToolCallCard } from '@/components/tool-call-card';
 import { ToolExecutionWindow } from '@/components/tool-execution-window';

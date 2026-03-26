@@ -37,8 +37,8 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { useLocale } from 'next-intl';
-import { useRouter } from 'next/navigation';
+import { useLocale } from '@/client/i18n/use-translations';
+import { useRouter } from '@/client/i18n/routing';
 import { useProject } from '@/components/project-context';
 import type { Agent, TodoItem, TodoPriority, TodoStatus, TodoSubTask } from '@/types';
 

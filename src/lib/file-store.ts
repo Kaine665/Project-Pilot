@@ -17,9 +17,74 @@ import os from 'os';
  * Some editors (Notepad, VS Code in rare cases) prepend BOM to files,
  * causing JSON.parse to fail with "Unexpected token".
  */
+function extractFirstJsonDocument(raw: string): string | null {
+  const trimmed = raw.trimStart();
+  if (!trimmed) return null;
+
+  const firstChar = trimmed[0];
+  if (firstChar !== '{' && firstChar !== '[') {
+    return null;
+  }
+
+  const stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const char = trimmed[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === '{' || char === '[') {
+      stack.push(char);
+      continue;
+    }
+
+    if (char === '}' || char === ']') {
+      const opening = stack.pop();
+      if (!opening) return null;
+      if ((opening === '{' && char !== '}') || (opening === '[' && char !== ']')) {
+        return null;
+      }
+      if (stack.length === 0) {
+        return trimmed.slice(0, index + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
 export function parseJsonSafe<T>(raw: string): T {
   const cleaned = raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw;
-  return JSON.parse(cleaned);
+  try {
+    return JSON.parse(cleaned);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) {
+      throw error;
+    }
+
+    const recovered = extractFirstJsonDocument(cleaned);
+    if (recovered && recovered !== cleaned) {
+      return JSON.parse(recovered) as T;
+    }
+
+    throw error;
+  }
 }
 
 // 默认存到用户目录的隐藏文件夹
@@ -78,6 +143,7 @@ async function ensureDataDirInitialized(): Promise<void> {
     // prompts/
     path.join(DATA_DIR, 'prompts', 'agents'),
     path.join(DATA_DIR, 'prompts', 'history'),
+    // Compatibility path: session prompt overrides are still stored under prompts/runtime/
     path.join(DATA_DIR, 'prompts', 'runtime'),
     path.join(DATA_DIR, 'prompts', 'blocks'),
     getProjectPromptsDir(),
@@ -92,6 +158,9 @@ async function ensureDataDirInitialized(): Promise<void> {
     getSkillsDir(),
     // usage/
     path.join(DATA_DIR, 'usage'),
+    // runs/
+    path.join(DATA_DIR, '_next', 'runs', 'by-id'),
+    path.join(DATA_DIR, '_next', 'runs', 'latest-by-session'),
     // top-level
     path.join(DATA_DIR, '_snapshots'),
   ];
@@ -243,8 +312,8 @@ let _v2Migrated = false;
  * 3. Phase B：写标记文件
  * 4. Phase C：删除旧文件（best-effort）
  *
- * 对 prompts/.runtime/ 目录，旧结构是 prompts/{agentId}.runtime/，
- * 新结构是 prompts/runtime/{agentId}/。
+ * 对 session prompt override 目录，兼容旧结构 prompts/{agentId}.runtime/，
+ * 当前兼容路径仍是 prompts/runtime/{agentId}/。
  */
 export async function ensureDataDirV2Migrated(): Promise<void> {
   if (_v2Migrated) return;
@@ -355,7 +424,7 @@ export async function ensureDataDirV2Migrated(): Promise<void> {
     }
   } catch { /* ok */ }
 
-  // 特殊处理：prompt runtime（prompts/{agentId}.runtime/ → prompts/runtime/{agentId}/）
+  // 特殊处理：session prompt override（prompts/{agentId}.runtime/ → prompts/runtime/{agentId}/）
   try {
     const promptsRoot = path.join(DATA_DIR, 'prompts');
     const entries = await fs.readdir(promptsRoot, { withFileTypes: true });
@@ -512,6 +581,30 @@ export function getAgentChatMessagePath(sessionId: string): string {
   return path.join(DATA_DIR, 'chat', 'messages', `${safe}.jsonl`);
 }
 
+export function getRunsByIdDir(): string {
+  return path.join(DATA_DIR, '_next', 'runs', 'by-id');
+}
+
+export function getRunByIdPath(runId: string): string {
+  const safe = runId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 200) {
+    throw new Error(`Invalid run id: ${runId}`);
+  }
+  return path.join(getRunsByIdDir(), `${safe}.json`);
+}
+
+export function getLatestRunsBySessionDir(): string {
+  return path.join(DATA_DIR, '_next', 'runs', 'latest-by-session');
+}
+
+export function getLatestRunBySessionPath(sessionId: string): string {
+  const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 200) {
+    throw new Error(`Invalid session id: ${sessionId}`);
+  }
+  return path.join(getLatestRunsBySessionDir(), `${safe}.json`);
+}
+
 export function getWorktreePortsPath(): string {
   return path.join(DATA_DIR, 'workflows', 'worktree-ports.json');
 }
@@ -550,7 +643,12 @@ export function getPromptHistoryDir(agentId: string): string {
   return path.join(DATA_DIR, 'prompts', 'history', safe);
 }
 
-export function getPromptRuntimeDir(agentId: string): string {
+/**
+ * Session prompt override compatibility directory.
+ * Note: the current physical path still lives under prompts/runtime/ for backward compatibility,
+ * but the product meaning is "session prompt override", not a standalone runtime-prompt domain.
+ */
+export function getSessionPromptOverrideDir(agentId: string): string {
   const safe = agentId.replace(/[^a-zA-Z0-9_-]/g, '');
   if (!safe || safe.length < 1 || safe.length > 100) {
     throw new Error(`Invalid agent id: ${agentId}`);
@@ -558,7 +656,11 @@ export function getPromptRuntimeDir(agentId: string): string {
   return path.join(DATA_DIR, 'prompts', 'runtime', safe);
 }
 
-export function getPromptRuntimePath(agentId: string, sessionId: string): string {
+/**
+ * Session prompt override compatibility file path.
+ * Physical path currently remains under prompts/runtime/{agentId}/{sessionId}.md.
+ */
+export function getSessionPromptOverridePath(agentId: string, sessionId: string): string {
   const safeAgent = agentId.replace(/[^a-zA-Z0-9_-]/g, '');
   if (!safeAgent || safeAgent.length < 1 || safeAgent.length > 100) {
     throw new Error(`Invalid agent id: ${agentId}`);
@@ -568,6 +670,22 @@ export function getPromptRuntimePath(agentId: string, sessionId: string): string
     throw new Error(`Invalid session id: ${sessionId}`);
   }
   return path.join(DATA_DIR, 'prompts', 'runtime', safeAgent, `${safeSession}.md`);
+}
+
+/**
+ * @deprecated Prefer getSessionPromptOverrideDir().
+ * Kept for compatibility while the codebase migrates away from the old "runtime prompt" wording.
+ */
+export function getPromptRuntimeDir(agentId: string): string {
+  return getSessionPromptOverrideDir(agentId);
+}
+
+/**
+ * @deprecated Prefer getSessionPromptOverridePath().
+ * Kept for compatibility while the codebase migrates away from the old "runtime prompt" wording.
+ */
+export function getPromptRuntimePath(agentId: string, sessionId: string): string {
+  return getSessionPromptOverridePath(agentId, sessionId);
 }
 
 export function getGlobalPromptPath(): string {

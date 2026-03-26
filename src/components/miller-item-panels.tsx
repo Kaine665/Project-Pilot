@@ -9,7 +9,7 @@ import {
   BookOpen,
   Bot,
 } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/client/i18n/use-translations';
 import { DeleteButton } from './flow-shared';
 import type { TreeItem } from '@/types/flow';
 import type { Agent } from '@/types';

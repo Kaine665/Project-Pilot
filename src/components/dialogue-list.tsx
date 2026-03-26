@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { CreateDialogueDialog } from '@/components/create-dialogue-dialog';
 import type { AgentDialogueSummary, DialogueStatus } from '@/types';
 import { Plus, Bot, Trash2, MessageCircle } from 'lucide-react';
-import { useRouter } from '@/i18n/routing';
+import { useRouter } from '@/client/i18n/routing';
 
 const STATUS_CONFIG: Record<DialogueStatus, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }> = {
   pending: { label: '等待中', variant: 'secondary' },

@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/client/i18n/use-translations';
 import { ClipboardList, FileDown, Loader2 } from 'lucide-react';
 import { ChatBubble } from '@/components/chat-bubble';
 import type { ParsedActionTag } from '@/lib/action-tag-parser';

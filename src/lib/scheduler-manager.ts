@@ -198,6 +198,7 @@ export class SchedulerManager {
           undefined,
           undefined,
           undefined,
+          undefined,
           'schedule',
           schedule.id,
           schedule.todoId,

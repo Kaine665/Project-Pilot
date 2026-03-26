@@ -1,19 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import dynamic from 'next/dynamic';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { Blocks, BookOpen, Bot, FolderKanban, ListTodo, ScrollText, Timer, Zap } from 'lucide-react';
 import { TopNav } from '@/components/top-nav';
 import { useProject } from '@/components/project-context';
 import { SidebarIconButton } from '@/components/sidebar-icon-button';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { BUTLER_AGENT_ID } from '@/lib/default-agents';
-import { useRouter, usePathname } from '@/i18n/routing';
+import { useRouter, usePathname } from '@/client/i18n/routing';
 import type { Agent } from '@/types';
 
-const AgentChatPanel = dynamic(
-  () => import('@/components/agent-chat-panel').then((m) => m.AgentChatPanel),
-  { ssr: false },
+const AgentChatPanel = lazy(() =>
+  import('@/components/agent-chat-panel').then((m) => ({ default: m.AgentChatPanel })),
 );
 
 export default function FlowsLayout({ children }: { children: React.ReactNode }) {
@@ -149,7 +147,17 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
             className={`shrink-0 overflow-hidden bg-white transition-[width] duration-200 ease-in-out dark:bg-zinc-950 ${plannerOpen ? 'border-l border-zinc-200 dark:border-zinc-800' : ''}`}
           >
             <div className="flex h-full w-[360px] flex-col">
-              {butlerAgent && <AgentChatPanel agent={butlerAgent} variant="sidebar" projectKey={activeKey} />}
+              {butlerAgent && (
+                <Suspense
+                  fallback={
+                    <div className="flex flex-1 items-center justify-center">
+                      <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" />
+                    </div>
+                  }
+                >
+                  <AgentChatPanel agent={butlerAgent} variant="sidebar" projectKey={activeKey} />
+                </Suspense>
+              )}
             </div>
           </div>
         )}

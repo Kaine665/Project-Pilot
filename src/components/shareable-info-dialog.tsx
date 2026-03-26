@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/client/i18n/use-translations';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X, Share2, FileText, ListTree, Users, Layers, MessageSquare, Settings2, Check } from 'lucide-react';
 import type { TreeItem } from '@/types/flow';
