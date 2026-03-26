@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { useRouter } from '@/i18n/routing';
+import { useSearchParams } from '@/client/i18n/routing';
+import { useRouter } from '@/client/i18n/routing';
 
 export default function DocsIndexPage() {
   const router = useRouter();

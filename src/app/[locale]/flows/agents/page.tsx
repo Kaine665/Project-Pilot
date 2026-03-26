@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/client/i18n/use-translations';
 import {
   Plus, Trash2, X, Minimize2,
   MessageSquare, Archive, ArchiveRestore,
@@ -10,24 +10,28 @@ import {
   Command, Terminal, Globe,
   Files, GitBranch, Eye, Database, ListTodo, HardDrive,
   FileText, FileJson,
+  ChevronDown, ChevronRight, Clock, Play,
 } from 'lucide-react';
-import dynamic from 'next/dynamic';
+import { lazy, Suspense } from 'react';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import { FolderExplorerPanel } from '@/components/folder-explorer-panel';
 import { AgentSessionPromptStack, type PromptStackSeedItem } from '@/components/agent-session-prompt-stack';
 
-const AgentChatPanel = dynamic(
-  () => import('@/components/agent-chat-panel').then(m => ({ default: m.AgentChatPanel })),
-  {
-    ssr: false,
-    loading: () => (
+const AgentChatPanelLazy = lazy(() =>
+  import('@/components/agent-chat-panel').then(m => ({ default: m.AgentChatPanel }))
+);
+function AgentChatPanel(props: React.ComponentProps<typeof AgentChatPanelLazy>) {
+  return (
+    <Suspense fallback={
       <div className="flex-1 flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-2 border-muted-foreground/30 border-t-primary" />
       </div>
-    ),
-  }
-);
+    }>
+      <AgentChatPanelLazy {...props} />
+    </Suspense>
+  );
+}
 import { AgentIcon, SettingsForm, type FormData, emptyForm, agentToForm } from '@/components/agent-form';
 import { AgentPickerDropdown } from '@/components/agent-picker-dropdown';
 import { AgentPickerModal } from '@/components/agent-picker-modal';
@@ -112,42 +116,36 @@ const SessionCard = memo(function SessionCard({
   return (
     <div
       onClick={() => onClick(s)}
-      className={`group/session relative flex cursor-pointer items-start gap-3 rounded-2xl border px-3.5 py-3 transition-all ${
+      className={`group/session relative flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-all border-l-2 ${
         isActive
-          ? 'border-border bg-card shadow-[0_12px_32px_rgba(15,23,42,0.06)] dark:shadow-none'
-          : 'border-transparent bg-transparent hover:border-border/70 hover:bg-card/80'
+          ? 'border-l-foreground bg-card shadow-sm'
+          : 'border-l-transparent hover:bg-card/50'
       } ${s.archived ? 'opacity-45' : ''}`}
     >
-      {isActive && (
-        <div className="absolute inset-y-3 left-1.5 w-0.5 rounded-full bg-zinc-900 dark:bg-zinc-100" />
-      )}
-      <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ring-1 ${
-        isActive ? 'bg-background shadow-sm ring-border' : 'bg-muted/70 ring-border/70'
+      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${
+        isActive ? 'bg-blue-50 text-blue-600 ring-blue-100 dark:bg-blue-950 dark:text-blue-400 dark:ring-blue-900' : 'bg-muted/70 text-muted-foreground ring-border/70'
       }`}>
-        <AgentIcon iconKey={s.agentIcon} className={`h-5 w-5 ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-300'}`} />
+        <AgentIcon iconKey={s.agentIcon} className="h-5 w-5" />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="mb-0.5 flex items-start justify-between gap-3">
-          <div className={`truncate text-[13px] ${s.archived ? 'font-medium text-zinc-400 dark:text-zinc-500' : 'font-semibold text-foreground'}`}>
-            {displayText(s.title, newSessionTitle)}
-          </div>
-          <span className="shrink-0 pt-0.5 text-[10px] font-medium text-muted-foreground">
+        <div className="mb-0.5 flex items-center justify-between">
+          <span className={`truncate text-[13px] ${isActive ? 'font-bold text-foreground' : s.archived ? 'font-medium text-zinc-400 dark:text-zinc-500' : 'font-semibold text-zinc-800 dark:text-zinc-200'}`}>
+            {displayText(s.agentName, s.agentId)}
+          </span>
+          <span className="shrink-0 text-[10px] font-medium text-muted-foreground">
             {s.isRunning && listClockNow !== undefined
               ? formatSessionElapsed(s.runningStartedAt, listClockNow)
               : formatSessionTimestamp(s.updatedAt, nowTs, yesterdayLabel)}
           </span>
         </div>
         <div className={`truncate text-[11px] ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-muted-foreground'}`}>
-          {displayText(s.agentName, s.agentId)}
+          {s.archived
+            ? archivedLabel
+            : displayText(s.title, newSessionTitle)}
         </div>
-        {s.archived && (
-          <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-zinc-300 dark:text-zinc-600">
-            {archivedLabel}
-          </div>
-        )}
       </div>
       {!isActive && !!s.unreadCount && s.unreadCount > 0 && !s.archived && (
-        <span className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-zinc-900 px-1.5 text-[10px] font-bold text-white dark:bg-zinc-100 dark:text-zinc-900">
+        <span className="flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full bg-foreground px-1 text-[9px] font-bold text-background">
           {s.unreadCount > 99 ? '99+' : s.unreadCount}
         </span>
       )}
@@ -196,6 +194,7 @@ export default function AgentsPage() {
   const [expandedPrompt, setExpandedPrompt] = useState(false);
 
   const [sessionQuery, setSessionQuery] = useState('');
+  const [historyExpanded, setHistoryExpanded] = useState(false);
 
   // ── New session agent picker (dropdown + modal) ──
   const [showAgentDropdown, setShowAgentDropdown] = useState(false);
@@ -545,6 +544,7 @@ export default function AgentsPage() {
     setSelectedAgentId(agent.id);
     setForm(agentToForm(agent));
     setExpandedPrompt(false);
+    setHistoryExpanded(false);
     setActivePanel({ type: 'agent', agentId: agent.id, mode: 'chat' });
     syncUrlParams({ agent: agent.id, session: null });
   };
@@ -1083,6 +1083,18 @@ export default function AgentsPage() {
   const activeWorkspacePanelKey = activeWorkspaceSession?.key ?? null;
   const activeWorkspaceSessionId = activeWorkspaceSession?.sessionId ?? null;
 
+  const currentAgentSessions = useMemo(() => {
+    if (!activeWorkspaceAgent) return [];
+    return allSessions.filter(s => s.agentId === activeWorkspaceAgent.id && !s.archived);
+  }, [allSessions, activeWorkspaceAgent]);
+  const currentAgentRunningSession = useMemo(() => currentAgentSessions.find(s => s.isRunning) ?? null, [currentAgentSessions]);
+  const currentAgentHistorySessions = useMemo(() => currentAgentSessions.filter(s => !s.isRunning), [currentAgentSessions]);
+  const isDraftSession = activePanel?.type === 'session' && activeWorkspaceSessionId === null;
+  const activeExistingSession = useMemo(
+    () => activeWorkspaceSessionId ? currentAgentSessions.find(s => s.id === activeWorkspaceSessionId) ?? null : null,
+    [activeWorkspaceSessionId, currentAgentSessions],
+  );
+
   const handleWorkspacePanelSessionChange = useCallback((
     agent: Agent,
     panelKey: number | null,
@@ -1169,135 +1181,119 @@ export default function AgentsPage() {
 
   return (
     <div className="flex h-full overflow-hidden bg-background text-foreground">
-      <aside className="relative flex w-[356px] shrink-0 flex-col border-r border-border bg-muted/30">
-        <div className="border-b border-border px-4 py-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+      <aside className="relative flex w-[280px] shrink-0 flex-col border-r border-border bg-muted/30">
+        <div className="border-b border-border p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Folder className="h-3.5 w-3.5 text-muted-foreground" />
+              <h2 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                 {t('workspace.label')}
-              </div>
-              <div className="mt-2 truncate text-[17px] font-semibold text-foreground">
-                {activeProject?.name ?? activeProject?.key ?? t('workspace.defaultProjectName')}
-              </div>
-              <div className="mt-3 space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex max-w-full items-center rounded-full border border-border bg-background px-2.5 py-1 text-[10px] font-medium text-foreground">
-                    <span className="truncate">{workspaceAgentName}</span>
-                  </span>
-                  <span className="inline-flex items-center rounded-full border border-border bg-background px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
-                    {inboxSummary}
-                  </span>
-                </div>
-                <div className="grid gap-2 text-[11px] text-muted-foreground sm:grid-cols-2">
-                  <div className="rounded-xl border border-border bg-background px-3 py-2">
-                    <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-400">
-                      {t('workspace.projectKeyLabel')}
-                    </div>
-                    <div className="mt-1 truncate text-foreground">
-                      {activeProject?.key ?? 'project-pilot'}
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-border bg-background px-3 py-2">
-                    <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-400">
-                      {t('workspace.agentIdLabel')}
-                    </div>
-                    <div className="mt-1 truncate text-foreground">
-                      {workspaceAgentId}
-                    </div>
-                  </div>
-                </div>
-              </div>
+              </h2>
             </div>
             <button
-              onClick={() => setShowAgentDropdown(v => !v)}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-border bg-background text-foreground transition-colors hover:bg-card"
-              title={t('workspace.newSession')}
+              onClick={handleStartCreate}
+              className="text-muted-foreground hover:text-foreground"
+              title={t('agent.createButton')}
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-4.5 w-4.5" />
             </button>
           </div>
-
-          <div className="mt-4 flex h-10 items-center gap-2 rounded-2xl border border-border bg-background px-3 text-muted-foreground">
-            <Search className="h-4 w-4 shrink-0" />
+          <div className="mb-2 flex gap-1 overflow-x-auto pb-1 scrollbar-hide">
+            <span className="shrink-0 rounded-full bg-foreground px-2.5 py-1 text-[10px] font-bold text-background">
+              {activeProject?.name ?? activeProject?.key ?? t('workspace.defaultProjectName')}
+            </span>
+            <span className="shrink-0 rounded-full border border-border bg-background px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
+              {filteredAgents.length} Agents
+            </span>
+          </div>
+          <div className="flex items-center gap-2 rounded-md bg-muted/50 px-2 py-1.5 text-muted-foreground">
+            <Search className="h-3.5 w-3.5 shrink-0" />
             <input
               value={sessionQuery}
               onChange={(e) => setSessionQuery(e.target.value)}
               placeholder={t('workspace.searchPlaceholder')}
-              className="w-full bg-transparent text-[12px] text-foreground outline-none placeholder:text-muted-foreground"
+              className="w-full bg-transparent text-[11px] font-medium text-foreground outline-none placeholder:text-muted-foreground"
             />
           </div>
-
-          <AgentPickerDropdown
-            open={showAgentDropdown}
-            onClose={() => setShowAgentDropdown(false)}
-            onSelect={handleNewSession}
-            onExpand={() => { setShowAgentDropdown(false); setShowAgentModal(true); }}
-            agents={filteredAgents}
-            activeProjectKey={effectiveProjectKey ?? undefined}
-            recentAgentIds={recentAgentIds}
-          />
-          <AgentPickerModal
-            open={showAgentModal}
-            onClose={() => setShowAgentModal(false)}
-            onSelect={handleNewSession}
-            agents={filteredAgents}
-            activeProjectKey={effectiveProjectKey ?? undefined}
-            recentAgentIds={recentAgentIds}
-          />
         </div>
 
-        <div className="flex-1 overflow-y-auto px-3 py-3">
-          {visibleSessions.length === 0 ? (
-            <div className="rounded-[22px] border border-dashed border-border bg-card/70 px-5 py-10 text-center text-sm text-muted-foreground">
-              <MessageSquare className="mx-auto mb-3 h-8 w-8 text-zinc-300 dark:text-zinc-600" />
-              <p>{sessionQuery ? t('session.emptyFiltered') : t('session.emptyWithAgent', { agentName: workspaceAgentName })}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{t('session.emptyHint')}</p>
+        <div className="flex-1 overflow-y-auto">
+          {filteredAgents.filter(a => !sessionQuery || a.name.toLowerCase().includes(sessionQuery.toLowerCase()) || a.id.toLowerCase().includes(sessionQuery.toLowerCase())).length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+              <MessageSquare className="mx-auto mb-3 h-7 w-7 text-zinc-300 dark:text-zinc-600" />
+              <p>{sessionQuery ? t('session.emptyFiltered') : 'No agents available'}</p>
             </div>
           ) : (
-            <div className="space-y-2.5">
-              {visibleSessions.map((session) => (
-                <SessionCard
-                  key={session.id}
-                  session={session}
-                  isActive={activeSessionId === session.id}
-                  listClockNow={session.isRunning ? listClockNow : undefined}
-                  onClick={handleSessionClick}
-                  onArchiveToggle={handleArchiveToggle}
-                  newSessionTitle={t('session.new')}
-                  archivedLabel={t('session.archived')}
-                  archiveTitle={tActions('archive')}
-                  unarchiveTitle={tActions('unarchive')}
-                  yesterdayLabel={t('session.yesterday')}
-                />
-              ))}
+            <div className="flex flex-col">
+              {filteredAgents
+                .filter(a => !sessionQuery || a.name.toLowerCase().includes(sessionQuery.toLowerCase()) || a.id.toLowerCase().includes(sessionQuery.toLowerCase()))
+                .map((agent) => {
+                  const isActive = activeWorkspaceAgent?.id === agent.id;
+                  const agentSessions = allSessions.filter(s => s.agentId === agent.id && !s.archived);
+                  const lastSession = agentSessions[0];
+                  const totalUnread = agentSessions.reduce((sum, s) => sum + (s.unreadCount || 0), 0);
+                  const hasRunning = agentSessions.some(s => s.isRunning);
+                  return (
+                    <div
+                      key={agent.id}
+                      onClick={() => handleAgentClick(agent)}
+                      className={`group/agent relative flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-all border-l-2 ${
+                        isActive
+                          ? 'border-l-foreground bg-card shadow-sm'
+                          : 'border-l-transparent hover:bg-card/50'
+                      }`}
+                    >
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${
+                        isActive ? 'bg-blue-50 text-blue-600 ring-blue-100 dark:bg-blue-950 dark:text-blue-400 dark:ring-blue-900' : 'bg-muted/70 text-muted-foreground ring-border/70'
+                      }`}>
+                        <AgentIcon iconKey={agent.icon} className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-0.5 flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`truncate text-[13px] ${isActive ? 'font-bold text-foreground' : 'font-semibold text-zinc-800 dark:text-zinc-200'}`}>
+                              {agent.name}
+                            </span>
+                            {agent.builtIn && (
+                              <span className="shrink-0 rounded bg-blue-50 px-1 py-0.5 text-[9px] font-semibold text-blue-600 dark:bg-blue-950 dark:text-blue-400">
+                                {t('agent.builtInBadge')}
+                              </span>
+                            )}
+                          </div>
+                          {lastSession && (
+                            <span className="shrink-0 text-[10px] font-medium text-muted-foreground">
+                              {formatSessionTimestamp(lastSession.updatedAt, Date.now(), t('session.yesterday'))}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                          {hasRunning && (
+                            <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-green-500 animate-pulse" />
+                          )}
+                          <span className="truncate">
+                            {lastSession
+                              ? displayText(lastSession.title, agent.description || agent.id)
+                              : (agent.description || agent.id)}
+                          </span>
+                        </div>
+                      </div>
+                      {totalUnread > 0 && !isActive && (
+                        <span className="flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full bg-foreground px-1 text-[9px] font-bold text-background">
+                          {totalUnread > 99 ? '99+' : totalUnread}
+                        </span>
+                      )}
+                      {agentSessions.length > 0 && (
+                        <span className="shrink-0 text-[10px] font-medium text-muted-foreground opacity-0 group-hover/agent:opacity-100 transition-opacity">
+                          {agentSessions.length}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
             </div>
           )}
         </div>
 
-        <div className="border-t border-border px-3 py-3">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => workspaceAgent && handleAgentSettingsClick(workspaceAgent)}
-              className="flex-1 rounded-xl border border-border bg-card px-3 py-2 text-[12px] font-medium text-foreground transition-colors hover:bg-background"
-            >
-              {t('agent.settingsButton')}
-            </button>
-            <button
-              onClick={() => setShowAgentDropdown(v => !v)}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-              title={t('workspace.newSession')}
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-            <button
-              onClick={handleImport}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-              title={t('agent.importButton')}
-            >
-              <Upload className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
       </aside>
 
       <div className="flex min-w-0 flex-1">
@@ -1433,24 +1429,159 @@ export default function AgentsPage() {
         ) : (
           <div className="flex flex-1 flex-col overflow-hidden bg-[linear-gradient(180deg,#ffffff_0%,#faf8f3_100%)] dark:bg-[linear-gradient(180deg,#0f141b_0%,#111722_100%)]">
             {activeWorkspaceAgent ? (
-              <div className="flex-1 overflow-hidden">
-                <AgentChatPanel
-                  key={`workspace-${activeWorkspaceAgent.id}-${activeWorkspaceSessionId ?? 'draft'}-${activeWorkspacePanelKey ?? 'root'}`}
-                  agent={activeWorkspaceAgent}
-                  initialSessionId={activeWorkspaceSessionId}
-                  variant="full"
-                  projectKey={effectiveProjectKey}
-                  cachedAgents={agents}
-                  cachedSettings={cachedSettings}
-                  workspaceMode
-                  onSessionChange={(newSession) => handleWorkspacePanelSessionChange(
-                    activeWorkspaceAgent,
-                    activeWorkspacePanelKey,
-                    activeWorkspaceSessionId,
-                    newSession,
-                  )}
-                />
-              </div>
+              <>
+                {/* ── Top: Agent info + Sessions ── */}
+                <div className="shrink-0 border-b border-[#e7dfd0] dark:border-zinc-800">
+                  <div className="grid grid-cols-[1fr_1.2fr] divide-x divide-[#e7dfd0] dark:divide-zinc-800">
+                    {/* Left column: Agent basic info */}
+                    <div className="flex items-start gap-3 px-5 py-4">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-zinc-600 ring-1 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700">
+                        <AgentIcon iconKey={activeWorkspaceAgent.icon} className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-[14px] font-semibold text-zinc-900 dark:text-zinc-100">{activeWorkspaceAgent.name}</span>
+                          {activeWorkspaceAgent.builtIn && (
+                            <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold text-blue-700 dark:bg-blue-950 dark:text-blue-300">内置</span>
+                          )}
+                        </div>
+                        <div className="mt-1 flex items-center gap-3 text-[11px] text-zinc-500 dark:text-zinc-400">
+                          <span>{activeWorkspaceAgent.defaultProvider ?? '默认'}</span>
+                          <span className="text-zinc-300 dark:text-zinc-600">·</span>
+                          <span>{activeWorkspaceAgent.defaultModel ?? '继承全局'}</span>
+                        </div>
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <button
+                            onClick={() => handleAgentSettingsClick(activeWorkspaceAgent)}
+                            className="flex items-center gap-1 text-[11px] text-zinc-500 transition-colors hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+                          >
+                            <Settings className="h-3 w-3" />
+                            <span>设置</span>
+                          </button>
+                          <button
+                            onClick={() => handleExport(activeWorkspaceAgent)}
+                            className="flex items-center gap-1 text-[11px] text-zinc-500 transition-colors hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+                          >
+                            <Download className="h-3 w-3" />
+                            <span>导出</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right column: Sessions */}
+                    <div className="flex flex-col px-4 py-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-400 dark:text-zinc-500">会话</span>
+                        <button
+                          onClick={() => handleNewSession(activeWorkspaceAgent)}
+                          className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                        >
+                          <Plus className="h-3 w-3" />
+                          <span>新建</span>
+                        </button>
+                      </div>
+
+                      {/* Current / running session */}
+                      {currentAgentRunningSession ? (
+                        <button
+                          type="button"
+                          onClick={() => handleSessionClick(currentAgentRunningSession)}
+                          className={`mt-2 flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors ${
+                            activeWorkspaceSessionId === currentAgentRunningSession.id
+                              ? 'bg-blue-50 ring-1 ring-blue-200 dark:bg-blue-950/40 dark:ring-blue-800'
+                              : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                          }`}
+                        >
+                          <span className="relative flex h-2 w-2 shrink-0">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                          </span>
+                          <span className="truncate text-[12px] font-medium text-zinc-800 dark:text-zinc-200">{displayText(currentAgentRunningSession.title, '运行中…')}</span>
+                          <span className="ml-auto shrink-0 text-[10px] text-zinc-400">{formatSessionElapsed(currentAgentRunningSession.runningStartedAt, listClockNow ?? Date.now())}</span>
+                        </button>
+                      ) : null}
+
+                      {/* Active session indicator (draft or existing) */}
+                      {isDraftSession ? (
+                        <div className="mt-2 flex items-center gap-2 rounded-lg bg-blue-50/60 px-2.5 py-1.5 ring-1 ring-blue-100 dark:bg-blue-950/20 dark:ring-blue-900">
+                          <MessageSquare className="h-3 w-3 shrink-0 text-blue-500 dark:text-blue-400" />
+                          <span className="truncate text-[12px] font-medium text-blue-700 dark:text-blue-300">新会话（草稿）</span>
+                        </div>
+                      ) : activeExistingSession && activeExistingSession.id !== currentAgentRunningSession?.id ? (
+                        <button
+                          type="button"
+                          onClick={() => handleSessionClick(activeExistingSession)}
+                          className="mt-2 flex items-center gap-2 rounded-lg bg-blue-50 px-2.5 py-1.5 ring-1 ring-blue-200 dark:bg-blue-950/40 dark:ring-blue-800"
+                        >
+                          <MessageSquare className="h-3 w-3 shrink-0 text-blue-500 dark:text-blue-400" />
+                          <span className="truncate text-[12px] font-medium text-zinc-800 dark:text-zinc-200">{displayText(activeExistingSession.title, '会话')}</span>
+                          <span className="ml-auto shrink-0 text-[10px] text-zinc-400">{formatSessionTimestamp(activeExistingSession.updatedAt, listClockNow ?? Date.now())}</span>
+                        </button>
+                      ) : !currentAgentRunningSession && !isDraftSession && !activeExistingSession ? (
+                        <div className="mt-2 px-2.5 text-[11px] text-zinc-400 dark:text-zinc-500">点击「新建」开始对话</div>
+                      ) : null}
+
+                      {/* Historical sessions (collapsed by default) */}
+                      {currentAgentHistorySessions.length > 0 && (
+                        <div className="mt-2">
+                          <button
+                            type="button"
+                            onClick={() => setHistoryExpanded(prev => !prev)}
+                            className="flex w-full items-center gap-1.5 rounded px-1 py-1 text-[11px] text-zinc-500 transition-colors hover:text-zinc-800 dark:hover:text-zinc-200"
+                          >
+                            {historyExpanded
+                              ? <ChevronDown className="h-3 w-3" />
+                              : <ChevronRight className="h-3 w-3" />
+                            }
+                            <span>历史会话 ({currentAgentHistorySessions.length})</span>
+                          </button>
+                          {historyExpanded && (
+                            <div className="mt-1 max-h-[140px] space-y-0.5 overflow-y-auto">
+                              {currentAgentHistorySessions.map((session) => (
+                                <button
+                                  key={session.id}
+                                  type="button"
+                                  onClick={() => handleSessionClick(session)}
+                                  className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors ${
+                                    activeWorkspaceSessionId === session.id
+                                      ? 'bg-blue-50 dark:bg-blue-950/40'
+                                      : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                                  }`}
+                                >
+                                  <Clock className="h-3 w-3 shrink-0 text-zinc-300 dark:text-zinc-600" />
+                                  <span className="truncate text-[11px] text-zinc-700 dark:text-zinc-300">{displayText(session.title, '未命名')}</span>
+                                  <span className="ml-auto shrink-0 text-[10px] text-zinc-400">{formatSessionTimestamp(session.updatedAt, listClockNow ?? Date.now())}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Bottom: Chat area (fixed height) ── */}
+                <div className="min-h-0 flex-1" style={{ minHeight: 420 }}>
+                  <AgentChatPanel
+                    key={`workspace-${activeWorkspaceAgent.id}-${activeWorkspaceSessionId ?? 'draft'}-${activeWorkspacePanelKey ?? 'root'}`}
+                    agent={activeWorkspaceAgent}
+                    initialSessionId={activeWorkspaceSessionId}
+                    variant="full"
+                    projectKey={effectiveProjectKey}
+                    cachedAgents={agents}
+                    cachedSettings={cachedSettings}
+                    workspaceMode
+                    onSessionChange={(newSession) => handleWorkspacePanelSessionChange(
+                      activeWorkspaceAgent,
+                      activeWorkspacePanelKey,
+                      activeWorkspaceSessionId,
+                      newSession,
+                    )}
+                  />
+                </div>
+              </>
             ) : (
               <div className="flex h-full items-center justify-center px-8 text-sm text-zinc-500">
                 暂无可用 Agent。
@@ -1461,7 +1592,7 @@ export default function AgentsPage() {
         </main>
 
         {false && (
-        <aside className="hidden w-[360px] shrink-0 border-l border-zinc-200 bg-[#fbfbfb] xl:flex xl:flex-col">
+        <aside className="w-[320px] shrink-0 border-l border-zinc-200 bg-[#fbfbfb] flex flex-col dark:border-zinc-800 dark:bg-zinc-950">
           <div className="flex items-start justify-between border-b border-zinc-200 px-5 py-4">
             <div className="min-w-0">
               <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-zinc-400">
@@ -1668,7 +1799,7 @@ export default function AgentsPage() {
         </aside>
         )}
 
-        <aside className="hidden w-[320px] shrink-0 border-l border-[#e7dfd0] bg-[#fcfaf5] shadow-[0_18px_48px_rgba(15,23,42,0.08)] xl:flex xl:flex-col dark:border-zinc-800 dark:bg-zinc-950">
+        <aside className="w-[320px] shrink-0 border-l border-[#e7dfd0] bg-[#fcfaf5] shadow-[0_18px_48px_rgba(15,23,42,0.08)] flex flex-col dark:border-zinc-800 dark:bg-zinc-950">
           <div className="flex h-full min-h-0 flex-col">
             <section className="flex min-h-0 flex-[1.15] flex-col border-b border-[#e7dfd0] bg-[#f8f3e8] dark:border-zinc-800 dark:bg-zinc-900">
               <div className="flex h-11 items-center justify-between border-b border-[#e7dfd0] px-4 dark:border-zinc-800">

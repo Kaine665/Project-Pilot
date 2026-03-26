@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { AgentDialogue, DialogueMessage, DialogueStatus } from '@/types';
 import { ArrowLeft, Bot, Square, RotateCcw, Loader2 } from 'lucide-react';
-import { useRouter } from '@/i18n/routing';
+import { useRouter } from '@/client/i18n/routing';
 
 const STATUS_CONFIG: Record<DialogueStatus, { label: string; color: string }> = {
   pending: { label: '等待中', color: 'bg-zinc-200 dark:bg-zinc-700' },

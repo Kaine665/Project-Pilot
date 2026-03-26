@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation';
+import { Navigate } from '@/client/i18n/routing';
 
 export default function FlowsPage() {
-  redirect('/flows/projects');
+  return <Navigate to="/flows/projects" replace />;
 }

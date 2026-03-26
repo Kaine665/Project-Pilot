@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo, useReducer, startTransition } from 'react';
 import { Sparkles, PanelRight, Settings } from 'lucide-react';
-import { useTranslations } from 'next-intl';
-import { useRouter } from '@/i18n/routing';
+import { useTranslations } from '@/client/i18n/use-translations';
+import { useRouter } from '@/client/i18n/routing';
 import { ChatInput } from '@/components/chat-input';
 import { ChatNotificationBanners } from '@/components/chat-notification-banners';
 import { useNotificationManager } from '@/hooks/use-notification-manager';

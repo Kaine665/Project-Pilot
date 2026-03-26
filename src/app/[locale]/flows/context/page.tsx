@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { ArrowRight, BookOpen } from 'lucide-react';
-import { useRouter } from '@/i18n/routing';
+import { useRouter } from '@/client/i18n/routing';
 import { useProject } from '@/components/project-context';
 
 export default function ContextPage() {

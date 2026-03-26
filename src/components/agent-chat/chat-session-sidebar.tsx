@@ -1,7 +1,7 @@
 'use client';
 
 import { Plus, MessageSquare } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/client/i18n/use-translations';
 import type { SessionListItem } from './types';
 import { formatSessionElapsed } from './types';
 

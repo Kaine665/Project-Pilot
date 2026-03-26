@@ -2,7 +2,7 @@
 
 import { Dispatch } from 'react';
 import { Sparkles, ArrowLeft, Trash2, FileDown, Settings, Maximize2, Minimize2, GitFork, PanelRight } from 'lucide-react';
-import { useRouter } from '@/i18n/routing';
+import { useRouter } from '@/client/i18n/routing';
 import { Button } from '@/components/ui/button';
 import { SessionDropdown } from '@/components/session-dropdown';
 import { buildSessionUrl } from '@/components/agent-session-utils';

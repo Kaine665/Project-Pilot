@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { usePathname } from '@/i18n/routing';
+import { usePathname } from '@/client/i18n/routing';
 import type { ProjectEntry } from '@/types';
 
 export type { ProjectEntry };
