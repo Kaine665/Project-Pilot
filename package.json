@@ -5,9 +5,9 @@
   "main": "electron/dist/main.js",
   "scripts": {
     "postinstall": "node scripts/ensure-postcss-alloc-lru.mjs",
-    "dev": "concurrently --kill-others \"vite\" \"bun run --tsconfig tsconfig.json src/server/index.ts\"",
+    "dev": "concurrently --kill-others \"vite\" \"bun ./src/server/index.ts\"",
     "dev:client": "vite",
-    "dev:server": "bun run --tsconfig tsconfig.json src/server/index.ts",
+    "dev:server": "bun ./src/server/index.ts",
     "build": "vite build && bun build src/server/index.ts --outfile=dist/server/index.js --target=node --minify",
     "build:client": "vite build",
     "build:server": "bun build src/server/index.ts --outfile=dist/server/index.js --target=node --minify",
@@ -19,7 +19,9 @@
     "electron:dev": "node scripts/electron-dev.mjs",
     "electron:compile": "tsc -p electron/tsconfig.json",
     "electron:build": "cross-env NODE_ENV=production npm run build && npm run electron:compile && electron-builder --win",
-    "electron:start": "electron ."
+    "electron:start": "electron .",
+    "ui-workflow:capture": "node tmp/ui-workflow-experiment-capture.mjs",
+    "ui-workflow:train": "powershell -NoProfile -ExecutionPolicy Bypass -File tmp/run-ui-workflow-training.ps1"
   },
   "build": {
     "appId": "com.projectpilot.app",

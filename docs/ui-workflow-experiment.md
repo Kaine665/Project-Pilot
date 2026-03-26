@@ -63,16 +63,25 @@ git branch -D exp/ui-workflow-b-agents
 ## 3. 截图协议（可复现）
 
 1. 同一时间只在一个 worktree 里 `npm run dev`（默认端口 **4000**）；换分支对比时 **停掉上一进程** 再起，避免端口冲突。
-2. 浏览器打开：`http://127.0.0.1:4000/zh/flows/agents`（或你的默认 locale）。
+2. 浏览器打开 Agents：**Vite 当前栈** 为 `http://127.0.0.1:4000/flows/agents`；若仍为 Next + next-intl，多为 `http://127.0.0.1:4000/zh/flows/agents`。截图脚本默认前者，可传第 4 参数或环境变量 `PP_UI_CAPTURE_PATH` 覆盖。
 3. 建议输出目录：`develop-static/tmp/ui-workflow-experiment/`；命名：`baseline.png`、`workflow-a.png`、`workflow-b.png`。
 
 自动化（依赖已安装的 Playwright）：
 
 ```bash
 cd develop-static
-# 先在某一 worktree 启动 dev，再执行（设置端口与标签）
-node tmp/ui-workflow-experiment-capture.mjs 4000 baseline
+# 一键顺序跑 baseline + workflow-a + workflow-b（须在能访问本机 127.0.0.1 的终端执行，例如本机 PowerShell）
+npm run ui-workflow:train
 ```
+
+仅截一张图时：先在对应 worktree 启动 `npm run dev`，再执行：
+
+```bash
+npm run ui-workflow:capture -- 4000 baseline
+# 或：node tmp/ui-workflow-experiment-capture.mjs 4000 workflow-a /zh/flows/agents
+```
+
+**注意**：部分 IDE 内置 Agent 终端对 `localhost` 有限制，若出现 `ECONNREFUSED`，请在系统终端运行上述命令。
 
 换到另一 worktree、重启 dev 后改最后一个参数为 `workflow-a` / `workflow-b` 再跑。
 
