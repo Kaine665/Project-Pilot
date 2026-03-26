@@ -14,6 +14,12 @@ interface SkillListItem {
   name: string;
   description: string;
   updatedAt: string;
+  /** 与 API 路径一致；缺省时用 name */
+  dirName?: string;
+}
+
+function skillApiKey(s: SkillListItem): string {
+  return s.dirName ?? s.name;
 }
 
 interface SkillFileItem {
@@ -443,10 +449,15 @@ export default function SkillsPage() {
   const isFileDirty = activeFile.type === 'subfile' && fileContent !== originalFileContent;
   const filteredSkills = useMemo(() =>
     searchQuery
-      ? skills.filter(s =>
-          s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          s.description.toLowerCase().includes(searchQuery.toLowerCase())
-        )
+      ? skills.filter(s => {
+          const q = searchQuery.toLowerCase();
+          const key = skillApiKey(s);
+          return (
+            s.name.toLowerCase().includes(q) ||
+            key.toLowerCase().includes(q) ||
+            s.description.toLowerCase().includes(q)
+          );
+        })
       : skills,
     [skills, searchQuery]);
 
@@ -474,7 +485,7 @@ export default function SkillsPage() {
 
   // ── Detail View (File Tree + Editor) ──
   if (selected) {
-    const skill = skills.find(s => s.name === selected);
+    const skill = skills.find(s => skillApiKey(s) === selected);
     const isEditing = activeFile.type === 'skill.md' ? editing : editingFile;
     const currentIsDirty = activeFile.type === 'skill.md' ? isDirty : isFileDirty;
 
@@ -1032,8 +1043,8 @@ export default function SkillsPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {filteredSkills.map(skill => (
               <div
-                key={skill.name}
-                onClick={() => handleSelect(skill.name)}
+                key={skillApiKey(skill)}
+                onClick={() => handleSelect(skillApiKey(skill))}
                 className="group rounded-lg border border-zinc-200 dark:border-zinc-800 p-4 cursor-pointer hover:border-zinc-300 dark:hover:border-zinc-700 hover:shadow-sm transition-all bg-white dark:bg-zinc-950"
               >
                 <div className="flex items-start justify-between mb-2">
@@ -1046,7 +1057,7 @@ export default function SkillsPage() {
                     </h3>
                   </div>
                   <button
-                    onClick={e => handleDelete(skill.name, e)}
+                    onClick={e => handleDelete(skillApiKey(skill), e)}
                     className="opacity-0 group-hover:opacity-100 rounded p-1 text-zinc-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
                   >
                     <Trash2 className="h-3 w-3" />

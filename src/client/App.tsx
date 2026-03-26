@@ -12,6 +12,7 @@ const AgentsPage = lazy(() => import('@/app/[locale]/flows/agents/page'));
 const ButlerPage = lazy(() => import('@/app/[locale]/flows/butler/page'));
 const TodosPage = lazy(() => import('@/app/[locale]/flows/todos/page'));
 const DocsPage = lazy(() => import('@/app/[locale]/flows/docs/page'));
+const DocsProjectPage = lazy(() => import('@/app/[locale]/flows/docs/[projectKey]/page'));
 const ContextPage = lazy(() => import('@/app/[locale]/flows/context/page'));
 const KnowledgePage = lazy(() => import('@/app/[locale]/flows/knowledge/page'));
 const PromptsPage = lazy(() => import('@/app/[locale]/flows/prompts/page'));
@@ -21,7 +22,6 @@ const DialoguesPage = lazy(() => import('@/app/[locale]/flows/dialogues/page'));
 const DialogueDetailPage = lazy(() => import('@/app/[locale]/flows/dialogues/[id]/page'));
 const SchedulesPage = lazy(() => import('@/app/[locale]/flows/schedules/page'));
 const TaskTriggersPage = lazy(() => import('@/app/[locale]/flows/task-triggers/page'));
-const SatelliteTasksPage = lazy(() => import('@/app/[locale]/flows/satellite-tasks/page'));
 const DimensionsPage = lazy(() => import('@/app/[locale]/flows/dimensions/page'));
 const RecycleBinPage = lazy(() => import('@/app/[locale]/flows/recycle-bin/page'));
 
@@ -57,6 +57,7 @@ function AppRoutes() {
           <Route path="butler" element={<ButlerPage />} />
           <Route path="todos" element={<TodosPage />} />
           <Route path="docs" element={<DocsPage />} />
+          <Route path="docs/:projectKey" element={<DocsProjectPage />} />
           <Route path="context" element={<ContextPage />} />
           <Route path="knowledge" element={<KnowledgePage />} />
           <Route path="prompts" element={<PromptsPage />} />
@@ -66,7 +67,6 @@ function AppRoutes() {
           <Route path="dialogues/:id" element={<DialogueDetailPage />} />
           <Route path="schedules" element={<SchedulesPage />} />
           <Route path="task-triggers" element={<TaskTriggersPage />} />
-          <Route path="satellite-tasks" element={<SatelliteTasksPage />} />
           <Route path="dimensions" element={<DimensionsPage />} />
           <Route path="recycle-bin" element={<RecycleBinPage />} />
         </Route>
