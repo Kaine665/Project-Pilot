@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useTranslations, useLocale } from 'next-intl';
-import { useRouter, usePathname } from '@/i18n/routing';
+import { useTranslations, useLocale } from '@/client/i18n/use-translations';
+import { useRouter, usePathname } from '@/client/i18n/routing';
 import { TopNav } from '@/components/top-nav';
 import { Button } from '@/components/ui/button';
-import { Check, X, Loader2, Brain, Wrench, Palette, Database, Eye, Settings, ShieldAlert, Sparkles } from 'lucide-react';
+import { Check, X, Loader2, Brain, Wrench, Palette, Database, Eye, Settings, ShieldAlert, Sparkles, Satellite } from 'lucide-react';
 import { getProviderPreset } from '@/lib/provider-registry';
 import { useTheme } from '@/components/theme-provider';
 import { AddCustomProviderDialog } from '@/components/add-custom-provider-dialog';
@@ -14,14 +14,21 @@ import {
   SettingsClaudeSection,
   SettingsAppearanceSection,
   SettingsDataSection,
+  SettingsDeveloperSection,
   SettingsPrivacySection,
   SettingsSafetySection,
   SettingsTitleGenerationSection,
 } from '@/components/settings-sections';
+import type { ModelHealthData } from '@/components/settings-sections';
+import {
+  DEFAULT_OPENAI_REASONING_EFFORT,
+  isOpenAIReasoningEffort,
+} from '@/lib/openai-reasoning-effort';
+import { isOpenAIFastModel } from '@/lib/openai-fast-mode';
 import type { CustomProviderConfig, ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort, DangerCategory, DangerActionLevel, DangerDetectorSettings, TitleGenerationChainEntry } from '@/types';
 import { DEFAULT_DANGER_SETTINGS, DEFAULT_TITLE_GENERATION } from '@/types';
-
-const OPENAI_REASONING_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
+const INITIAL_PROVIDER: ProviderId = 'anthropic';
+const INITIAL_MODEL = getProviderPreset(INITIAL_PROVIDER).models[0]?.id ?? '';
 
 /** 根据加载的数据应用模型选择状态，供 fetchSettings 使用，避免闭包依赖 */
 function applyProviderModelStateFromData(
@@ -54,10 +61,6 @@ function applyProviderModelStateFromData(
   setCustomModel('');
 }
 
-function isOpenAIReasoningEffort(value: unknown): value is OpenAIReasoningEffort {
-  return typeof value === 'string' && OPENAI_REASONING_EFFORTS.includes(value as OpenAIReasoningEffort);
-}
-
 export default function SettingsPage() {
   const t = useTranslations('settings');
   const tActions = useTranslations('actions');
@@ -67,16 +70,17 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
 
   // Form state — per-provider maps
-  const [provider, setProvider] = useState<ProviderId>('anthropic');
+  const [provider, setProvider] = useState<ProviderId>(INITIAL_PROVIDER);
   const [authMode, setAuthMode] = useState<ClaudeAuthMode>('api_key');
   const [providerApiKeys, setProviderApiKeys] = useState<Partial<Record<ProviderId, string>>>({});
   const [providerModels, setProviderModels] = useState<Partial<Record<ProviderId, string>>>({});
   const [providerModelLibrary, setProviderModelLibrary] = useState<Partial<Record<ProviderId, string[]>>>({});
-  const [model, setModel] = useState('claude-sonnet-4-5-20250929');
+  const [model, setModel] = useState(INITIAL_MODEL);
   const [customModel, setCustomModel] = useState('');
   const [skipPermissions, setSkipPermissions] = useState(true);
   const [effortLevel, setEffortLevel] = useState<EffortLevel>('high');
-  const [openaiReasoningEffort, setOpenaiReasoningEffort] = useState<OpenAIReasoningEffort>('xhigh');
+  const [openaiReasoningEffort, setOpenaiReasoningEffort] = useState<OpenAIReasoningEffort>(DEFAULT_OPENAI_REASONING_EFFORT);
+  const [openaiFastMode, setOpenaiFastMode] = useState(false);
   const [openaiModels, setOpenaiModels] = useState<Array<{ id: string; displayName: string }>>([]);
   const [openaiModelsLoading, setOpenaiModelsLoading] = useState(false);
   const [maxTurns, setMaxTurns] = useState(0);
@@ -87,6 +91,9 @@ export default function SettingsPage() {
 
   // Privacy state
   const [telemetry, setTelemetry] = useState(false);
+  const [satelliteTasksEnabled, setSatelliteTasksEnabled] = useState(true);
+  const [schedulesPageEnabled, setSchedulesPageEnabled] = useState(true);
+  const [taskTriggersPageEnabled, setTaskTriggersPageEnabled] = useState(true);
 
   // Safety detection state
   const [dangerSettings, setDangerSettings] = useState<DangerDetectorSettings>({ ...DEFAULT_DANGER_SETTINGS });
@@ -113,6 +120,8 @@ export default function SettingsPage() {
   const [oauthSubmitError, setOauthSubmitError] = useState<string | null>(null);
   const [testState, setTestState] = useState<'idle' | 'testing' | 'success' | 'failed'>('idle');
   const [testMessage, setTestMessage] = useState('');
+  const [modelHealthData, setModelHealthData] = useState<ModelHealthData | null>(null);
+  const [healthCheckRunning, setHealthCheckRunning] = useState(false);
 
   // Data management state
   const [dataDir, setDataDir] = useState('');
@@ -203,6 +212,7 @@ export default function SettingsPage() {
 
   const openaiReasoningOptions = useMemo(
     () => [
+      { value: 'minimal' as OpenAIReasoningEffort, label: t('openaiReasoningMinimal') },
       { value: 'low' as OpenAIReasoningEffort, label: t('openaiReasoningLow') },
       { value: 'medium' as OpenAIReasoningEffort, label: t('openaiReasoningMedium') },
       { value: 'high' as OpenAIReasoningEffort, label: t('openaiReasoningHigh') },
@@ -226,12 +236,16 @@ export default function SettingsPage() {
         setOpenaiReasoningEffort(
           isOpenAIReasoningEffort(data.claude.openaiReasoningEffort)
             ? data.claude.openaiReasoningEffort
-            : 'xhigh'
+            : DEFAULT_OPENAI_REASONING_EFFORT
         );
+        setOpenaiFastMode(data.claude.openaiFastMode === true);
         setMaxTurns(data.claude.maxTurns || 0);
         setDefaultExposePromptPath(data.claude.defaultExposePromptPath !== false);
         setBaseUrl(data.claude.baseUrl || '');
         setTelemetry(data.general?.telemetry || false);
+        setSatelliteTasksEnabled(data.developer?.satelliteTasksEnabled !== false);
+        setSchedulesPageEnabled(data.developer?.schedulesPageEnabled !== false);
+        setTaskTriggersPageEnabled(data.developer?.taskTriggersPageEnabled !== false);
         setDangerSettings({ ...DEFAULT_DANGER_SETTINGS, ...data.dangerDetector });
 
         // Title generation
@@ -304,7 +318,36 @@ export default function SettingsPage() {
     }
   }, [t]);
 
+  // Fetch model health data
+  const fetchModelHealth = useCallback(async () => {
+    try {
+      const res = await fetch('/api/settings/model-health');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.ok && json.data) setModelHealthData(json.data as ModelHealthData);
+      }
+    } catch {
+      // ignore — health data is best-effort
+    }
+  }, []);
+
+  const handleRunHealthCheck = useCallback(async () => {
+    setHealthCheckRunning(true);
+    try {
+      const res = await fetch('/api/settings/model-health', { method: 'POST' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.ok && json.data) setModelHealthData(json.data as ModelHealthData);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setHealthCheckRunning(false);
+    }
+  }, []);
+
   useEffect(() => { fetchSettings(); }, [fetchSettings]);
+  useEffect(() => { fetchModelHealth(); }, [fetchModelHealth]);
   useEffect(() => {
     if (activeSection === 'data') fetchDataInfo();
   }, [activeSection, fetchDataInfo]);
@@ -351,6 +394,7 @@ export default function SettingsPage() {
     { id: 'ai', icon: Brain, label: t('aiConfig') },
     { id: 'claude', icon: Wrench, label: t('claudeCodeConfig') },
     { id: 'safety', icon: ShieldAlert, label: t('safetyDetection') },
+    { id: 'developer', icon: Satellite, label: t('developerTools') },
     { id: 'titleGeneration', icon: Sparkles, label: t('titleGeneration') },
     { id: 'appearance', icon: Palette, label: t('appearance') },
     { id: 'data', icon: Database, label: t('dataManagement') },
@@ -468,9 +512,15 @@ export default function SettingsPage() {
             })),
             model: effectiveModel,
             openaiReasoningEffort,
+            openaiFastMode,
             skipPermissions, effortLevel, maxTurns, defaultExposePromptPath, baseUrl,
           },
           general: { telemetry },
+          developer: {
+            satelliteTasksEnabled,
+            schedulesPageEnabled,
+            taskTriggersPageEnabled,
+          },
           dangerDetector: dangerSettings,
           titleGeneration: {
             enabled: titleGenEnabled,
@@ -526,6 +576,11 @@ export default function SettingsPage() {
         setLoginFlowActive(false);
         return;
       }
+      // Anthropic PKCE: auth-login 直接返回 loginUrl
+      const data = await res.json();
+      if (data.loginUrl) {
+        setLoginUrl(data.loginUrl);
+      }
     } catch (err) {
       console.error('Failed to trigger login:', err);
       setLoginPending(false);
@@ -573,9 +628,12 @@ export default function SettingsPage() {
     }
   };
 
-  // 轮询 auth-url 获取 OAuth 链接 / device code
+  // 轮询 auth-url 获取 OAuth 链接 / device code（主要用于 OpenAI）
+  // Anthropic PKCE: URL 已在 triggerOAuthLogin 中设置，轮询仅用于检测 session 状态
   useEffect(() => {
     if (!loginFlowActive) return;
+    // Anthropic 不需要轮询（URL 同步返回，code 由用户手动提交）
+    if (provider !== 'openai') return;
     let wasAlive = true;
     const poll = async () => {
       try {
@@ -583,10 +641,9 @@ export default function SettingsPage() {
         const data = await res.json();
         if (data.loginUrl) setLoginUrl(data.loginUrl);
         if (data.loginCode) setLoginCode(data.loginCode);
-        if (!data.processAlive) {
+        if (!data.sessionActive) {
           setLoginProcessAlive(false);
-          // OpenAI：进程结束表示用户已在浏览器完成授权，自动刷新状态
-          if (wasAlive && provider === 'openai') {
+          if (wasAlive) {
             wasAlive = false;
             setLoginFlowActive(false);
             setLoginUrl(null);
@@ -624,7 +681,7 @@ export default function SettingsPage() {
         const err = await res.json();
         const msg = err?.error || '';
         setOauthSubmitError(
-          msg.includes('No active login process') || msg.includes('login process')
+          msg.includes('No active') || msg.includes('session')
             ? t('oauthProcessGone')
             : msg || t('oauthSubmitFailed')
         );
@@ -637,7 +694,10 @@ export default function SettingsPage() {
   };
 
   const switchLocale = (newLocale: string) => {
-    router.push(pathname, { locale: newLocale });
+    import('i18next').then((mod) => {
+      mod.default.changeLanguage(newLocale);
+    }).catch(() => {});
+    router.push(pathname);
   };
 
   const handleExport = async () => {
@@ -764,6 +824,8 @@ export default function SettingsPage() {
                 provider={provider} authMode={authMode} apiKey={apiKey}
                 model={model} customModel={customModel} baseUrl={baseUrl}
                 openaiReasoningEffort={openaiReasoningEffort}
+                openaiFastMode={openaiFastMode}
+                openaiFastModeEligible={authMode === 'oauth' && isOpenAIFastModel(model === '__custom__' ? customModel : model)}
                 openaiReasoningOptions={openaiReasoningOptions}
                 oauthStatus={oauthStatus} loginPending={loginPending}
                 loginUrl={loginUrl} loginCode={loginCode} loginFlowActive={loginFlowActive}
@@ -777,6 +839,7 @@ export default function SettingsPage() {
                 onCustomModelChange={handleCustomModelChange}
                 onBaseUrlChange={setBaseUrl}
                 onOpenAIReasoningEffortChange={setOpenaiReasoningEffort}
+                onOpenAIFastModeChange={setOpenaiFastMode}
                 onCheckOAuthStatus={checkOAuthStatus} onTriggerOAuthLogin={triggerOAuthLogin}
                 onOauthCodeChange={setOauthCode} onCodeSubmit={handleCodeSubmit}
                 onCancelLoginFlow={cancelLoginFlow}
@@ -784,6 +847,9 @@ export default function SettingsPage() {
                 customProviders={customProviders}
                 onAddCustomProvider={() => setShowAddCustomProvider(true)}
                 onDeleteCustomProvider={handleDeleteCustomProvider}
+                modelHealthData={modelHealthData}
+                healthCheckRunning={healthCheckRunning}
+                onRunHealthCheck={handleRunHealthCheck}
               />
             )}
 
@@ -802,6 +868,18 @@ export default function SettingsPage() {
                 t={t} tActions={tActions} btnActive={btnActive} btnInactive={btnInactive}
                 dangerSettings={dangerSettings}
                 onDangerSettingChange={handleDangerSettingChange}
+              />
+            )}
+
+            {activeSection === 'developer' && (
+              <SettingsDeveloperSection
+                t={t} tActions={tActions} btnActive={btnActive} btnInactive={btnInactive}
+                satelliteTasksEnabled={satelliteTasksEnabled}
+                onSatelliteTasksEnabledChange={setSatelliteTasksEnabled}
+                schedulesPageEnabled={schedulesPageEnabled}
+                onSchedulesPageEnabledChange={setSchedulesPageEnabled}
+                taskTriggersPageEnabled={taskTriggersPageEnabled}
+                onTaskTriggersPageEnabledChange={setTaskTriggersPageEnabled}
               />
             )}
 
@@ -842,7 +920,12 @@ export default function SettingsPage() {
             )}
 
             {/* ── Save Button (for AI/Claude/Privacy sections) ── */}
-            {(activeSection === 'ai' || activeSection === 'claude' || activeSection === 'safety' || activeSection === 'titleGeneration' || activeSection === 'privacy') && (
+            {(activeSection === 'ai'
+              || activeSection === 'claude'
+              || activeSection === 'safety'
+              || activeSection === 'developer'
+              || activeSection === 'titleGeneration'
+              || activeSection === 'privacy') && (
               <div className="flex items-center gap-3">
                 <Button onClick={handleSave} disabled={saving}>
                   {saving && <Loader2 className="h-4 w-4 animate-spin" />}

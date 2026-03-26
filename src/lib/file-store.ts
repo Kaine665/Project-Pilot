@@ -1,4 +1,4 @@
-/**
+﻿/**
  * JSON 文件读写工具（简化版，无文件锁）
  * ProjectPilot 数据存储在用户目录：
  * - Windows: C:\Users\<username>\.project-pilot\data\
@@ -17,9 +17,74 @@ import os from 'os';
  * Some editors (Notepad, VS Code in rare cases) prepend BOM to files,
  * causing JSON.parse to fail with "Unexpected token".
  */
+function extractFirstJsonDocument(raw: string): string | null {
+  const trimmed = raw.trimStart();
+  if (!trimmed) return null;
+
+  const firstChar = trimmed[0];
+  if (firstChar !== '{' && firstChar !== '[') {
+    return null;
+  }
+
+  const stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const char = trimmed[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === '{' || char === '[') {
+      stack.push(char);
+      continue;
+    }
+
+    if (char === '}' || char === ']') {
+      const opening = stack.pop();
+      if (!opening) return null;
+      if ((opening === '{' && char !== '}') || (opening === '[' && char !== ']')) {
+        return null;
+      }
+      if (stack.length === 0) {
+        return trimmed.slice(0, index + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
 export function parseJsonSafe<T>(raw: string): T {
   const cleaned = raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw;
-  return JSON.parse(cleaned);
+  try {
+    return JSON.parse(cleaned);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) {
+      throw error;
+    }
+
+    const recovered = extractFirstJsonDocument(cleaned);
+    if (recovered && recovered !== cleaned) {
+      return JSON.parse(recovered) as T;
+    }
+
+    throw error;
+  }
 }
 
 // 默认存到用户目录的隐藏文件夹
@@ -70,22 +135,32 @@ async function ensureDataDirInitialized(): Promise<void> {
     path.join(DATA_DIR, 'agents'),
     getAgentDataDir(),
     // chat/
+    path.join(DATA_DIR, 'chat'),
     getAgentChatMessagesDir(),
+    getAgentChatSessionAdjunctsDir(),
     // tasks/
     path.join(DATA_DIR, 'tasks'),
     // prompts/
     path.join(DATA_DIR, 'prompts', 'agents'),
     path.join(DATA_DIR, 'prompts', 'history'),
+    // Compatibility path: session prompt overrides are still stored under prompts/runtime/
     path.join(DATA_DIR, 'prompts', 'runtime'),
+    path.join(DATA_DIR, 'prompts', 'blocks'),
     getProjectPromptsDir(),
     // knowledge/
     getContextDir(),
     getDesignDocsDir(),
+    // dialogues/
+    getDialoguesDir(),
     // workflows/
     getFlowsDir(),
-    path.join(DATA_DIR, 'workflows', 'orchestrations'),
     // storage/
     getSkillsDir(),
+    // usage/
+    path.join(DATA_DIR, 'usage'),
+    // runs/
+    path.join(DATA_DIR, '_next', 'runs', 'by-id'),
+    path.join(DATA_DIR, '_next', 'runs', 'latest-by-session'),
     // top-level
     path.join(DATA_DIR, '_snapshots'),
   ];
@@ -178,8 +253,6 @@ export async function ensureProjectsMigrated(): Promise<void> {
     return;
   }
 
-  const existingKeys = new Set(index.projects.map(p => p.key));
-
   for (const [key, config] of Object.entries(oldProjects)) {
     const existing = index.projects.find(p => p.key === key);
     if (existing) {
@@ -239,8 +312,8 @@ let _v2Migrated = false;
  * 3. Phase B：写标记文件
  * 4. Phase C：删除旧文件（best-effort）
  *
- * 对 prompts/.runtime/ 目录，旧结构是 prompts/{agentId}.runtime/，
- * 新结构是 prompts/runtime/{agentId}/。
+ * 对 session prompt override 目录，兼容旧结构 prompts/{agentId}.runtime/，
+ * 当前兼容路径仍是 prompts/runtime/{agentId}/。
  */
 export async function ensureDataDirV2Migrated(): Promise<void> {
   if (_v2Migrated) return;
@@ -275,12 +348,10 @@ export async function ensureDataDirV2Migrated(): Promise<void> {
   const jsonMoves: [string, string][] = [
     // agents/
     [path.join(DATA_DIR, 'agents.json'), getAgentsPath()],
-    [path.join(DATA_DIR, 'agent-teams.json'), getAgentTeamsPath()],
     [path.join(DATA_DIR, 'agent-schedules.json'), getSchedulesPath()],
     [path.join(DATA_DIR, 'agent-schedule-runs.json'), getScheduleRunsPath()],
     // chat/
     [path.join(DATA_DIR, 'agent-chat-sessions.json'), getAgentChatSessionsPath()],
-    [path.join(DATA_DIR, 'orchestrator-sessions.json'), getOrchestratorSessionsPath()],
     // tasks/
     [path.join(DATA_DIR, 'active-tasks.json'), getActiveTasksPath()],
     [path.join(DATA_DIR, 'suspended-tasks.json'), getSuspendedTasksPath()],
@@ -309,10 +380,8 @@ export async function ensureDataDirV2Migrated(): Promise<void> {
     [path.join(DATA_DIR, 'fundraising'), path.join(DATA_DIR, 'knowledge', 'fundraising')],
     // workflows/
     [path.join(DATA_DIR, 'flows'), getFlowsDir()],
-    [path.join(DATA_DIR, 'orchestrations'), path.join(DATA_DIR, 'workflows', 'orchestrations')],
     // storage/
     [path.join(DATA_DIR, 'artifacts'), path.join(DATA_DIR, 'storage', 'artifacts')],
-    [path.join(DATA_DIR, 'bitable'), path.join(DATA_DIR, 'storage', 'bitable')],
     [path.join(DATA_DIR, 'skills'), getSkillsDir()],
     // project-prompts → prompts/projects
     [path.join(DATA_DIR, 'project-prompts'), getProjectPromptsDir()],
@@ -355,7 +424,7 @@ export async function ensureDataDirV2Migrated(): Promise<void> {
     }
   } catch { /* ok */ }
 
-  // 特殊处理：prompt runtime（prompts/{agentId}.runtime/ → prompts/runtime/{agentId}/）
+  // 特殊处理：session prompt override（prompts/{agentId}.runtime/ → prompts/runtime/{agentId}/）
   try {
     const promptsRoot = path.join(DATA_DIR, 'prompts');
     const entries = await fs.readdir(promptsRoot, { withFileTypes: true });
@@ -490,6 +559,14 @@ export function getAgentChatSessionsPath(): string {
   return path.join(DATA_DIR, 'chat', 'sessions.json');
 }
 
+export function getAgentChatSessionAdjunctsDir(): string {
+  return path.join(DATA_DIR, 'chat', 'adjuncts');
+}
+
+export function getAgentChatSessionAdjunctsPath(): string {
+  return path.join(getAgentChatSessionAdjunctsDir(), 'sessions.json');
+}
+
 /** 每个会话的消息 JSONL 文件目录 */
 export function getAgentChatMessagesDir(): string {
   return path.join(DATA_DIR, 'chat', 'messages');
@@ -504,26 +581,36 @@ export function getAgentChatMessagePath(sessionId: string): string {
   return path.join(DATA_DIR, 'chat', 'messages', `${safe}.jsonl`);
 }
 
+export function getRunsByIdDir(): string {
+  return path.join(DATA_DIR, '_next', 'runs', 'by-id');
+}
+
+export function getRunByIdPath(runId: string): string {
+  const safe = runId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 200) {
+    throw new Error(`Invalid run id: ${runId}`);
+  }
+  return path.join(getRunsByIdDir(), `${safe}.json`);
+}
+
+export function getLatestRunsBySessionDir(): string {
+  return path.join(DATA_DIR, '_next', 'runs', 'latest-by-session');
+}
+
+export function getLatestRunBySessionPath(sessionId: string): string {
+  const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 200) {
+    throw new Error(`Invalid session id: ${sessionId}`);
+  }
+  return path.join(getLatestRunsBySessionDir(), `${safe}.json`);
+}
+
 export function getWorktreePortsPath(): string {
   return path.join(DATA_DIR, 'workflows', 'worktree-ports.json');
 }
 
 export function getTodosPath(): string {
   return path.join(DATA_DIR, 'tasks', 'todos.json');
-}
-
-export function getOrchestratorSessionsPath(): string {
-  return path.join(DATA_DIR, 'chat', 'orchestrator-sessions.json');
-}
-
-export function getAgentTeamsPath(): string {
-  return path.join(DATA_DIR, 'agents', 'teams.json');
-}
-
-/** 编排会话的跨 Worker 消息文件（JSONL 格式，追加写） */
-export function getOrchestratorMessagesPath(orchId: string): string {
-  const safeId = orchId.replace(/[^a-zA-Z0-9_-]/g, '');
-  return path.join(DATA_DIR, 'workflows', 'orchestrations', `${safeId}-messages.jsonl`);
 }
 
 export function getActiveTasksPath(): string {
@@ -556,7 +643,12 @@ export function getPromptHistoryDir(agentId: string): string {
   return path.join(DATA_DIR, 'prompts', 'history', safe);
 }
 
-export function getPromptRuntimeDir(agentId: string): string {
+/**
+ * Session prompt override compatibility directory.
+ * Note: the current physical path still lives under prompts/runtime/ for backward compatibility,
+ * but the product meaning is "session prompt override", not a standalone runtime-prompt domain.
+ */
+export function getSessionPromptOverrideDir(agentId: string): string {
   const safe = agentId.replace(/[^a-zA-Z0-9_-]/g, '');
   if (!safe || safe.length < 1 || safe.length > 100) {
     throw new Error(`Invalid agent id: ${agentId}`);
@@ -564,7 +656,11 @@ export function getPromptRuntimeDir(agentId: string): string {
   return path.join(DATA_DIR, 'prompts', 'runtime', safe);
 }
 
-export function getPromptRuntimePath(agentId: string, sessionId: string): string {
+/**
+ * Session prompt override compatibility file path.
+ * Physical path currently remains under prompts/runtime/{agentId}/{sessionId}.md.
+ */
+export function getSessionPromptOverridePath(agentId: string, sessionId: string): string {
   const safeAgent = agentId.replace(/[^a-zA-Z0-9_-]/g, '');
   if (!safeAgent || safeAgent.length < 1 || safeAgent.length > 100) {
     throw new Error(`Invalid agent id: ${agentId}`);
@@ -574,6 +670,22 @@ export function getPromptRuntimePath(agentId: string, sessionId: string): string
     throw new Error(`Invalid session id: ${sessionId}`);
   }
   return path.join(DATA_DIR, 'prompts', 'runtime', safeAgent, `${safeSession}.md`);
+}
+
+/**
+ * @deprecated Prefer getSessionPromptOverrideDir().
+ * Kept for compatibility while the codebase migrates away from the old "runtime prompt" wording.
+ */
+export function getPromptRuntimeDir(agentId: string): string {
+  return getSessionPromptOverrideDir(agentId);
+}
+
+/**
+ * @deprecated Prefer getSessionPromptOverridePath().
+ * Kept for compatibility while the codebase migrates away from the old "runtime prompt" wording.
+ */
+export function getPromptRuntimePath(agentId: string, sessionId: string): string {
+  return getSessionPromptOverridePath(agentId, sessionId);
 }
 
 export function getGlobalPromptPath(): string {
@@ -590,6 +702,57 @@ export function getProjectPromptPath(projectKey: string): string {
     throw new Error(`Invalid project key: ${projectKey}`);
   }
   return path.join(DATA_DIR, 'prompts', 'projects', `${safe}.md`);
+}
+
+// ── Segmented Prompt 路径函数 ──
+// 每个 prompt (global / project) 可拆分为 segments 目录：
+//   {base}.d/_index.json  → 元数据索引
+//   {base}.d/{segmentId}.md  → 各段内容
+// 若 .d/ 目录不存在，则 fallback 到单 .md 文件
+
+import type { PromptSegmentScope } from '@/types';
+
+/** 根据 scope 获取 segments 目录路径 */
+export function getSegmentedPromptDir(scope: PromptSegmentScope): string {
+  switch (scope.type) {
+    case 'global':
+      return path.join(DATA_DIR, 'prompts', 'global.d');
+    case 'project': {
+      const safe = scope.projectKey.replace(/[^a-zA-Z0-9_-]/g, '');
+      if (!safe || safe.length < 1 || safe.length > 100) {
+        throw new Error(`Invalid project key: ${scope.projectKey}`);
+      }
+      return path.join(DATA_DIR, 'prompts', 'projects', `${safe}.d`);
+    }
+  }
+}
+
+/** 获取 segments 目录下的 _index.json 路径 */
+export function getSegmentedPromptIndexPath(scope: PromptSegmentScope): string {
+  return path.join(getSegmentedPromptDir(scope), '_index.json');
+}
+
+/** 获取单个 segment 的 .md 文件路径 */
+export function getSegmentFilePath(scope: PromptSegmentScope, segmentId: string): string {
+  const safe = segmentId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 100) {
+    throw new Error(`Invalid segment id: ${segmentId}`);
+  }
+  return path.join(getSegmentedPromptDir(scope), `${safe}.md`);
+}
+
+// ── Prompt Block 路径函数 ──
+
+export function getPromptBlocksDir(): string {
+  return path.join(DATA_DIR, 'prompts', 'blocks');
+}
+
+export function getPromptBlockPath(blockId: string): string {
+  const safe = blockId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 100) {
+    throw new Error(`Invalid prompt block id: ${blockId}`);
+  }
+  return path.join(DATA_DIR, 'prompts', 'blocks', `${safe}.md`);
 }
 
 // ── Context 路径函数 ──
@@ -682,6 +845,7 @@ function getSnapshotTargets(): Map<string, string> {
   return new Map([
     [getAgentsPath(), 'agents-registry'],
     [getAgentChatSessionsPath(), 'chat-sessions'],
+    [getAgentChatSessionAdjunctsPath(), 'chat-session-adjuncts'],
   ]);
 }
 
@@ -969,6 +1133,24 @@ export async function writeInbox(projectKey: string, data: import('@/types').Pro
   await writeJsonFile(getInboxPath(projectKey), data);
 }
 
+// ── Agent Dialogues 路径函数 ──
+
+export function getDialoguesDir(): string {
+  return path.join(DATA_DIR, 'dialogues');
+}
+
+export function getDialoguesIndexPath(): string {
+  return path.join(DATA_DIR, 'dialogues', '_index.json');
+}
+
+export function getDialoguePath(dialogueId: string): string {
+  const safe = dialogueId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length > 100) {
+    throw new Error(`Invalid dialogue ID: ${dialogueId}`);
+  }
+  return path.join(DATA_DIR, 'dialogues', `${safe}.json`);
+}
+
 // ── Agent Schedules 路径函数 ──
 
 export function getSchedulesPath(): string {
@@ -977,6 +1159,18 @@ export function getSchedulesPath(): string {
 
 export function getScheduleRunsPath(): string {
   return path.join(DATA_DIR, 'agents', 'schedule-runs.json');
+}
+
+export function getEventTriggersPath(): string {
+  return path.join(DATA_DIR, 'agents', 'event-triggers.json');
+}
+
+export function getEventTriggerRunsPath(): string {
+  return path.join(DATA_DIR, 'agents', 'event-trigger-runs.json');
+}
+
+export function getEventTriggerStatesPath(): string {
+  return path.join(DATA_DIR, 'agents', 'event-trigger-states.json');
 }
 
 /**

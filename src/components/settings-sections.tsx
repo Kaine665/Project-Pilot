@@ -5,16 +5,65 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Link } from '@/client/i18n/routing';
 import {
   Shield, Brain, Wrench, Check, X, Loader2, ExternalLink, Server, Copy,
   Gauge, RotateCw, Eye, Sun, Moon, Monitor,
-  Download, Upload, Trash2, FolderOpen, Info, Github, ShieldAlert,
-  Sparkles, Plus, Minus, Zap,
+  Download, Upload, Trash2, FolderOpen, Info, Github, ShieldAlert, Satellite,
+  Sparkles, Plus, Minus, Zap, ActivitySquare, Timer,
 } from 'lucide-react';
 import type { DangerCategory, DangerActionLevel, DangerDetectorSettings, TitleGenerationChainEntry } from '@/types';
 import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
 import type { Theme } from '@/components/theme-provider';
 import type { CustomProviderConfig, ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort } from '@/types';
+
+// ── Model Health Types ──
+
+export interface ModelHealthResult {
+  status: 'ok' | 'failed' | 'skipped';
+  latencyMs?: number;
+  error?: string;
+  checkedAt?: string;
+}
+
+export interface ModelHealthData {
+  lastRunAt: string;
+  results: Record<string, ModelHealthResult>;
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function ModelStatusBadge({ status }: { status: 'ok' | 'failed' | 'skipped' }) {
+  if (status === 'ok') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+        <Check className="h-3 w-3" />
+        ok
+      </span>
+    );
+  }
+  if (status === 'failed') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
+        <X className="h-3 w-3" />
+        failed
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+      skipped
+    </span>
+  );
+}
 
 // ── Shared props ──
 
@@ -38,6 +87,8 @@ interface AIConfigSectionProps extends TranslationProps {
   customModel: string;
   baseUrl: string;
   openaiReasoningEffort: OpenAIReasoningEffort;
+  openaiFastMode: boolean;
+  openaiFastModeEligible: boolean;
   openaiReasoningOptions: Array<{ value: OpenAIReasoningEffort; label: string }>;
   oauthStatus: 'unknown' | 'checking' | 'authenticated' | 'not_authenticated';
   loginPending: boolean;
@@ -59,6 +110,7 @@ interface AIConfigSectionProps extends TranslationProps {
   onCustomModelChange: (m: string) => void;
   onBaseUrlChange: (u: string) => void;
   onOpenAIReasoningEffortChange: (effort: OpenAIReasoningEffort) => void;
+  onOpenAIFastModeChange: (enabled: boolean) => void;
   onCheckOAuthStatus: () => void;
   onTriggerOAuthLogin: () => void;
   onOauthCodeChange: (v: string) => void;
@@ -68,23 +120,29 @@ interface AIConfigSectionProps extends TranslationProps {
   customProviders?: CustomProviderConfig[];
   onAddCustomProvider?: () => void;
   onDeleteCustomProvider?: (id: `custom-${string}`) => void;
+  modelHealthData?: ModelHealthData | null;
+  healthCheckRunning?: boolean;
+  onRunHealthCheck?: () => void;
 }
 
 export function SettingsAISection({
   t, tActions, btnActive, btnInactive,
   provider, authMode, apiKey, model, customModel, baseUrl,
-  openaiReasoningEffort, openaiReasoningOptions,
+  openaiReasoningEffort, openaiFastMode, openaiFastModeEligible, openaiReasoningOptions,
   oauthStatus, loginPending, loginUrl, loginCode, loginFlowActive, oauthCode, codeSubmitting, oauthSubmitError,
   testState, testMessage,
   preset, isPresetModel, modelSelectOptions,
   onProviderChange, onAuthModeChange, onApiKeyChange,
   onModelChange, onCustomModelChange, onBaseUrlChange,
-  onOpenAIReasoningEffortChange,
+  onOpenAIReasoningEffortChange, onOpenAIFastModeChange,
   onCheckOAuthStatus, onTriggerOAuthLogin, onOauthCodeChange, onCodeSubmit, onCancelLoginFlow,
   onTestConnection,
   customProviders = [],
   onAddCustomProvider,
   onDeleteCustomProvider,
+  modelHealthData,
+  healthCheckRunning = false,
+  onRunHealthCheck,
 }: AIConfigSectionProps) {
   return (
     <>
@@ -258,6 +316,14 @@ export function SettingsAISection({
                         >
                           <Copy className="h-3.5 w-3.5" />
                         </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={onTriggerOAuthLogin}
+                          title={t('oauthRefreshUrl')}
+                        >
+                          <RotateCw className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                     </>
                   ) : (
@@ -316,14 +382,9 @@ export function SettingsAISection({
               )}
 
               {!loginFlowActive && (
-                <div className="space-y-1">
-                  <p className="text-xs text-zinc-500">
-                    {provider === 'openai' ? t('oauthHintOpenAI') : t('oauthHint')}
-                  </p>
-                  {provider === 'anthropic' && (
-                    <p className="text-xs text-amber-600 dark:text-amber-500">{t('oauthHintRedirect')}</p>
-                  )}
-                </div>
+                <p className="text-xs text-zinc-500">
+                  {provider === 'openai' ? t('oauthHintOpenAI') : t('oauthHint')}
+                </p>
               )}
             </div>
           )}
@@ -378,6 +439,32 @@ export function SettingsAISection({
           {provider === 'openai' && (
             <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
               <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                {t('openaiFastMode')}
+              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => onOpenAIFastModeChange(false)}
+                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    !openaiFastMode ? btnActive : btnInactive
+                  }`}
+                >
+                  {t('openaiFastModeOff')}
+                </button>
+                <button
+                  onClick={() => onOpenAIFastModeChange(true)}
+                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    openaiFastMode ? btnActive : btnInactive
+                  }`}
+                >
+                  {t('openaiFastModeOn')}
+                </button>
+              </div>
+              <p className="text-xs text-zinc-500">
+                {openaiFastModeEligible
+                  ? t('openaiFastModeEligibleHint')
+                  : t('openaiFastModeHint')}
+              </p>
+              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                 {t('openaiReasoningMode')}
               </label>
               <div className="flex gap-2">
@@ -419,6 +506,77 @@ export function SettingsAISection({
           </div>
         </CardContent>
       </Card>
+
+      {/* Model Health */}
+      {(modelHealthData || onRunHealthCheck) && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <ActivitySquare className="h-5 w-5" />
+                {t('modelHealth')}
+              </span>
+              <div className="flex items-center gap-2">
+                {modelHealthData?.lastRunAt && (
+                  <span className="text-xs font-normal text-zinc-400">
+                    {timeAgo(modelHealthData.lastRunAt)}
+                  </span>
+                )}
+                {onRunHealthCheck && (
+                  <Button variant="outline" size="sm" onClick={onRunHealthCheck} disabled={healthCheckRunning}>
+                    {healthCheckRunning
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <RotateCw className="h-3.5 w-3.5" />}
+                    {t('runHealthCheck')}
+                  </Button>
+                )}
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {modelHealthData && preset.models.length > 0 ? (
+              <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                {preset.models.map((m) => {
+                  const key = `${provider}/${m.id}`;
+                  const result = modelHealthData.results[key];
+                  const isOAuthVerified = result?.status === 'ok' && !result?.latencyMs;
+                  return (
+                    <div key={m.id} className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
+                      {/* Model name */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-zinc-700 dark:text-zinc-300 truncate">{m.label}</p>
+                        {result?.status === 'failed' && result.error && (
+                          <p className="mt-0.5 text-xs text-red-500 dark:text-red-400 line-clamp-2">{result.error}</p>
+                        )}
+                      </div>
+                      {/* Status badge */}
+                      {result ? (
+                        <div className="flex items-center gap-2 shrink-0">
+                          <ModelStatusBadge status={result.status} />
+                          {isOAuthVerified ? (
+                            <span className="text-xs font-medium text-blue-500 dark:text-blue-400">OAuth</span>
+                          ) : result.latencyMs ? (
+                            <span className="text-xs text-zinc-400">{result.latencyMs}ms</span>
+                          ) : null}
+                          {result.checkedAt && (
+                            <span className="text-xs text-zinc-400">{timeAgo(result.checkedAt)}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-zinc-400 shrink-0">—</span>
+                      )}
+                      {/* Reserved: quick links (task 2) */}
+                      <div className="w-6 shrink-0" />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-zinc-400">{t('noHealthData')}</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Advanced: Base URL */}
       {(preset.editableBaseUrl || provider === 'anthropic') && (
@@ -919,6 +1077,124 @@ export function SettingsSafetySection({
         </CardContent>
       </Card>
     </>
+  );
+}
+
+interface DeveloperSectionProps extends TranslationProps {
+  satelliteTasksEnabled: boolean;
+  onSatelliteTasksEnabledChange: (v: boolean) => void;
+  schedulesPageEnabled: boolean;
+  onSchedulesPageEnabledChange: (v: boolean) => void;
+  taskTriggersPageEnabled: boolean;
+  onTaskTriggersPageEnabledChange: (v: boolean) => void;
+}
+
+export function SettingsDeveloperSection({
+  t,
+  satelliteTasksEnabled,
+  onSatelliteTasksEnabledChange,
+  schedulesPageEnabled,
+  onSchedulesPageEnabledChange,
+  taskTriggersPageEnabled,
+  onTaskTriggersPageEnabledChange,
+}: DeveloperSectionProps) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Satellite className="h-5 w-5" />
+          {t('developerTools')}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <label className="flex items-center justify-between cursor-pointer">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2 text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              <Satellite className="h-4 w-4" />
+              {t('satelliteTasksEnabled')}
+            </div>
+            <p className="pr-4 text-xs text-zinc-500">{t('satelliteTasksEnabledHint')}</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={satelliteTasksEnabled}
+            onClick={() => onSatelliteTasksEnabledChange(!satelliteTasksEnabled)}
+            className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
+              satelliteTasksEnabled ? 'bg-zinc-900 dark:bg-zinc-100' : 'bg-zinc-200 dark:bg-zinc-700'
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform dark:bg-zinc-900 ${
+                satelliteTasksEnabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </label>
+
+        <label className="flex items-center justify-between cursor-pointer">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2 text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              <Timer className="h-4 w-4" />
+              {t('schedulesPageEnabled')}
+            </div>
+            <p className="pr-4 text-xs text-zinc-500">{t('schedulesPageEnabledHint')}</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={schedulesPageEnabled}
+            onClick={() => onSchedulesPageEnabledChange(!schedulesPageEnabled)}
+            className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
+              schedulesPageEnabled ? 'bg-zinc-900 dark:bg-zinc-100' : 'bg-zinc-200 dark:bg-zinc-700'
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform dark:bg-zinc-900 ${
+                schedulesPageEnabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </label>
+
+        <label className="flex items-center justify-between cursor-pointer">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2 text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              <Zap className="h-4 w-4" />
+              {t('taskTriggersPageEnabled')}
+            </div>
+            <p className="pr-4 text-xs text-zinc-500">{t('taskTriggersPageEnabledHint')}</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={taskTriggersPageEnabled}
+            onClick={() => onTaskTriggersPageEnabledChange(!taskTriggersPageEnabled)}
+            className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
+              taskTriggersPageEnabled ? 'bg-zinc-900 dark:bg-zinc-100' : 'bg-zinc-200 dark:bg-zinc-700'
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform dark:bg-zinc-900 ${
+                taskTriggersPageEnabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </label>
+
+        <div className="rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900/40">
+          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{t('satelliteTasksInternalTitle')}</p>
+          <p className="mt-1 text-xs text-zinc-500">{t('satelliteTasksInternalHint')}</p>
+          <Link
+            href="/flows/satellite-tasks"
+            className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-zinc-700 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            {t('openSatelliteTasks')}
+          </Link>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

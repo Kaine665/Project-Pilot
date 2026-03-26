@@ -4,19 +4,21 @@
   "private": true,
   "main": "electron/dist/main.js",
   "scripts": {
-    "dev": "next dev --port 4000 --turbopack",
-    "build": "next build",
-    "start": "next start",
+    "postinstall": "node scripts/ensure-postcss-alloc-lru.mjs",
+    "dev": "concurrently --kill-others \"vite\" \"bun run --tsconfig tsconfig.json src/server/index.ts\"",
+    "dev:client": "vite",
+    "dev:server": "bun run --tsconfig tsconfig.json src/server/index.ts",
+    "build": "vite build && bun build src/server/index.ts --outfile=dist/server/index.js --target=node --minify",
+    "build:client": "vite build",
+    "build:server": "bun build src/server/index.ts --outfile=dist/server/index.js --target=node --minify",
     "lint": "eslint",
     "mcp": "tsx mcp-server/index.ts",
     "demo:load": "node scripts/load-demo-data.js",
     "demo:load-en": "node scripts/load-demo-data.js en",
     "migrate:data": "node scripts/migrate-data.js",
-    "dev:sidecar": "tsx --tsconfig tsconfig.json src/sidecar/server.ts",
-    "build:sidecar": "node -e \"require('esbuild').buildSync({entryPoints:['src/sidecar/server.ts'],bundle:true,platform:'node',outfile:'electron/dist/sidecar.js',tsconfig:'tsconfig.json',external:['electron']})\"",
-    "electron:dev": "concurrently --kill-others \"npm run dev\" \"wait-on tcp:127.0.0.1:4000 && cross-env ELECTRON_DEV=1 electron .\"",
+    "electron:dev": "node scripts/electron-dev.mjs",
     "electron:compile": "tsc -p electron/tsconfig.json",
-    "electron:build": "cross-env NODE_ENV=production BUILD_TARGET=electron next build && npm run electron:compile && npm run build:sidecar && electron-builder --win",
+    "electron:build": "cross-env NODE_ENV=production npm run build && npm run electron:compile && electron-builder --win",
     "electron:start": "electron ."
   },
   "build": {
@@ -27,21 +29,8 @@
     },
     "files": [
       "electron/dist/**/*",
-      "electron/splash.html"
-    ],
-    "extraResources": [
-      {
-        "from": ".next/standalone",
-        "to": "standalone"
-      },
-      {
-        "from": ".next/static",
-        "to": "standalone/.next/static"
-      },
-      {
-        "from": "public",
-        "to": "standalone/public"
-      }
+      "electron/splash.html",
+      "dist/**/*"
     ],
     "win": {
       "target": "nsis",
@@ -54,10 +43,13 @@
     }
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.72",
+    "@alloc/quick-lru": "^5.2.0",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.79",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@fontsource-variable/inter": "^5.2.8",
+    "@hono/node-server": "^1.19.11",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@openai/codex": "^0.114.0",
     "@openai/codex-sdk": "^0.114.0",
@@ -68,13 +60,17 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "archiver": "^7.0.1",
     "clsx": "^2.1.1",
+    "hono": "^4.12.9",
+    "i18next": "^25.10.9",
+    "i18next-browser-languagedetector": "^8.2.1",
+    "js-yaml": "^4.1.1",
     "lucide-react": "^0.563.0",
-    "next": "16.1.6",
-    "next-intl": "^4.8.3",
     "node-cron": "^4.2.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-i18next": "^16.6.6",
     "react-markdown": "^10.1.0",
+    "react-router": "^7.13.2",
     "remark-gfm": "^4.0.1",
     "socket.io-client": "^4.8.3",
     "tailwind-merge": "^3.4.0",
@@ -87,16 +83,21 @@
     "@types/node-cron": "^3.0.11",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.0.1",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
     "electron": "^40.8.0",
     "electron-builder": "^26.8.1",
+    "esbuild": "^0.27.4",
     "eslint": "^9",
-    "eslint-config-next": "16.1.6",
     "playwright": "^1.58.2",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
+    "vite": "^8.0.2",
     "wait-on": "^9.0.4"
+  },
+  "overrides": {
+    "@alloc/quick-lru": "^5.2.0"
   }
 }

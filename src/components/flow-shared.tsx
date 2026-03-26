@@ -9,7 +9,7 @@ import {
   Plus,
   X,
 } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/client/i18n/use-translations';
 import { Badge } from '@/components/ui/badge';
 import type {
   Section,
@@ -482,7 +482,7 @@ export interface ItemActionsCtx {
   onDelete: (itemId: string) => void;
   onAddChild: (parentItemId: string, content: string) => void;
   onToggleDefer: (itemId: string, currentDeferred: boolean) => void;
-  onLaunchAI: (item: TreeItem, ancestors: TreeItem[]) => void;
+  onLaunchAI: (item: TreeItem, ancestors: TreeItem[], options?: { background?: boolean }) => void;
   agents: Agent[];
   onAssignAgent: (itemId: string, agentId: string | null) => void;
 }

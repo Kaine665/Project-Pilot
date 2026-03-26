@@ -7,8 +7,11 @@
 
 import { getSettingsPath, readJsonFile, writeJsonFile } from '@/lib/file-store';
 import { getKimiCandidateBaseUrls, getProviderPreset } from '@/lib/provider-registry';
-import type { AgentCapabilities, AppSettings, ClaudeSettings, CustomProviderConfig, ProviderId } from '@/types';
+import type { AgentCapabilities, AppSettings, ClaudeAuthMode, ClaudeSettings, CustomProviderConfig, ProviderCredential, ProviderId } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_APP_SETTINGS } from '@/types';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 const CACHE_TTL_MS = 30_000;
 
@@ -20,7 +23,8 @@ export async function getSettings(): Promise<AppSettings> {
   if (cachedSettings && now - cacheTimestamp < CACHE_TTL_MS) {
     return cachedSettings;
   }
-  cachedSettings = await readJsonFile<AppSettings>(getSettingsPath(), DEFAULT_APP_SETTINGS);
+  const raw = await readJsonFile<AppSettings>(getSettingsPath(), DEFAULT_APP_SETTINGS);
+  cachedSettings = migrateCredentials(raw);
   cacheTimestamp = now;
   return cachedSettings;
 }
@@ -35,35 +39,187 @@ export function invalidateCache(): void {
   cacheTimestamp = 0;
 }
 
+// ── Credential migration & unified access ──
+
+const ANTHROPIC_CREDENTIALS_PATH = path.join(os.homedir(), '.claude', '.credentials.json');
+
+/** Check if Anthropic OAuth credentials file exists (without importing oauth-flow to avoid circular deps) */
+function anthropicCredentialsFileExists(): boolean {
+  try { return fs.existsSync(ANTHROPIC_CREDENTIALS_PATH); } catch { return false; }
+}
+
+/**
+ * 运行时凭据迁移（幂等）。
+ * 将旧的分散存储（providerApiKeys / customProviders[].apiKey / flat apiKey / 全局 authMode）
+ * 合并到 providerCredentials。
+ */
+function migrateCredentials(settings: AppSettings): AppSettings {
+  const claude = settings.claude;
+  // 已有 providerCredentials → 跳过迁移
+  if (claude.providerCredentials && Object.keys(claude.providerCredentials).length > 0) {
+    return settings;
+  }
+
+  const creds: Partial<Record<ProviderId, ProviderCredential>> = {};
+
+  // 1. 从 providerApiKeys 迁移
+  if (claude.providerApiKeys) {
+    for (const [p, key] of Object.entries(claude.providerApiKeys)) {
+      if (key) {
+        creds[p as ProviderId] = { authMode: 'api_key', apiKey: key };
+      }
+    }
+  }
+
+  // 2. 从 customProviders[].apiKey 迁移
+  if (claude.customProviders) {
+    for (const cp of claude.customProviders) {
+      if (cp.apiKey && !creds[cp.id]) {
+        creds[cp.id] = { authMode: 'api_key', apiKey: cp.apiKey };
+      }
+    }
+  }
+
+  // 3. 从旧 flat apiKey 迁移（仅 anthropic）
+  if (claude.apiKey && !creds['anthropic']) {
+    creds['anthropic'] = { authMode: 'api_key', apiKey: claude.apiKey };
+  }
+
+  // 4. Anthropic OAuth：如果全局 authMode=oauth 或 credentials 文件存在
+  if (claude.authMode === 'oauth' || anthropicCredentialsFileExists()) {
+    const existing = creds['anthropic'] ?? { authMode: 'oauth' as ClaudeAuthMode };
+    // 如果全局 authMode 是 oauth，设置这个供应商为 oauth 模式
+    if (claude.authMode === 'oauth') {
+      existing.authMode = 'oauth';
+    }
+    existing.oauth = { tokenFile: ANTHROPIC_CREDENTIALS_PATH };
+    creds['anthropic'] = existing;
+  }
+
+  // 只在有数据需要迁移时才写入
+  if (Object.keys(creds).length > 0) {
+    claude.providerCredentials = creds;
+  }
+
+  return settings;
+}
+
+/** 统一读取凭据的返回类型 */
+export interface ResolvedCredential {
+  authMode: ClaudeAuthMode;
+  apiKey?: string;
+  /** 凭据来源（调试用） */
+  source: 'providerCredentials' | 'providerApiKeys' | 'customProvider' | 'legacyApiKey' | 'default';
+}
+
+/**
+ * 统一读取指定供应商的凭据。
+ *
+ * 优先级：
+ * 1. providerCredentials[p] — 新统一存储
+ * 2. providerApiKeys[p] — 旧 per-provider 存储
+ * 3. customProviders[].apiKey — 自定义供应商旧存储
+ * 4. claude.apiKey（仅 anthropic）— 最旧的 flat 存储
+ */
+export function getCredential(claude: ClaudeSettings, provider?: ProviderId): ResolvedCredential {
+  const p = provider ?? claude.provider ?? 'anthropic';
+
+  // 1. 新统一存储
+  const cred = claude.providerCredentials?.[p];
+  if (cred) {
+    return {
+      authMode: cred.authMode,
+      apiKey: cred.apiKey,
+      source: 'providerCredentials',
+    };
+  }
+
+  // 2. 旧 per-provider 存储
+  const scopedKey = claude.providerApiKeys?.[p];
+  if (scopedKey) {
+    return { authMode: 'api_key', apiKey: scopedKey, source: 'providerApiKeys' };
+  }
+
+  // 3. 自定义供应商旧存储
+  if (p.startsWith('custom-') && claude.customProviders) {
+    const cp = claude.customProviders.find((c) => c.id === p);
+    if (cp?.apiKey) {
+      return { authMode: 'api_key', apiKey: cp.apiKey, source: 'customProvider' };
+    }
+  }
+
+  // 4. 旧 flat apiKey（仅 anthropic）
+  if (p === 'anthropic' && claude.apiKey) {
+    return { authMode: claude.authMode ?? 'api_key', apiKey: claude.apiKey, source: 'legacyApiKey' };
+  }
+
+  // 无凭据：根据全局 authMode 或默认 api_key
+  return { authMode: claude.authMode ?? 'api_key', source: 'default' };
+}
+
+/**
+ * 获取指定供应商的有效认证方式。
+ *
+ * 逻辑：
+ * 1. providerCredentials[p].authMode 存在 → 使用它
+ * 2. 否则：anthropic/openai 根据 OAuth 文件存在推断，其他始终 api_key
+ */
+export function getEffectiveAuthMode(claude: ClaudeSettings, provider?: ProviderId): ClaudeAuthMode {
+  const p = provider ?? claude.provider ?? 'anthropic';
+
+  // 从新统一存储读
+  const cred = claude.providerCredentials?.[p];
+  if (cred?.authMode) return cred.authMode;
+
+  // 向后兼容：anthropic 使用全局 authMode
+  if (p === 'anthropic') return claude.authMode ?? 'api_key';
+
+  // 其他供应商默认 api_key
+  return 'api_key';
+}
+
+/**
+ * 统一写入指定供应商的凭据。
+ * 只写 providerCredentials[p]，不动旧字段。
+ */
+export async function setCredential(
+  provider: ProviderId,
+  credential: Partial<ProviderCredential>,
+): Promise<void> {
+  const settings = await getSettings();
+  const claude = settings.claude;
+  if (!claude.providerCredentials) claude.providerCredentials = {};
+
+  const existing = claude.providerCredentials[provider] ?? { authMode: 'api_key' as ClaudeAuthMode };
+  claude.providerCredentials[provider] = { ...existing, ...credential };
+
+  await saveSettings(settings);
+}
+
 // ── Per-provider scoped helpers ──
 
 /**
  * 获取指定供应商的 API Key。
- * 优先级：providerApiKeys[provider] > 自定义供应商.apiKey > 旧的 flat apiKey（仅 anthropic 时回退）
+ * @deprecated 内部已委托给 getCredential()，外部调用者应逐步迁移到 getCredential()。
  */
 export function getProviderScopedApiKey(claude: ClaudeSettings, provider?: ProviderId): string | undefined {
-  const p = provider ?? claude.provider ?? 'anthropic';
-  const scoped = claude.providerApiKeys?.[p];
-  if (scoped) return scoped;
-  // 自定义供应商：从 customProvider.apiKey 取
-  if (p.startsWith('custom-') && claude.customProviders) {
-    const cp = claude.customProviders.find((c) => c.id === p);
-    if (cp?.apiKey) return cp.apiKey;
-  }
-  // 向后兼容：旧数据只有 flat apiKey，仅 anthropic 时回退
-  if (p === 'anthropic' && claude.apiKey) return claude.apiKey;
-  return undefined;
+  return getCredential(claude, provider).apiKey;
 }
 
 /**
  * 获取指定供应商的模型 ID。
- * 优先级：providerModels[provider] > 旧的 flat model
+ * 优先级：providerModels[provider] > 当前全局 provider 的旧 flat model > provider preset 第一个模型
  */
 export function getProviderScopedModel(claude: ClaudeSettings, provider?: ProviderId): string {
   const p = provider ?? claude.provider ?? 'anthropic';
-  const scoped = claude.providerModels?.[p];
+  const scoped = claude.providerModels?.[p]?.trim();
   if (scoped) return scoped;
-  return claude.model;
+
+  const legacy = claude.model?.trim();
+  if (legacy && p === (claude.provider ?? 'anthropic')) return legacy;
+
+  const preset = getProviderPreset(p, claude.customProviders);
+  return preset.models[0]?.id ?? '';
 }
 
 /**
@@ -122,12 +278,13 @@ export async function buildClaudeEnv(
 
   const env: NodeJS.ProcessEnv = { ...process.env };
 
-  const scopedKey = getProviderScopedApiKey(claude, provider);
+  const cred = getCredential(claude, provider);
+  const authMode = getEffectiveAuthMode(claude, provider);
 
   if (provider === 'anthropic' || provider === 'openai') {
     // 官方供应商（Anthropic / OpenAI）：API Key 或 OAuth
-    if (claude.authMode === 'api_key' && scopedKey && !process.env.ANTHROPIC_API_KEY) {
-      env.ANTHROPIC_API_KEY = scopedKey;
+    if (authMode === 'api_key' && cred.apiKey && !process.env.ANTHROPIC_API_KEY) {
+      env.ANTHROPIC_API_KEY = cred.apiKey;
     }
     if (claude.baseUrl && !process.env.ANTHROPIC_BASE_URL) {
       env.ANTHROPIC_BASE_URL = claude.baseUrl;
@@ -143,13 +300,13 @@ export async function buildClaudeEnv(
     // Kimi、自定义 API_KEY 模式：用 ANTHROPIC_API_KEY；其他第三方用 AUTH_TOKEN。
     // 必须强制覆盖（不检查 process.env），并删除对立变量，
     // 因为 Claude Code SDK 用 ?? 选择 token——空字符串不会穿透。
-    if (scopedKey) {
+    if (cred.apiKey) {
       const useApiKey = provider === 'kimi' || preset.authMethod === 'API_KEY';
       if (useApiKey) {
-        env.ANTHROPIC_API_KEY = scopedKey;
+        env.ANTHROPIC_API_KEY = cred.apiKey;
         delete env.ANTHROPIC_AUTH_TOKEN;
       } else {
-        env.ANTHROPIC_AUTH_TOKEN = scopedKey;
+        env.ANTHROPIC_AUTH_TOKEN = cred.apiKey;
         delete env.ANTHROPIC_API_KEY;
       }
     }
@@ -184,9 +341,10 @@ export async function buildCodexExecEnv(): Promise<NodeJS.ProcessEnv> {
   const settings = await getSettings();
   const claude = settings.claude;
   const env: NodeJS.ProcessEnv = { ...process.env };
-  const scopedKey = getProviderScopedApiKey(claude, 'openai');
-  if (claude.authMode === 'api_key' && scopedKey && !process.env.CODEX_API_KEY) {
-    env.CODEX_API_KEY = scopedKey;
+  const cred = getCredential(claude, 'openai');
+  const authMode = getEffectiveAuthMode(claude, 'openai');
+  if (authMode === 'api_key' && cred.apiKey && !process.env.CODEX_API_KEY) {
+    env.CODEX_API_KEY = cred.apiKey;
   }
   env.FORCE_COLOR = '0';
   return env;

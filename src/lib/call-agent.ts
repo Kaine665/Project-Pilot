@@ -107,6 +107,7 @@ async function startSession(opts: {
     projectKey: projectKey || undefined,
     parentSessionId: parentSessionId || undefined,
     depth,
+    background: true,
   });
 
   const postResult = await httpRequest({
@@ -196,9 +197,13 @@ async function readSessionFromDisk(sessionId: string, port: number): Promise<str
   const messages: Array<{ role: string; content: string }> = session.messages || [];
 
   // Check execution record for failure
-  const execution = session.execution as { status?: string; result?: { error?: { message: string } } } | undefined;
+  const execution = session.execution as {
+    status?: string;
+    errorMessage?: string;
+    result?: { error?: { message: string } };
+  } | undefined;
   if (execution?.status === 'failed' || execution?.status === 'stopped') {
-    throw new Error(execution.result?.error?.message ?? `Session ${execution.status}`);
+    throw new Error(execution.errorMessage ?? execution.result?.error?.message ?? `Session ${execution.status}`);
   }
 
   const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
@@ -223,21 +228,26 @@ const POLL_EXIT_RUNNING = 2;
  */
 async function pollSession(sessionId: string, port: number): Promise<void> {
   // Step 1: 查询内存中的运行状态
-  const statusResult = await httpRequest({
+  const runtimeResult = await httpRequest({
     method: 'GET',
     hostname: '127.0.0.1',
     port,
-    path: `/api/agent-chat/status?sessionId=${encodeURIComponent(sessionId)}`,
+    path: `/api/agent-chat/runtime-snapshot?sessionId=${encodeURIComponent(sessionId)}`,
     timeoutMs: POST_TIMEOUT_MS,
   });
 
-  if (statusResult.statusCode !== 200) {
-    throw new Error(`GET /api/agent-chat/status failed: HTTP ${statusResult.statusCode} — ${statusResult.body}`);
+  if (runtimeResult.statusCode !== 200) {
+    throw new Error(
+      `GET /api/agent-chat/runtime-snapshot failed: HTTP ${runtimeResult.statusCode} — ${runtimeResult.body}`,
+    );
   }
 
-  const statusData = JSON.parse(statusResult.body);
-  const status: string = statusData.status;
-  const statusMessages: Array<{ role: string; content: string }> = statusData.messages || [];
+  const runtimeData = JSON.parse(runtimeResult.body) as {
+    status?: string;
+    available?: boolean;
+    messages?: Array<{ role: string; content: string }>;
+  };
+  const status: string = runtimeData.status ?? 'none';
 
   if (status === 'running' || status === 'awaiting') {
     writeResult({ status: 'running', sessionId });
@@ -253,7 +263,8 @@ async function pollSession(sessionId: string, port: number): Promise<void> {
   // status === 'completed': data is guaranteed on disk (finalizing→completed is atomic).
   // Try in-memory messages first (faster), then disk.
   if (status === 'completed') {
-    const inMemoryAssistant = [...statusMessages].reverse().find(m => m.role === 'assistant');
+    const snapshotMessages = runtimeData.available ? (runtimeData.messages || []) : [];
+    const inMemoryAssistant = [...snapshotMessages].reverse().find(m => m.role === 'assistant');
     if (inMemoryAssistant) {
       writeResult({ status: 'completed', sessionId, content: inMemoryAssistant.content });
       return;
@@ -284,9 +295,17 @@ async function pollSession(sessionId: string, port: number): Promise<void> {
   const messages: Array<{ role: string; content: string }> = session.messages || [];
 
   // Check execution record for terminal status (unified state source)
-  const execution = session.execution as { status?: string; result?: { status: string; summary: string; error?: { message: string } } } | undefined;
+  const execution = session.execution as {
+    status?: string;
+    errorMessage?: string;
+    result?: { status: string; summary: string; error?: { message: string } };
+  } | undefined;
+  if (execution?.status === 'awaiting') {
+    writeResult({ status: 'running', sessionId });
+    process.exit(POLL_EXIT_RUNNING);
+  }
   if (execution?.status === 'failed' || execution?.status === 'stopped') {
-    const errMsg = execution.result?.error?.message ?? `Session ${execution.status}`;
+    const errMsg = execution.errorMessage ?? execution.result?.error?.message ?? `Session ${execution.status}`;
     process.stderr.write(`[call-agent] Session ${execution.status}: ${errMsg}\n`);
     writeResult({ status: 'failed', sessionId, error: errMsg });
     process.exit(1);

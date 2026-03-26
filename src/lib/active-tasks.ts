@@ -16,14 +16,14 @@
  *   清理：npx tsx src/lib/active-tasks.ts prune
  */
 
-import { getActiveTasksPath, readJsonFile, modifyJsonFile } from './file-store';
+import { getActiveTasksPath, getTodosPath, readJsonFile, modifyJsonFile } from './file-store';
+import type { TodosData, TodoLifecycle } from '@/types';
 
 // ── 类型定义 ──
 
 export type ActiveTaskAgentType =
   | 'self-dev'
   | 'task-worker'
-  | 'orchestrator-worker'
   | 'agent-chat';
 
 export type ActiveTaskStatus = 'running' | 'completed' | 'failed';
@@ -43,6 +43,10 @@ export interface ActiveTaskEntry {
   scope?: string[];
   /** 关联的 git 分支 */
   branch?: string;
+  /** 关联的 Agent 会话 ID（用于会话结束时自动清理） */
+  sessionId?: string;
+  /** 关联的 Todo ID（双向绑定，注册时通过 --todo-id 传入） */
+  todoId?: string;
   /** 任务状态 */
   status: ActiveTaskStatus;
   /** 注册时间 */
@@ -72,6 +76,50 @@ function generateId(): string {
   return `at-${ts}-${rand}`;
 }
 
+// ── Todo 联动 ──
+
+const TODO_DEFAULT: TodosData = { todos: [] };
+
+/**
+ * 更新关联 Todo 的 lifecycle 和绑定字段。
+ * 如果 todoId 为空则静默跳过。
+ */
+async function syncTodoLifecycle(
+  todoId: string | undefined,
+  lifecycle: TodoLifecycle,
+  bind?: { activeTaskId?: string; claimedByBranch?: string },
+): Promise<void> {
+  if (!todoId) return;
+  try {
+    await modifyJsonFile<TodosData>(getTodosPath(), TODO_DEFAULT, (data) => ({
+      ...data,
+      todos: data.todos.map((t) => {
+        if (t.id !== todoId) return t;
+        // 同步 status 字段（前端只看 status）
+        const statusMap: Record<TodoLifecycle, typeof t.status> = {
+          draft: 'pending',
+          pending: 'pending',
+          active: 'in_progress',
+          stale: 'pending',
+          done: 'done',
+          archived: 'done',
+        };
+        return {
+          ...t,
+          lifecycle,
+          status: statusMap[lifecycle],
+          ...(bind?.activeTaskId !== undefined && { activeTaskId: bind.activeTaskId }),
+          ...(bind?.claimedByBranch !== undefined && { claimedByBranch: bind.claimedByBranch }),
+          updatedAt: new Date().toISOString(),
+        };
+      }),
+    }));
+  } catch {
+    // Best-effort: todo 文件损坏或丢失不应阻塞 active task 操作
+    console.error(`[active-tasks] Warning: failed to sync todo ${todoId} lifecycle to ${lifecycle}`);
+  }
+}
+
 // ── 核心函数 ──
 
 /** 读取所有任务 */
@@ -94,11 +142,13 @@ export async function listRunningTasks(): Promise<ActiveTaskEntry[]> {
   });
 }
 
-/** 注册一个新任务 */
+/** 注册一个新任务（自动清理过期/已完成记录，同一 branch 去重） */
 export async function registerTask(
   params: Omit<ActiveTaskEntry, 'id' | 'status' | 'registeredAt' | 'heartbeatAt'>,
 ): Promise<ActiveTaskEntry> {
   const now = new Date().toISOString();
+  const nowMs = Date.now();
+  const staleMs = STALE_HOURS * 60 * 60 * 1000;
   const entry: ActiveTaskEntry = {
     id: generateId(),
     status: 'running',
@@ -111,10 +161,37 @@ export async function registerTask(
     getActiveTasksPath(),
     DEFAULT_DATA,
     (data) => {
+      // Auto-prune: remove completed/failed/stale tasks
+      data.tasks = data.tasks.filter(t => {
+        if (t.status !== 'running') return false;
+        const heartbeat = new Date(t.heartbeatAt).getTime();
+        return nowMs - heartbeat <= staleMs;
+      });
+
+      // Dedup: if same branch already has a running task, mark it as failed
+      if (entry.branch) {
+        for (const t of data.tasks) {
+          if (t.branch === entry.branch && t.status === 'running') {
+            t.status = 'failed';
+            t.finishedAt = now;
+          }
+        }
+        // Remove the just-failed duplicates (they're stale anyway)
+        data.tasks = data.tasks.filter(t => t.status === 'running');
+      }
+
       data.tasks.push(entry);
       return data;
     },
   );
+
+  // 联动：将关联的 Todo 标记为 active
+  if (entry.todoId) {
+    await syncTodoLifecycle(entry.todoId, 'active', {
+      activeTaskId: entry.id,
+      claimedByBranch: entry.branch,
+    });
+  }
 
   return entry;
 }
@@ -122,6 +199,7 @@ export async function registerTask(
 /** 标记任务完成 */
 export async function completeTask(taskId: string): Promise<boolean> {
   let found = false;
+  let linkedTodoId: string | undefined;
   await modifyJsonFile<ActiveTasksData>(
     getActiveTasksPath(),
     DEFAULT_DATA,
@@ -131,16 +209,22 @@ export async function completeTask(taskId: string): Promise<boolean> {
         task.status = 'completed';
         task.finishedAt = new Date().toISOString();
         found = true;
+        linkedTodoId = task.todoId;
       }
       return data;
     },
   );
+  // 联动：将关联的 Todo 标记为 done
+  if (found && linkedTodoId) {
+    await syncTodoLifecycle(linkedTodoId, 'done', { activeTaskId: undefined });
+  }
   return found;
 }
 
 /** 标记任务失败 */
 export async function failTask(taskId: string): Promise<boolean> {
   let found = false;
+  let linkedTodoId: string | undefined;
   await modifyJsonFile<ActiveTasksData>(
     getActiveTasksPath(),
     DEFAULT_DATA,
@@ -150,11 +234,53 @@ export async function failTask(taskId: string): Promise<boolean> {
         task.status = 'failed';
         task.finishedAt = new Date().toISOString();
         found = true;
+        linkedTodoId = task.todoId;
       }
       return data;
     },
   );
+  // 联动：失败时 Todo 回到 pending，清除绑定
+  if (found && linkedTodoId) {
+    await syncTodoLifecycle(linkedTodoId, 'pending', {
+      activeTaskId: undefined,
+      claimedByBranch: undefined,
+    });
+  }
   return found;
+}
+
+/** 按 sessionId 批量完成/失败任务（供卫星任务调用） */
+export async function finishTasksBySession(
+  sessionId: string,
+  status: 'completed' | 'failed',
+): Promise<number> {
+  let count = 0;
+  const linkedTodoIds: string[] = [];
+  const now = new Date().toISOString();
+  await modifyJsonFile<ActiveTasksData>(
+    getActiveTasksPath(),
+    DEFAULT_DATA,
+    (data) => {
+      for (const t of data.tasks) {
+        if (t.sessionId === sessionId && t.status === 'running') {
+          t.status = status;
+          t.finishedAt = now;
+          count++;
+          if (t.todoId) linkedTodoIds.push(t.todoId);
+        }
+      }
+      return data;
+    },
+  );
+  // 联动关联的 Todos
+  const todoLifecycle: TodoLifecycle = status === 'completed' ? 'done' : 'pending';
+  for (const todoId of linkedTodoIds) {
+    await syncTodoLifecycle(todoId, todoLifecycle, {
+      activeTaskId: undefined,
+      claimedByBranch: undefined,
+    });
+  }
+  return count;
 }
 
 /** 更新心跳 */
@@ -233,7 +359,7 @@ async function main() {
       const opts = parseArgs(args);
       const title = opts.title;
       if (!title) {
-        console.error('Usage: register --title "任务标题" [--agent-type TYPE] [--agent-id ID] [--project KEY] [--scope "file1,file2"] [--branch BRANCH]');
+        console.error('Usage: register --title "任务标题" [--agent-type TYPE] [--agent-id ID] [--project KEY] [--scope "file1,file2"] [--branch BRANCH] [--todo-id TODO_ID]');
         process.exit(1);
       }
       const entry = await registerTask({
@@ -243,6 +369,8 @@ async function main() {
         title,
         scope: opts.scope ? opts.scope.split(',').map(s => s.trim()) : undefined,
         branch: opts.branch,
+        sessionId: opts.session,
+        todoId: opts['todo-id'],
       });
       console.log(JSON.stringify(entry, null, 2));
       break;
@@ -282,15 +410,23 @@ async function main() {
     }
 
     case 'list': {
-      const tasks = await listActiveTasks();
-      const running = tasks.filter(t => t.status === 'running');
-      const finished = tasks.filter(t => t.status !== 'running');
+      const running = await listRunningTasks();
+      const runningIds = new Set(running.map(t => t.id));
+      const allTasks = await listActiveTasks();
+      const finished = allTasks.filter(t => t.status !== 'running');
+      const staleRunning = allTasks.filter(t => t.status === 'running' && !runningIds.has(t.id));
 
       console.log(`=== Running (${running.length}) ===`);
       for (const t of running) {
         const scope = t.scope ? ` [${t.scope.join(', ')}]` : '';
         const branch = t.branch ? ` (${t.branch})` : '';
         console.log(`  ${t.id}  ${t.agentType}  "${t.title}"${scope}${branch}  since ${t.registeredAt}`);
+      }
+      if (staleRunning.length > 0) {
+        console.log(`=== Stale (${staleRunning.length}, heartbeat expired) ===`);
+        for (const t of staleRunning) {
+          console.log(`  ${t.id}  "${t.title}"  last heartbeat ${t.heartbeatAt}`);
+        }
       }
       if (finished.length > 0) {
         console.log(`=== Finished (${finished.length}) ===`);

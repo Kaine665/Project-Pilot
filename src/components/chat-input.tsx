@@ -44,8 +44,19 @@ interface SkillItem {
   description: string;
 }
 
+/** Uploaded file info returned from /api/upload */
+interface UploadedFile {
+  name: string;
+  path: string;
+  size: number;
+  formattedSize: string;
+  isText: boolean;
+}
+
 interface ChatInputProps {
   onSubmit: (text: string, images: string[], files: Array<{ name: string; content: string }>) => void;
+  /** Session ID for file uploads (required to enable upload) */
+  sessionId?: string;
   onAbort: () => void;
   isStreaming: boolean;
   placeholder: string;
@@ -104,6 +115,7 @@ export const ChatInput = memo(function ChatInput({
   effortValue,
   onEffortChange,
   effortLabel,
+  sessionId,
   enableSlashCommands = false,
   tokenInfo,
 }: ChatInputProps) {
@@ -115,6 +127,10 @@ export const ChatInput = memo(function ChatInput({
   });
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [pendingFiles, setPendingFiles] = useState<Array<{ name: string; content: string }>>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const dragCounterRef = useRef(0);
   const [guestPickerOpen, setGuestPickerOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -129,6 +145,21 @@ export const ChatInput = memo(function ChatInput({
   const [slashIndex, setSlashIndex] = useState(0);
   const skillsCacheRef = useRef<SkillItem[] | null>(null);
   const [skillsLoaded, setSkillsLoaded] = useState(false);
+
+  // Listen for external text insertion (e.g. from folder explorer @reference)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ text: string }>).detail;
+      if (!detail?.text) return;
+      setInput((prev) => {
+        const prefix = prev && !prev.endsWith(' ') && !prev.endsWith('\n') ? prev + ' ' : prev;
+        return prefix + detail.text;
+      });
+      textareaRef.current?.focus();
+    };
+    window.addEventListener('pp:insert-text', handler);
+    return () => window.removeEventListener('pp:insert-text', handler);
+  }, []);
 
   // Persist draft text to localStorage (debounced)
   useEffect(() => {
@@ -238,9 +269,16 @@ export const ChatInput = memo(function ChatInput({
   };
 
   const handleSubmit = () => {
+    // Legacy text-read files
     const fileParts = pendingFiles.map(f => `📎 **${f.name}**\n\`\`\`\n${f.content}\n\`\`\``);
-    const fullText = fileParts.length > 0
-      ? (input.trim() ? `${input.trim()}\n\n---\n${fileParts.join('\n\n')}` : fileParts.join('\n\n'))
+    // Uploaded files (path references)
+    const uploadParts = uploadedFiles.map(f => {
+      const hint = f.isText ? '可用 cat 读取' : '二进制文件';
+      return `📎 ${f.path} (${f.formattedSize}, ${hint})`;
+    });
+    const allAttachments = [...fileParts, ...uploadParts];
+    const fullText = allAttachments.length > 0
+      ? (input.trim() ? `${input.trim()}\n\n---\n${allAttachments.join('\n')}` : allAttachments.join('\n'))
       : input;
     if (!fullText.trim() && pendingImages.length === 0) return;
     pushHistory(input.trim());
@@ -250,6 +288,7 @@ export const ChatInput = memo(function ChatInput({
     if (draftStorageKey) try { localStorage.removeItem(draftStorageKey); } catch { /* ignore */ }
     setPendingImages([]);
     setPendingFiles([]);
+    setUploadedFiles([]);
     // Reset textarea height
     if (textareaRef.current && !fullWidth) {
       textareaRef.current.style.height = 'auto';
@@ -335,22 +374,102 @@ export const ChatInput = memo(function ChatInput({
     }
   }, []);
 
+  /** Upload files via /api/upload and add to uploadedFiles list */
+  const uploadFiles = useCallback(async (fileList: FileList | File[]) => {
+    const files = Array.from(fileList);
+    if (files.length === 0) return;
+
+    // If no sessionId, fall back to old text-read behavior
+    if (!sessionId) {
+      for (const file of files) {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const text = (ev.target?.result as string) ?? '';
+          setPendingFiles(prev => [...prev, { name: file.name, content: text }]);
+        };
+        reader.readAsText(file);
+      }
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('sessionId', sessionId);
+      for (const file of files) {
+        formData.append('files', file);
+      }
+      const res = await fetch('/api/upload', { method: 'POST', body: formData });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Upload failed' }));
+        console.error('[upload]', err.error);
+        return;
+      }
+      const data = await res.json() as { files: UploadedFile[] };
+      setUploadedFiles(prev => [...prev, ...data.files]);
+    } catch (err) {
+      console.error('[upload] network error:', err);
+    } finally {
+      setIsUploading(false);
+    }
+  }, [sessionId]);
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    Array.from(e.target.files ?? []).forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const text = (ev.target?.result as string) ?? '';
-        setPendingFiles(prev => [...prev, { name: file.name, content: text }]);
-      };
-      reader.readAsText(file);
-    });
+    if (e.target.files) uploadFiles(e.target.files);
     e.target.value = '';
   };
 
-  const hasContent = input.trim() || pendingImages.length > 0 || pendingFiles.length > 0;
+  // Drag & drop handlers
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current++;
+    if (e.dataTransfer.types.includes('Files')) {
+      setDragOver(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current--;
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0;
+      setDragOver(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
+    setDragOver(false);
+    if (e.dataTransfer.files.length > 0) {
+      uploadFiles(e.dataTransfer.files);
+    }
+  }, [uploadFiles]);
+
+  const hasContent = input.trim() || pendingImages.length > 0 || pendingFiles.length > 0 || uploadedFiles.length > 0;
 
   return (
-    <>
+    <div
+      className="relative"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {/* Drag overlay */}
+      {dragOver && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center rounded-lg border-2 border-dashed border-blue-400 bg-blue-50/80 dark:border-blue-500 dark:bg-blue-950/60">
+          <p className="text-sm font-medium text-blue-600 dark:text-blue-300">松开以上传文件</p>
+        </div>
+      )}
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
       {/* Toolbar */}
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
@@ -468,13 +587,33 @@ export const ChatInput = memo(function ChatInput({
           </>
         )}
         {pendingFiles.map((f, i) => (
-          <span key={i} className="flex items-center gap-1 rounded-full bg-zinc-100 pl-2.5 pr-1.5 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+          <span key={`legacy-${i}`} className="flex items-center gap-1 rounded-full bg-zinc-100 pl-2.5 pr-1.5 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
             {f.name}
             <button onClick={() => setPendingFiles(prev => prev.filter((_, j) => j !== i))} className="ml-0.5 rounded-full p-0.5 hover:bg-zinc-200 dark:hover:bg-zinc-700">
               <X className="h-2.5 w-2.5" />
             </button>
           </span>
         ))}
+        {uploadedFiles.map((f, i) => (
+          <span
+            key={`uploaded-${i}`}
+            className="group/file flex items-center gap-1 rounded-full bg-blue-50 pl-2.5 pr-1.5 py-0.5 text-xs text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+            title={f.path}
+          >
+            <Paperclip className="h-2.5 w-2.5 shrink-0" />
+            {f.name}
+            <span className="text-blue-400 dark:text-blue-500">({f.formattedSize})</span>
+            <button onClick={() => setUploadedFiles(prev => prev.filter((_, j) => j !== i))} className="ml-0.5 rounded-full p-0.5 hover:bg-blue-100 dark:hover:bg-blue-900/40">
+              <X className="h-2.5 w-2.5" />
+            </button>
+          </span>
+        ))}
+        {isUploading && (
+          <span className="flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500">
+            <span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border border-zinc-300 border-t-zinc-600 dark:border-zinc-600 dark:border-t-zinc-300" />
+            上传中...
+          </span>
+        )}
       </div>
       {/* Pending images */}
       {pendingImages.length > 0 && (
@@ -571,6 +710,6 @@ export const ChatInput = memo(function ChatInput({
           )}
         </div>
       )}
-    </>
+    </div>
   );
 });

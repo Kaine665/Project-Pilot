@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/client/i18n/use-translations';
 import { FormattedText } from '@/components/formatted-text';
 import { CheckCircle2, Circle, AlertTriangle } from 'lucide-react';
 

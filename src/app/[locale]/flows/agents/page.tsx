@@ -1,30 +1,44 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
+import { useTranslations } from '@/client/i18n/use-translations';
 import {
-  Bot, Plus, Trash2, X, ChevronRight, Minimize2,
-  Settings, MessageSquare, Archive, ArchiveRestore,
-  Download, Upload, FileDown, FolderOpen,
+  Plus, Trash2, X, Minimize2,
+  MessageSquare, Archive, ArchiveRestore,
+  Settings,
+  Download, Upload, Search, Folder, FolderOpen,
+  Command, Terminal, Globe,
+  Files, GitBranch, Eye, Database, ListTodo, HardDrive,
+  FileText, FileJson,
+  ChevronDown, ChevronRight, Clock, Play,
 } from 'lucide-react';
-import dynamic from 'next/dynamic';
+import { lazy, Suspense } from 'react';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
+import { FolderExplorerPanel } from '@/components/folder-explorer-panel';
+import { AgentSessionPromptStack, type PromptStackSeedItem } from '@/components/agent-session-prompt-stack';
 
-const AgentChatPanel = dynamic(
-  () => import('@/components/agent-chat-panel').then(m => ({ default: m.AgentChatPanel })),
-  {
-    ssr: false,
-    loading: () => (
+const AgentChatPanelLazy = lazy(() =>
+  import('@/components/agent-chat-panel').then(m => ({ default: m.AgentChatPanel }))
+);
+function AgentChatPanel(props: React.ComponentProps<typeof AgentChatPanelLazy>) {
+  return (
+    <Suspense fallback={
       <div className="flex-1 flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-2 border-muted-foreground/30 border-t-primary" />
       </div>
-    ),
-  }
-);
+    }>
+      <AgentChatPanelLazy {...props} />
+    </Suspense>
+  );
+}
 import { AgentIcon, SettingsForm, type FormData, emptyForm, agentToForm } from '@/components/agent-form';
-import { type AllSessionItem, type OpenedSession, groupSessionsByDay, syncUrlParams } from '@/components/agent-session-utils';
+import { AgentPickerDropdown } from '@/components/agent-picker-dropdown';
+import { AgentPickerModal } from '@/components/agent-picker-modal';
+import { type AllSessionItem, type OpenedSession, syncUrlParams } from '@/components/agent-session-utils';
 import { useProject } from '@/components/project-context';
 import { getProviderPreset } from '@/lib/provider-registry';
+import { repairTextIfNeeded } from '@/lib/text-repair';
 
 
 // ── Helpers ──
@@ -37,6 +51,39 @@ function formatSessionElapsed(startedAt: string | undefined, nowTs: number): str
   return `${Math.floor(diffSeconds / 3600)}h`;
 }
 
+function formatSessionTimestamp(timestamp: string | undefined, nowTs: number, yesterdayLabel = 'Yesterday'): string {
+  if (!timestamp) return '--';
+  const diffSeconds = Math.max(0, Math.floor((nowTs - new Date(timestamp).getTime()) / 1000));
+  if (diffSeconds < 60) return `${diffSeconds}s`;
+  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m`;
+  if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h`;
+  if (diffSeconds < 172800) return yesterdayLabel;
+  return `${Math.floor(diffSeconds / 86400)}d`;
+}
+
+function estimateTokenCount(content: string | undefined): number {
+  const normalized = content?.trim() ?? '';
+  if (!normalized) return 0;
+  return Math.max(1, Math.round(normalized.length / 4));
+}
+
+function formatTokenCount(tokens: number | null | undefined): string {
+  if (!tokens) return '--';
+  if (tokens >= 1000) return `~${(tokens / 1000).toFixed(1)}k`;
+  return `~${tokens}`;
+}
+
+function getBaseName(pathValue: string | undefined): string {
+  if (!pathValue) return 'develop-static';
+  const normalized = pathValue.replace(/\\/g, '/').replace(/\/+$/, '');
+  const segments = normalized.split('/').filter(Boolean);
+  return segments[segments.length - 1] ?? 'develop-static';
+}
+
+function displayText(value: string | undefined, fallback = '--'): string {
+  return repairTextIfNeeded(value) ?? value ?? fallback;
+}
+
 // ── Session card (memo-ized to avoid re-render on listClockNow ticks) ──
 
 interface SessionCardProps {
@@ -45,6 +92,11 @@ interface SessionCardProps {
   listClockNow: number | undefined; // only passed when session.isRunning
   onClick: (session: AllSessionItem) => void;
   onArchiveToggle: (session: AllSessionItem, e: React.MouseEvent) => void;
+  newSessionTitle: string;
+  archivedLabel: string;
+  archiveTitle: string;
+  unarchiveTitle: string;
+  yesterdayLabel: string;
 }
 
 const SessionCard = memo(function SessionCard({
@@ -53,42 +105,54 @@ const SessionCard = memo(function SessionCard({
   listClockNow,
   onClick,
   onArchiveToggle,
+  newSessionTitle,
+  archivedLabel,
+  archiveTitle,
+  unarchiveTitle,
+  yesterdayLabel,
 }: SessionCardProps) {
+  const nowTs = listClockNow ?? 0;
+
   return (
     <div
       onClick={() => onClick(s)}
-      className={`group/session flex cursor-pointer items-center gap-3.5 rounded-xl border px-3 py-3.5 transition-all ${
+      className={`group/session relative flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-all border-l-2 ${
         isActive
-          ? 'bg-zinc-50 border-zinc-100 shadow-sm dark:bg-zinc-800 dark:border-zinc-700'
-          : 'border-transparent hover:bg-zinc-50 hover:border-zinc-100 dark:hover:bg-zinc-800/50 dark:hover:border-zinc-700/50'
+          ? 'border-l-foreground bg-card shadow-sm'
+          : 'border-l-transparent hover:bg-card/50'
       } ${s.archived ? 'opacity-45' : ''}`}
     >
-      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ${
-        isActive ? 'bg-white shadow-sm ring-zinc-200 dark:bg-zinc-700 dark:ring-zinc-600' : 'bg-zinc-50 ring-zinc-100 dark:bg-zinc-800 dark:ring-zinc-700'
+      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${
+        isActive ? 'bg-blue-50 text-blue-600 ring-blue-100 dark:bg-blue-950 dark:text-blue-400 dark:ring-blue-900' : 'bg-muted/70 text-muted-foreground ring-border/70'
       }`}>
-        <AgentIcon iconKey={s.agentIcon} className={`h-5 w-5 ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400'}`} />
+        <AgentIcon iconKey={s.agentIcon} className="h-5 w-5" />
       </div>
       <div className="min-w-0 flex-1">
-        <div className={`truncate text-[13px] ${s.archived ? 'font-medium text-zinc-400 dark:text-zinc-500' : 'font-semibold text-zinc-900 dark:text-zinc-100'}`}>
-          {s.title}
+        <div className="mb-0.5 flex items-center justify-between">
+          <span className={`truncate text-[13px] ${isActive ? 'font-bold text-foreground' : s.archived ? 'font-medium text-zinc-400 dark:text-zinc-500' : 'font-semibold text-zinc-800 dark:text-zinc-200'}`}>
+            {displayText(s.agentName, s.agentId)}
+          </span>
+          <span className="shrink-0 text-[10px] font-medium text-muted-foreground">
+            {s.isRunning && listClockNow !== undefined
+              ? formatSessionElapsed(s.runningStartedAt, listClockNow)
+              : formatSessionTimestamp(s.updatedAt, nowTs, yesterdayLabel)}
+          </span>
         </div>
-        <div className={`truncate text-[11px] ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400'}`}>
-          {s.agentName}
+        <div className={`truncate text-[11px] ${s.archived ? 'text-zinc-300 dark:text-zinc-600' : 'text-muted-foreground'}`}>
+          {s.archived
+            ? archivedLabel
+            : displayText(s.title, newSessionTitle)}
         </div>
       </div>
-      {s.isRunning && listClockNow !== undefined ? (
-        <span className="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-blue-700 dark:bg-blue-950/70 dark:text-blue-300">
-          {formatSessionElapsed(s.runningStartedAt, listClockNow)}
-        </span>
-      ) : !isActive && !!s.unreadCount && s.unreadCount > 0 && !s.archived && (
-        <span className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-zinc-900 px-1.5 text-[10px] font-bold text-white dark:bg-zinc-100 dark:text-zinc-900">
+      {!isActive && !!s.unreadCount && s.unreadCount > 0 && !s.archived && (
+        <span className="flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full bg-foreground px-1 text-[9px] font-bold text-background">
           {s.unreadCount > 99 ? '99+' : s.unreadCount}
         </span>
       )}
       <button
         onClick={(e) => onArchiveToggle(s, e)}
-        className="shrink-0 rounded-lg p-1.5 text-zinc-400 opacity-0 transition-all hover:bg-zinc-100 hover:text-zinc-600 group-hover/session:opacity-100 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-400"
-        title={s.archived ? '取消归档' : '归档'}
+        className="shrink-0 rounded-lg p-1.5 text-zinc-400 opacity-0 transition-all hover:bg-muted hover:text-foreground group-hover/session:opacity-100 dark:text-zinc-500"
+        title={s.archived ? unarchiveTitle : archiveTitle}
       >
         {s.archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
       </button>
@@ -99,16 +163,15 @@ const SessionCard = memo(function SessionCard({
 // ── Main page ──
 
 export default function AgentsPage() {
-  const { projects, activeKey, initialized: projectInitialized } = useProject();
+  const { projects, activeKey } = useProject();
+  const t = useTranslations('agentsWorkspace');
+  const tActions = useTranslations('actions');
 
   // ── Core data ──
   const [agents, setAgents] = useState<Agent[]>([]);
   const agentsRef = useRef<Agent[]>(agents);
   agentsRef.current = agents;
   const [allSessions, setAllSessions] = useState<AllSessionItem[]>([]);
-
-  // ── Sidebar tab ──
-  const [sidebarTab, setSidebarTab] = useState<'conversations' | 'agents'>('conversations');
 
   // ── Active panel ──
   const [activePanel, setActivePanel] = useState<
@@ -130,16 +193,26 @@ export default function AgentsPage() {
   const [saving, setSaving] = useState(false);
   const [expandedPrompt, setExpandedPrompt] = useState(false);
 
-  // ── Session archive filter ──
-  const [sessionFilter, setSessionFilter] = useState<'active' | 'archived' | 'all'>('active');
+  const [sessionQuery, setSessionQuery] = useState('');
+  const [historyExpanded, setHistoryExpanded] = useState(false);
 
-  // ── New session agent picker ──
-  const [showAgentPicker, setShowAgentPicker] = useState(false);
-  const agentPickerRef = useRef<HTMLDivElement>(null);
+  // ── New session agent picker (dropdown + modal) ──
+  const [showAgentDropdown, setShowAgentDropdown] = useState(false);
+  const [showAgentModal, setShowAgentModal] = useState(false);
 
   // ── Cached settings for child panels (fetched once, shared to all AgentChatPanel instances) ──
-  type CachedSettings = { provider: ProviderId; model: string; modelOptions: Array<{ value: string; label: string }>; effort: OpenAIReasoningEffort };
+  type CachedSettings = {
+    provider: ProviderId;
+    model: string;
+    modelOptions: Array<{ value: string; label: string }>;
+    effort: OpenAIReasoningEffort;
+    fastMode: boolean;
+  };
   const [cachedSettings, setCachedSettings] = useState<CachedSettings | undefined>(undefined);
+  const [promptMetrics, setPromptMetrics] = useState<{ global: number | null; project: number | null }>({
+    global: null,
+    project: null,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -169,9 +242,10 @@ export default function AgentsPage() {
         if (fallbackModel && !optionMap.has(fallbackModel)) optionMap.set(fallbackModel, fallbackModel);
         const modelOptions = Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
         const model = modelOptions.some((o) => o.value === fallbackModel) ? fallbackModel : (modelOptions[0]?.value || '');
-        const VALID_EFFORTS: OpenAIReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
+        const VALID_EFFORTS: OpenAIReasoningEffort[] = ['minimal', 'low', 'medium', 'high', 'xhigh'];
         const effort: OpenAIReasoningEffort = (typeof claude.openaiReasoningEffort === 'string' && VALID_EFFORTS.includes(claude.openaiReasoningEffort)) ? claude.openaiReasoningEffort : 'xhigh';
-        setCachedSettings({ provider: loadedProvider, model, modelOptions, effort });
+        const fastMode = claude.openaiFastMode === true;
+        setCachedSettings({ provider: loadedProvider, model, modelOptions, effort, fastMode });
       } catch { /* ignore */ }
     })();
     return () => { cancelled = true; };
@@ -189,6 +263,47 @@ export default function AgentsPage() {
   }, []);
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const nextMetrics: { global: number | null; project: number | null } = {
+        global: null,
+        project: null,
+      };
+
+      try {
+        const globalRes = await fetch('/api/global-prompt', { cache: 'no-store' });
+        if (globalRes.ok) {
+          const globalData = await globalRes.json();
+          nextMetrics.global = estimateTokenCount(globalData.content);
+        }
+      } catch {
+        // ignore prompt metric failures
+      }
+
+      if (activeKey) {
+        try {
+          const projectRes = await fetch(`/api/project-prompt/${encodeURIComponent(activeKey)}`, {
+            cache: 'no-store',
+          });
+          if (projectRes.ok) {
+            const projectData = await projectRes.json();
+            nextMetrics.project = estimateTokenCount(projectData.content);
+          }
+        } catch {
+          // ignore prompt metric failures
+        }
+      }
+
+      if (!cancelled) {
+        setPromptMetrics(nextMetrics);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [activeKey]);
 
   // Restore selection from URL params after agents load
   useEffect(() => {
@@ -228,15 +343,14 @@ export default function AgentsPage() {
   const sessionCacheRef = useRef<Map<string, AllSessionItem[]>>(new Map());
   const CACHE_KEY_ALL = '__all__';
 
-  // 解析首次渲染时 URL 上的 projectKey，跳过等待 ProjectProvider 初始化
-  const initialProjectKeyRef = useRef<string | null>(
-    typeof window !== 'undefined'
-      ? new URLSearchParams(window.location.search).get('project')
-      : null,
-  );
+  const [urlProjectKey, setUrlProjectKey] = useState<string | null>(null);
 
-  // 实际使用的 projectKey：优先用 ProjectProvider 的值，首次渲染时用 URL 直读值
-  const effectiveProjectKey = projectInitialized ? activeKey : initialProjectKeyRef.current;
+  useEffect(() => {
+    setUrlProjectKey(new URLSearchParams(window.location.search).get('project'));
+  }, []);
+
+  // 实际使用的 projectKey：优先用 ProjectProvider 的值，挂载后再同步 URL 参数
+  const effectiveProjectKey = activeKey ?? urlProjectKey;
 
   // ── Fetch all sessions (cross-agent, filtered by active project) ──
   const fetchAllSessions = useCallback(async () => {
@@ -278,10 +392,10 @@ export default function AgentsPage() {
         const agent = agentMap.get(s.agentId);
         return {
           id: s.id,
-          title: s.title,
+          title: repairTextIfNeeded(s.title) ?? s.title,
           updatedAt: s.updatedAt,
           agentId: s.agentId,
-          agentName: agent?.name ?? '未知 Agent',
+          agentName: agent?.name ?? s.agentId ?? '已删除 Agent',
           agentIcon: agent?.icon,
           unreadCount: s.unreadCount,
           archived: s.archived,
@@ -322,51 +436,49 @@ export default function AgentsPage() {
       prevProjectKeyRef.current = effectiveProjectKey;
       setOpenedSessions([]);
       setActivePanel(null);
+      setSelectedAgentId(null);
+      setCreating(false);
+      setForm(emptyForm);
+      setExpandedPrompt(false);
     }
   }, [effectiveProjectKey]);
 
   // ── Clock for running-session elapsed display ──
   const hasRunningSession = useMemo(() => allSessions.some(s => s.isRunning), [allSessions]);
-  const [listClockNow, setListClockNow] = useState(() => Date.now());
+  const [listClockNow, setListClockNow] = useState<number | undefined>(undefined);
   useEffect(() => {
     if (!hasRunningSession) return;
+    setListClockNow(Date.now());
     const timer = setInterval(() => setListClockNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [hasRunningSession]);
 
-  // ── Filtered sessions by archive status ──
-  const filteredSessions = useMemo(() => {
-    if (sessionFilter === 'all') return allSessions;
-    if (sessionFilter === 'archived') return allSessions.filter(s => s.archived);
-    return allSessions.filter(s => !s.archived); // 'active'
-  }, [allSessions, sessionFilter]);
-
-  // ── Grouped sessions for display ──
-  const groupedSessions = useMemo(() => groupSessionsByDay(filteredSessions), [filteredSessions]);
-
   // ── Project-filtered agents（项目专属排前面，全局排后面）──
   const filteredAgents = useMemo(() => {
-    if (!activeKey) return agents;
+    if (!effectiveProjectKey) return agents;
     return agents
-      .filter(a => !a.projectKey || a.projectKey === activeKey)
+      .filter(a => !a.projectKey || a.projectKey === effectiveProjectKey)
       .sort((a, b) => {
         const aGlobal = a.projectKey ? 0 : 1;
         const bGlobal = b.projectKey ? 0 : 1;
         return aGlobal - bGlobal;
       });
-  }, [agents, activeKey]);
+  }, [agents, effectiveProjectKey]);
 
-  // ── Close agent picker when clicking outside ──
-  useEffect(() => {
-    if (!showAgentPicker) return;
-    const handleClick = (e: MouseEvent) => {
-      if (agentPickerRef.current && !agentPickerRef.current.contains(e.target as Node)) {
-        setShowAgentPicker(false);
+  // ── Recent agent IDs (derived from sessions) ──
+  const recentAgentIds = useMemo(() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    // allSessions are already sorted by most recent first
+    for (const s of allSessions) {
+      if (!seen.has(s.agentId)) {
+        seen.add(s.agentId);
+        result.push(s.agentId);
       }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [showAgentPicker]);
+      if (result.length >= 5) break;
+    }
+    return result;
+  }, [allSessions]);
 
   // ── Handlers: Conversations tab ──
 
@@ -400,7 +512,7 @@ export default function AgentsPage() {
     const key = nextKeyRef.current++;
     setOpenedSessions(prev => [...prev, { sessionId: null, agentId: agent.id, key }]);
     setActivePanel({ type: 'session', key });
-    setShowAgentPicker(false);
+    setShowAgentDropdown(false);
     syncUrlParams({ agent: agent.id, session: null });
   };
 
@@ -432,7 +544,17 @@ export default function AgentsPage() {
     setSelectedAgentId(agent.id);
     setForm(agentToForm(agent));
     setExpandedPrompt(false);
+    setHistoryExpanded(false);
     setActivePanel({ type: 'agent', agentId: agent.id, mode: 'chat' });
+    syncUrlParams({ agent: agent.id, session: null });
+  };
+
+  const handleAgentSettingsClick = (agent: Agent) => {
+    setCreating(false);
+    setSelectedAgentId(agent.id);
+    setForm(agentToForm(agent));
+    setExpandedPrompt(false);
+    setActivePanel({ type: 'agent', agentId: agent.id, mode: 'settings' });
     syncUrlParams({ agent: agent.id, session: null });
   };
 
@@ -445,32 +567,6 @@ export default function AgentsPage() {
     setForm({ ...emptyForm, projectKey: activeKey ?? '' });
     setExpandedPrompt(false);
     setActivePanel(null);
-  };
-
-  // B1: Clone an agent — copy all config with "(副本)" suffix
-  const handleClone = async (source: Agent) => {
-    try {
-      const res = await fetch('/api/agents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: `${source.name} (副本)`,
-          description: source.description,
-          systemPrompt: source.systemPrompt,
-          icon: source.icon,
-          capabilities: source.capabilities,
-          requiredParams: source.requiredParams,
-          contextIds: source.contextIds,
-          defaultResources: source.defaultResources,
-          projectKey: source.projectKey,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        await fetchAgents();
-        handleSelect(data.agent);
-      }
-    } catch { /* ignore */ }
   };
 
   const handleClose = () => {
@@ -510,6 +606,10 @@ export default function AgentsPage() {
             projectKey: form.projectKey || undefined,
             defaultProvider: form.defaultProvider || undefined,
             defaultModel: form.defaultModel || undefined,
+            defaultOpenAIReasoningEffort: form.defaultProvider === 'openai'
+              ? (form.defaultOpenAIReasoningEffort || null)
+              : null,
+            contextStrategy: form.contextStrategy || undefined,
           }),
         });
         if (res.ok) {
@@ -542,6 +642,10 @@ export default function AgentsPage() {
             projectKey: form.projectKey || undefined,
             defaultProvider: form.defaultProvider || undefined,
             defaultModel: form.defaultModel || undefined,
+            defaultOpenAIReasoningEffort: form.defaultProvider === 'openai'
+              ? (form.defaultOpenAIReasoningEffort || null)
+              : null,
+            contextStrategy: form.contextStrategy || undefined,
           }),
         });
         if (res.ok) await fetchAgents();
@@ -552,7 +656,7 @@ export default function AgentsPage() {
 
   const handleDelete = async (id: string) => {
     const agent = agents.find(a => a.id === id);
-    if (!confirm(`确定要将 Agent「${agent?.name ?? id}」移到回收站吗？`)) return;
+    if (!confirm(t('agent.deleteConfirm', { name: agent?.name ?? id }))) return;
     try {
       const res = await fetch('/api/agents', {
         method: 'DELETE',
@@ -584,7 +688,7 @@ export default function AgentsPage() {
       a.href = url;
       a.download = `${safeName}.ppagent`;
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch { /* ignore */ }
   };
 
@@ -608,22 +712,22 @@ export default function AgentsPage() {
           await fetchAgents();
           handleSelect(data.agent);
           const msg = data.contextsImported > 0
-            ? `已导入 Agent「${data.agent.name}」及 ${data.contextsImported} 个上下文`
-            : `已导入 Agent「${data.agent.name}」`;
+            ? t('agent.importSuccessWithContexts', { name: data.agent.name, count: data.contextsImported })
+            : t('agent.importSuccess', { name: data.agent.name });
           alert(msg);
         } else {
           const err = await res.json();
-          alert(`导入失败: ${err.error}`);
+          alert(t('agent.importErrorWithReason', { reason: err.error }));
         }
       } catch {
-        alert('导入失败: 文件格式无效');
+        alert(t('agent.importErrorInvalidFile'));
       }
     };
     input.click();
   };
 
   // ── Derived state ──
-  const selectedAgent = agents.find(a => a.id === selectedAgentId) ?? null;
+  const selectedAgent = useMemo(() => agents.find(a => a.id === selectedAgentId) ?? null, [agents, selectedAgentId]);
   const agentViewMode = activePanel?.type === 'agent' ? activePanel.mode : 'chat';
 
   const hasChanges = useMemo(() => {
@@ -641,7 +745,9 @@ export default function AgentsPage() {
         )
       || form.projectKey !== (selectedAgent.projectKey ?? '')
       || form.defaultProvider !== (selectedAgent.defaultProvider ?? '')
-      || form.defaultModel !== (selectedAgent.defaultModel ?? '');
+      || form.defaultModel !== (selectedAgent.defaultModel ?? '')
+      || form.defaultOpenAIReasoningEffort !== (selectedAgent.defaultOpenAIReasoningEffort ?? '')
+      || form.contextStrategy !== (selectedAgent.contextStrategy ?? 'additive');
   }, [creating, form, selectedAgent]);
 
   // ── Pre-computed active session ID for sidebar highlight ──
@@ -651,209 +757,547 @@ export default function AgentsPage() {
   }, [activePanel, openedSessions]);
 
   // ── Active session info (for header display) ──
-  const activeOpened = activePanel?.type === 'session'
-    ? openedSessions.find(o => o.key === activePanel.key)
-    : null;
-  const activeSessionAgent = activeOpened
-    ? agents.find(a => a.id === activeOpened.agentId) ?? null
-    : null;
-  const activeSessionInfo = activeOpened?.sessionId
-    ? allSessions.find(s => s.id === activeOpened.sessionId)
-    : null;
+  const activeOpened = useMemo(() =>
+    activePanel?.type === 'session'
+      ? openedSessions.find(o => o.key === activePanel.key) ?? null
+      : null,
+    [activePanel, openedSessions]);
+  const activeSessionAgent = useMemo(() =>
+    activeOpened ? agents.find(a => a.id === activeOpened.agentId) ?? null : null,
+    [activeOpened, agents]);
+
+  const agentLookup = useMemo(() => new Map(agents.map((agent) => [agent.id, agent])), [agents]);
+
+  const resolvedSessions = useMemo(() => allSessions.map((session) => {
+    const agent = agentLookup.get(session.agentId);
+    if (!agent) return session;
+    if (session.agentName === agent.name && session.agentIcon === agent.icon) return session;
+    return {
+      ...session,
+      agentName: agent.name,
+      agentIcon: agent.icon,
+    };
+  }), [allSessions, agentLookup]);
+
+  const projectScopedSessions = useMemo(() => {
+    if (!effectiveProjectKey) return resolvedSessions;
+    return resolvedSessions.filter((session) => session.projectKey === effectiveProjectKey);
+  }, [resolvedSessions, effectiveProjectKey]);
+
+  const visibleSessions = useMemo(() => {
+    const query = sessionQuery.trim().toLowerCase();
+    if (!query) return projectScopedSessions;
+    return projectScopedSessions.filter((session) => {
+      const haystack = `${session.title} ${session.agentName}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [projectScopedSessions, sessionQuery]);
+
+  useEffect(() => {
+    if (agents.length === 0) return;
+    setAllSessions(prev => prev.map((session) => {
+      const agent = agentLookup.get(session.agentId);
+      if (!agent) return session;
+      if (session.agentName === agent.name && session.agentIcon === agent.icon) return session;
+      return {
+        ...session,
+        agentName: agent.name,
+        agentIcon: agent.icon,
+      };
+    }));
+  }, [agents, agentLookup]);
+
+  const activeSessionInfo = useMemo(() =>
+    activeOpened?.sessionId ? resolvedSessions.find(s => s.id === activeOpened.sessionId) ?? null : null,
+    [activeOpened, resolvedSessions]);
+
+  const activeProject = useMemo(
+    () => projects.find((project) => project.key === effectiveProjectKey) ?? null,
+    [projects, effectiveProjectKey],
+  );
+
+  const fallbackWorkspaceAgent = filteredAgents.find((agent) => agent.id === 'agent-builtin-self-dev') ?? filteredAgents[0] ?? null;
+  const workspaceAgent = selectedAgent ?? activeSessionAgent ?? fallbackWorkspaceAgent;
+  const workspaceSessionId = activeSessionInfo?.id ?? activeOpened?.sessionId ?? null;
+  const workspaceTitle = activeSessionInfo?.title ?? t('session.new');
+  const workspaceDisplayTitle = repairTextIfNeeded(workspaceTitle) ?? workspaceTitle;
+  const workspaceAgentCapabilities = workspaceAgent?.capabilities ?? DEFAULT_AGENT_CAPABILITIES;
+  const workspaceAgentName = displayText(workspaceAgent?.name, t('workspace.defaultAgentName'));
+  const workspaceAgentId = workspaceAgent?.id ?? 'agent-builtin-self-dev';
+  const workspaceAgentDataDirName = workspaceAgent?.slug ?? workspaceAgentId;
+  const workspaceAgentDataPath = `agents/data/${workspaceAgentDataDirName}`;
+  const workspaceAgentDescription = displayText(
+    workspaceAgent?.description,
+    t('workspace.defaultAgentDescription', { agentName: workspaceAgentName }),
+  );
+  const projectRootLabel = `${getBaseName(activeProject?.path)}/`;
+  const projectPromptLabel = effectiveProjectKey ? `${effectiveProjectKey}.md` : 'project-pilot.md';
+  const projectPromptPath = effectiveProjectKey
+    ? `~/.project-pilot/data/project-prompts/${effectiveProjectKey}.md`
+    : '~/.project-pilot/data/project-prompts/project-pilot.md';
+  const agentPromptLabel = workspaceAgent
+    ? `${workspaceAgent.id}.md`
+    : 'agent-builtin-self-dev.md';
+  const agentPromptPath = workspaceAgent
+    ? (workspaceAgent.builtIn
+        ? `~/.project-pilot/data/prompts/${workspaceAgent.id}.md`
+        : `~/.project-pilot/data/prompts/agents/${workspaceAgent.id}.md`)
+    : '~/.project-pilot/data/prompts/agent-builtin-self-dev.md';
+  const runtimePromptLabel = workspaceSessionId && workspaceAgent
+    ? `${workspaceSessionId}.md`
+    : 'session-runtime.md';
+  const runtimePromptPath = workspaceSessionId && workspaceAgent
+    ? `~/.project-pilot/data/prompts/runtime/${workspaceAgent.id}/${workspaceSessionId}.md`
+    : '~/.project-pilot/data/prompts/runtime/<agent>/<session>.md';
+  const agentPromptTokens = estimateTokenCount(workspaceAgent?.systemPrompt);
+  const combinedPromptTokens = (promptMetrics.global ?? 0) + (promptMetrics.project ?? 0) + agentPromptTokens;
+  const promptUsagePercent = Math.min(100, Math.round((combinedPromptTokens / 128000) * 100));
+  const promptStackItems: PromptStackSeedItem[] = [
+    {
+      scope: 'Global',
+      accent: 'bg-blue-50 text-blue-700 border-blue-100',
+      label: t('promptStack.items.global.label'),
+      path: '~/.project-pilot/data/prompts/global.md',
+      tokens: promptMetrics.global,
+      description: t('promptStack.items.global.description'),
+      target: 'global',
+    },
+    {
+      scope: 'Project',
+      accent: 'bg-amber-50 text-amber-700 border-amber-100',
+      label: effectiveProjectKey
+        ? t('promptStack.items.project.labelWithKey', { key: effectiveProjectKey })
+        : t('promptStack.items.project.label'),
+      path: projectPromptPath,
+      tokens: promptMetrics.project,
+      description: effectiveProjectKey
+        ? t('promptStack.items.project.descriptionWithKey', { key: effectiveProjectKey })
+        : t('promptStack.items.project.description'),
+      target: 'project',
+      projectKey: effectiveProjectKey ?? 'project-pilot',
+    },
+    {
+      scope: 'Agent',
+      accent: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+      label: workspaceAgentName,
+      path: agentPromptPath,
+      tokens: agentPromptTokens,
+      description: workspaceAgent?.description || t('promptStack.items.agent.description'),
+      target: 'agent',
+      agentId: workspaceAgentId,
+      content: workspaceAgent?.systemPrompt ?? '',
+    },
+    {
+      scope: 'Session',
+      accent: 'bg-zinc-100 text-zinc-700 border-zinc-200',
+      label: workspaceSessionId
+        ? t('promptStack.items.session.labelWithTitle', { title: workspaceTitle })
+        : t('promptStack.items.session.label'),
+      path: runtimePromptPath,
+      tokens: null,
+      description: workspaceSessionId
+        ? t('promptStack.items.session.descriptionActive')
+        : t('promptStack.items.session.description'),
+      target: 'session',
+      agentId: workspaceAgentId,
+      sessionId: workspaceSessionId,
+    },
+  ];
+
+  const workspaceTreeNodes = [
+    {
+      depth: 0,
+      kind: 'folder',
+      label: projectRootLabel,
+      path: activeProject?.path ?? 'D:/Desktop/ProgrammingProjects/',
+      detail: t('projectWorkspace.tree.root'),
+    },
+    {
+      depth: 1,
+      kind: 'folder',
+      label: 'develop-static/',
+      path: activeProject?.path ?? 'D:/Desktop/ProgrammingProjects/personal-projects/03-In-Development/project-pilot/develop-static/',
+      detail: t('projectWorkspace.tree.worktree'),
+    },
+    {
+      depth: 2,
+      kind: 'folder',
+      label: '.project-pilot/',
+      path: '~/.project-pilot/',
+      detail: t('projectWorkspace.tree.ppHome'),
+    },
+    {
+      depth: 3,
+      kind: 'folder',
+      label: 'data/',
+      path: '~/.project-pilot/data/',
+      detail: t('projectWorkspace.tree.sharedData'),
+    },
+    {
+      depth: 4,
+      kind: 'folder',
+      label: 'prompts/',
+      path: '~/.project-pilot/data/prompts/',
+      detail: t('projectWorkspace.tree.promptRoot'),
+    },
+    {
+      depth: 5,
+      kind: 'folder',
+      label: 'agents/',
+      path: '~/.project-pilot/data/prompts/agents/',
+      detail: t('projectWorkspace.tree.agentPrompts'),
+    },
+    {
+      depth: 6,
+      kind: 'file',
+      label: agentPromptLabel,
+      path: agentPromptPath,
+      detail: t('projectWorkspace.tree.active'),
+    },
+    {
+      depth: 5,
+      kind: 'file',
+      label: 'global.md',
+      path: '~/.project-pilot/data/prompts/global.md',
+      detail: t('projectWorkspace.tree.global'),
+    },
+    {
+      depth: 5,
+      kind: 'file',
+      label: projectPromptLabel,
+      path: projectPromptPath,
+      detail: t('projectWorkspace.tree.project'),
+    },
+    {
+      depth: 3,
+      kind: 'folder',
+      label: 'runtime/',
+      path: `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/`,
+      detail: 'runtime',
+    },
+    {
+      depth: 4,
+      kind: 'folder',
+      label: `${workspaceAgentId}/`,
+      path: `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/`,
+      detail: 'agent scope',
+    },
+    {
+      depth: 5,
+      kind: 'folder',
+      label: workspaceSessionId ? `${workspaceSessionId}/` : '<session>/',
+      path: workspaceSessionId
+        ? `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/${workspaceSessionId}/`
+        : `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/<session>/`,
+      detail: 'active session',
+    },
+    {
+      depth: 6,
+      kind: 'file',
+      label: runtimePromptLabel,
+      path: runtimePromptPath,
+      detail: 'runtime copy',
+    },
+    {
+      depth: 6,
+      kind: 'block',
+      label: 'memory.snapshot.json',
+      path: workspaceSessionId
+        ? `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/${workspaceSessionId}/memory.snapshot.json`
+        : '~/.project-pilot/data/prompts/runtime/<agent>/<session>/memory.snapshot.json',
+      detail: 'memory',
+    },
+  ] as const;
+
+  const promptTreeSections = [
+    {
+      scope: 'Global',
+      accent: 'text-blue-700',
+      summary: t('promptTree.global.summary'),
+      file: {
+        label: 'global.md',
+        path: '~/.project-pilot/data/prompts/global.md',
+        tokens: promptMetrics.global,
+      },
+      nodes: [
+        { kind: 'folder', label: 'prompt-blocks/_global/', path: '~/.project-pilot/data/prompt-blocks/_global/' },
+        { kind: 'block', label: 'safety-rules.block.md', path: '~/.project-pilot/data/prompt-blocks/_global/safety-rules.block.md' },
+      ],
+    },
+    {
+      scope: 'Project',
+      accent: 'text-amber-700',
+      summary: t('promptTree.project.summary'),
+      file: {
+        label: projectPromptLabel,
+        path: projectPromptPath,
+        tokens: promptMetrics.project,
+      },
+      nodes: [
+        { kind: 'folder', label: `prompt-blocks/_projects/${effectiveProjectKey ?? 'project-pilot'}/`, path: `~/.project-pilot/data/prompt-blocks/_projects/${effectiveProjectKey ?? 'project-pilot'}/` },
+        { kind: 'folder', label: `docs/${effectiveProjectKey ?? 'project-pilot'}/`, path: `~/.project-pilot/data/docs/${effectiveProjectKey ?? 'project-pilot'}/` },
+        { kind: 'block', label: 'workspace-context.block.md', path: `~/.project-pilot/data/prompt-blocks/_projects/${effectiveProjectKey ?? 'project-pilot'}/workspace-context.block.md` },
+      ],
+    },
+    {
+      scope: 'Agent',
+      accent: 'text-emerald-700',
+      summary: t('promptTree.agent.summary'),
+      file: {
+        label: agentPromptLabel,
+        path: agentPromptPath,
+        tokens: agentPromptTokens,
+      },
+      nodes: [
+        { kind: 'folder', label: `skills/_agents/${workspaceAgentId}/`, path: `~/.project-pilot/data/skills/_agents/${workspaceAgentId}/` },
+        { kind: 'folder', label: `agent-data/${workspaceAgentId}/`, path: `~/.project-pilot/data/agent-data/${workspaceAgentId}/` },
+        { kind: 'block', label: 'agent-capabilities.block.md', path: `~/.project-pilot/data/prompt-blocks/_agents/${workspaceAgentId}/agent-capabilities.block.md` },
+        ...(workspaceSessionId
+          ? [
+            { kind: 'folder', label: `${workspaceSessionId}/`, path: `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/${workspaceSessionId}/` },
+            { kind: 'block', label: 'memory.snapshot.json', path: `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/${workspaceSessionId}/memory.snapshot.json` },
+          ]
+          : [
+            { kind: 'folder', label: 'runtime/<session>/', path: `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/<session>/` },
+          ]),
+      ],
+    },
+  ] as const;
+
+  const capabilityCards = [
+    { label: t('capabilities.terminal.label'), hint: t('capabilities.terminal.hint'), enabled: workspaceAgentCapabilities.bash, icon: Terminal },
+    { label: t('capabilities.web.label'), hint: t('capabilities.web.hint'), enabled: workspaceAgentCapabilities.web, icon: Globe },
+    { label: t('capabilities.files.label'), hint: t('capabilities.files.hint'), enabled: workspaceAgentCapabilities.fileAccess, icon: Files },
+    { label: t('capabilities.subAgent.label'), hint: t('capabilities.subAgent.hint'), enabled: workspaceAgentCapabilities.subAgent, icon: GitBranch },
+    { label: t('capabilities.todo.label'), hint: t('capabilities.todo.hint'), enabled: workspaceAgentCapabilities.todoRead, icon: ListTodo },
+    { label: t('capabilities.data.label'), hint: t('capabilities.data.hint'), enabled: workspaceAgentCapabilities.dataStore, icon: HardDrive },
+    { label: t('capabilities.promptPath.label'), hint: t('capabilities.promptPath.hint'), enabled: workspaceAgentCapabilities.exposePromptPath, icon: Eye },
+    { label: t('capabilities.skipReview.label'), hint: t('capabilities.skipReview.hint'), enabled: workspaceAgentCapabilities.skipReview, icon: Database },
+  ] as const;
+
+  const inboxSummary = t('workspace.inboxSummary', { count: visibleSessions.length });
+  const activeWorkspaceSession = activePanel?.type === 'session' ? activeOpened : null;
+  const activeWorkspaceAgent = activeWorkspaceSession
+    ? agents.find((agent) => agent.id === activeWorkspaceSession.agentId) ?? workspaceAgent
+    : (selectedAgent ?? workspaceAgent);
+  const activeWorkspacePanelKey = activeWorkspaceSession?.key ?? null;
+  const activeWorkspaceSessionId = activeWorkspaceSession?.sessionId ?? null;
+
+  const currentAgentSessions = useMemo(() => {
+    if (!activeWorkspaceAgent) return [];
+    return allSessions.filter(s => s.agentId === activeWorkspaceAgent.id && !s.archived);
+  }, [allSessions, activeWorkspaceAgent]);
+  const currentAgentRunningSession = useMemo(() => currentAgentSessions.find(s => s.isRunning) ?? null, [currentAgentSessions]);
+  const currentAgentHistorySessions = useMemo(() => currentAgentSessions.filter(s => !s.isRunning), [currentAgentSessions]);
+  const isDraftSession = activePanel?.type === 'session' && activeWorkspaceSessionId === null;
+  const activeExistingSession = useMemo(
+    () => activeWorkspaceSessionId ? currentAgentSessions.find(s => s.id === activeWorkspaceSessionId) ?? null : null,
+    [activeWorkspaceSessionId, currentAgentSessions],
+  );
+
+  const handleWorkspacePanelSessionChange = useCallback((
+    agent: Agent,
+    panelKey: number | null,
+    previousSessionId: string | null,
+    newSession?: {
+      id: string;
+      title: string;
+      updatedAt: string;
+      unreadCount?: number;
+      isRunning?: boolean;
+      runningStartedAt?: string;
+    },
+  ) => {
+    if (newSession) {
+      const repairedTitle = displayText(newSession.title, '新会话');
+      setAllSessions(prev => {
+        const existing = prev.find((session) => session.id === newSession.id);
+        if (existing) {
+          return prev.map((session) => session.id === newSession.id
+            ? {
+                ...session,
+                title: repairedTitle,
+                updatedAt: newSession.updatedAt,
+                agentId: agent.id,
+                agentName: displayText(agent.name, agent.id),
+                agentIcon: agent.icon,
+                ...(newSession.isRunning !== undefined && {
+                  isRunning: newSession.isRunning,
+                  runningStartedAt: newSession.runningStartedAt,
+                }),
+                ...(newSession.unreadCount !== undefined && {
+                  unreadCount: newSession.unreadCount,
+                }),
+              }
+            : session);
+        }
+        return [{
+          id: newSession.id,
+          title: repairedTitle,
+          updatedAt: newSession.updatedAt,
+          agentId: agent.id,
+          agentName: displayText(agent.name, agent.id),
+          agentIcon: agent.icon,
+          isRunning: newSession.isRunning,
+          runningStartedAt: newSession.runningStartedAt,
+          unreadCount: newSession.unreadCount,
+          projectKey: effectiveProjectKey ?? undefined,
+        }, ...prev];
+      });
+
+      if (panelKey !== null) {
+        if (previousSessionId !== newSession.id) {
+          setOpenedSessions(prev =>
+            prev.map((panel) => panel.key === panelKey ? { ...panel, sessionId: newSession.id } : panel),
+          );
+        }
+        setActivePanel({ type: 'session', key: panelKey });
+      } else {
+        const existing = openedSessionsRef.current.find(
+          (panel) => panel.sessionId === newSession.id && panel.agentId === agent.id,
+        );
+        if (existing) {
+          setActivePanel({ type: 'session', key: existing.key });
+        } else {
+          const nextKey = nextKeyRef.current++;
+          setOpenedSessions(prev => [...prev, { sessionId: newSession.id, agentId: agent.id, key: nextKey }]);
+          setActivePanel({ type: 'session', key: nextKey });
+        }
+      }
+
+      fetch(`/api/agent-chat/sessions/${newSession.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'markAsRead' }),
+      }).catch(() => {});
+
+      syncUrlParams({ agent: agent.id, session: newSession.id });
+    }
+
+    if (!newSession || newSession.isRunning !== true) {
+      fetchAllSessions();
+    }
+  }, [effectiveProjectKey, fetchAllSessions]);
 
   return (
-    <div className="flex h-full">
-      {/* Left sidebar */}
-      <div className="flex w-72 shrink-0 flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-        {/* ── Tab switcher ── */}
-        <div className="flex gap-1 px-4 pt-4 pb-2">
-          <button
-            onClick={() => setSidebarTab('conversations')}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-all ${
-              sidebarTab === 'conversations'
-                ? 'bg-zinc-900 text-white shadow-sm dark:bg-zinc-100 dark:text-zinc-900'
-                : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 dark:hover:text-zinc-300'
-            }`}
-          >
-            <MessageSquare className="h-3.5 w-3.5" />
-            对话
-          </button>
-          <button
-            onClick={() => setSidebarTab('agents')}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-all ${
-              sidebarTab === 'agents'
-                ? 'bg-zinc-900 text-white shadow-sm dark:bg-zinc-100 dark:text-zinc-900'
-                : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 dark:hover:text-zinc-300'
-            }`}
-          >
-            <Bot className="h-3.5 w-3.5" />
-            Agents
-          </button>
+    <div className="flex h-full overflow-hidden bg-background text-foreground">
+      <aside className="relative flex w-[280px] shrink-0 flex-col border-r border-border bg-muted/30">
+        <div className="border-b border-border p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Folder className="h-3.5 w-3.5 text-muted-foreground" />
+              <h2 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+                {t('workspace.label')}
+              </h2>
+            </div>
+            <button
+              onClick={handleStartCreate}
+              className="text-muted-foreground hover:text-foreground"
+              title={t('agent.createButton')}
+            >
+              <Plus className="h-4.5 w-4.5" />
+            </button>
+          </div>
+          <div className="mb-2 flex gap-1 overflow-x-auto pb-1 scrollbar-hide">
+            <span className="shrink-0 rounded-full bg-foreground px-2.5 py-1 text-[10px] font-bold text-background">
+              {activeProject?.name ?? activeProject?.key ?? t('workspace.defaultProjectName')}
+            </span>
+            <span className="shrink-0 rounded-full border border-border bg-background px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
+              {filteredAgents.length} Agents
+            </span>
+          </div>
+          <div className="flex items-center gap-2 rounded-md bg-muted/50 px-2 py-1.5 text-muted-foreground">
+            <Search className="h-3.5 w-3.5 shrink-0" />
+            <input
+              value={sessionQuery}
+              onChange={(e) => setSessionQuery(e.target.value)}
+              placeholder={t('workspace.searchPlaceholder')}
+              className="w-full bg-transparent text-[11px] font-medium text-foreground outline-none placeholder:text-muted-foreground"
+            />
+          </div>
         </div>
 
-        {/* ── Tab content ── */}
-        {sidebarTab === 'conversations' ? (
-          <div className="flex flex-1 flex-col overflow-hidden">
-            {/* Session filter + new session button */}
-            <div className="relative flex items-center justify-between px-5 py-4">
-              <div className="flex items-center gap-1 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800">
-                {([
-                  ['active', '活跃'],
-                  ['archived', '归档'],
-                  ['all', '全部'],
-                ] as const).map(([key, label]) => (
-                  <button
-                    key={key}
-                    onClick={() => setSessionFilter(key)}
-                    className={`rounded-md px-2 py-1 text-[11px] font-medium transition-all ${
-                      sessionFilter === key
-                        ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
-                        : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <button
-                onClick={() => setShowAgentPicker(v => !v)}
-                className="flex h-7 w-7 items-center justify-center rounded-full bg-zinc-50 text-zinc-500 transition-all hover:bg-zinc-900 hover:text-white dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-100 dark:hover:text-zinc-900"
-                title="新建对话"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-              {/* Agent picker dropdown */}
-              {showAgentPicker && (
-                <div
-                  ref={agentPickerRef}
-                  className="absolute right-4 top-full z-20 mt-1 w-56 rounded-xl border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
-                >
-                  <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400">
-                    选择 Agent 开始对话
-                  </div>
-                  {filteredAgents.map(a => (
-                    <button
-                      key={a.id}
-                      onClick={() => handleNewSession(a)}
-                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-zinc-50 transition-colors dark:hover:bg-zinc-800"
+        <div className="flex-1 overflow-y-auto">
+          {filteredAgents.filter(a => !sessionQuery || a.name.toLowerCase().includes(sessionQuery.toLowerCase()) || a.id.toLowerCase().includes(sessionQuery.toLowerCase())).length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+              <MessageSquare className="mx-auto mb-3 h-7 w-7 text-zinc-300 dark:text-zinc-600" />
+              <p>{sessionQuery ? t('session.emptyFiltered') : 'No agents available'}</p>
+            </div>
+          ) : (
+            <div className="flex flex-col">
+              {filteredAgents
+                .filter(a => !sessionQuery || a.name.toLowerCase().includes(sessionQuery.toLowerCase()) || a.id.toLowerCase().includes(sessionQuery.toLowerCase()))
+                .map((agent) => {
+                  const isActive = activeWorkspaceAgent?.id === agent.id;
+                  const agentSessions = allSessions.filter(s => s.agentId === agent.id && !s.archived);
+                  const lastSession = agentSessions[0];
+                  const totalUnread = agentSessions.reduce((sum, s) => sum + (s.unreadCount || 0), 0);
+                  const hasRunning = agentSessions.some(s => s.isRunning);
+                  return (
+                    <div
+                      key={agent.id}
+                      onClick={() => handleAgentClick(agent)}
+                      className={`group/agent relative flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-all border-l-2 ${
+                        isActive
+                          ? 'border-l-foreground bg-card shadow-sm'
+                          : 'border-l-transparent hover:bg-card/50'
+                      }`}
                     >
-                      <AgentIcon iconKey={a.icon} className="h-4 w-4 shrink-0 text-zinc-400" />
-                      <span className="truncate text-zinc-900 dark:text-zinc-100">{a.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            {/* Session list */}
-            <div className="flex-1 overflow-y-auto px-2 pb-4">
-              {filteredSessions.length === 0 ? (
-                <div className="px-4 py-12 text-center text-xs text-zinc-400 dark:text-zinc-500">
-                  <MessageSquare className="mx-auto mb-2 h-8 w-8 text-zinc-300 dark:text-zinc-600" />
-                  <p>{sessionFilter === 'archived' ? '暂无归档对话' : sessionFilter === 'all' ? '暂无对话' : '暂无活跃对话'}</p>
-                  {sessionFilter === 'active' && <p className="mt-1">点击右上角 + 开始新对话</p>}
-                </div>
-              ) : (
-                groupedSessions.map(group => (
-                  <div key={group.label} className="space-y-1">
-                    <div className="px-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                      {group.label}
-                    </div>
-                    {group.items.map(s => {
-                      const isActive = activeSessionId === s.id;
-                      return (
-                        <SessionCard
-                          key={s.id}
-                          session={s}
-                          isActive={isActive}
-                          listClockNow={s.isRunning ? listClockNow : undefined}
-                          onClick={handleSessionClick}
-                          onArchiveToggle={handleArchiveToggle}
-                        />
-                      );
-                    })}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        ) : (
-          /* ── Agents tab ── */
-          <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4">
-              <div className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
-                {filteredAgents.length > 0 ? `${filteredAgents.length} 个 Agent` : 'Agents'}
-              </div>
-              <div className="flex items-center gap-0.5">
-                <button
-                  onClick={handleImport}
-                  className="rounded-lg p-1.5 text-zinc-400 transition-all hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                  title="导入 .ppagent"
-                >
-                  <Upload className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={handleStartCreate}
-                  className="rounded-lg p-1.5 text-zinc-400 transition-all hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                  title="新建 Agent"
-                >
-                  <Plus className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto px-2 pb-4 space-y-1">
-              {filteredAgents.length === 0 ? (
-                <div className="px-4 py-8 text-center text-xs text-zinc-400 dark:text-zinc-500">
-                  暂无 Agent
-                </div>
-              ) : (
-                filteredAgents.map(a => (
-                  <div
-                    key={a.id}
-                    onClick={() => handleAgentClick(a)}
-                    className={`group flex cursor-pointer items-center gap-3.5 rounded-xl border px-3 py-3.5 transition-all ${
-                      activePanel?.type === 'agent' && activePanel.agentId === a.id
-                        ? 'bg-zinc-50 border-zinc-100 shadow-sm dark:bg-zinc-800 dark:border-zinc-700'
-                        : 'border-transparent hover:bg-zinc-50 hover:border-zinc-100 dark:hover:bg-zinc-800/50 dark:hover:border-zinc-700/50'
-                    }`}
-                  >
-                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ${
-                      activePanel?.type === 'agent' && activePanel.agentId === a.id
-                        ? 'bg-white shadow-sm ring-zinc-200 dark:bg-zinc-700 dark:ring-zinc-600'
-                        : 'bg-zinc-50 ring-zinc-100 dark:bg-zinc-800 dark:ring-zinc-700'
-                    }`}>
-                      <AgentIcon iconKey={a.icon} className="h-5 w-5 text-zinc-500 dark:text-zinc-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">
-                        <span className="truncate">{a.name}</span>
-                        {a.builtIn && (
-                          <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                            内置
-                          </span>
-                        )}
-                        {!a.projectKey && activeKey && (
-                          <span className="shrink-0 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:bg-amber-900/30 dark:text-amber-400">
-                            全局
-                          </span>
-                        )}
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${
+                        isActive ? 'bg-blue-50 text-blue-600 ring-blue-100 dark:bg-blue-950 dark:text-blue-400 dark:ring-blue-900' : 'bg-muted/70 text-muted-foreground ring-border/70'
+                      }`}>
+                        <AgentIcon iconKey={agent.icon} className="h-5 w-5" />
                       </div>
-                      {a.description && (
-                        <div className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
-                          {a.description}
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-0.5 flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`truncate text-[13px] ${isActive ? 'font-bold text-foreground' : 'font-semibold text-zinc-800 dark:text-zinc-200'}`}>
+                              {agent.name}
+                            </span>
+                            {agent.builtIn && (
+                              <span className="shrink-0 rounded bg-blue-50 px-1 py-0.5 text-[9px] font-semibold text-blue-600 dark:bg-blue-950 dark:text-blue-400">
+                                {t('agent.builtInBadge')}
+                              </span>
+                            )}
+                          </div>
+                          {lastSession && (
+                            <span className="shrink-0 text-[10px] font-medium text-muted-foreground">
+                              {formatSessionTimestamp(lastSession.updatedAt, Date.now(), t('session.yesterday'))}
+                            </span>
+                          )}
                         </div>
+                        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                          {hasRunning && (
+                            <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-green-500 animate-pulse" />
+                          )}
+                          <span className="truncate">
+                            {lastSession
+                              ? displayText(lastSession.title, agent.description || agent.id)
+                              : (agent.description || agent.id)}
+                          </span>
+                        </div>
+                      </div>
+                      {totalUnread > 0 && !isActive && (
+                        <span className="flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full bg-foreground px-1 text-[9px] font-bold text-background">
+                          {totalUnread > 99 ? '99+' : totalUnread}
+                        </span>
+                      )}
+                      {agentSessions.length > 0 && (
+                        <span className="shrink-0 text-[10px] font-medium text-muted-foreground opacity-0 group-hover/agent:opacity-100 transition-opacity">
+                          {agentSessions.length}
+                        </span>
                       )}
                     </div>
-                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-300 dark:text-zinc-600" />
-                  </div>
-                ))
-              )}
+                  );
+                })}
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
 
-      {/* Right panel */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      </aside>
+
+      <div className="flex min-w-0 flex-1">
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#fcfbf8] dark:bg-[#0f141b]">
         {creating ? (
           /* ── Creating new agent ── */
           expandedPrompt ? (
@@ -894,9 +1338,8 @@ export default function AgentsPage() {
               projects={projects}
             />
           )
-        ) : activePanel?.type === 'agent' && selectedAgent ? (
-          /* ── Agent detail (chat / settings) ── */
-          expandedPrompt && agentViewMode === 'settings' ? (
+        ) : activePanel?.type === 'agent' && selectedAgent && agentViewMode === 'settings' ? (
+          expandedPrompt ? (
             <div className="flex flex-1 flex-col p-4 gap-3 overflow-hidden">
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
@@ -920,35 +1363,27 @@ export default function AgentsPage() {
             </div>
           ) : (
             <>
-              {/* Agent panel header */}
-              <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
-                <div className="flex items-center gap-2 min-w-0">
-                  <AgentIcon iconKey={selectedAgent.icon} className="h-4 w-4 shrink-0 text-zinc-500" />
-                  <span className="text-sm font-medium text-zinc-900 truncate dark:text-zinc-100">{selectedAgent.name}</span>
-                  {selectedAgent.builtIn && (
-                    <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                      内置
-                    </span>
-                  )}
+              <div className="flex items-start justify-between border-b border-zinc-200 px-6 py-4">
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-600">
+                    <AgentIcon iconKey={selectedAgent.icon} className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-[15px] font-semibold text-zinc-950">{selectedAgent.name}</span>
+                      {selectedAgent.builtIn && (
+                        <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                          内置
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 truncate text-[12px] text-zinc-500">{selectedAgent.id}</div>
+                    <div className="mt-2 text-[12px] text-zinc-600">
+                      {selectedAgent.description || '当前 agent 的默认工作区入口。'}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => {
-                      if (activePanel?.type === 'agent') {
-                        const newMode = activePanel.mode === 'chat' ? 'settings' : 'chat';
-                        setActivePanel({ ...activePanel, mode: newMode });
-                        setExpandedPrompt(false);
-                      }
-                    }}
-                    className={`rounded-md p-1.5 transition-colors ${
-                      agentViewMode === 'settings'
-                        ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                        : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300'
-                    }`}
-                    title={agentViewMode === 'chat' ? '设置' : '聊天'}
-                  >
-                    {agentViewMode === 'chat' ? <Settings className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
-                  </button>
+                <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => handleExport(selectedAgent)}
                     className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
@@ -975,213 +1410,485 @@ export default function AgentsPage() {
                 </div>
               </div>
 
-              {agentViewMode === 'chat' ? (
-                <div className="flex-1 overflow-hidden">
-                  <AgentChatPanel
-                    key={`agent-${selectedAgent.id}`}
-                    agent={selectedAgent}
-                    initialSessionId={null}
-                    projectKey={activeKey}
-                    cachedAgents={agents}
-                    cachedSettings={cachedSettings}
-                    onSessionChange={(newSession) => {
-                      if (newSession && selectedAgent) {
-                        setAllSessions(prev => {
-                          const existing = prev.find(s => s.id === newSession.id);
-                          if (existing) {
-                            return prev.map(s => s.id === newSession.id
-                              ? {
-                                  ...s,
-                                  title: newSession.title,
-                                  updatedAt: newSession.updatedAt,
-                                  ...(newSession.isRunning !== undefined && {
-                                    isRunning: newSession.isRunning,
-                                    runningStartedAt: newSession.runningStartedAt,
-                                  }),
-                                  ...(newSession.unreadCount !== undefined && {
-                                    unreadCount: newSession.unreadCount,
-                                  }),
-                                }
-                              : s);
-                          }
-                          return [{
-                            id: newSession.id,
-                            title: newSession.title,
-                            updatedAt: newSession.updatedAt,
-                            agentId: selectedAgent.id,
-                            agentName: selectedAgent.name,
-                            agentIcon: selectedAgent.icon,
-                            isRunning: newSession.isRunning,
-                            runningStartedAt: newSession.runningStartedAt,
-                            unreadCount: newSession.unreadCount,
-                          }, ...prev];
-                        });
-                      }
-                      // Don't fetch on every streaming tick – only fetch on real content changes
-                      if (!newSession || newSession.isRunning !== true) {
-                        fetchAllSessions();
-                      }
-                    }}
-                  />
-                </div>
-              ) : (
-                <SettingsForm
-                  creating={false}
-                  form={form}
-                  setForm={setForm}
-                  selectedAgent={selectedAgent}
-                  hasChanges={hasChanges}
-                  saving={saving}
-                  onSave={handleSave}
-                  onClose={handleClose}
-                  onDelete={handleDelete}
-                  selectedId={selectedAgentId}
-                  onExpandPrompt={() => setExpandedPrompt(true)}
-                  projects={projects}
-                />
-              )}
+              <SettingsForm
+                creating={false}
+                form={form}
+                setForm={setForm}
+                selectedAgent={selectedAgent}
+                hasChanges={hasChanges}
+                saving={saving}
+                onSave={handleSave}
+                onClose={handleClose}
+                onDelete={handleDelete}
+                selectedId={selectedAgentId}
+                onExpandPrompt={() => setExpandedPrompt(true)}
+                projects={projects}
+              />
             </>
           )
-        ) : activePanel?.type === 'session' ? (
-          /* ── Session chat panels (multi-instance, CSS visibility toggle) ── */
-          <>
-            {/* Session header */}
-            {activeSessionAgent && (
-              <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
-                <div className="flex items-center gap-2 min-w-0">
-                  <AgentIcon iconKey={activeSessionAgent.icon} className="h-4 w-4 shrink-0 text-zinc-500" />
-                  <span className="text-sm font-medium text-zinc-900 truncate dark:text-zinc-100">
-                    {activeSessionInfo?.title ?? '新会话'}
-                  </span>
-                  <span className="text-xs text-zinc-400 shrink-0">
-                    — {activeSessionAgent.name}
-                  </span>
-                  <button
-                    onClick={() => {
-                      window.dispatchEvent(new CustomEvent('toggle-session-compress', { detail: { sessionId: activeOpened?.sessionId } }));
-                    }}
-                    className="shrink-0 rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-blue-500 transition-colors dark:hover:bg-zinc-800 dark:hover:text-blue-400"
-                    title="压缩会话历史"
-                  >
-                    <FileDown className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      window.dispatchEvent(new CustomEvent('toggle-session-config'));
-                    }}
-                    className="shrink-0 rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                    title="会话配置"
-                  >
-                    <Settings className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      window.dispatchEvent(new CustomEvent('toggle-folder-explorer'));
-                    }}
-                    className="shrink-0 rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                    title="打开本地文件夹"
-                  >
-                    <FolderOpen className="h-3.5 w-3.5" />
-                  </button>
+        ) : (
+          <div className="flex flex-1 flex-col overflow-hidden bg-[linear-gradient(180deg,#ffffff_0%,#faf8f3_100%)] dark:bg-[linear-gradient(180deg,#0f141b_0%,#111722_100%)]">
+            {activeWorkspaceAgent ? (
+              <>
+                {/* ── Top: Agent info + Sessions ── */}
+                <div className="shrink-0 border-b border-[#e7dfd0] dark:border-zinc-800">
+                  <div className="grid grid-cols-[1fr_1.2fr] divide-x divide-[#e7dfd0] dark:divide-zinc-800">
+                    {/* Left column: Agent basic info */}
+                    <div className="flex items-start gap-3 px-5 py-4">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-zinc-600 ring-1 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700">
+                        <AgentIcon iconKey={activeWorkspaceAgent.icon} className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-[14px] font-semibold text-zinc-900 dark:text-zinc-100">{activeWorkspaceAgent.name}</span>
+                          {activeWorkspaceAgent.builtIn && (
+                            <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold text-blue-700 dark:bg-blue-950 dark:text-blue-300">内置</span>
+                          )}
+                        </div>
+                        <div className="mt-1 flex items-center gap-3 text-[11px] text-zinc-500 dark:text-zinc-400">
+                          <span>{activeWorkspaceAgent.defaultProvider ?? '默认'}</span>
+                          <span className="text-zinc-300 dark:text-zinc-600">·</span>
+                          <span>{activeWorkspaceAgent.defaultModel ?? '继承全局'}</span>
+                        </div>
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <button
+                            onClick={() => handleAgentSettingsClick(activeWorkspaceAgent)}
+                            className="flex items-center gap-1 text-[11px] text-zinc-500 transition-colors hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+                          >
+                            <Settings className="h-3 w-3" />
+                            <span>设置</span>
+                          </button>
+                          <button
+                            onClick={() => handleExport(activeWorkspaceAgent)}
+                            className="flex items-center gap-1 text-[11px] text-zinc-500 transition-colors hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+                          >
+                            <Download className="h-3 w-3" />
+                            <span>导出</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right column: Sessions */}
+                    <div className="flex flex-col px-4 py-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-400 dark:text-zinc-500">会话</span>
+                        <button
+                          onClick={() => handleNewSession(activeWorkspaceAgent)}
+                          className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                        >
+                          <Plus className="h-3 w-3" />
+                          <span>新建</span>
+                        </button>
+                      </div>
+
+                      {/* Current / running session */}
+                      {currentAgentRunningSession ? (
+                        <button
+                          type="button"
+                          onClick={() => handleSessionClick(currentAgentRunningSession)}
+                          className={`mt-2 flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors ${
+                            activeWorkspaceSessionId === currentAgentRunningSession.id
+                              ? 'bg-blue-50 ring-1 ring-blue-200 dark:bg-blue-950/40 dark:ring-blue-800'
+                              : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                          }`}
+                        >
+                          <span className="relative flex h-2 w-2 shrink-0">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                          </span>
+                          <span className="truncate text-[12px] font-medium text-zinc-800 dark:text-zinc-200">{displayText(currentAgentRunningSession.title, '运行中…')}</span>
+                          <span className="ml-auto shrink-0 text-[10px] text-zinc-400">{formatSessionElapsed(currentAgentRunningSession.runningStartedAt, listClockNow ?? Date.now())}</span>
+                        </button>
+                      ) : null}
+
+                      {/* Active session indicator (draft or existing) */}
+                      {isDraftSession ? (
+                        <div className="mt-2 flex items-center gap-2 rounded-lg bg-blue-50/60 px-2.5 py-1.5 ring-1 ring-blue-100 dark:bg-blue-950/20 dark:ring-blue-900">
+                          <MessageSquare className="h-3 w-3 shrink-0 text-blue-500 dark:text-blue-400" />
+                          <span className="truncate text-[12px] font-medium text-blue-700 dark:text-blue-300">新会话（草稿）</span>
+                        </div>
+                      ) : activeExistingSession && activeExistingSession.id !== currentAgentRunningSession?.id ? (
+                        <button
+                          type="button"
+                          onClick={() => handleSessionClick(activeExistingSession)}
+                          className="mt-2 flex items-center gap-2 rounded-lg bg-blue-50 px-2.5 py-1.5 ring-1 ring-blue-200 dark:bg-blue-950/40 dark:ring-blue-800"
+                        >
+                          <MessageSquare className="h-3 w-3 shrink-0 text-blue-500 dark:text-blue-400" />
+                          <span className="truncate text-[12px] font-medium text-zinc-800 dark:text-zinc-200">{displayText(activeExistingSession.title, '会话')}</span>
+                          <span className="ml-auto shrink-0 text-[10px] text-zinc-400">{formatSessionTimestamp(activeExistingSession.updatedAt, listClockNow ?? Date.now())}</span>
+                        </button>
+                      ) : !currentAgentRunningSession && !isDraftSession && !activeExistingSession ? (
+                        <div className="mt-2 px-2.5 text-[11px] text-zinc-400 dark:text-zinc-500">点击「新建」开始对话</div>
+                      ) : null}
+
+                      {/* Historical sessions (collapsed by default) */}
+                      {currentAgentHistorySessions.length > 0 && (
+                        <div className="mt-2">
+                          <button
+                            type="button"
+                            onClick={() => setHistoryExpanded(prev => !prev)}
+                            className="flex w-full items-center gap-1.5 rounded px-1 py-1 text-[11px] text-zinc-500 transition-colors hover:text-zinc-800 dark:hover:text-zinc-200"
+                          >
+                            {historyExpanded
+                              ? <ChevronDown className="h-3 w-3" />
+                              : <ChevronRight className="h-3 w-3" />
+                            }
+                            <span>历史会话 ({currentAgentHistorySessions.length})</span>
+                          </button>
+                          {historyExpanded && (
+                            <div className="mt-1 max-h-[140px] space-y-0.5 overflow-y-auto">
+                              {currentAgentHistorySessions.map((session) => (
+                                <button
+                                  key={session.id}
+                                  type="button"
+                                  onClick={() => handleSessionClick(session)}
+                                  className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors ${
+                                    activeWorkspaceSessionId === session.id
+                                      ? 'bg-blue-50 dark:bg-blue-950/40'
+                                      : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                                  }`}
+                                >
+                                  <Clock className="h-3 w-3 shrink-0 text-zinc-300 dark:text-zinc-600" />
+                                  <span className="truncate text-[11px] text-zinc-700 dark:text-zinc-300">{displayText(session.title, '未命名')}</span>
+                                  <span className="ml-auto shrink-0 text-[10px] text-zinc-400">{formatSessionTimestamp(session.updatedAt, listClockNow ?? Date.now())}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
+
+                {/* ── Bottom: Chat area (fixed height) ── */}
+                <div className="min-h-0 flex-1" style={{ minHeight: 420 }}>
+                  <AgentChatPanel
+                    key={`workspace-${activeWorkspaceAgent.id}-${activeWorkspaceSessionId ?? 'draft'}-${activeWorkspacePanelKey ?? 'root'}`}
+                    agent={activeWorkspaceAgent}
+                    initialSessionId={activeWorkspaceSessionId}
+                    variant="full"
+                    projectKey={effectiveProjectKey}
+                    cachedAgents={agents}
+                    cachedSettings={cachedSettings}
+                    workspaceMode
+                    onSessionChange={(newSession) => handleWorkspacePanelSessionChange(
+                      activeWorkspaceAgent,
+                      activeWorkspacePanelKey,
+                      activeWorkspaceSessionId,
+                      newSession,
+                    )}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="flex h-full items-center justify-center px-8 text-sm text-zinc-500">
+                暂无可用 Agent。
               </div>
             )}
-            {/* Render all opened sessions, toggle visibility */}
-            <div className="flex-1 overflow-hidden relative">
-              {openedSessions.map(os => {
-                const agent = agents.find(a => a.id === os.agentId);
-                if (!agent) return null;
-                const isVisible = activePanel.key === os.key;
-                return (
-                  <div
-                    key={os.key}
-                    className={`absolute inset-0 ${isVisible ? 'flex flex-col' : 'hidden'}`}
-                  >
-                    <AgentChatPanel
-                      agent={agent}
-                      initialSessionId={os.sessionId}
-                      projectKey={activeKey}
-                      cachedAgents={agents}
-                      cachedSettings={cachedSettings}
-                      onSessionChange={(newSession) => {
-                        // Update the opened session's sessionId (new session or branch switch)
-                        if (newSession && os.sessionId !== newSession.id) {
-                          setOpenedSessions(prev =>
-                            prev.map(p => p.key === os.key ? { ...p, sessionId: newSession.id } : p),
-                          );
-                          syncUrlParams({ session: newSession.id });
-                        }
-                        // Optimistically insert/update session in sidebar list
-                        if (newSession) {
-                          setAllSessions(prev => {
-                            const existing = prev.find(s => s.id === newSession.id);
-                            if (existing) {
-                              return prev.map(s => s.id === newSession.id
-                                ? {
-                                    ...s,
-                                    title: newSession.title,
-                                    updatedAt: newSession.updatedAt,
-                                    ...(newSession.isRunning !== undefined && {
-                                      isRunning: newSession.isRunning,
-                                      runningStartedAt: newSession.runningStartedAt,
-                                    }),
-                                  }
-                                : s);
-                            }
-                            return [{
-                              id: newSession.id,
-                              title: newSession.title,
-                              updatedAt: newSession.updatedAt,
-                              agentId: os.agentId,
-                              agentName: agent.name,
-                              agentIcon: agent.icon,
-                              isRunning: newSession.isRunning,
-                              runningStartedAt: newSession.runningStartedAt,
-                            }, ...prev];
-                          });
-                        }
-                        // Mark as read if user is actively viewing this session
-                        const sid = newSession?.id ?? os.sessionId;
-                        if (sid) {
-                          fetch(`/api/agent-chat/sessions/${sid}`, {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ action: 'markAsRead' }),
-                          }).catch(() => {});
-                        }
-                        // Don't fetch on every streaming tick – only fetch on real content changes
-                        if (!newSession || newSession.isRunning !== true) {
-                          fetchAllSessions();
-                        }
-                      }}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        ) : (
-          /* ── Empty state ── */
-          <div className="flex flex-1 flex-col overflow-hidden bg-zinc-50/30 dark:bg-zinc-950/50">
-            <div className="flex h-full flex-col items-center justify-center p-12 text-center">
-              <div className="relative mb-6">
-                <div className="absolute -inset-4 rounded-full bg-zinc-100/50 blur-xl dark:bg-zinc-800/30" />
-                <MessageSquare className="relative h-16 w-16 text-zinc-200 dark:text-zinc-600" />
+          </div>
+        )}
+        </main>
+
+        {false && (
+        <aside className="w-[320px] shrink-0 border-l border-zinc-200 bg-[#fbfbfb] flex flex-col dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="flex items-start justify-between border-b border-zinc-200 px-5 py-4">
+            <div className="min-w-0">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-zinc-400">
+                Agent Workspace
               </div>
-              <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-2">ProjectPilot Agents</h3>
-              <p className="text-sm text-zinc-400 dark:text-zinc-500 max-w-xs leading-relaxed">
-                选择左侧的一个对话继续，或者通过新建对话来让 AI 协助你完成项目任务。
-              </p>
+              <div className="mt-2 truncate text-[15px] font-semibold text-zinc-950 dark:text-zinc-100">
+                {workspaceAgentName}
+              </div>
+              <div className="mt-1 flex items-center gap-2 text-[11px] text-zinc-500">
+                <Command className="h-3.5 w-3.5" />
+                <span className="truncate">{`workspace/${activeProject?.key ?? 'project-pilot'}`}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
               <button
-                onClick={() => { setSidebarTab('conversations'); setShowAgentPicker(true); }}
-                className="mt-8 flex items-center gap-2 rounded-xl bg-zinc-900 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-zinc-200 transition-all hover:-translate-y-0.5 hover:shadow-zinc-300 dark:bg-zinc-100 dark:text-zinc-900 dark:shadow-zinc-800 dark:hover:bg-zinc-200"
+                onClick={() => workspaceAgent && handleAgentSettingsClick(workspaceAgent)}
+                className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[12px] font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
               >
-                <Plus className="h-4 w-4" />
-                开启新对话
+                Agent 设置
+              </button>
+              <button
+                onClick={handleStartCreate}
+                className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[12px] font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                新建 Agent
+              </button>
+              <button
+                onClick={handleImport}
+                className="rounded-md p-2 text-zinc-400 transition-colors hover:bg-white hover:text-zinc-700 dark:hover:bg-zinc-900 dark:hover:text-zinc-200"
+                title="导入 Agent"
+              >
+                <Upload className="h-4 w-4" />
               </button>
             </div>
           </div>
+
+          <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
+            <section className="space-y-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-400">
+                Agent Workspace
+              </div>
+              <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)] dark:border-zinc-800 dark:bg-zinc-900/90 dark:shadow-none">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-200">
+                    <AgentIcon iconKey={workspaceAgent?.icon} className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-100">{workspaceDisplayTitle}</div>
+                    <div className="mt-1 text-[12px] text-zinc-500">{workspaceAgentId}</div>
+                    <div className="mt-3 inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-300">
+                      <Command className="h-3 w-3" />
+                      {activeProject?.key ?? 'project-pilot'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50/80 px-3 py-3 dark:border-zinc-800 dark:bg-zinc-950/70">
+                  <div className="mb-2 text-[11px] leading-5 text-zinc-500 dark:text-zinc-400">
+                    {workspaceAgentDescription}
+                  </div>
+                  <div className="space-y-0.5 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+                    {workspaceTreeNodes.map((node) => (
+                      <div
+                        key={`${node.depth}-${node.path}`}
+                        className="relative"
+                        style={{ marginLeft: `${node.depth * 14}px` }}
+                      >
+                        {node.depth > 0 && (
+                          <>
+                            <div className="absolute bottom-1/2 left-0 top-[-10px] w-px bg-zinc-200 dark:bg-zinc-800" />
+                            <div className="absolute left-0 top-1/2 h-px w-3 bg-zinc-200 dark:bg-zinc-800" />
+                          </>
+                        )}
+                        <div className="rounded-md px-2 py-1.5 transition-colors hover:bg-white/70 dark:hover:bg-zinc-900/70">
+                          <div className="flex items-center gap-2 text-[12px] font-medium text-zinc-800 dark:text-zinc-200">
+                            {node.kind === 'folder' ? (
+                              <FolderOpen className="h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
+                            ) : node.kind === 'file' ? (
+                              <FileText className="h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
+                            ) : (
+                              <FileJson className="h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
+                            )}
+                            <span className="truncate">{node.label}</span>
+                            <span className="ml-auto rounded bg-zinc-100 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.12em] text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500">
+                              {node.detail}
+                            </span>
+                          </div>
+                          {node.kind !== 'folder' && (
+                            <div className="truncate pl-5 text-[10px] text-zinc-500 dark:text-zinc-400">{node.path}</div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-400">
+                  {t('promptStack.title')}
+                </div>
+                <div className="text-[11px] font-medium text-zinc-500">{formatTokenCount(combinedPromptTokens)}</div>
+              </div>
+              <div className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/90">
+                {promptTreeSections.map((section) => (
+                  <div key={section.scope} className="space-y-2 border-b border-zinc-100 pb-3 last:border-b-0 last:pb-0 dark:border-zinc-800/80">
+                    <div className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${section.accent}`}>
+                      {t(`promptTree.scope.${section.scope.toLowerCase()}`)}
+                    </div>
+                    <div className="text-[11px] leading-5 text-zinc-500 dark:text-zinc-400">{section.summary}</div>
+                    <div className="space-y-1 pl-4">
+                      <div className="relative rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-950/70">
+                        <div className="absolute bottom-1/2 left-[-16px] top-[-10px] w-px bg-zinc-200 dark:bg-zinc-800" />
+                        <div className="absolute left-[-16px] top-1/2 h-px w-3 bg-zinc-200 dark:bg-zinc-800" />
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 text-[12px] font-semibold text-zinc-900 dark:text-zinc-100">
+                              <span className="rounded bg-white px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:bg-zinc-900 dark:text-zinc-500">{t('promptTree.mainBadge')}</span>
+                              <span className="truncate">{section.file.label}</span>
+                            </div>
+                            <div className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">{section.file.path}</div>
+                          </div>
+                          <div className="shrink-0 text-[11px] font-medium text-zinc-500">{formatTokenCount(section.file.tokens)}</div>
+                        </div>
+                      </div>
+                      {section.nodes.map((node) => (
+                        <div key={node.path} className="relative rounded-md px-3 py-1.5 dark:bg-zinc-950/20">
+                          <div className="absolute bottom-1/2 left-[-16px] top-[-10px] w-px bg-zinc-200 dark:bg-zinc-800" />
+                          <div className="absolute left-[-16px] top-1/2 h-px w-3 bg-zinc-200 dark:bg-zinc-800" />
+                          <div className="flex items-center gap-2 text-[12px] font-medium text-zinc-700 dark:text-zinc-200">
+                            {node.kind === 'folder' ? (
+                              <Folder className="h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
+                            ) : node.kind === 'block' ? (
+                              <FileJson className="h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
+                            ) : (
+                              <FileText className="h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
+                            )}
+                            <span className="truncate">{node.label}</span>
+                            <span className="ml-auto rounded bg-zinc-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500">{t(`promptTree.kind.${node.kind}`)}</span>
+                          </div>
+                          <div className="truncate pl-5 text-[10px] text-zinc-500 dark:text-zinc-400">{node.path}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-400">
+                {t('capabilities.title')}
+              </div>
+              <div className="rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/90">
+                {capabilityCards.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <div key={item.label} className="flex items-center justify-between border-b border-zinc-100 px-1 py-2.5 last:border-b-0 dark:border-zinc-800">
+                      <div className="flex items-center gap-2.5">
+                        <div className={`flex h-7 w-7 items-center justify-center rounded-md ${item.enabled ? 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-100' : 'bg-zinc-50 text-zinc-300 dark:bg-zinc-900 dark:text-zinc-600'}`}>
+                          <Icon className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="truncate text-[12px] font-medium text-zinc-800 dark:text-zinc-200">{item.label}</div>
+                          <div className="mt-0.5 text-[10px] uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">{item.hint}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 dark:text-zinc-400">
+                        <span className={`h-1.5 w-1.5 rounded-full ${item.enabled ? 'bg-zinc-700 dark:bg-zinc-200' : 'bg-zinc-300 dark:bg-zinc-600'}`} />
+                        <span>{item.enabled ? t('capabilities.enabled') : t('capabilities.disabled')}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/90">
+              <div className="flex items-center justify-between text-[11px] font-medium text-zinc-500">
+                <span>{t('budget.title')}</span>
+                <span>{t('budget.usage', { percent: promptUsagePercent })}</span>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                <div className="h-full rounded-full bg-zinc-900" style={{ width: `${promptUsagePercent}%` }} />
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2 text-[11px] text-zinc-500">
+                <div>
+                  <div className="text-zinc-400">{t('budget.global')}</div>
+                  <div className="mt-1 font-medium text-zinc-800 dark:text-zinc-200">{formatTokenCount(promptMetrics.global)}</div>
+                </div>
+                <div>
+                  <div className="text-zinc-400">{t('budget.project')}</div>
+                  <div className="mt-1 font-medium text-zinc-800">{formatTokenCount(promptMetrics.project)}</div>
+                </div>
+                <div>
+                  <div className="text-zinc-400">{t('budget.agent')}</div>
+                  <div className="mt-1 font-medium text-zinc-800">{formatTokenCount(agentPromptTokens)}</div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </aside>
         )}
+
+        <aside className="w-[320px] shrink-0 border-l border-[#e7dfd0] bg-[#fcfaf5] shadow-[0_18px_48px_rgba(15,23,42,0.08)] flex flex-col dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="flex h-full min-h-0 flex-col">
+            <section className="flex min-h-0 flex-[1.15] flex-col border-b border-[#e7dfd0] bg-[#f8f3e8] dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="flex h-11 items-center justify-between border-b border-[#e7dfd0] px-4 dark:border-zinc-800">
+                <div className="flex items-center gap-2">
+                  <FolderOpen className="h-4 w-4 text-[#5f5a4f] dark:text-zinc-300" />
+                  <h2 className="text-[13px] font-bold tracking-tight text-zinc-900 dark:text-zinc-100">{t('projectWorkspace.title')}</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!workspaceAgent) return;
+                    setCreating(false);
+                    setSelectedAgentId(workspaceAgent.id);
+                    setForm(agentToForm(workspaceAgent));
+                    setExpandedPrompt(false);
+                    setActivePanel({ type: 'agent', agentId: workspaceAgent.id, mode: 'settings' });
+                    syncUrlParams({ agent: workspaceAgent.id, session: workspaceSessionId });
+                  }}
+                  className="flex items-center gap-1.5 text-[#7f7461] transition-colors hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                  title={t('agent.openSettings')}
+                >
+                  <Settings className="h-4 w-4" />
+                  <span className="text-[12px] font-medium">{t('agent.settingsShort')}</span>
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1">
+                {workspaceAgentDataPath ? (
+                  <FolderExplorerPanel
+                    embedded
+                    onClose={() => {}}
+                    initialPath={workspaceAgentDataPath}
+                    initialResolveMode="data"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center px-6 text-center text-[12px] text-zinc-500 dark:text-zinc-400">
+                    {t('projectWorkspace.empty')}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="flex min-h-0 flex-[0.95] flex-col border-b border-[#e7dfd0] bg-[#fcfbf8] dark:border-zinc-800 dark:bg-zinc-950">
+              <AgentSessionPromptStack
+                key={promptStackItems.map((item) => `${item.scope}:${item.label}:${item.path}`).join('|')}
+                items={promptStackItems}
+              />
+            </section>
+            <section className="min-h-0 flex-[0.8] overflow-y-auto bg-[#fcfbf8] px-3 py-3 dark:bg-zinc-950">
+              <div className="space-y-3">
+                <div className="px-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-400">
+                  {t('capabilities.title')}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {capabilityCards.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <div
+                        key={item.label}
+                        className={`flex items-center gap-2.5 rounded-2xl border px-3 py-2.5 ${
+                          item.enabled
+                            ? 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/90'
+                            : 'border-zinc-200/80 bg-zinc-50/80 dark:border-zinc-800 dark:bg-zinc-900/60'
+                        }`}
+                      >
+                        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl ${item.enabled ? 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-100' : 'bg-zinc-100 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-500'}`}>
+                          <Icon className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="truncate text-[12px] font-medium text-zinc-800 dark:text-zinc-200">{item.label}</span>
+                            <span className="shrink-0 text-[9px] uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">{item.hint}</span>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center">
+                          <span
+                            className={`h-2 w-2 rounded-full ${item.enabled ? 'bg-zinc-700 dark:bg-zinc-200' : 'bg-zinc-300 dark:bg-zinc-600'}`}
+                            aria-label={item.enabled ? t('capabilities.enabledAria', { label: item.label }) : t('capabilities.disabledAria', { label: item.label })}
+                            title={item.enabled ? t('capabilities.enabled') : t('capabilities.disabled')}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+          </div>
+        </aside>
       </div>
     </div>
   );

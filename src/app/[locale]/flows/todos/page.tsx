@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -37,8 +37,8 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { useLocale } from 'next-intl';
-import { useRouter } from 'next/navigation';
+import { useLocale } from '@/client/i18n/use-translations';
+import { useRouter } from '@/client/i18n/routing';
 import { useProject } from '@/components/project-context';
 import type { Agent, TodoItem, TodoPriority, TodoStatus, TodoSubTask } from '@/types';
 
@@ -160,7 +160,7 @@ interface DraggableCardProps {
   dispatchingId?: string | null;
 }
 
-function DraggableCard({ task, agentMap, onClick, overlay, batchMode, selected, onToggleSelect, onDispatch, dispatchingId }: DraggableCardProps) {
+const DraggableCard = memo(function DraggableCard({ task, agentMap, onClick, overlay, batchMode, selected, onToggleSelect, onDispatch, dispatchingId }: DraggableCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task.id });
   const style = transform ? { transform: CSS.Translate.toString(transform) } : undefined;
   const overdue = isOverdue(task.dueAt) && task.status !== 'done';
@@ -264,7 +264,7 @@ function DraggableCard({ task, agentMap, onClick, overlay, batchMode, selected, 
       </div>
     </div>
   );
-}
+});
 
 // ─── DroppableColumn ─────────────────────────────────────────────────────────
 
@@ -281,7 +281,7 @@ interface DroppableColumnProps {
   dispatchingId?: string | null;
 }
 
-function DroppableColumn({ status, tasks, agentMap, onCardClick, onAddClick, batchMode, selectedIds, onToggleSelect, onDispatch, dispatchingId }: DroppableColumnProps) {
+const DroppableColumn = memo(function DroppableColumn({ status, tasks, agentMap, onCardClick, onAddClick, batchMode, selectedIds, onToggleSelect, onDispatch, dispatchingId }: DroppableColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   const meta = statusMeta[status];
 
@@ -323,7 +323,7 @@ function DroppableColumn({ status, tasks, agentMap, onCardClick, onAddClick, bat
       </div>
     </section>
   );
-}
+});
 
 // ─── TaskCard (flat list view) ────────────────────────────────────────────────
 
@@ -338,7 +338,7 @@ interface FlatTaskCardProps {
   dispatchingId?: string | null;
 }
 
-function FlatTaskCard({ task, agentMap, onClick, batchMode, selected, onToggleSelect, onDispatch, dispatchingId }: FlatTaskCardProps) {
+const FlatTaskCard = memo(function FlatTaskCard({ task, agentMap, onClick, batchMode, selected, onToggleSelect, onDispatch, dispatchingId }: FlatTaskCardProps) {
   const overdue = isOverdue(task.dueAt) && task.status !== 'done';
   const agent = task.agentId ? agentMap.get(task.agentId) : undefined;
   const canLaunch = !!task.agentId && !task.sessionId && task.status !== 'done';
@@ -432,7 +432,7 @@ function FlatTaskCard({ task, agentMap, onClick, batchMode, selected, onToggleSe
       </div>
     </div>
   );
-}
+});
 
 // ─── TaskDrawer ───────────────────────────────────────────────────────────────
 
@@ -1138,46 +1138,32 @@ export default function TodosPage() {
   }
 
   // Generic dispatch function: works for both inline card buttons and drawer
-  async function dispatchTask(taskId: string) {
-    const task = todos.find(t => t.id === taskId);
-    if (!task || !task.agentId || task.sessionId || dispatchingId) return;
-    setDispatching(true);
-    setDispatchingId(taskId);
-    try {
-      // Build message from todo title + description
-      const parts = [task.title];
-      if (task.description) parts.push(task.description);
-      const message = parts.join('\n\n');
+    async function dispatchTask(taskId: string) {
+      const task = todos.find(t => t.id === taskId);
+      if (!task || !task.agentId || task.sessionId || dispatchingId) return;
+      setDispatching(true);
+      setDispatchingId(taskId);
+      try {
+        const dispatchRes = await fetch(`/api/todos/${taskId}/dispatch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sourceType: 'todo', sourceId: taskId }),
+        });
+        if (!dispatchRes.ok) throw new Error(`Failed to dispatch todo: ${dispatchRes.status}`);
+        const { sessionId: newSessionId } = await dispatchRes.json() as { sessionId: string };
 
-      // 1. Create agent session
-      const chatRes = await fetch('/api/agent-chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          agentId: task.agentId,
-          message,
-          projectKey: task.projectKey || undefined,
-          initialTitle: task.title.slice(0, 10) || undefined,
-        }),
-      });
-      if (!chatRes.ok) throw new Error(`Failed to start session: ${chatRes.status}`);
-      const { sessionId: newSessionId } = await chatRes.json() as { sessionId: string };
-
-      // 2. Write sessionId back to todo + set status to in_progress
-      const patchRes = await fetch(`/api/todos/${taskId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: newSessionId, status: 'in_progress' }),
-      });
-      if (!patchRes.ok) throw new Error(`Failed to update todo: ${patchRes.status}`);
-
-      // 3. Update local state
-      const now = new Date().toISOString();
-      setTodos(cur => cur.map(t =>
-        t.id === taskId
-          ? { ...t, sessionId: newSessionId, status: 'in_progress' as TodoStatus, updatedAt: now }
-          : t,
-      ));
+        const now = new Date().toISOString();
+        setTodos(cur => cur.map(t =>
+          t.id === taskId
+            ? {
+              ...t,
+              sessionId: newSessionId,
+              status: 'in_progress' as TodoStatus,
+              lifecycle: 'active',
+              updatedAt: now,
+            }
+            : t,
+        ));
       // Also update draft if this task is open in drawer
       if (activeTaskId === taskId) {
         patchDraft({ status: 'in_progress' });
@@ -1206,6 +1192,15 @@ export default function TodosPage() {
   const launchableCount = useMemo(() =>
     todos.filter(t => t.agentId && !t.sessionId && t.status !== 'done').length,
     [todos]);
+
+  // Pre-compute per-status task lists for kanban view (avoid repeated .filter in render)
+  const tasksByStatus = useMemo(() => {
+    const map: Record<TodoStatus, TodoItem[]> = { pending: [], in_progress: [], done: [] };
+    for (const t of filteredTodos) {
+      map[t.status]?.push(t);
+    }
+    return map;
+  }, [filteredTodos]);
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
@@ -1375,7 +1370,7 @@ export default function TodosPage() {
                   <DroppableColumn
                     key={status}
                     status={status}
-                    tasks={filteredTodos.filter(t => t.status === status)}
+                    tasks={tasksByStatus[status]}
                     agentMap={agentMap}
                     onCardClick={openEdit}
                     onAddClick={() => openCreate(status)}

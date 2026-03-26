@@ -2,6 +2,15 @@
 
 > Not another AI chatbox. A work system for humans and Agents to move tasks forward together.
 
+<p align="center">
+  <img src="docs/images/projectpilot-chat-workspace.png" alt="ProjectPilot chat workspace" width="1200" />
+</p>
+
+<p align="center">
+  <img src="docs/images/projectpilot-prompts-overview.png" alt="ProjectPilot prompts overview" width="49%" />
+  <img src="docs/images/projectpilot-todo-board.png" alt="ProjectPilot todo board" width="49%" />
+</p>
+
 [中文](#中文) | [English](#english)
 
 ---

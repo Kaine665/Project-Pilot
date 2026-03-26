@@ -4,6 +4,27 @@
 
 import type { SessionExecution } from '@/lib/chat-managers/types';
 
+export type SessionSourceType = 'manual' | 'schedule' | 'todo' | 'event';
+
+/**
+ * 会话检查点 — 记录会话上下文断裂前的工作状态，
+ * 以便在新会话中快速恢复，无需重新探索已知信息。
+ */
+export interface SessionCheckpoint {
+  /** 检查点生成时间 */
+  createdAt: string;
+  /** 当前正在做什么（1-3 句话） */
+  workingSummary: string;
+  /** 发现的关键信息（文件路径、API 端点、Agent ID 等） */
+  keyFacts: string[];
+  /** 当前进度（步骤、分支、worktree 等） */
+  inProgressState?: string;
+  /** 接续时需要做的事 */
+  nextSteps: string[];
+  /** AI 输出的原始检查点文本（用于注入新会话） */
+  rawContent: string;
+}
+
 /**
  * 会话级别的可选配置。
  *
@@ -24,10 +45,20 @@ export interface SessionConfig {
   provider?: import('./index').ProviderId;
   /** 会话使用的模型 ID（覆盖 Agent 默认值和全局设置） */
   model?: string;
+  /** 浼氳瘽绾у埆 OpenAI 鎺ㄧ悊妗ｄ綅锛堣鐩?Agent 榛樿鍊煎拰鍏ㄥ眬璁剧疆锛?*/
+  openaiReasoningEffort?: import('./index').OpenAIReasoningEffort;
+  /** OpenAI Codex Fast Mode（仅 ChatGPT 登录 + GPT-5.4 生效） */
+  openaiFastMode?: boolean;
   /** 会话级别的系统提示词覆盖（替换 Agent 的 systemPrompt，不影响 supplementaryPrompt） */
   systemPrompt?: string;
   /** 会话级别的能力覆盖（与 Agent 默认值合并，只能收紧不能放宽） */
   capabilities?: Partial<import('./index').AgentCapabilities>;
+  /**
+   * 统一资源引用列表（Phase 4）。
+   * 替代 contextIds / skillNames，直接使用 ResourceRef[] 配置会话级资源。
+   * 与 contextIds / skillNames 共存（向后兼容），优先级更高。
+   */
+  resourceRefs?: import('@/types/resource').ResourceRef[];
 }
 
 /** 单条消息 */
@@ -38,15 +69,20 @@ export interface ChatMessage {
   contentBlocks?: import('./index').ContentBlock[];
 }
 
-export interface PendingUserQueueItem {
+export interface DeferredInputBufferItem {
   text: string;
   images?: string[];
 }
 
-export interface PendingUserQueueState {
-  items: PendingUserQueueItem[];
+export interface DeferredInputBufferState {
+  items: DeferredInputBufferItem[];
   expanded?: boolean;
 }
+
+/** @deprecated Use DeferredInputBufferItem instead. */
+export type PendingUserQueueItem = DeferredInputBufferItem;
+/** @deprecated Use DeferredInputBufferState instead. */
+export type PendingUserQueueState = DeferredInputBufferState;
 
 export interface AgentChatSession {
   id: string;                    // "agent-chat-{timestamp}-{random}"
@@ -60,6 +96,10 @@ export interface AgentChatSession {
 
   /** 未读消息计数（agent 回复但用户尚未查看） */
   unreadCount?: number;
+
+  sourceType?: SessionSourceType;
+  sourceId?: string;
+  todoId?: string;
 
   /** 会话已归档（已完成的任务，侧边栏显示为灰色） */
   archived?: boolean;
@@ -78,10 +118,11 @@ export interface AgentChatSession {
   importedTurnIndices?: number[];
 
   /** Sub Agent 调用深度（0=顶层，服务端自动追踪，用于递归保护） */
-  depth?: number;
 
   /** 助手回复期间用户继续提交的待发送消息队列 */
-  pendingUserQueue?: PendingUserQueueState;
+
+  /** 会话检查点（context window 接近上限时由 AI 生成，用于续接新会话） */
+  checkpoint?: SessionCheckpoint;
 }
 
 /**
@@ -95,6 +136,8 @@ export type SessionMeta = Omit<AgentChatSession, 'messages'> & {
 
   /** 最近一次运行的执行记录（含状态、结构化结果等） */
   execution?: SessionExecution;
+
+  /** 后台创建的会话（不触发前端跳转，侧边栏显示但不自动切换） */
 };
 
 /**

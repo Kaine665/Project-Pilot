@@ -14,15 +14,33 @@ import { satelliteRegistry } from './registry';
 import { isTaskEnabled } from './config';
 import { callLightweightAI } from './lightweight-ai';
 import { appendRun } from './run-store';
+import { getSettings } from '@/lib/settings-manager';
 import { refreshTitleTriggerCache } from './tasks/title-generation';
 import { refreshHealthGuardCache } from './tasks/health-guard';
+import { refreshKnowledgeExtractionCache } from './tasks/knowledge-extraction';
+import { refreshTopicCompletionCache } from './tasks/topic-completion';
+import { refreshTaskCardCache } from './tasks/task-card-generation';
+import { refreshCodeCardRefreshCache } from './tasks/code-card-refresh';
 import type { SatelliteContext, SatelliteTask } from './types';
 
 const LOG_PREFIX = '[Satellite]';
 
 export async function runSatelliteTasks(ctx: SatelliteContext): Promise<void> {
+  const settings = await getSettings();
+  if (settings.developer?.satelliteTasksEnabled === false) {
+    ctx.emit({ type: 'stream_end' });
+    return;
+  }
+
   // Refresh config caches before evaluating shouldRun (which is sync)
-  await Promise.all([refreshTitleTriggerCache(), refreshHealthGuardCache()]);
+  await Promise.all([
+    refreshTitleTriggerCache(),
+    refreshHealthGuardCache(),
+    refreshKnowledgeExtractionCache(),
+    refreshTopicCompletionCache(),
+    refreshTaskCardCache(ctx.sessionId),
+    refreshCodeCardRefreshCache(),
+  ]);
 
   const tasks = satelliteRegistry.getAllSorted();
 
@@ -60,6 +78,11 @@ export async function runSatelliteTasks(ctx: SatelliteContext): Promise<void> {
       console.error(`${LOG_PREFIX} Task "${task.id}" failed:`, err);
     }
   }
+
+  // Signal that all satellite tasks are done — the SSE connection can now be closed.
+  // The frontend uses 'done' to finalize the UI immediately; 'stream_end' is the actual
+  // close signal so that satellite SSE events (e.g. task_card_updated) are not lost.
+  ctx.emit({ type: 'stream_end' });
 }
 
 async function runAITask(task: SatelliteTask, ctx: SatelliteContext): Promise<void> {

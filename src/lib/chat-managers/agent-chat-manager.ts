@@ -11,13 +11,11 @@
  * - StreamParser → SdkEventAdapter
  */
 
-import { writeFile, unlink } from 'fs/promises';
-import { tmpdir } from 'os';
-import { join } from 'path';
-import { randomBytes } from 'crypto';
 import { getAppWorkingDir } from '@/lib/app-paths';
-import { getPromptFilePath, getContextIndexPath, readJsonFile } from '@/lib/file-store';
-import type { ContextIndexData } from '@/types';
+import { getPromptFilePath, getContextIndexPath, getContextDir, getTodosPath, readJsonFile } from '@/lib/file-store';
+import { matchCodeCards, buildCodeCardIndex } from '@/lib/code-card-matcher';
+import { listRunningTasks } from '@/lib/active-tasks';
+import type { ContextIndexData, TodosData } from '@/types';
 import { resolveSystemPrompt, createRuntimePromptCopy } from '@/lib/agent-prompt-store';
 import { resolveSkillsForSession } from '@/lib/skill-store';
 import { getSettings } from '@/lib/settings-manager';
@@ -25,18 +23,25 @@ import { createAgentRunner, type IAgentRunner } from './agent-runner';
 import { detectDangerousCommand } from '@/lib/danger-detector';
 import type { ChatSSEEvent, ContentBlock, Agent, AgentCapabilities, ProviderId } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_DANGER_SETTINGS } from '@/types';
-import type { AgentChatSession, SessionConfig } from '@/types/agent-chat';
+import type { AgentChatSession, SessionConfig, SessionCheckpoint, SessionSourceType } from '@/types/agent-chat';
 import type { ResourceRef, InlineTextRef, FlowContextRef, ReferenceTurnsRef } from '@/types/resource';
 import { resourceRegistry } from '@/lib/resource-registry';
+import { formatConversationHistory } from './conversation-history';
 import '@/lib/resource-loaders'; // side-effect: registers non-action loaders
 import '@/lib/agent-actions';    // side-effect: registers actions + their loaders
 import { actionRegistry } from '@/lib/agent-actions';
 import { estimateTokens } from '@/lib/token-estimate';
 import { migrateAgentToResources } from '@/lib/resource-migration';
+import { updateAgentStatus } from '@/lib/agents-store';
 import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
-import { checkSessionHealth, buildGuardMessage } from './session-health-guard';
-import { shouldGenerateTitle, generateSessionTitle } from '@/lib/session-title-generator';
-import type { RunStatus, RunStatusInfo } from './types';
+import { runSatelliteTasks } from '@/lib/satellite-tasks';
+import '@/lib/satellite-tasks'; // side-effect: registers all satellite tasks
+import type { SatelliteContext } from '@/lib/satellite-tasks';
+import { repairStoredTextIfNeeded } from '@/lib/text-repair-server';
+import type { RunStatus, RunStatusInfo, SessionExecution } from './types';
+import { appendUsageRecord } from '@/lib/usage-store';
+import { normalizeOpenAIFastMode } from '@/lib/openai-fast-mode';
+import { normalizeOpenAIReasoningEffort } from '@/lib/openai-reasoning-effort';
 
 // Re-export store functions so existing callers don't break during migration
 export { generateSessionId } from './agent-chat-session-store';
@@ -50,6 +55,7 @@ import {
   incrementGuardRetryCountOnDisk,
   deleteSessionFromDisk,
   updateConfigOnDisk,
+  writeStreamingDraft,
 } from './agent-chat-session-store';
 
 // ── Types ──
@@ -82,6 +88,9 @@ export interface AgentChatRun {
   agentId: string;
   projectKey?: string;
   sessionTitle?: string;
+  sourceType?: SessionSourceType;
+  sourceId?: string;
+  todoId?: string;
 
   /** 当前运行的 SDK runner（统一 Claude Agent SDK / Codex SDK 抽象） */
   runner: IAgentRunner | null;
@@ -111,16 +120,34 @@ export interface AgentChatRun {
   config?: SessionConfig;
   parentSessionId?: string;
   importedTurnIndices?: number[];
-  _tempImagePaths?: string[];
+  _images?: ImageAttachment[];
   _guardRetryCount?: number;
   /** 临时测试会话，不持久化到会话列表 */
   _ephemeral?: boolean;
+  /** 会话检查点（context window 快满时由 AI 生成） */
+  checkpoint?: import('@/types/agent-chat').SessionCheckpoint;
+  /** Throttle timestamp for streaming draft writes (crash recovery) */
+  _lastDraftWriteTs?: number;
+
+  // Token usage tracking (accumulated from token_usage events)
+  _tokenInputs: number;
+  _tokenOutputs: number;
+  _contextWindow?: number;
+  _awaitingSubAgents?: SessionExecution['awaiting'];
+
+  /**
+   * Resolves when consumeRunnerStream() (including finalizeRun) has completed.
+   * Used by stop() to wait for graceful shutdown before returning to the caller.
+   */
+  _completionPromise?: Promise<void>;
+  _resolveCompletion?: () => void;
 }
 
 // ── Constants ──
 
 const SWEEP_INTERVAL_MS = 60_000;
 const COMPLETED_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const STREAMING_DRAFT_INTERVAL_MS = 2_000; // Write streaming draft every 2s for crash recovery
 const LOG_PREFIX = '[AgentChat]';
 
 // ── AgentChatManager ──
@@ -152,30 +179,37 @@ class AgentChatManager {
     providerOverride?: ProviderId,
     modelOverride?: string,
     effortOverride?: string,
+    fastModeOverride?: boolean,
     ephemeral?: boolean,
+    _depth?: number,
+    _background?: boolean,
+    sourceType?: SessionSourceType,
+    sourceId?: string,
+    todoId?: string,
   ): Promise<string> {
     const agent = await loadAgent(agentId);
+    void _depth;
+    void _background;
 
-    let existing = this.runs.get(sessionId);
+    const existingRun = this.runs.get(sessionId);
+    const diskSession = existingRun ? null : await loadSession(sessionId);
 
-    // Hydrate from disk if not in memory
-    if (!existing) {
-      const diskSession = await loadSession(sessionId);
-      if (diskSession) {
-        existing = this.hydrateFromDisk(diskSession);
-        this.runs.set(sessionId, existing);
-      }
-    }
-
-    if (existing?.status === 'running') {
+    if (existingRun?.status === 'running') {
       throw new Error('This session is already running');
     }
 
-    const messages = existing?.messages ? [...existing.messages] : [];
+    const existingMessages = existingRun?.messages ?? diskSession?.messages ?? [];
+    const messages = [...existingMessages];
     const dataUrls = images?.map(img => `data:${img.mediaType};base64,${img.data}`);
     messages.push({ role: 'user', content: message, images: dataUrls?.length ? dataUrls : undefined });
 
-    const sessionConfig = initialConfig ?? existing?.config;
+    const sessionConfig = initialConfig ?? existingRun?.config ?? diskSession?.config;
+    const existingProjectKey = existingRun?.projectKey ?? diskSession?.projectKey;
+    const existingSessionTitle = existingRun?.sessionTitle ?? diskSession?.title;
+    const existingParentSessionId = existingRun?.parentSessionId ?? diskSession?.parentSessionId;
+    const existingClaudeSessionId = existingRun?.claudeSessionId ?? diskSession?.claudeSessionId;
+    const existingCheckpoint = existingRun?.checkpoint ?? diskSession?.checkpoint;
+    const existingGuardRetryCount = existingRun?._guardRetryCount ?? diskSession?.guardRetryCount;
 
     // ── Resolve provider / model with priority chain ──
     const resolvedProvider = providerOverride
@@ -186,31 +220,50 @@ class AgentChatManager {
       || sessionConfig?.model
       || agent.defaultModel
       || undefined;
+    const resolvedOpenAIEffort = normalizeOpenAIReasoningEffort(
+      effortOverride
+      || sessionConfig?.openaiReasoningEffort
+      || agent.defaultOpenAIReasoningEffort,
+    );
+    const settings = await getSettings();
+    const hasExplicitOpenAIFastMode =
+      fastModeOverride !== undefined || sessionConfig?.openaiFastMode !== undefined;
+    const resolvedOpenAIFastMode = normalizeOpenAIFastMode(
+      fastModeOverride
+      ?? sessionConfig?.openaiFastMode
+      ?? settings.claude.openaiFastMode
+      ?? false,
+    ) ?? false;
 
     // 切换 provider/model 后，旧的 resume session 可能不兼容（常见于同会话切换渠道）。
     // 这种情况下必须放弃 resume，避免 Claude SDK 直接 error_during_execution / code 1。
-    const prevProvider = existing?.config?.provider;
-    const prevModel = existing?.config?.model;
-    const hasResumeId = !!existing?.claudeSessionId;
-    const lastRole = existing?.messages?.[existing.messages.length - 1]?.role;
+    const prevProvider = existingRun?.config?.provider ?? diskSession?.config?.provider;
+    const prevModel = existingRun?.config?.model ?? diskSession?.config?.model;
+    const hasResumeId = !!existingClaudeSessionId;
+    const lastRole = existingMessages[existingMessages.length - 1]?.role;
     const previousTurnIncomplete = lastRole === 'user';
     const providerChanged =
       hasResumeId && !!prevProvider && !!resolvedProvider && prevProvider !== resolvedProvider;
     const modelChanged =
       hasResumeId && !!prevModel && !!resolvedModel && prevModel !== resolvedModel;
     const isResume = hasResumeId && !providerChanged && !modelChanged && !previousTurnIncomplete;
-    const resumeSessionId = isResume ? existing?.claudeSessionId : undefined;
+    const resumeSessionId = isResume ? existingClaudeSessionId : undefined;
 
     // Persist resolved provider/model into session config
     const persistedConfig: SessionConfig = {
       ...sessionConfig,
       ...(resolvedProvider ? { provider: resolvedProvider } : {}),
       ...(resolvedModel ? { model: resolvedModel } : {}),
+      ...(resolvedProvider === 'openai' && resolvedOpenAIEffort
+        ? { openaiReasoningEffort: resolvedOpenAIEffort }
+        : {}),
+      ...(resolvedProvider === 'openai' && (hasExplicitOpenAIFastMode || resolvedOpenAIFastMode)
+        ? { openaiFastMode: resolvedOpenAIFastMode }
+        : {}),
     };
 
     // OpenAI 协议的自定义供应商暂不支持 Agent Chat（仅内置 openai 支持 Codex CLI）
     if (resolvedProvider?.startsWith('custom-')) {
-      const settings = await getSettings();
       const cp = settings.claude.customProviders?.find((c) => c.id === resolvedProvider);
       if (cp?.apiProtocol === 'openai') {
         throw new Error(
@@ -220,27 +273,23 @@ class AgentChatManager {
     }
 
     // Build prompt
-    const sessionProjectKey = flowContext?.projectKey ?? existing?.projectKey;
+    const sessionProjectKey = flowContext?.projectKey ?? existingProjectKey;
+
+    // 当 resume 不可用但存在历史消息时，将历史对话注入 prompt
+    // 这样即使 SDK 会话是全新的，AI 也能知道之前聊过什么
+    const conversationHistory = (!resumeSessionId && existingMessages.length > 0)
+      ? formatConversationHistory(existingMessages, existingCheckpoint ?? undefined)
+      : undefined;
+
+    if (conversationHistory && !resumeSessionId && existingMessages.length > 0) {
+      console.log(`${LOG_PREFIX} [${sessionId}] Resume unavailable, injecting ${existingMessages.length} messages as conversation history`);
+    }
 
     let promptContent: string;
     if (flowContext) {
-      promptContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext, persistedConfig, sessionId);
+      promptContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext, persistedConfig, sessionId, conversationHistory ?? undefined);
     } else {
-      promptContent = await buildAgentChatPrompt(agent, message, persistedConfig, sessionId, sessionProjectKey);
-    }
-
-    // Write images to temp files
-    const tempPaths: string[] = [];
-    const extMap: Record<string, string> = {
-      'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp',
-    };
-    if (images && images.length > 0) {
-      for (const img of images) {
-        const ext = extMap[img.mediaType] ?? 'png';
-        const tmpPath = join(tmpdir(), `agent-img-${randomBytes(8).toString('hex')}.${ext}`);
-        await writeFile(tmpPath, Buffer.from(img.data, 'base64'));
-        tempPaths.push(tmpPath);
-      }
+      promptContent = await buildAgentChatPrompt(agent, message, persistedConfig, sessionId, sessionProjectKey, conversationHistory ?? undefined);
     }
 
     // Merge capabilities
@@ -251,26 +300,32 @@ class AgentChatManager {
       await eagerlySaveUserTurn({
         sessionId,
         agentId,
-        projectKey: flowContext?.projectKey ?? existing?.projectKey,
-        sessionTitle: existing?.sessionTitle ?? initialTitle,
+        projectKey: flowContext?.projectKey ?? existingProjectKey,
+        sessionTitle: existingSessionTitle ?? initialTitle,
+        sourceType: sourceType ?? diskSession?.sourceType ?? 'manual',
+        sourceId: sourceId ?? diskSession?.sourceId,
+        todoId: todoId ?? diskSession?.todoId,
         messages,
         claudeSessionId: resumeSessionId,
         config: persistedConfig,
-        parentSessionId: parentSessionId ?? existing?.parentSessionId,
+        parentSessionId: parentSessionId ?? existingParentSessionId,
         importedTurnIndices: undefined,
       });
     }
 
     // ── Create run ──
     const runId = `run-${sessionId}-${Date.now()}`;
-    const run: AgentChatRun = {
-      runId,
-      sessionId,
-      agentId,
-      projectKey: flowContext?.projectKey ?? existing?.projectKey,
-      sessionTitle: existing?.sessionTitle ?? initialTitle,
-      runner: null,
-      status: 'running',
+      const run: AgentChatRun = {
+        runId,
+        sessionId,
+        agentId,
+        projectKey: flowContext?.projectKey ?? existingProjectKey,
+        sessionTitle: existingSessionTitle ?? initialTitle,
+        sourceType: sourceType ?? diskSession?.sourceType ?? 'manual',
+        sourceId: sourceId ?? diskSession?.sourceId,
+        todoId: todoId ?? diskSession?.todoId,
+        runner: null,
+        status: 'running',
       startedAt: Date.now(),
       events: [],
       listeners: new Set(),
@@ -280,10 +335,12 @@ class AgentChatManager {
       claudeSessionId: resumeSessionId,
       messages,
       config: persistedConfig,
-      parentSessionId: parentSessionId ?? existing?.parentSessionId,
-      _tempImagePaths: tempPaths,
-      _guardRetryCount: existing?._guardRetryCount,
+      parentSessionId: parentSessionId ?? existingParentSessionId,
+      _images: images,
+      _guardRetryCount: existingGuardRetryCount,
       _ephemeral: ephemeral,
+      _tokenInputs: 0,
+      _tokenOutputs: 0,
     };
 
     // Snapshot danger detector settings
@@ -296,21 +353,30 @@ class AgentChatManager {
 
     this.runs.set(sessionId, run);
 
+    // Update agent status to busy (fire-and-forget)
+    updateAgentStatus(agentId, {
+      state: 'busy',
+      lastActiveAt: new Date().toISOString(),
+      lastSessionId: sessionId,
+    }).catch(() => {});
+
     // ── Launch runner（provider 无关）──
     try {
       const runner = await createAgentRunner({
         provider: resolvedProvider ?? 'anthropic',
         capabilities: effectiveCaps,
         model: resolvedModel,
-        effortOverride,
+        effortOverride: resolvedOpenAIEffort,
+        fastModeOverride: resolvedOpenAIFastMode,
         resumeSessionId,
         cwd: getAppWorkingDir(),
       });
       run.runner = runner;
 
-      this.consumeRunnerStream(run, runner, promptContent).catch(err => {
+      run._completionPromise = new Promise<void>(resolve => { run._resolveCompletion = resolve; });
+      this.consumeRunnerStream(run, runner, promptContent, images).catch(err => {
         console.error(`${LOG_PREFIX} Runner stream error for ${sessionId}:`, err);
-      });
+      }).finally(() => { run._resolveCompletion?.(); });
     } catch (err) {
       this.trackAndEmit(run, { type: 'error', message: `Failed to start runner: ${err instanceof Error ? err.message : String(err)}` });
       this.trackAndEmit(run, { type: 'done' });
@@ -354,13 +420,15 @@ class AgentChatManager {
 
     const agent = await loadAgent(agentId);
 
-    const existing = this.runs.get(guestSessionId);
-    if (existing?.status === 'running') {
+    const existingRun = this.runs.get(guestSessionId);
+    const diskSession = existingRun ? null : await loadSession(guestSessionId);
+    if (existingRun?.status === 'running') {
       throw new Error('This guest session is already running');
     }
 
-    const isResume = !!existing?.claudeSessionId;
-    const messages = existing?.messages ? [...existing.messages] : [];
+    const existingMessages = existingRun?.messages ?? diskSession?.messages ?? [];
+    const isResume = !!(existingRun?.claudeSessionId ?? diskSession?.claudeSessionId);
+    const messages = [...existingMessages];
     messages.push({ role: 'user', content: message });
 
     const promptContent = await buildGuestAgentPrompt(agent, message, selectedTurns);
@@ -377,7 +445,8 @@ class AgentChatManager {
       runId,
       sessionId: guestSessionId,
       agentId,
-      sessionTitle: existing?.sessionTitle,
+      projectKey: diskSession?.projectKey ?? hostSession.projectKey,
+      sessionTitle: existingRun?.sessionTitle ?? diskSession?.title,
       runner: null,
       status: 'running',
       startedAt: Date.now(),
@@ -386,10 +455,15 @@ class AgentChatManager {
       assistantText: '',
       contentBlocks: [],
       toolCalls: [],
-      claudeSessionId: existing?.claudeSessionId,
+      claudeSessionId: existingRun?.claudeSessionId ?? diskSession?.claudeSessionId,
       messages,
       parentSessionId,
       importedTurnIndices: turnIndices,
+      checkpoint: diskSession?.checkpoint,
+      config: diskSession?.config,
+      _guardRetryCount: diskSession?.guardRetryCount,
+      _tokenInputs: 0,
+      _tokenOutputs: 0,
     };
 
     // Snapshot danger detector settings
@@ -408,14 +482,15 @@ class AgentChatManager {
         provider: resolvedProvider,
         capabilities: agent.capabilities,
         model: agent.defaultModel,
-        resumeSessionId: isResume ? existing?.claudeSessionId : undefined,
+        resumeSessionId: isResume ? (existingRun?.claudeSessionId ?? diskSession?.claudeSessionId) : undefined,
         cwd: getAppWorkingDir(),
       });
       run.runner = runner;
 
+      run._completionPromise = new Promise<void>(resolve => { run._resolveCompletion = resolve; });
       this.consumeRunnerStream(run, runner, promptContent).catch(err => {
         console.error(`${LOG_PREFIX} Runner stream error for guest ${guestSessionId}:`, err);
-      });
+      }).finally(() => { run._resolveCompletion?.(); });
     } catch (err) {
       this.trackAndEmit(run, { type: 'error', message: `Failed to start runner: ${err instanceof Error ? err.message : String(err)}` });
       this.trackAndEmit(run, { type: 'done' });
@@ -476,6 +551,14 @@ class AgentChatManager {
     run.status = 'stopped';
     run.runner?.abort();
     run.runner = null;
+
+    // Wait for consumeRunnerStream → finalizeRun to complete so that
+    // the session is fully persisted before we return to the caller.
+    // Timeout after 8s to avoid hanging if something goes wrong.
+    if (run._completionPromise) {
+      const timeout = new Promise<void>(resolve => setTimeout(resolve, 8_000));
+      await Promise.race([run._completionPromise, timeout]);
+    }
     return true;
   }
 
@@ -483,6 +566,34 @@ class AgentChatManager {
     const run = this.runs.get(sessionId);
     if (!run) return [];
     return run.messages;
+  }
+
+  getRuntimeSnapshot(sessionId: string): {
+    status: RunStatus;
+    runId: string;
+    startedAt: string;
+    eventCount: number;
+    errorMessage?: string;
+    messages: Array<{
+      role: 'user' | 'assistant';
+      content: string;
+      images?: string[];
+      contentBlocks?: ContentBlock[];
+    }>;
+  } | null {
+    const run = this.runs.get(sessionId);
+    if (!run) return null;
+    const lastError = run.events.filter((e): e is { type: 'error'; message: string } =>
+      e.type === 'error' && 'message' in e
+    ).pop();
+    return {
+      status: run.status,
+      runId: run.runId,
+      startedAt: new Date(run.startedAt).toISOString(),
+      eventCount: run.events.length,
+      errorMessage: lastError?.message,
+      messages: run.messages.map(message => ({ ...message })),
+    };
   }
 
   getRunningForAgent(agentId: string): string | null {
@@ -538,9 +649,10 @@ class AgentChatManager {
     run: AgentChatRun,
     runner: IAgentRunner,
     prompt: string,
+    images?: ImageAttachment[],
   ): Promise<void> {
     try {
-      for await (const event of runner.stream(prompt)) {
+      for await (const event of runner.stream(prompt, { images })) {
         if (run.status === 'stopped') break;
         this.trackAndEmit(run, event);
       }
@@ -549,6 +661,13 @@ class AgentChatManager {
         const errMsg = err instanceof Error ? err.message : String(err);
         this.trackAndEmit(run, { type: 'error', message: errMsg });
       }
+    }
+
+    // Write a final draft snapshot before entering finalizeRun(),
+    // which may take time (title generation, action processing).
+    // If the server crashes during finalization, this ensures the full assistant text is recoverable.
+    if (run.assistantText) {
+      writeStreamingDraft(run.sessionId, run.assistantText).catch(() => {});
     }
 
     const aborted = run.status === 'stopped';
@@ -566,21 +685,26 @@ class AgentChatManager {
    * 清理临时文件 → 处理 Agent Actions → 生成标题 → 持久化 → emit done。
    */
   private async finalizeRun(run: AgentChatRun, aborted: boolean): Promise<void> {
-    // Clean up temp image files
-    if (run._tempImagePaths) {
-      for (const tmpPath of run._tempImagePaths) {
-        unlink(tmpPath).catch(() => {});
-      }
-    }
+    // Release image references (no longer needed after stream completes)
+    run._images = undefined;
 
     // Process all agent actions: parse tags, execute side-effects, strip tags
     if (run.assistantText) {
-      const actionCtx = {
+      const actionCtx: {
+        sessionId: string;
+        agentId: string;
+        projectKey?: string;
+        emit: (event: ChatSSEEvent) => void;
+        setSessionTitle: (title: string) => void;
+        setCheckpoint: (checkpoint: SessionCheckpoint) => void;
+        _awaitingSubAgents?: SessionExecution['awaiting'];
+      } = {
         sessionId: run.sessionId,
         agentId: run.agentId,
         projectKey: run.projectKey,
         emit: (event: ChatSSEEvent) => this.trackAndEmit(run, event),
         setSessionTitle: (title: string) => { if (!run.sessionTitle) run.sessionTitle = title; },
+        setCheckpoint: (checkpoint: SessionCheckpoint) => { run.checkpoint = checkpoint; },
       };
 
       const cleaned = await actionRegistry.processResponse(run.assistantText, actionCtx);
@@ -598,20 +722,7 @@ class AgentChatManager {
         contentBlocks: cleanedBlocks.length > 0 ? cleanedBlocks : undefined,
       });
 
-      // Async title generation
-      const assistantTurnCount = run.messages.filter(m => m.role === 'assistant').length;
-      if (shouldGenerateTitle(assistantTurnCount)) {
-        try {
-          const aiTitle = await generateSessionTitle(
-            run.messages.map(m => ({ role: m.role, content: m.content })),
-            run.sessionTitle,
-          );
-          if (aiTitle) run.sessionTitle = aiTitle;
-        } catch (err) {
-          console.error(`${LOG_PREFIX} Title generation failed:`, err);
-        }
-      }
-
+      // Fallback title (non-AI, sync) — satellite task will generate a better one later
       if (!run.sessionTitle) {
         const firstUserMsg = run.messages.find(m => m.role === 'user')?.content;
         const defaultTitle = run.parentSessionId ? '旁听会话' : '新会话';
@@ -619,6 +730,11 @@ class AgentChatManager {
       }
 
       this.trackAndEmit(run, { type: 'session_title_set', title: run.sessionTitle });
+
+      if (actionCtx._awaitingSubAgents) {
+        run._awaitingSubAgents = actionCtx._awaitingSubAgents;
+        run.status = 'awaiting';
+      }
     }
 
     if (run.status === 'running') {
@@ -641,13 +757,67 @@ class AgentChatManager {
       run.claudeSessionId = undefined;
     }
 
+    // When user aborts mid-stream, the SDK session may be in an inconsistent state
+    // (e.g. tool call started but never completed). Clear the session ID to force
+    // a fresh session on next message, avoiding resume into a broken state.
+    if (aborted) {
+      run.claudeSessionId = undefined;
+    }
+
     try {
       await this.persistAfterClose(run, aborted);
     } catch (err) {
       console.error(`${LOG_PREFIX} persistAfterClose error:`, err);
     }
 
+    // Record token usage to JSONL (fire-and-forget)
+    if (!run._ephemeral && (run._tokenInputs > 0 || run._tokenOutputs > 0)) {
+      appendUsageRecord({
+        ts: new Date().toISOString(),
+        sessionId: run.sessionId,
+        agentId: run.agentId,
+        projectKey: run.projectKey,
+        model: run.config?.model,
+        inputTokens: run._tokenInputs,
+        outputTokens: run._tokenOutputs,
+        contextWindow: run._contextWindow,
+      }).catch((err) => {
+        console.error(`${LOG_PREFIX} Failed to record token usage:`, err);
+      });
+    }
+
+    // Update agent status (fire-and-forget)
+    {
+      const errorEvent = run.status === 'failed'
+        ? run.events.find((e): e is { type: 'error'; message: string } => e.type === 'error')
+        : undefined;
+      updateAgentStatus(run.agentId, {
+        state: run.status === 'failed' ? 'error' : 'idle',
+        lastActiveAt: new Date().toISOString(),
+        lastSessionId: run.sessionId,
+        ...(errorEvent ? { lastError: errorEvent.message.slice(0, 200) } : {}),
+      }).catch(() => {});
+    }
+
+    if (run.status === 'awaiting') {
+      this.trackAndEmit(run, { type: 'awaiting_sub_agents' });
+      return;
+    }
+
     this.trackAndEmit(run, { type: 'done' });
+
+    // Fire-and-forget: run all registered satellite tasks (title, health guard, task card, etc.)
+    // The scheduler emits 'stream_end' after all tasks complete, which is the signal that
+    // closes the SSE connection. This allows satellite SSE events (e.g. task_card_updated)
+    // to reach the frontend before the connection closes.
+    if (!run._ephemeral) {
+      this.runSatelliteTasks(run).catch((err) => {
+        console.error(`${LOG_PREFIX} Satellite tasks error:`, err);
+      });
+    } else {
+      // Ephemeral runs skip satellite tasks — emit stream_end immediately so the SSE closes.
+      this.trackAndEmit(run, { type: 'stream_end' });
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -662,6 +832,14 @@ class AgentChatManager {
         last.text += event.text;
       } else {
         run.contentBlocks.push({ type: 'text', text: event.text });
+      }
+
+      // Throttled streaming draft write for crash recovery.
+      // If the server dies mid-stream, loadSession() will recover partial text from the draft file.
+      const now = Date.now();
+      if (!run._lastDraftWriteTs || now - run._lastDraftWriteTs >= STREAMING_DRAFT_INTERVAL_MS) {
+        run._lastDraftWriteTs = now;
+        writeStreamingDraft(run.sessionId, run.assistantText).catch(() => {});
       }
     } else if (event.type === 'tool_use_start') {
       const tc: ChatToolCall = {
@@ -705,6 +883,20 @@ class AgentChatManager {
         tc.output = event.output;
         tc.status = event.status;
       }
+    } else if (event.type === 'token_usage') {
+      // Track token usage on the run object for persistence
+      if (event.final) {
+        // Result event: cumulative total, replace directly
+        if (event.inputTokens > 0) run._tokenInputs = event.inputTokens;
+        if (event.outputTokens > 0) run._tokenOutputs = event.outputTokens;
+      } else {
+        // Streaming incremental: input overwrites, output accumulates
+        if (event.inputTokens > 0) run._tokenInputs = event.inputTokens;
+        if (event.outputTokens > 0) run._tokenOutputs += event.outputTokens;
+      }
+      if (event.contextWindow && event.contextWindow > 0) {
+        run._contextWindow = event.contextWindow;
+      }
     }
 
     const index = run.events.length;
@@ -724,13 +916,17 @@ class AgentChatManager {
 
   private async persistAfterClose(run: AgentChatRun, _aborted: boolean): Promise<void> {
     if (run._ephemeral) return;
+    void _aborted;
 
     const now = new Date().toISOString();
     const session: AgentChatSession = {
       id: run.sessionId,
       agentId: run.agentId,
       projectKey: run.projectKey,
-      title: run.sessionTitle ?? '新会话',
+      title: repairStoredTextIfNeeded(run.sessionTitle) ?? '新会话',
+      sourceType: run.sourceType,
+      sourceId: run.sourceId,
+      todoId: run.todoId,
       messages: run.messages,
       claudeSessionId: run.claudeSessionId,
       createdAt: new Date(run.startedAt).toISOString(),
@@ -739,74 +935,121 @@ class AgentChatManager {
       guardRetryCount: run._guardRetryCount,
       parentSessionId: run.parentSessionId,
       importedTurnIndices: run.importedTurnIndices,
+      checkpoint: run.checkpoint,
     };
-    await persistSessionToDisk(session);
+    await persistSessionToDisk(session, this.buildExecutionSummary(run));
+  }
 
-    // Session Health Guard
-    if (
-      (run.status === 'failed' || run.status === 'stopped')
-      && !(run._guardRetryCount && run._guardRetryCount >= 1)
-    ) {
-      const tailText = run.assistantText.slice(-100);
-      checkSessionHealth({
-        sessionId: run.sessionId,
-        agentId: run.agentId,
-        status: run.status,
-        tailText,
-        guardRetryCount: run._guardRetryCount ?? 0,
-      }).then(async (result) => {
-        if (!result?.abnormal) return;
+  /**
+   * Build a SatelliteContext and run all registered satellite tasks.
+   * Called fire-and-forget after emit 'done'.
+   */
+  private async runSatelliteTasks(run: AgentChatRun): Promise<void> {
+    const ctx: SatelliteContext = {
+      sessionId: run.sessionId,
+      agentId: run.agentId,
+      projectKey: run.projectKey,
+      messages: run.messages.map(m => ({ role: m.role, content: m.content })),
+      assistantText: run.assistantText,
+      assistantTurnCount: run.messages.filter(m => m.role === 'assistant').length,
+      runStatus: run.status as RunStatus,
+      guardRetryCount: run._guardRetryCount ?? 0,
+      sessionTitle: run.sessionTitle,
 
-        const memRun = this.runs.get(run.sessionId);
-        // 竞态：用户可能在 Health Guard 检查期间已发送新消息，会话已在运行
-        if (memRun?.status === 'running') {
-          console.log(`${LOG_PREFIX} Session ${run.sessionId} already running (user retried), skip resume`);
-          return;
-        }
-        if (memRun) {
-          memRun._guardRetryCount = (memRun._guardRetryCount ?? 0) + 1;
-        }
-        await incrementGuardRetryCountOnDisk(run.sessionId);
+      emit: (event: ChatSSEEvent) => this.trackAndEmit(run, event),
 
-        const guardMsg = buildGuardMessage(run.status, result.reason);
-        try {
-          await this.start(run.sessionId, run.agentId, guardMsg);
-          console.log(`${LOG_PREFIX} Health guard resumed session ${run.sessionId}`);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (msg.includes('already running')) {
-            console.log(`${LOG_PREFIX} Session ${run.sessionId} already running (race), skip resume`);
-          } else {
-            console.error(`${LOG_PREFIX} Health guard failed to resume session:`, err);
+      setSessionTitle: (title: string) => {
+        const normalizedTitle = repairStoredTextIfNeeded(title) ?? title;
+        run.sessionTitle = normalizedTitle;
+        this.trackAndEmit(run, { type: 'session_title_set', title: normalizedTitle });
+        // Re-persist updated title to disk (fire-and-forget)
+        persistSessionToDisk({
+          id: run.sessionId,
+          agentId: run.agentId,
+          projectKey: run.projectKey,
+          title: normalizedTitle,
+          sourceType: run.sourceType,
+          sourceId: run.sourceId,
+          todoId: run.todoId,
+          messages: run.messages,
+          claudeSessionId: run.claudeSessionId,
+          createdAt: new Date(run.startedAt).toISOString(),
+          updatedAt: new Date().toISOString(),
+          config: run.config,
+          guardRetryCount: run._guardRetryCount,
+          parentSessionId: run.parentSessionId,
+          importedTurnIndices: run.importedTurnIndices,
+          checkpoint: run.checkpoint,
+        }).catch(() => {});
+      },
+
+      resumeSession: (message: string) => {
+        // Defer until after all satellite tasks complete
+        setTimeout(async () => {
+          try {
+            const memRun = this.runs.get(run.sessionId);
+            // Race condition: user may have already started a new message
+            if (memRun?.status === 'running') {
+              console.log(`${LOG_PREFIX} Session ${run.sessionId} already running (user retried), skip resume`);
+              return;
+            }
+            if (memRun) {
+              memRun._guardRetryCount = (memRun._guardRetryCount ?? 0) + 1;
+            }
+            await incrementGuardRetryCountOnDisk(run.sessionId);
+
+            await this.start(run.sessionId, run.agentId, message);
+            console.log(`${LOG_PREFIX} Satellite task resumed session ${run.sessionId}`);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.includes('already running')) {
+              console.log(`${LOG_PREFIX} Session ${run.sessionId} already running (race), skip resume`);
+            } else {
+              console.error(`${LOG_PREFIX} Satellite resume failed:`, err);
+            }
           }
-        }
-      }).catch(err => console.error(`${LOG_PREFIX} Health guard error:`, err));
-    }
+        }, 0);
+      },
+    };
+
+    await runSatelliteTasks(ctx);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
   // Private helpers
   // ═══════════════════════════════════════════════════════════════════════
 
-  private hydrateFromDisk(diskSession: AgentChatSession): AgentChatRun {
+  private buildExecutionSummary(run: AgentChatRun): SessionExecution {
+    const lastError = [...run.events]
+      .reverse()
+      .find((event): event is Extract<ChatSSEEvent, { type: 'error' }> => event.type === 'error');
+
+    const tokenUsage = (run._tokenInputs > 0 || run._tokenOutputs > 0 || run._contextWindow)
+      ? {
+          inputTokens: run._tokenInputs,
+          outputTokens: run._tokenOutputs,
+          contextWindow: run._contextWindow,
+        }
+      : undefined;
+
+    const executionStatus: SessionExecution['status'] = run.status === 'awaiting'
+      ? 'awaiting'
+      : run.status === 'failed'
+        ? 'failed'
+        : run.status === 'stopped'
+          ? 'stopped'
+          : 'completed';
+
     return {
-      runId: '',
-      sessionId: diskSession.id,
-      agentId: diskSession.agentId,
-      projectKey: diskSession.projectKey,
-      runner: null,
-      status: 'completed',
-      events: [],
-      listeners: new Set(),
-      startedAt: new Date(diskSession.createdAt).getTime(),
-      assistantText: '',
-      contentBlocks: [],
-      toolCalls: [],
-      claudeSessionId: diskSession.claudeSessionId,
-      sessionTitle: diskSession.title,
-      messages: [...diskSession.messages],
-      config: diskSession.config,
-      _guardRetryCount: diskSession.guardRetryCount,
+      runId: run.runId,
+      status: executionStatus,
+      startedAt: new Date(run.startedAt).toISOString(),
+      completedAt: new Date(run.completedAt ?? Date.now()).toISOString(),
+      errorMessage: lastError?.message,
+      stopReason: executionStatus === 'stopped' ? 'aborted' : undefined,
+      tokenUsage,
+      eventCount: run.events.length,
+      awaiting: executionStatus === 'awaiting' ? run._awaitingSubAgents : undefined,
     };
   }
 
@@ -858,13 +1101,25 @@ async function buildResourcePrompt(
     merged.push({ type: 'project-prompt', id: '_project', priority: 2 });
   }
 
-  if (projectKey) {
+  // Inject prompt blocks referenced by agent.promptRefs
+  if (agent.promptRefs?.length) {
+    for (const blockId of agent.promptRefs) {
+      merged.push({ type: 'prompt-block', id: blockId, priority: 3 });
+    }
+  }
+
+  // Load context index (hoisted — needed by both auto-inject and code cards)
+  const ctxIndex = projectKey
+    ? await readJsonFile<ContextIndexData>(getContextIndexPath(), { entries: [] })
+    : { entries: [] };
+
+  // Auto-inject project-level contexts (skip when agent uses 'exclusive' strategy)
+  if (projectKey && agent.contextStrategy !== 'exclusive') {
     const existingCtxIds = new Set([
       ...(baseRefs.filter(r => r.type === 'context').map(r => r.id)),
       ...(sessionConfig?.contextIds ?? []),
     ]);
     const agentTags = agent.contextTags;
-    const ctxIndex = await readJsonFile<ContextIndexData>(getContextIndexPath(), { entries: [] });
     for (const entry of ctxIndex.entries) {
       if (entry.projectKey !== projectKey) continue;
       if (entry.status && entry.status !== 'active') continue;
@@ -874,7 +1129,79 @@ async function buildResourcePrompt(
     }
   }
 
+  // ── Auto-inject Code Cards matching active task scope ──
+  {
+    const allCodeCards = ctxIndex.entries.filter(
+      e => e.coveredPaths?.length &&
+        e.tags?.includes('code-card') &&
+        (!e.status || e.status === 'active'),
+    );
+
+    if (allCodeCards.length > 0) {
+      // Try to find active task scope for this session
+      let scopePaths: string[] = [];
+      if (sessionId) {
+        try {
+          const runningTasks = await listRunningTasks();
+          const myTask = runningTasks.find(t => t.sessionId === sessionId);
+          if (myTask?.scope?.length) {
+            scopePaths = myTask.scope;
+          }
+        } catch { /* active-tasks may not exist yet */ }
+      }
+
+      const matched = scopePaths.length > 0
+        ? matchCodeCards(scopePaths, ctxIndex.entries)
+        : [];
+
+      if (matched.length > 0) {
+        // Scope matched → inject full content at high priority
+        for (const card of matched) {
+          merged.push({ type: 'context', id: card.id, priority: 15, injectMode: 'full' });
+        }
+      } else {
+        // No scope match (cold start or unrelated task) → inject index table
+        const indexTable = buildCodeCardIndex(allCodeCards, getContextDir());
+        if (indexTable) {
+          const indexRef: InlineTextRef = {
+            type: 'inline-text',
+            id: '_code-card-index',
+            priority: 40,
+            label: 'Code Cards 索引',
+            inlineContent: indexTable,
+          };
+          merged.push(indexRef);
+        }
+      }
+
+      // Append update reminder (low priority, always present when code cards exist)
+      const reminderRef: InlineTextRef = {
+        type: 'inline-text',
+        id: '_code-card-update-reminder',
+        priority: 90,
+        label: 'Code Card 维护提醒',
+        inlineContent: '任务完成后，如果你修改了 Code Card 覆盖范围内的文件（新增函数、改变数据流、修复重要 bug），请更新对应的 Code Card 内容，保持代码理解层的准确性。使用 PATCH /api/context/[id] 更新内容。',
+      };
+      merged.push(reminderRef);
+    }
+  }
+
   if (extraRefs) merged.push(...extraRefs);
+
+  // ── Phase 2: Merge contextRefs from active todos assigned to this agent ──
+  {
+    const todosData = await readJsonFile<TodosData>(getTodosPath(), { todos: [] });
+    const activeTodos = todosData.todos.filter(t =>
+      t.status === 'in_progress' &&
+      t.agentId === agent.id &&
+      t.contextRefs?.length,
+    );
+    for (const todo of activeTodos) {
+      for (const ref of todo.contextRefs!) {
+        merged.push({ ...ref, priority: ref.priority ?? 33 });
+      }
+    }
+  }
 
   // ── Auto-inject scoped skills (global → project → agent cascade) ──
   {
@@ -891,6 +1218,11 @@ async function buildResourcePrompt(
   }
 
   if (sessionConfig) {
+    // Phase 4: unified resourceRefs take precedence over legacy contextIds/skillNames
+    if (sessionConfig.resourceRefs?.length) {
+      merged.push(...sessionConfig.resourceRefs);
+    }
+    // Legacy fields still work (backward compatible)
     if (sessionConfig.contextIds?.length) {
       for (const cid of sessionConfig.contextIds) {
         merged.push({ type: 'context', id: cid, priority: 35 });
@@ -942,11 +1274,13 @@ async function buildResourcePrompt(
 
 // ── Prompt Builders (powered by Resource Registry) ──
 
-async function buildAgentChatPrompt(agent: Agent, message: string, sessionConfig?: SessionConfig, sessionId?: string, projectKey?: string): Promise<string> {
+async function buildAgentChatPrompt(agent: Agent, message: string, sessionConfig?: SessionConfig, sessionId?: string, projectKey?: string, conversationHistory?: string): Promise<string> {
   const resourcePrompt = await buildResourcePrompt(agent, undefined, sessionConfig, sessionId, projectKey);
 
-  return `${resourcePrompt}
+  const historyBlock = conversationHistory ? `\n${conversationHistory}\n` : '';
 
+  return `${resourcePrompt}
+${historyBlock}
 ---
 
 用户消息：${message}`;
@@ -958,6 +1292,7 @@ async function buildAgentChatPromptWithFlowContext(
   flowContext: FlowContext,
   sessionConfig?: SessionConfig,
   sessionId?: string,
+  conversationHistory?: string,
 ): Promise<string> {
   const { projectKey, projectName, flowDataPath } = flowContext;
 
@@ -973,8 +1308,10 @@ async function buildAgentChatPromptWithFlowContext(
 
   const resourcePrompt = await buildResourcePrompt(agent, [flowRef], sessionConfig, sessionId, projectKey);
 
-  return `${resourcePrompt}
+  const historyBlock = conversationHistory ? `\n${conversationHistory}\n` : '';
 
+  return `${resourcePrompt}
+${historyBlock}
 ---
 
 用户消息：${message}`;

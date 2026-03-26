@@ -8,7 +8,9 @@ import {
   writePromptFile,
 } from '@/lib/agent-prompt-store';
 import { getSettings } from '@/lib/settings-manager';
-import type { Agent, AgentCapabilities, AgentsData } from '@/types';
+import type {
+  Agent, AgentCapabilities, AgentStatus, AgentsData, OpenAIReasoningEffort,
+} from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import type { ResourceRef } from '@/types/resource';
 
@@ -28,10 +30,13 @@ export interface AgentMutationInput {
   requiredParams?: string[];
   contextIds?: string[];
   defaultResources?: ResourceRef[];
+  promptRefs?: string[];
   projectKey?: string;
   triggerHints?: string[];
   defaultProvider?: Agent['defaultProvider'];
   defaultModel?: string;
+  defaultOpenAIReasoningEffort?: OpenAIReasoningEffort | null;
+  contextStrategy?: 'additive' | 'exclusive';
 }
 
 export interface CreateAgentInput extends Required<Pick<AgentMutationInput, 'name'>> {
@@ -42,10 +47,13 @@ export interface CreateAgentInput extends Required<Pick<AgentMutationInput, 'nam
   requiredParams?: string[];
   contextIds?: string[];
   defaultResources?: ResourceRef[];
+  promptRefs?: string[];
   projectKey?: string;
   triggerHints?: string[];
   defaultProvider?: Agent['defaultProvider'];
   defaultModel?: string;
+  defaultOpenAIReasoningEffort?: OpenAIReasoningEffort | null;
+  contextStrategy?: 'additive' | 'exclusive';
 }
 
 function normalizeOptionalString(value?: string): string | undefined {
@@ -202,10 +210,13 @@ export async function createAgent(input: CreateAgentInput): Promise<Agent> {
     requiredParams: normalizeOptionalList(input.requiredParams),
     contextIds: normalizeOptionalList(input.contextIds),
     defaultResources: normalizeOptionalList(input.defaultResources),
+    promptRefs: normalizeOptionalList(input.promptRefs),
     triggerHints: normalizeOptionalList(input.triggerHints),
     projectKey: normalizeOptionalString(input.projectKey),
     defaultProvider: input.defaultProvider || undefined,
     defaultModel: normalizeOptionalString(input.defaultModel),
+    defaultOpenAIReasoningEffort: input.defaultOpenAIReasoningEffort ?? undefined,
+    contextStrategy: input.contextStrategy || undefined,
     createdAt: now,
     updatedAt: now,
   };
@@ -238,10 +249,22 @@ export async function updateAgent(id: string, input: AgentMutationInput): Promis
   if (input.requiredParams !== undefined) agent.requiredParams = normalizeOptionalList(input.requiredParams);
   if (input.contextIds !== undefined) agent.contextIds = normalizeOptionalList(input.contextIds);
   if (input.defaultResources !== undefined) agent.defaultResources = normalizeOptionalList(input.defaultResources);
+  if (input.promptRefs !== undefined) agent.promptRefs = normalizeOptionalList(input.promptRefs);
   if (input.triggerHints !== undefined) agent.triggerHints = normalizeOptionalList(input.triggerHints);
   if (input.projectKey !== undefined) agent.projectKey = normalizeOptionalString(input.projectKey);
   if (input.defaultProvider !== undefined) agent.defaultProvider = input.defaultProvider || undefined;
   if (input.defaultModel !== undefined) agent.defaultModel = normalizeOptionalString(input.defaultModel);
+  if (input.defaultProvider !== undefined && input.defaultProvider !== 'openai') {
+    delete agent.defaultOpenAIReasoningEffort;
+  }
+  if (input.defaultOpenAIReasoningEffort !== undefined) {
+    if (input.defaultOpenAIReasoningEffort === null) {
+      delete agent.defaultOpenAIReasoningEffort;
+    } else {
+      agent.defaultOpenAIReasoningEffort = input.defaultOpenAIReasoningEffort;
+    }
+  }
+  if (input.contextStrategy !== undefined) agent.contextStrategy = input.contextStrategy || undefined;
 
   if (input.systemPrompt !== undefined) {
     const promptText = input.systemPrompt.trim();
@@ -301,4 +324,23 @@ export async function permanentlyDeleteAgent(id: string): Promise<Agent | undefi
   await writeAgentsData(data);
   await deletePromptFile(id);
   return agent;
+}
+
+/**
+ * Update an agent's runtime status without touching updatedAt.
+ * Used by session lifecycle hooks (start → busy, end → idle, fail → error).
+ */
+export async function updateAgentStatus(
+  id: string,
+  status: Partial<AgentStatus>,
+): Promise<void> {
+  const data = await readAgentsData();
+  const agent = data.agents.find((item) => item.id === id);
+  if (!agent) return;
+
+  agent.agentStatus = {
+    ...(agent.agentStatus ?? { state: 'idle' }),
+    ...status,
+  };
+  await writeAgentsData(data);
 }

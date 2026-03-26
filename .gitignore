@@ -19,6 +19,7 @@
 
 # production
 /build
+/dist
 
 # misc
 .DS_Store
@@ -56,3 +57,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 openclaw/
+
+# SuperDesign artifacts
+.superdesign/

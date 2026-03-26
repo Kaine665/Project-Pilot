@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, memo } from 'react';
 import {
   Satellite,
   Loader2,
@@ -98,7 +98,7 @@ function getFieldValue(params: Record<string, unknown>, fieldKey: string, schema
 
 // ── Components ──
 
-function StatsBar({ stats }: { stats: RunStats }) {
+const StatsBar = memo(function StatsBar({ stats }: { stats: RunStats }) {
   if (stats.total === 0) {
     return <span className="text-xs text-zinc-400">暂无执行记录</span>;
   }
@@ -124,7 +124,7 @@ function StatsBar({ stats }: { stats: RunStats }) {
       {stats.lastRunAt && <span>最近: {formatTime(stats.lastRunAt)}</span>}
     </div>
   );
-}
+});
 
 function RunHistoryPanel({ taskId }: { taskId: string }) {
   const [runs, setRuns] = useState<RunRecord[]>([]);

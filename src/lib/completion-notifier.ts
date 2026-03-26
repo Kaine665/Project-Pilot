@@ -1,143 +1,181 @@
 /**
- * Agent 完成通知协调器
- * - 整合通知 + 音频
- * - 环境检测（浏览器 vs Electron）
- * - 设置读取和应用
+ * Agent completion notification coordinator.
+ * Combines native/browser notifications with configurable local audio playback.
  */
 
+import type { NotificationClickAction, NotificationSettings } from '@/types';
 import { BrowserNotifier } from './notification/browser-notification';
 import { ElectronNotifier } from './notification/electron-notification';
 import { AudioPlayer } from './audio/audio-player';
-import {
-  NOTIFICATION_CONFIG,
-  AUDIO_CONFIG,
-} from './notification/notification-config';
+import { NOTIFICATION_CONFIG, AUDIO_CONFIG } from './notification/notification-config';
 import { getNotificationSettings } from './notification-settings-client';
+import { normalizeNotificationSettings } from './notification/notification-sound-presets';
 
 export interface CompletionNotifyParams {
   agentName: string;
   sessionId: string;
   sessionTitle: string;
+  messagePreview?: string;
+  durationMs?: number;
   navigateToSession?: () => void;
+}
+
+function sanitizePreview(value?: string): string {
+  if (!value) return '';
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= NOTIFICATION_CONFIG.MAX_PREVIEW_LENGTH) {
+    return normalized;
+  }
+  return `${normalized.slice(0, NOTIFICATION_CONFIG.MAX_PREVIEW_LENGTH - 1)}…`;
+}
+
+function formatTemplate(template: string, params: CompletionNotifyParams): string {
+  const durationSec = typeof params.durationMs === 'number'
+    ? Math.max(0, Math.round(params.durationMs / 1000))
+    : 0;
+
+  return template
+    .replaceAll('{agentName}', params.agentName)
+    .replaceAll('{sessionTitle}', params.sessionTitle)
+    .replaceAll('{messagePreview}', sanitizePreview(params.messagePreview))
+    .replaceAll('{durationSec}', String(durationSec))
+    .trim();
+}
+
+function getClickBehavior(
+  settings: NotificationSettings,
+  params: CompletionNotifyParams,
+): {
+  clickAction: NotificationClickAction;
+  focusAppOnClick: boolean;
+  sessionId?: string;
+  onClick?: () => void;
+} {
+  const clickAction = settings.clickAction ?? 'open_session';
+
+  if (clickAction === 'open_session') {
+    return {
+      clickAction,
+      focusAppOnClick: true,
+      sessionId: params.sessionId,
+      onClick: params.navigateToSession,
+    };
+  }
+
+  if (clickAction === 'focus_app') {
+    return {
+      clickAction,
+      focusAppOnClick: true,
+    };
+  }
+
+  return {
+    clickAction,
+    focusAppOnClick: false,
+  };
 }
 
 export class CompletionNotifier {
   private browserNotifier = new BrowserNotifier();
   private electronNotifier = new ElectronNotifier();
   private audioPlayer = new AudioPlayer();
-  private lastNotificationTime = 0;
+  private lastNotificationAtBySession = new Map<string, number>();
 
-  /**
-   * 发送完成通知（包括桌面提示和音频）
-   */
   async notifyCompletion(params: CompletionNotifyParams): Promise<void> {
     try {
-      // 1. 读取用户设置
-      const settings = await getNotificationSettings();
-      console.debug('[CompletionNotifier] 设置已加载:', {
-        enabled: settings.enabled,
-        soundEnabled: settings.soundEnabled,
-        soundVolume: settings.soundVolume,
-        onlyWhenUnfocused: settings.onlyWhenUnfocused,
-      });
-
-      // 如果通知被禁用，直接返回
+      const settings = normalizeNotificationSettings(await getNotificationSettings());
       if (!settings.enabled) {
-        console.info('[CompletionNotifier] 通知已禁用，跳过');
         return;
       }
 
-      // 2. 检查窗口聚焦状态
       if (settings.onlyWhenUnfocused && document.hasFocus?.()) {
-        console.debug('[CompletionNotifier] 窗口已聚焦，跳过通知');
         return;
       }
 
-      // 3. 去重检查：避免快速连续通知
+      const durationMs = params.durationMs ?? 0;
+      const minDurationMs = settings.minDurationMs ?? 0;
+      if (durationMs < minDurationMs) {
+        return;
+      }
+
+      const dedupeWindowMs = settings.dedupeWindowMs ?? 500;
       const now = Date.now();
-      if (now - this.lastNotificationTime < 500) {
-        console.debug('[CompletionNotifier] 去重：跳过快速连续通知');
+      const lastNotificationAt = this.lastNotificationAtBySession.get(params.sessionId) ?? 0;
+      if (now - lastNotificationAt < dedupeWindowMs) {
         return;
       }
-      this.lastNotificationTime = now;
-      console.debug('[CompletionNotifier] 准备发送通知:', params);
+      this.lastNotificationAtBySession.set(params.sessionId, now);
 
-      // 4. 构建通知内容
-      const notificationTitle = NOTIFICATION_CONFIG.MESSAGES.TITLE;
-      const notificationBody =
-        NOTIFICATION_CONFIG.MESSAGES.BODY_TEMPLATE.replace(
-          '{agentName}',
-          params.agentName
-        ).replace('{sessionTitle}', params.sessionTitle);
-
+      const titleTemplate = settings.titleTemplate ?? '{agentName} 已完成';
+      const bodyTemplate = settings.bodyTemplate ?? '会话“{sessionTitle}”已收到新回复';
+      const notificationTitle = formatTemplate(titleTemplate, params);
+      const notificationBody = formatTemplate(bodyTemplate, params);
       const notificationTag = `${NOTIFICATION_CONFIG.TAG_PREFIX}-${params.sessionId}`;
-
-      // 5. 优先选择 Electron，降级到浏览器
-      let notified = false;
+      const clickBehavior = getClickBehavior(settings, params);
 
       if (ElectronNotifier.isAvailable()) {
-        console.debug('[CompletionNotifier] 使用 Electron 原生通知');
-        notified = await this.electronNotifier.sendNotification({
+        await this.electronNotifier.sendNotification({
           title: notificationTitle,
           body: notificationBody,
           icon: NOTIFICATION_CONFIG.DEFAULT_ICON,
           tag: notificationTag,
-          sessionId: params.sessionId, // Phase 3: 传递 sessionId 用于点击导航
-          onClick: params.navigateToSession,
+          sessionId: clickBehavior.sessionId,
+          requireInteraction: settings.requireInteraction ?? true,
+          focusAppOnClick: clickBehavior.focusAppOnClick,
+          onClick: clickBehavior.onClick,
         });
-        console.debug('[CompletionNotifier] Electron 通知发送结果:', notified);
       } else {
-        console.debug('[CompletionNotifier] 使用 Web Notifications API');
-        notified = await this.browserNotifier.sendNotification({
+        await this.browserNotifier.sendNotification({
           title: notificationTitle,
           body: notificationBody,
           icon: NOTIFICATION_CONFIG.DEFAULT_ICON,
           tag: notificationTag,
-          onClick: params.navigateToSession,
+          onClick: clickBehavior.clickAction === 'open_session'
+            ? params.navigateToSession
+            : undefined,
         });
-        console.debug('[CompletionNotifier] Web 通知发送结果:', notified);
       }
 
-      // 6. 播放音频
-      if (settings.soundEnabled && notified) {
-        console.debug('[CompletionNotifier] 播放通知音频，音量:', settings.soundVolume);
+      if (settings.soundEnabled) {
         try {
-          await this.audioPlayer.playSound(AUDIO_CONFIG.DEFAULT_SOUND_PATH, {
-            volume: settings.soundVolume || AUDIO_CONFIG.DEFAULT_VOLUME,
-            maxRetries: AUDIO_CONFIG.MAX_RETRIES,
-          });
-          console.debug('[CompletionNotifier] 音频播放完成');
+          await this.audioPlayer.playSound(
+            {
+              soundSource: settings.soundSource,
+              builtinSound: settings.builtinSound,
+              customSoundDataUrl: settings.customSoundDataUrl,
+            },
+            {
+              volume: settings.soundVolume || AUDIO_CONFIG.DEFAULT_VOLUME,
+              maxRetries: AUDIO_CONFIG.MAX_RETRIES,
+            },
+          );
         } catch (audioErr) {
-          console.warn('[CompletionNotifier] 音频播放失败:', audioErr);
+          console.warn('[CompletionNotifier] Failed to play notification sound:', audioErr);
         }
-      } else if (!settings.soundEnabled) {
-        console.debug('[CompletionNotifier] 音频已禁用');
-      } else {
-        console.debug('[CompletionNotifier] 通知发送失败，跳过音频');
       }
     } catch (error) {
-      console.error('[CompletionNotifier] 通知流程错误:', error);
+      console.error('[CompletionNotifier] Notification flow failed:', error);
     }
   }
 
-  /**
-   * 预加载音频文件（用于初始化）
-   */
   async preloadSound(): Promise<void> {
     try {
-      await this.audioPlayer.preload(AUDIO_CONFIG.DEFAULT_SOUND_PATH);
+      const settings = normalizeNotificationSettings(await getNotificationSettings());
+      await this.audioPlayer.preload({
+        soundSource: settings.soundSource,
+        builtinSound: settings.builtinSound,
+        customSoundDataUrl: settings.customSoundDataUrl,
+      });
     } catch (error) {
-      console.warn('[CompletionNotifier] 音频预加载失败:', error);
+      console.warn('[CompletionNotifier] Failed to preload sound:', error);
     }
   }
 
-  /**
-   * 清理资源
-   */
   cleanup(): void {
+    this.lastNotificationAtBySession.clear();
     this.audioPlayer.cleanup();
+    this.electronNotifier.cleanup();
   }
 }
 
-// 导出单例实例
 export const completionNotifier = new CompletionNotifier();

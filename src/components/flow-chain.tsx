@@ -11,7 +11,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { useRouter } from '@/i18n/routing';
+import { useRouter } from '@/client/i18n/routing';
 import { Badge } from '@/components/ui/badge';
 import { useFlowData } from './flow-editor';
 import type {
@@ -406,7 +406,7 @@ interface ItemActionsCtx {
   onDelete: (itemId: string) => void;
   onAddChild: (parentItemId: string, content: string) => void;
   onToggleDefer: (itemId: string, currentDeferred: boolean) => void;
-  onLaunchAI: (item: TreeItem, ancestors: TreeItem[]) => void;
+  onLaunchAI: (item: TreeItem, ancestors: TreeItem[], options?: { background?: boolean }) => void;
 }
 
 const ItemActionsContext = createContext<ItemActionsCtx | null>(null);
@@ -647,7 +647,7 @@ export function SectionBlock({ section }: { section: Section }) {
     totalCount === 0 ? 'todo' : doneCount === totalCount ? 'done' : doneCount > 0 ? 'doing' : 'todo';
 
   // AI launch handler
-  const handleLaunchAI = async (item: TreeItem, ancestors: TreeItem[]) => {
+  const handleLaunchAI = async (item: TreeItem, ancestors: TreeItem[], options?: { background?: boolean }) => {
     const flowContext = collectFlowTaskContext({
       projectKey,
       projectName,
@@ -678,10 +678,11 @@ export function SectionBlock({ section }: { section: Section }) {
         message: promptLines.join('\n'),
         projectKey,
         initialTitle: item.content,
+        background: options?.background || undefined,
       }),
     });
 
-    if (res.ok) {
+    if (res.ok && !options?.background) {
       const session = await res.json() as { sessionId: string };
       const query = new URLSearchParams();
       query.set('project', projectKey);

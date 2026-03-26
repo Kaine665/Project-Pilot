@@ -1,13 +1,14 @@
 import { app, BrowserWindow, dialog, Menu, ipcMain, shell, Notification } from 'electron';
+import type { NotificationConstructorOptions } from 'electron';
 import { ChildProcess } from 'child_process';
 import path from 'path';
 import { findAvailablePort } from './port-finder';
-import { startNextServer } from './server';
+import { startBackendServer } from './server';
 import { checkCliHealth } from './cli-check';
 
 const isDev = !!process.env.ELECTRON_DEV;
 const DEV_PORT = 4000;
-const APP_ENTRY_PATH = '/zh/flows/projects';
+const APP_ENTRY_PATH = '/flows/projects';
 
 let mainWindow: BrowserWindow | null = null;
 let serverProcess: ChildProcess | null = null;
@@ -60,40 +61,39 @@ ipcMain.handle(
       icon?: string;
       tag?: string;
       sessionId?: string;
+      requireInteraction?: boolean;
+      focusAppOnClick?: boolean;
     }
   ) => {
     try {
-      const notificationOptions: any = {
+      const notificationOptions: NotificationConstructorOptions & {
+        requireInteraction?: boolean;
+      } = {
         title: options.title,
         body: options.body,
         icon: options.icon,
-        // Phase 3: 持久化 - 使通知在系统通知中心中保持可见
-        // 用户需要手动关闭，而不是自动消失
-        requireInteraction: true,
+        requireInteraction: options.requireInteraction ?? true,
       };
 
       const notification = new Notification(notificationOptions);
 
-      // Phase 3: 点击处理 - 点击通知时聚焦应用并导航到会话
-      (notification as any).onclick = () => {
-        // 聚焦主窗口
-        if (mainWindow) {
+      notification.on('click', () => {
+        if (options.focusAppOnClick !== false && mainWindow) {
           if (mainWindow.isMinimized()) mainWindow.restore();
           mainWindow.focus();
         }
 
-        // 发送事件到渲染进程，告知用户点击了通知
-        // 渲染进程可以据此导航到对应会话
-        event.sender.send('notification-clicked', {
-          sessionId: options.sessionId,
-          timestamp: Date.now(),
-        });
-      };
+        if (options.sessionId) {
+          event.sender.send('notification-clicked', {
+            sessionId: options.sessionId,
+            timestamp: Date.now(),
+          });
+        }
+      });
 
-      // Phase 3: 关闭处理 - 跟踪通知关闭状态（用于分析）
-      (notification as any).onclose = () => {
+      notification.on('close', () => {
         console.debug(`[Notification] 用户关闭通知: ${options.title}`);
-      };
+      });
 
       notification.show();
       return true;
@@ -138,17 +138,14 @@ function createMainWindow() {
 // ── 启动流程 ──────────────────────────────────────────
 app.whenReady().then(async () => {
   if (isDev) {
-    // Dev 模式：假�?Next.js dev server 已在外部运行
     serverPort = DEV_PORT;
     createMainWindow();
     return;
   }
 
-  // 生产模式：启动内�?standalone server
   let splash: BrowserWindow | null = null;
 
   try {
-    // 显示 splash
     splash = new BrowserWindow({
       width: 400,
       height: 300,
@@ -159,18 +156,14 @@ app.whenReady().then(async () => {
     });
     splash.loadFile(path.join(__dirname, 'splash.html'));
 
-    // 找端�?
     serverPort = await findAvailablePort(4000);
 
-    // 启动 server
-    serverProcess = await startNextServer(serverPort);
+    serverProcess = await startBackendServer(serverPort);
 
-    // �?splash，开主窗�?
     splash.close();
     splash = null;
     createMainWindow();
 
-    // 延迟检�?CLI
     setTimeout(() => {
       checkCliHealth(serverPort).catch(() => {});
     }, 3000);
@@ -179,7 +172,7 @@ app.whenReady().then(async () => {
     if (splash) splash.close();
     dialog.showErrorBox(
       '启动失败',
-      `Next.js 服务器启动失败：\n${err instanceof Error ? err.message : String(err)}\n\n请尝试重新安装或联系开发者。`
+      `Hono 后端服务器启动失败：\n${err instanceof Error ? err.message : String(err)}\n\n请尝试重新安装或联系开发者。`
     );
     app.quit();
   }

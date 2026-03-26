@@ -1,18 +1,20 @@
 'use client';
 
-import { useLocale } from 'next-intl';
-import { usePathname, useRouter } from '@/i18n/routing';
+import { useTranslation } from 'react-i18next';
+import { usePathname, useRouter } from '@/client/i18n/routing';
 import { Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export function LanguageSwitcher() {
-  const locale = useLocale();
+  const { i18n } = useTranslation();
+  const locale = i18n.language;
   const router = useRouter();
   const pathname = usePathname();
 
   const switchLocale = () => {
     const newLocale = locale === 'zh' ? 'en' : 'zh';
-    router.push(pathname, { locale: newLocale });
+    i18n.changeLanguage(newLocale);
+    router.push(pathname);
   };
 
   return (

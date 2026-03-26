@@ -26,6 +26,10 @@ import {
   DEFAULT_SKILL_SCOPE,
 } from './file-store';
 
+const yaml = require('js-yaml') as {
+  load(input: string): unknown;
+};
+
 /** 最大 skill 文件大小：10MB */
 const MAX_SKILL_SIZE = 10 * 1024 * 1024;
 
@@ -45,10 +49,15 @@ export interface SkillMeta {
 export function parseSkillFrontmatter(content: string): SkillMeta | null {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return null;
-  const fm = match[1];
-  const name = fm.match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? '';
-  // description 可能是多行（YAML > 折叠语法），只取第一行
-  const description = fm.match(/^description:\s*(.+)$/m)?.[1]?.trim() ?? '';
+  const frontmatter = parseFrontmatterBlock(match[1]);
+  if (!frontmatter || typeof frontmatter !== 'object' || Array.isArray(frontmatter)) {
+    return null;
+  }
+
+  const name = typeof frontmatter.name === 'string' ? frontmatter.name.trim() : '';
+  const description = typeof frontmatter.description === 'string'
+    ? frontmatter.description.trim()
+    : '';
   if (!name) return null;
   return { name, description };
 }
@@ -59,6 +68,18 @@ export function parseSkillFrontmatter(content: string): SkillMeta | null {
  * 读取 skill 的 SKILL.md 内容。
  * 文件不存在返回 undefined。
  */
+function parseFrontmatterBlock(frontmatterBlock: string): Record<string, unknown> | null {
+  try {
+    const parsed = yaml.load(frontmatterBlock);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 export async function readSkillFile(
   skillName: string,
   scope: SkillScope = DEFAULT_SKILL_SCOPE,

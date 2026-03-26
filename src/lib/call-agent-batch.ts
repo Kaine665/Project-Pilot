@@ -139,6 +139,7 @@ async function startSession(
     projectKey: projectKey || undefined,
     parentSessionId: parentSessionId || undefined,
     depth,
+    background: true,
   });
 
   const postResult = await httpRequest({
@@ -170,27 +171,30 @@ async function startSession(
 /**
  * Poll a session's status. With the unified state source:
  * - `completed` guarantees data is on disk (no more race window)
- * - `running` includes `finalizing` (server maps it for backward compat)
+ * - `running` / `awaiting` indicate the run is still active
  */
 async function pollSession(sessionId: string, port: number): Promise<{ status: 'running' | 'completed' | 'failed'; result?: string; error?: string }> {
-  // Step 1: Check in-memory status
-  const statusResult = await httpRequest({
+  // Step 1: Check the runtime read model
+  const runtimeResult = await httpRequest({
     method: 'GET',
     hostname: '127.0.0.1',
     port,
-    path: `/api/agent-chat/status?sessionId=${encodeURIComponent(sessionId)}`,
+    path: `/api/agent-chat/runtime-snapshot?sessionId=${encodeURIComponent(sessionId)}`,
     timeoutMs: POST_TIMEOUT_MS,
   });
 
-  if (statusResult.statusCode !== 200) {
-    return { status: 'failed', error: `Status check failed: HTTP ${statusResult.statusCode}` };
+  if (runtimeResult.statusCode !== 200) {
+    return { status: 'failed', error: `Runtime snapshot failed: HTTP ${runtimeResult.statusCode}` };
   }
 
-  const statusData = JSON.parse(statusResult.body);
-  const status: string = statusData.status;
-  const statusMessages: Array<{ role: string; content: string }> = statusData.messages || [];
+  const runtimeData = JSON.parse(runtimeResult.body) as {
+    status?: string;
+    available?: boolean;
+    messages?: Array<{ role: string; content: string }>;
+  };
+  const status: string = runtimeData.status ?? 'none';
 
-  if (status === 'running') {
+  if (status === 'running' || status === 'awaiting') {
     return { status: 'running' };
   }
 
@@ -200,7 +204,8 @@ async function pollSession(sessionId: string, port: number): Promise<{ status: '
 
   // status === 'completed': data guaranteed on disk. Try in-memory messages first.
   if (status === 'completed') {
-    const inMemoryAssistant = [...statusMessages].reverse().find(m => m.role === 'assistant');
+    const snapshotMessages = runtimeData.available ? (runtimeData.messages || []) : [];
+    const inMemoryAssistant = [...snapshotMessages].reverse().find(m => m.role === 'assistant');
     if (inMemoryAssistant) {
       return { status: 'completed', result: inMemoryAssistant.content };
     }
@@ -230,9 +235,16 @@ async function pollSession(sessionId: string, port: number): Promise<{ status: '
   const messages: Array<{ role: string; content: string }> = session.messages || [];
 
   // Check execution record (unified state source)
-  const execution = session.execution as { status?: string; result?: { error?: { message: string } } } | undefined;
+  const execution = session.execution as {
+    status?: string;
+    errorMessage?: string;
+    result?: { error?: { message: string } };
+  } | undefined;
+  if (execution?.status === 'awaiting') {
+    return { status: 'running' };
+  }
   if (execution?.status === 'failed' || execution?.status === 'stopped') {
-    return { status: 'failed', error: execution.result?.error?.message ?? `Session ${execution.status}` };
+    return { status: 'failed', error: execution.errorMessage ?? execution.result?.error?.message ?? `Session ${execution.status}` };
   }
 
   const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');

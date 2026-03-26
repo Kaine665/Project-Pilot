@@ -1,0 +1,97 @@
+/**
+ * Hono Backend — ProjectPilot unified server.
+ * Replaces both Next.js API Routes and the standalone Sidecar process.
+ */
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { logger } from 'hono/logger';
+import { serve } from '@hono/node-server';
+import { serveStatic } from '@hono/node-server/serve-static';
+import fs from 'fs';
+import path from 'path';
+
+import { errorHandler } from './middleware/error-handler';
+
+import agentsRoutes from './routes/agents';
+import settingsRoutes from './routes/settings';
+import todosRoutes from './routes/todos';
+import dataRoutes from './routes/data';
+import docsRoutes from './routes/docs';
+import contextRoutes from './routes/context';
+import dimensionsRoutes from './routes/dimensions';
+import usageRoutes from './routes/usage';
+import promptsRoutes from './routes/prompts';
+import skillsRoutes from './routes/skills';
+import fsRoutes from './routes/fs';
+import recycleBinRoutes from './routes/recycle-bin';
+import uploadRoutes from './routes/upload';
+import projectsRoutes from './routes/projects';
+import dialoguesRoutes from './routes/dialogues';
+import satelliteTasksRoutes from './routes/satellite-tasks';
+import aiDiscussRoutes from './routes/ai-discuss';
+import agentChatRoutes from './routes/agent-chat';
+import schedulesRoutes from './routes/schedules';
+import eventTriggersRoutes from './routes/event-triggers';
+
+const app = new Hono();
+
+// --- Middleware ---
+app.use('*', logger());
+app.use('/api/*', cors({ origin: '*' }));
+app.use('/api/*', errorHandler);
+
+// --- Health check ---
+app.get('/health', (c) => c.json({ ok: true, uptime: process.uptime() }));
+
+// --- API Routes ---
+app.route('/api/agents', agentsRoutes);
+app.route('/api/settings', settingsRoutes);
+app.route('/api/todos', todosRoutes);
+app.route('/api/data', dataRoutes);
+app.route('/api/docs', docsRoutes);
+app.route('/api/context', contextRoutes);
+app.route('/api/dimensions', dimensionsRoutes);
+app.route('/api/usage', usageRoutes);
+app.route('/api', promptsRoutes);
+app.route('/api/skills', skillsRoutes);
+app.route('/api/fs', fsRoutes);
+app.route('/api/recycle-bin', recycleBinRoutes);
+app.route('/api/upload', uploadRoutes);
+app.route('/api/projects', projectsRoutes);
+app.route('/api/dialogues', dialoguesRoutes);
+app.route('/api/satellite-tasks', satelliteTasksRoutes);
+app.route('/api/ai-discuss', aiDiscussRoutes);
+app.route('/api/agent-chat', agentChatRoutes);
+app.route('/api/schedules', schedulesRoutes);
+app.route('/api/event-triggers', eventTriggersRoutes);
+
+// --- Static file serving (production) ---
+const clientDistPath = path.resolve(__dirname, '../../dist/client');
+if (fs.existsSync(clientDistPath)) {
+  app.use('/*', serveStatic({ root: clientDistPath }));
+  app.get('*', async (c) => {
+    const html = await fs.promises.readFile(
+      path.join(clientDistPath, 'index.html'),
+      'utf-8',
+    );
+    return c.html(html);
+  });
+}
+
+// --- Start server ---
+const port = parseInt(process.env.PORT ?? '4500', 10);
+
+console.log(`[server] Starting Hono backend on http://127.0.0.1:${port}`);
+
+serve(
+  {
+    fetch: app.fetch,
+    port,
+    hostname: '127.0.0.1',
+  },
+  (info) => {
+    console.log(`[server] Hono backend ready on http://127.0.0.1:${info.port}`);
+  },
+);
+
+export default app;

@@ -14,11 +14,14 @@ import { Bot } from 'lucide-react';
 import { ItemActionsPanel, ItemAgentPickerPanel } from './miller-item-panels';
 import * as Dialog from '@radix-ui/react-dialog';
 import { TaskContextDialog } from './task-context-dialog';
-import { useRouter } from '@/i18n/routing';
-import { useTranslations } from 'next-intl';
-import dynamic from 'next/dynamic';
+import { useRouter } from '@/client/i18n/routing';
+import { useTranslations } from '@/client/i18n/use-translations';
+import { lazy, Suspense } from 'react';
 
-const DndSortableList = dynamic(() => import('./miller-columns-dnd'), { ssr: false });
+const DndSortableListLazy = lazy(() => import('./miller-columns-dnd'));
+function DndSortableList(props: React.ComponentProps<typeof DndSortableListLazy>) {
+  return <Suspense fallback={null}><DndSortableListLazy {...props} /></Suspense>;
+}
 import { useFlowData, filterTreeItems } from './flow-editor';
 import {
   nextStatus,
@@ -648,7 +651,7 @@ export function MillerSectionBlock({ section }: { section: Section }) {
     totalCount === 0 ? 'todo' : doneCount === totalCount ? 'done' : doneCount > 0 ? 'doing' : 'todo';
 
   // AI launch handler
-  const handleLaunchAI = useCallback(async (item: TreeItem, ancestors: TreeItem[]) => {
+  const handleLaunchAI = useCallback(async (item: TreeItem, ancestors: TreeItem[], options?: { background?: boolean }) => {
     const flowContext = collectFlowTaskContext({
       projectKey,
       projectName,
@@ -672,10 +675,11 @@ export function MillerSectionBlock({ section }: { section: Section }) {
         message: buildFlowTaskPrompt(flowContext),
         projectKey,
         initialTitle: item.content,
+        background: options?.background || undefined,
       }),
     });
 
-    if (res.ok) {
+    if (res.ok && !options?.background) {
       const data = await res.json() as { sessionId: string };
       router.push(buildFlowAgentUrl({ projectKey, agentId, sessionId: data.sessionId }));
     }
