@@ -40,6 +40,7 @@ interface ChatBubbleProps {
   onActionReject?: (tag: ParsedActionTag) => void;
   onActionRestore?: (tag: ParsedActionTag) => void;
   onEdit?: (messageId: string, content: string) => Promise<boolean> | boolean;
+  assistantAvatarSrc?: string;
 }
 
 export const ChatBubble = memo(function ChatBubble({
@@ -61,6 +62,7 @@ export const ChatBubble = memo(function ChatBubble({
   onActionReject,
   onActionRestore,
   onEdit,
+  assistantAvatarSrc,
 }: ChatBubbleProps) {
   const t = useTranslations();
   const tActions = useTranslations('actions');
@@ -300,13 +302,19 @@ export const ChatBubble = memo(function ChatBubble({
   return (
     <div className={`group/bubble flex gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
       <div
-        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
+        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full ${
           isUser
             ? 'bg-user-subtle text-user'
             : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
         }`}
       >
-        {isUser ? <User className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
+        {isUser ? (
+          <User className="h-3.5 w-3.5" />
+        ) : assistantAvatarSrc ? (
+          <img src={assistantAvatarSrc} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <Bot className="h-3.5 w-3.5" />
+        )}
       </div>
 
       <div className="max-w-[85%]">

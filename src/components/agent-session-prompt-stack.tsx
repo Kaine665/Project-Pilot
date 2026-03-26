@@ -1,15 +1,15 @@
 'use client';
 
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { useTranslations } from '@/client/i18n/use-translations';
 import {
-  ChevronDown,
   Eye,
   FileText,
   FolderOpen,
   LoaderCircle,
-  Pencil,
   X,
 } from 'lucide-react';
+import { WorkspaceRailPanelHeader } from '@/components/workspace-rail-panel-header';
 
 type PromptTarget = 'global' | 'project' | 'agent' | 'session';
 
@@ -52,6 +52,8 @@ interface EditorState {
 
 interface AgentSessionPromptStackProps {
   items: PromptStackSeedItem[];
+  /** 外层已提供统一顶栏时隐藏组件自带标题行 */
+  hideHeader?: boolean;
 }
 
 function getItemId(item: PromptStackSeedItem): string {
@@ -213,7 +215,9 @@ function PromptModal({
 
 export function AgentSessionPromptStack({
   items,
+  hideHeader = false,
 }: AgentSessionPromptStackProps) {
+  const t = useTranslations('agentsWorkspace');
   const groups = useMemo(() => buildGroups(items), [items]);
   const [openGroupIds, setOpenGroupIds] = useState<string[]>(() =>
     groups.map((group) => group.id),
@@ -439,16 +443,17 @@ export function AgentSessionPromptStack({
   const editorCanSave = editor ? canEditItem(editor.item) && !editor.loading && !editor.saving : false;
 
   return (
-    <div className="relative flex h-full flex-col bg-[#fcfbf8]">
-      <div className="flex h-11 items-center justify-between border-b border-[#ece5d8] px-4">
-        <h3 className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#9a8e7a]">
-          提示词注入栈
-        </h3>
-        <div className="text-[10px] text-[#b5aa97]">卡片看摘要，按钮看详情或编辑正文</div>
-      </div>
+    <div className="relative flex h-full min-h-0 flex-col bg-background">
+      {!hideHeader ? (
+        <div className="flex h-9 shrink-0 items-center border-b border-border bg-muted/30 px-3">
+          <h3 className="truncate text-xs font-semibold tracking-tight text-foreground">
+            {t('promptStack.title')}
+          </h3>
+        </div>
+      ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        <div className="space-y-5">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-0.5 py-1">
+        <div className="space-y-0.5">
           {groups.map((group) => {
             const isOpen = openGroupIds.includes(group.id);
             const tone = getScopeTone(group.id);
@@ -459,66 +464,47 @@ export function AgentSessionPromptStack({
                 : group.item.tokens;
 
             return (
-              <section key={group.id} className="space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => toggleGroup(group.id)}
-                    className="flex min-w-0 items-center gap-2 text-left"
-                  >
-                    <ChevronDown
-                      className={`h-4 w-4 text-slate-400 transition-transform ${
-                        isOpen ? '' : '-rotate-90'
-                      }`}
-                    />
-                    <FolderOpen className="h-4 w-4 text-[#cfb690]" />
-                    <span
-                      className={`inline-flex rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] ${group.accent}`}
-                    >
-                      {group.label} ({group.badge})
+              <section key={group.id}>
+                <WorkspaceRailPanelHeader
+                  variant="group"
+                  title={group.label}
+                  icon={<FolderOpen className="h-3 w-3 text-[#cfb690]" />}
+                  collapsed={!isOpen}
+                  onToggleCollapsed={() => toggleGroup(group.id)}
+                  toggleTitle={isOpen ? t('workspaceRail.collapseSection') : t('workspaceRail.expandSection')}
+                  actions={
+                    <span className={`text-[9px] font-medium ${tone.token}`}>
+                      {formatTokenLabel(displayTokens)}
                     </span>
-                  </button>
-                </div>
+                  }
+                />
 
                 {isOpen ? (
-                  <div className={`ml-2 border-l pl-4 ${tone.rail}`}>
+                  <div className="px-1.5 pb-1.5 pt-0.5">
                     <article
-                      className={`rounded-2xl border bg-white p-3 shadow-[0_6px_22px_rgba(15,23,42,0.04)] transition-all hover:ring-2 ${tone.card}`}
+                      className={`rounded-lg border bg-card p-2 shadow-sm transition-all hover:ring-1 hover:ring-ring/30 ${tone.card}`}
                     >
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
-                          <div className="mb-1 flex items-start gap-2">
-                            <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-                            <div className="min-w-0 flex-1">
-                              <div className={`truncate text-xs font-semibold ${tone.title}`}>
-                                {group.item.label}
-                              </div>
-                            </div>
+                          <div className="mb-0.5 flex items-start gap-1.5">
+                            <FileText className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground/50" />
+                            <span className={`truncate text-[11px] font-semibold ${tone.title}`}>
+                              {group.item.label}
+                            </span>
                           </div>
-                          <p className="line-clamp-2 text-[10px] leading-5 text-slate-500">
+                          <p className="line-clamp-2 pl-[18px] text-[10px] leading-4 text-muted-foreground">
                             {group.item.description || '暂无摘要'}
                           </p>
                         </div>
 
-                        <div className="flex shrink-0 items-center gap-1">
-                          <span className={`mr-1 text-[9px] ${tone.token}`}>
-                            {formatTokenLabel(displayTokens)}
-                          </span>
+                        <div className="flex shrink-0 items-center">
                           <button
                             type="button"
                             onClick={() => openDetail(group.item)}
-                            className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-                            title="查看详情"
+                            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                            aria-label={t('promptStack.viewDetailAria')}
                           >
-                            <Eye className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openEditor(group.item)}
-                            className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-                            title="编辑正文"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
+                            <Eye className="h-3 w-3" aria-hidden />
                           </button>
                         </div>
                       </div>

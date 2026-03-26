@@ -8,7 +8,8 @@ import { ChatInput } from '@/components/chat-input';
 import { ChatNotificationBanners } from '@/components/chat-notification-banners';
 import { useNotificationManager } from '@/hooks/use-notification-manager';
 import { useModelConfig } from '@/hooks/use-model-config';
-import { AgentIcon } from '@/components/agent-form';
+import { AgentAvatar } from '@/components/agent-form';
+import { resolveAgentAvatarSrc } from '@/lib/agent-avatar';
 import { SaveKnowledgeDialog } from '@/components/save-knowledge-dialog';
 import { GuestAgentOverlay } from '@/components/guest-agent-overlay';
 import { SessionConfigPanel } from '@/components/session-config-panel';
@@ -54,6 +55,7 @@ export function AgentChatPanel({
   cachedAgents,
   cachedSettings,
   workspaceMode = false,
+  draftCacheSlot,
 }: AgentChatPanelProps) {
   const t = useTranslations();
   const router = useRouter();
@@ -61,9 +63,15 @@ export function AgentChatPanel({
   const isFull = variant === 'full';
 
   // Cache key for surviving SPA route changes
+  // Workspace: keep cache key stable when parent promotes draft → real session id (same panel slot).
   const cacheKey = useMemo(
-    () => buildCacheKey(agent.id, projectKey, initialSessionId),
-    [agent.id, projectKey, initialSessionId],
+    () => buildCacheKey(
+      agent.id,
+      projectKey,
+      workspaceMode ? null : initialSessionId,
+      workspaceMode ? (draftCacheSlot ?? null) : null,
+    ),
+    [agent.id, projectKey, initialSessionId, workspaceMode, draftCacheSlot],
   );
 
   // Resolve project path for folder explorer
@@ -73,6 +81,11 @@ export function AgentChatPanel({
     const entry = projects.find(p => p.key === projectKey);
     return entry?.path ?? undefined;
   }, [projectKey, projects]);
+
+  const assistantAvatarSrc = useMemo(
+    () => resolveAgentAvatarSrc(agent.slug, agent.icon),
+    [agent.slug, agent.icon],
+  );
 
   // Insert file path reference into chat input via CustomEvent
   const handleInsertFilePath = useCallback((filePath: string) => {
@@ -124,9 +137,6 @@ export function AgentChatPanel({
 
   // Design doc saved notifications (auto-path)
   const [docsSaved, setDocsSaved] = useState<Array<{ docId: string; title: string; projectKey: string }>>([]);
-
-  // Topic completion detection
-  const [topicCompletion, setTopicCompletion] = useState<{ completed: boolean; confidence: number; summary: string } | null>(null);
 
   // Task card
   const [taskCard, setTaskCard] = useState<import('@/lib/task-card-store').TaskCard | null>(null);
@@ -785,16 +795,6 @@ export function AgentChatPanel({
               chatDispatch({ type: 'STREAM_ERROR', message: event.message ?? 'Stream error' });
               break;
 
-            case 'topic_completion':
-              if (event.completed) {
-                setTopicCompletion({ completed: event.completed, confidence: event.confidence, summary: event.summary });
-              }
-              break;
-
-            case 'task_card_updated':
-              setTaskCard(event.card);
-              break;
-
             case 'awaiting_sub_agents':
               sessionDispatch({ type: 'UPDATE_LIST', updater: (prev) =>
                 prev.map((s) =>
@@ -806,11 +806,7 @@ export function AgentChatPanel({
               break;
 
             case 'done':
-              // AI response is complete. Finalize the streaming UI immediately so the
-              // user sees the response without waiting for satellite tasks to finish.
-              // The SSE connection stays open until 'stream_end' (emitted after all
-              // satellite tasks complete) — this lets events like 'task_card_updated'
-              // arrive and update the UI in real-time.
+              // AI response is complete; finalize streaming UI. Connection closes after `stream_end`.
               if (rafIdRef.current) {
                 cancelAnimationFrame(rafIdRef.current);
                 rafIdRef.current = 0;
@@ -819,9 +815,7 @@ export function AgentChatPanel({
               break;
 
             case 'stream_end':
-              // All satellite tasks have completed. The sidecar will close the SSE
-              // connection after emitting this event. No UI action needed here —
-              // finalizeStream() was already called on 'done'.
+              // SSE 正常结束；UI 已在 `done` 时 finalize。
               break;
           }
         }
@@ -902,7 +896,10 @@ export function AgentChatPanel({
     projectKey,
     initialSessionId,
     hasProject,
+    workspaceMode,
     cacheKey,
+    sessionIdRef,
+    messagesRef,
     initTokenRef,
     streamAbortRef,
     setShowConfig,
@@ -1033,10 +1030,12 @@ export function AgentChatPanel({
 
     chatDispatch({ type: 'UPDATE_MESSAGES', updater: (prev) => {
       const last = prev[prev.length - 1];
-      if (last?.role === 'user' && last.content === userMsg.content) {
-        return [...prev.slice(0, -1), userMsg];
-      }
-      return [...prev, userMsg];
+      const next =
+        last?.role === 'user' && last.content === userMsg.content
+          ? [...prev.slice(0, -1), userMsg]
+          : [...prev, userMsg];
+      messagesRef.current = next;
+      return next;
     } });
     setAutoScroll(true);
     chatDispatch({ type: 'SEND_START' });
@@ -1524,7 +1523,6 @@ export function AgentChatPanel({
       setTimeout(() => el.classList.remove('ring-2', 'ring-offset-1', 'ring-yellow-400'), 1500);
     }
   }, []);
-  const handleDismissTopicCompletion = useCallback(() => setTopicCompletion(null), []);
   const handleSelectGuest = useCallback((a: Agent) => setGuestAgent(a), []);
 
   const handleViewPlan = useCallback((content: string) => {
@@ -1606,10 +1604,8 @@ export function AgentChatPanel({
     <ChatNotificationBanners
       knowledgeDrafts={knowledgeDrafts}
       docsSaved={docsSaved}
-      topicCompletion={topicCompletion}
       onDismissKnowledge={handleDismissKnowledge}
       onDismissDocs={handleDismissDocs}
-      onDismissTopicCompletion={handleDismissTopicCompletion}
       onScrollToAction={handleScrollToAction}
       checkpointSaved={checkpointSaved}
       onResumeCheckpoint={handleResumeCheckpoint}
@@ -1692,6 +1688,7 @@ export function AgentChatPanel({
     errorMsg,
     inPlanMode,
     thinkingText,
+    assistantAvatarSrc,
     onSaveAsKnowledge: handleSaveAsKnowledge,
     onDelete: handleDeleteMessage,
     onRegenerate: handleRegenerate,
@@ -1741,16 +1738,11 @@ export function AgentChatPanel({
   );
 
   const agentDisplayName = repairTextIfNeeded(agent.name) ?? agent.name;
-  const strippedSessionTitle = stripSessionTitleTag(sessionTitle).trim();
-  const sessionDisplayTitle = (repairTextIfNeeded(strippedSessionTitle) ?? strippedSessionTitle) || '新会话';
-  const agentDescriptionPreview = (repairTextIfNeeded(agent.description)?.trim() ?? agent.description?.trim() ?? '')
-    .replace(/\s+/g, ' ')
-    .slice(0, 88);
 
   const plainEmptyState = (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-zinc-400 dark:text-zinc-500">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-        <AgentIcon iconKey={agent.icon} className="h-7 w-7" />
+      <div className="h-14 w-14 overflow-hidden rounded-2xl bg-zinc-100 dark:bg-zinc-800">
+        <AgentAvatar slug={agent.slug} iconKey={agent.icon} className="h-full w-full object-cover" />
       </div>
       <div className="space-y-1">
         <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">{agentDisplayName}</p>
@@ -1777,43 +1769,7 @@ export function AgentChatPanel({
     </div>
   );
 
-  const projectHeader = workspaceMode ? (
-    <div className="border-b border-zinc-200 bg-white/90 px-5 py-4 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/90">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-            <AgentIcon iconKey={agent.icon} className="h-5 w-5" />
-          </div>
-          <div className="min-w-0">
-            <div className="truncate text-[15px] font-semibold text-zinc-950 dark:text-zinc-100">{agentDisplayName}</div>
-            <div className="mt-1 truncate text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-400">
-              {agent.id}
-            </div>
-            {agentDescriptionPreview ? (
-              <div className="mt-2 line-clamp-2 max-w-xl text-[12px] leading-5 text-zinc-500 dark:text-zinc-400">
-                {agentDescriptionPreview}
-              </div>
-            ) : null}
-            <div className="mt-2 flex items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-              <span className="uppercase tracking-[0.14em] text-zinc-400">当前会话</span>
-              <span className="truncate">{sessionDisplayTitle}</span>
-            </div>
-          </div>
-        </div>
-        <div className="shrink-0 rounded-xl border border-zinc-200 bg-zinc-50/80 px-3 py-2 text-right dark:border-zinc-800 dark:bg-zinc-900/70">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">
-            模型
-          </div>
-          <div className="mt-1 text-[12px] font-medium text-zinc-700 dark:text-zinc-200">
-            {chatModel || 'auto'}
-          </div>
-          <div className="mt-1 text-[10px] text-zinc-400 dark:text-zinc-500">
-            {PROVIDER_LABELS[chatProvider]}
-          </div>
-        </div>
-      </div>
-    </div>
-  ) : (
+  const projectHeader = workspaceMode ? null : (
     <ChatSessionHeader
       isFull={isFull}
       sessionId={sessionId}
@@ -1842,8 +1798,8 @@ export function AgentChatPanel({
 
   const projectEmptyState = workspaceMode ? (
     <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center text-zinc-400 dark:text-zinc-500">
-      <div className="flex h-16 w-16 items-center justify-center rounded-[24px] bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-        <AgentIcon iconKey={agent.icon} className="h-8 w-8" />
+      <div className="h-16 w-16 overflow-hidden rounded-[24px] bg-zinc-100 dark:bg-zinc-800">
+        <AgentAvatar slug={agent.slug} iconKey={agent.icon} className="h-full w-full object-cover" />
       </div>
       <div className="space-y-1.5">
         <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">{agentDisplayName}</p>

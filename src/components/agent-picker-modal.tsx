@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { X, Search } from 'lucide-react';
 import { useTranslations } from '@/client/i18n/use-translations';
 import type { Agent } from '@/types';
-import { AgentIcon } from '@/components/agent-form';
+import { AgentAvatar } from '@/components/agent-form';
 
 type FilterChip = 'all' | 'recent' | 'builtin' | 'project' | 'global';
 
@@ -208,7 +208,7 @@ export function AgentPickerModal({
                     : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
                 }`}
               >
-                <AgentIcon iconKey={agent.icon} className="h-5 w-5 shrink-0 text-zinc-400" />
+                <AgentAvatar slug={agent.slug} iconKey={agent.icon} className="h-9 w-9 shrink-0 rounded-lg" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
                     {agent.name}

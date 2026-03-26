@@ -17,6 +17,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { loadLocalFlowData, saveLocalFlowData } from '@/lib/flow-local-ephemeral';
 
 interface SortableProjectTreeProps {
   projects: ProjectEntry[];
@@ -82,17 +83,11 @@ export function SortableProjectTree({
     setSections(reordered);
 
     try {
-      const res = await fetch(`/api/data?project=${encodeURIComponent(activeKey)}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      const fullSections = data.sections ?? [];
+      const data = loadLocalFlowData(activeKey);
+      const fullSections = [...(data.sections ?? [])];
       const [movedFull] = fullSections.splice(oldIndex, 1);
       fullSections.splice(newIndex, 0, movedFull);
-      await fetch(`/api/data?project=${encodeURIComponent(activeKey)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...data, sections: fullSections }),
-      });
+      saveLocalFlowData(activeKey, { ...data, sections: fullSections });
     } catch { /* ignore */ }
   }, [sections, activeKey, setSections]);
 

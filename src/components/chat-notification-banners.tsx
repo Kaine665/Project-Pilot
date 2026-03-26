@@ -1,21 +1,13 @@
 'use client';
 
 import { memo } from 'react';
-import { ArrowDown, BookMarked, CheckCircle2, FileText, RotateCcw, X } from 'lucide-react';
-
-export interface TopicCompletionInfo {
-  completed: boolean;
-  confidence: number;
-  summary: string;
-}
+import { ArrowDown, BookMarked, FileText, RotateCcw, X } from 'lucide-react';
 
 interface ChatNotificationBannersProps {
   knowledgeDrafts: Array<{ entryId: string; label: string }>;
   docsSaved: Array<{ docId: string; title: string; projectKey: string }>;
-  topicCompletion: TopicCompletionInfo | null;
   onDismissKnowledge: () => void;
   onDismissDocs: () => void;
-  onDismissTopicCompletion: () => void;
   /** 点击横幅时滚动到对应 ActionCard 的位置 */
   onScrollToAction?: (actionType: string) => void;
   /** 会话检查点已生成，显示续接按钮 */
@@ -29,34 +21,18 @@ interface ChatNotificationBannersProps {
 export const ChatNotificationBanners = memo(function ChatNotificationBanners({
   knowledgeDrafts,
   docsSaved,
-  topicCompletion,
   onDismissKnowledge,
   onDismissDocs,
-  onDismissTopicCompletion,
   onScrollToAction,
   checkpointSaved,
   onResumeCheckpoint,
   onDismissCheckpoint,
   className = 'mx-3 mb-2',
 }: ChatNotificationBannersProps) {
-  if (knowledgeDrafts.length === 0 && docsSaved.length === 0 && !topicCompletion && !checkpointSaved) return null;
+  if (knowledgeDrafts.length === 0 && docsSaved.length === 0 && !checkpointSaved) return null;
 
   return (
     <>
-      {topicCompletion && (
-        <div className={`${className} flex items-center justify-between gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs dark:border-green-800/50 dark:bg-green-900/15`}>
-          <div className="flex items-center gap-1.5 text-green-700 dark:text-green-400">
-            <CheckCircle2 className="h-3 w-3 shrink-0" />
-            <span>主题已完成 — {topicCompletion.summary}</span>
-          </div>
-          <button
-            onClick={onDismissTopicCompletion}
-            className="shrink-0 text-green-400 hover:text-green-600 dark:text-green-600 dark:hover:text-green-400"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </div>
-      )}
       {checkpointSaved && (
         <div className={`${className} flex items-center justify-between gap-2 rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs dark:border-violet-800/50 dark:bg-violet-900/15`}>
           <div className="flex items-center gap-1.5 text-violet-700 dark:text-violet-400">

@@ -9,7 +9,7 @@ import { Link } from '@/client/i18n/routing';
 import {
   Shield, Brain, Wrench, Check, X, Loader2, ExternalLink, Server, Copy,
   Gauge, RotateCw, Eye, Sun, Moon, Monitor,
-  Download, Upload, Trash2, FolderOpen, Info, Github, ShieldAlert, Satellite,
+  Download, Upload, Trash2, FolderOpen, Info, Github, ShieldAlert,
   Sparkles, Plus, Minus, Zap, ActivitySquare, Timer,
 } from 'lucide-react';
 import type { DangerCategory, DangerActionLevel, DangerDetectorSettings, TitleGenerationChainEntry } from '@/types';
@@ -1081,8 +1081,6 @@ export function SettingsSafetySection({
 }
 
 interface DeveloperSectionProps extends TranslationProps {
-  satelliteTasksEnabled: boolean;
-  onSatelliteTasksEnabledChange: (v: boolean) => void;
   schedulesPageEnabled: boolean;
   onSchedulesPageEnabledChange: (v: boolean) => void;
   taskTriggersPageEnabled: boolean;
@@ -1091,8 +1089,6 @@ interface DeveloperSectionProps extends TranslationProps {
 
 export function SettingsDeveloperSection({
   t,
-  satelliteTasksEnabled,
-  onSatelliteTasksEnabledChange,
   schedulesPageEnabled,
   onSchedulesPageEnabledChange,
   taskTriggersPageEnabled,
@@ -1102,36 +1098,11 @@ export function SettingsDeveloperSection({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Satellite className="h-5 w-5" />
+          <Wrench className="h-5 w-5" />
           {t('developerTools')}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <label className="flex items-center justify-between cursor-pointer">
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-2 text-sm font-medium text-zinc-900 dark:text-zinc-100">
-              <Satellite className="h-4 w-4" />
-              {t('satelliteTasksEnabled')}
-            </div>
-            <p className="pr-4 text-xs text-zinc-500">{t('satelliteTasksEnabledHint')}</p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={satelliteTasksEnabled}
-            onClick={() => onSatelliteTasksEnabledChange(!satelliteTasksEnabled)}
-            className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
-              satelliteTasksEnabled ? 'bg-zinc-900 dark:bg-zinc-100' : 'bg-zinc-200 dark:bg-zinc-700'
-            }`}
-          >
-            <span
-              className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform dark:bg-zinc-900 ${
-                satelliteTasksEnabled ? 'translate-x-5' : 'translate-x-0'
-              }`}
-            />
-          </button>
-        </label>
-
         <label className="flex items-center justify-between cursor-pointer">
           <div className="space-y-0.5">
             <div className="flex items-center gap-2 text-sm font-medium text-zinc-900 dark:text-zinc-100">
@@ -1181,18 +1152,6 @@ export function SettingsDeveloperSection({
             />
           </button>
         </label>
-
-        <div className="rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900/40">
-          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{t('satelliteTasksInternalTitle')}</p>
-          <p className="mt-1 text-xs text-zinc-500">{t('satelliteTasksInternalHint')}</p>
-          <Link
-            href="/flows/satellite-tasks"
-            className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-zinc-700 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            {t('openSatelliteTasks')}
-          </Link>
-        </div>
       </CardContent>
     </Card>
   );

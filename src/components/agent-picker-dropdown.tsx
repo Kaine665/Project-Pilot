@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Search, Maximize2 } from 'lucide-react';
 import { useTranslations } from '@/client/i18n/use-translations';
 import type { Agent } from '@/types';
-import { AgentIcon } from '@/components/agent-form';
+import { AgentAvatar } from '@/components/agent-form';
 
 interface AgentPickerDropdownProps {
   open: boolean;
@@ -163,7 +163,7 @@ export function AgentPickerDropdown({
           : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
       }`}
     >
-      <AgentIcon iconKey={agent.icon} className="h-4 w-4 shrink-0 text-zinc-400" />
+      <AgentAvatar slug={agent.slug} iconKey={agent.icon} className="h-7 w-7 shrink-0 rounded-md" />
       <span className="min-w-0 flex-1 truncate text-[13px] text-zinc-800 dark:text-zinc-200">
         {agent.name}
       </span>

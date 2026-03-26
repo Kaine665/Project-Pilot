@@ -22,7 +22,12 @@ type UseSessionBootstrapParams = {
   projectKey?: string | null;
   initialSessionId?: string | null;
   hasProject: boolean;
+  /** Agents workspace: tighter guards so we never reset over an in-flight first message */
+  workspaceMode?: boolean;
   cacheKey: string;
+  /** Client session id ref; used to skip reset when parent syncs null → id after first send */
+  sessionIdRef: MutableRefObject<string | null>;
+  messagesRef: MutableRefObject<ChatMessage[]>;
   initTokenRef: MutableRefObject<number>;
   streamAbortRef: MutableRefObject<AbortController | null>;
   setShowConfig: Dispatch<SetStateAction<boolean>>;
@@ -48,13 +53,17 @@ export function useSessionBootstrap(params: UseSessionBootstrapParams): void {
     projectKey,
     initialSessionId,
     hasProject,
+    workspaceMode = false,
     cacheKey,
+    sessionIdRef,
+    messagesRef,
     initTokenRef,
     streamAbortRef,
   } = params;
 
   // 始终指向最新回调，避免 connectToStream / loadSessionData / finalizeStream 链因父级 onSessionChange 等每帧变引用导致 effect 死循环
   const paramsRef = useRef(params);
+  const prevInitialSessionPropRef = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
     paramsRef.current = params;
@@ -79,6 +88,21 @@ export function useSessionBootstrap(params: UseSessionBootstrapParams): void {
       connectToStream,
     } = paramsRef.current;
 
+    const prevInitialProp = prevInitialSessionPropRef.current;
+    prevInitialSessionPropRef.current = initialSessionId;
+
+    // 首条消息：客户端已 setSessionId + 追加了用户气泡，随后父级把 initialSessionId 从 null 同步为同一 id。
+    // 若仍走 resetState + loadSessionData，会清空首条消息。workspace 下还要求 messagesRef 已同步，避免 effect 序竞态。
+    const parentSyncedAfterFirstSend =
+      prevInitialProp === null
+      && !!initialSessionId
+      && sessionIdRef.current === initialSessionId
+      && (!workspaceMode || messagesRef.current.length > 0);
+    if (parentSyncedAfterFirstSend) {
+      fetchSessionList(agentId, projectKey).catch(() => {});
+      return () => {};
+    }
+
     let cancelled = false;
     const token = ++initTokenRef.current;
     const isStale = () => cancelled || initTokenRef.current !== token;
@@ -100,7 +124,9 @@ export function useSessionBootstrap(params: UseSessionBootstrapParams): void {
     }
 
     if (hasProject && !projectKey) return;
-    if (!hasProject && initialSessionId === null && !cachedSessionId) return;
+
+    /** `null` = parent asked for an empty new chat; must not reuse cache id or auto-open latest. */
+    const explicitNewSession = initialSessionId === null;
 
     const fetchRuntimeSnapshot = async (sid: string): Promise<RuntimeSnapshotData> => {
       const res = await fetch(
@@ -141,7 +167,12 @@ export function useSessionBootstrap(params: UseSessionBootstrapParams): void {
     };
 
     (async () => {
-      const preferredSessionId = initialSessionId ?? cachedSessionId;
+      const preferredSessionId =
+        initialSessionId === undefined
+          ? cachedSessionId
+          : explicitNewSession
+            ? null
+            : initialSessionId;
 
       if (preferredSessionId) {
         fetchSessionList(agentId, projectKey).catch(() => []);
@@ -162,6 +193,11 @@ export function useSessionBootstrap(params: UseSessionBootstrapParams): void {
         } catch {
           // Ignore transient bootstrap runtime failures.
         }
+        return;
+      }
+
+      if (explicitNewSession) {
+        fetchSessionList(agentId, projectKey).catch(() => []);
         return;
       }
 
@@ -211,5 +247,5 @@ export function useSessionBootstrap(params: UseSessionBootstrapParams): void {
       }
     };
     // 仅依赖「应重新 bootstrap」的结构输入；回调经 paramsRef 取最新，避免 Maximum update depth
-  }, [agentId, cacheKey, hasProject, initialSessionId, initTokenRef, projectKey, streamAbortRef]);
+  }, [agentId, cacheKey, hasProject, initialSessionId, initTokenRef, messagesRef, projectKey, sessionIdRef, streamAbortRef, workspaceMode]);
 }
