@@ -34,9 +34,15 @@ ProjectPilot 里有两类“真相”：
 ```text
 docs/
   README.md
+  documentation-system/   # as-is / design / contracts 体系说明与 walkthrough
+  as-is/                  # 现状（链到代码）
+  design/                 # 设计原则 + decisions/（ADR）
+  contracts/              # 迭代契约（TEMPLATE + examples）
   data-spec/
   ...
 ```
+
+**文档三层入口**：[documentation-system/README.md](./documentation-system/README.md)。
 
 ## 子层说明
 
