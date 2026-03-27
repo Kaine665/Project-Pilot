@@ -18,6 +18,8 @@ export interface ChatMessageListProps {
   showCompressHint: boolean;
   /** Localized "thinking" text */
   thinkingText: string;
+  /** Assistant bubble avatar (cartoon portrait URL) */
+  assistantAvatarSrc?: string;
   onSaveAsKnowledge: (messageId: string, content: string) => void;
   onDelete: (messageId: string) => void;
   onRegenerate: () => void;
@@ -44,6 +46,7 @@ export function ChatMessageList({
   inPlanMode,
   showCompressHint,
   thinkingText,
+  assistantAvatarSrc,
   onSaveAsKnowledge,
   onDelete,
   onRegenerate,
@@ -98,6 +101,7 @@ export function ChatMessageList({
             message={msg}
             showActions
             isStreaming={isStreaming}
+            assistantAvatarSrc={assistantAvatarSrc}
             onSaveAsKnowledge={onSaveAsKnowledge}
             onDelete={onDelete}
             onRegenerate={onRegenerate}
@@ -121,6 +125,7 @@ export function ChatMessageList({
             message={streamingMessage}
             streamingBlocks={streamingBlocks}
             isStreaming
+            assistantAvatarSrc={assistantAvatarSrc}
             onActionPreview={onActionPreview}
             onActionReject={onActionReject}
             onActionRestore={onActionRestore}

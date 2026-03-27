@@ -12,10 +12,11 @@
  */
 
 import { getAppWorkingDir } from '@/lib/app-paths';
-import { getPromptFilePath, getContextIndexPath, getContextDir, getTodosPath, readJsonFile } from '@/lib/file-store';
+import { getPromptFilePath, getContextIndexPath, getContextDir, readJsonFile } from '@/lib/file-store';
+import { readTodosMerged } from '@/lib/todo-file-store';
 import { matchCodeCards, buildCodeCardIndex } from '@/lib/code-card-matcher';
 import { listRunningTasks } from '@/lib/active-tasks';
-import type { ContextIndexData, TodosData } from '@/types';
+import type { ContextIndexData } from '@/types';
 import { resolveSystemPrompt, createRuntimePromptCopy } from '@/lib/agent-prompt-store';
 import { resolveSkillsForSession } from '@/lib/skill-store';
 import { getSettings } from '@/lib/settings-manager';
@@ -34,9 +35,6 @@ import { estimateTokens } from '@/lib/token-estimate';
 import { migrateAgentToResources } from '@/lib/resource-migration';
 import { updateAgentStatus } from '@/lib/agents-store';
 import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
-import { runSatelliteTasks } from '@/lib/satellite-tasks';
-import '@/lib/satellite-tasks'; // side-effect: registers all satellite tasks
-import type { SatelliteContext } from '@/lib/satellite-tasks';
 import { repairStoredTextIfNeeded } from '@/lib/text-repair-server';
 import type { RunStatus, RunStatusInfo, SessionExecution } from './types';
 import { appendUsageRecord } from '@/lib/usage-store';
@@ -52,7 +50,6 @@ import {
   loadAgent,
   eagerlySaveUserTurn,
   persistSessionToDisk,
-  incrementGuardRetryCountOnDisk,
   deleteSessionFromDisk,
   updateConfigOnDisk,
   writeStreamingDraft,
@@ -70,7 +67,8 @@ export interface ImageAttachment {
 export interface FlowContext {
   projectKey: string;
   projectName: string;
-  flowDataPath: string;
+  /** @deprecated 已无服务端 flow 文件 */
+  flowDataPath?: string;
 }
 
 /** ChatToolCall 类型（与 UI 事件对齐） */
@@ -722,7 +720,7 @@ class AgentChatManager {
         contentBlocks: cleanedBlocks.length > 0 ? cleanedBlocks : undefined,
       });
 
-      // Fallback title (non-AI, sync) — satellite task will generate a better one later
+      // Fallback title (non-AI, sync)
       if (!run.sessionTitle) {
         const firstUserMsg = run.messages.find(m => m.role === 'user')?.content;
         const defaultTitle = run.parentSessionId ? '旁听会话' : '新会话';
@@ -805,19 +803,7 @@ class AgentChatManager {
     }
 
     this.trackAndEmit(run, { type: 'done' });
-
-    // Fire-and-forget: run all registered satellite tasks (title, health guard, task card, etc.)
-    // The scheduler emits 'stream_end' after all tasks complete, which is the signal that
-    // closes the SSE connection. This allows satellite SSE events (e.g. task_card_updated)
-    // to reach the frontend before the connection closes.
-    if (!run._ephemeral) {
-      this.runSatelliteTasks(run).catch((err) => {
-        console.error(`${LOG_PREFIX} Satellite tasks error:`, err);
-      });
-    } else {
-      // Ephemeral runs skip satellite tasks — emit stream_end immediately so the SSE closes.
-      this.trackAndEmit(run, { type: 'stream_end' });
-    }
+    this.trackAndEmit(run, { type: 'stream_end' });
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -938,81 +924,6 @@ class AgentChatManager {
       checkpoint: run.checkpoint,
     };
     await persistSessionToDisk(session, this.buildExecutionSummary(run));
-  }
-
-  /**
-   * Build a SatelliteContext and run all registered satellite tasks.
-   * Called fire-and-forget after emit 'done'.
-   */
-  private async runSatelliteTasks(run: AgentChatRun): Promise<void> {
-    const ctx: SatelliteContext = {
-      sessionId: run.sessionId,
-      agentId: run.agentId,
-      projectKey: run.projectKey,
-      messages: run.messages.map(m => ({ role: m.role, content: m.content })),
-      assistantText: run.assistantText,
-      assistantTurnCount: run.messages.filter(m => m.role === 'assistant').length,
-      runStatus: run.status as RunStatus,
-      guardRetryCount: run._guardRetryCount ?? 0,
-      sessionTitle: run.sessionTitle,
-
-      emit: (event: ChatSSEEvent) => this.trackAndEmit(run, event),
-
-      setSessionTitle: (title: string) => {
-        const normalizedTitle = repairStoredTextIfNeeded(title) ?? title;
-        run.sessionTitle = normalizedTitle;
-        this.trackAndEmit(run, { type: 'session_title_set', title: normalizedTitle });
-        // Re-persist updated title to disk (fire-and-forget)
-        persistSessionToDisk({
-          id: run.sessionId,
-          agentId: run.agentId,
-          projectKey: run.projectKey,
-          title: normalizedTitle,
-          sourceType: run.sourceType,
-          sourceId: run.sourceId,
-          todoId: run.todoId,
-          messages: run.messages,
-          claudeSessionId: run.claudeSessionId,
-          createdAt: new Date(run.startedAt).toISOString(),
-          updatedAt: new Date().toISOString(),
-          config: run.config,
-          guardRetryCount: run._guardRetryCount,
-          parentSessionId: run.parentSessionId,
-          importedTurnIndices: run.importedTurnIndices,
-          checkpoint: run.checkpoint,
-        }).catch(() => {});
-      },
-
-      resumeSession: (message: string) => {
-        // Defer until after all satellite tasks complete
-        setTimeout(async () => {
-          try {
-            const memRun = this.runs.get(run.sessionId);
-            // Race condition: user may have already started a new message
-            if (memRun?.status === 'running') {
-              console.log(`${LOG_PREFIX} Session ${run.sessionId} already running (user retried), skip resume`);
-              return;
-            }
-            if (memRun) {
-              memRun._guardRetryCount = (memRun._guardRetryCount ?? 0) + 1;
-            }
-            await incrementGuardRetryCountOnDisk(run.sessionId);
-
-            await this.start(run.sessionId, run.agentId, message);
-            console.log(`${LOG_PREFIX} Satellite task resumed session ${run.sessionId}`);
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            if (msg.includes('already running')) {
-              console.log(`${LOG_PREFIX} Session ${run.sessionId} already running (race), skip resume`);
-            } else {
-              console.error(`${LOG_PREFIX} Satellite resume failed:`, err);
-            }
-          }
-        }, 0);
-      },
-    };
-
-    await runSatelliteTasks(ctx);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -1190,7 +1101,7 @@ async function buildResourcePrompt(
 
   // ── Phase 2: Merge contextRefs from active todos assigned to this agent ──
   {
-    const todosData = await readJsonFile<TodosData>(getTodosPath(), { todos: [] });
+    const todosData = await readTodosMerged();
     const activeTodos = todosData.todos.filter(t =>
       t.status === 'in_progress' &&
       t.agentId === agent.id &&
@@ -1303,7 +1214,7 @@ async function buildAgentChatPromptWithFlowContext(
     label: '项目上下文',
     projectKey,
     projectName,
-    flowDataPath,
+    ...(flowDataPath && { flowDataPath }),
   };
 
   const resourcePrompt = await buildResourcePrompt(agent, [flowRef], sessionConfig, sessionId, projectKey);

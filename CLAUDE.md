@@ -58,7 +58,9 @@ vite.config.ts           # Vite 配置
 
 ### 数据层
 
-- 所有数据存储在 `~/.project-pilot/data/`（纯 JSON 文件，无数据库）
+- **磁盘树目标与现实**：本机 `~/.project-pilot/README.md`、`数据文件夹现状.md`（不在仓库）。  
+- **代码当前默认根**：`src/lib/file-store.ts` → 未设置 `PROJECT_PILOT_DATA_DIR` 时为 **`~/.project-pilot`**（不再默认使用 `~/.project-pilot/data/`）。与上述目标可能不一致时，以 **`数据文件夹现状.md` 中「代码是否已适配」** 为准。  
+- 仓库说明：根 [`README.md`](../README.md#pp-data-directory)。对齐 2026-03-26。
 - 数据操作通过 `src/lib/file-store.ts`，使用原子写入（先写 .tmp 再 rename）
 - `modifyJsonFile()` 带进程级写入队列（同文件路径串行）
 

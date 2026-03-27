@@ -18,7 +18,7 @@ import {
   modifyJsonFile,
 } from '@/lib/file-store';
 import { getAppWorkingDir } from '@/lib/app-paths';
-import { callLightweightAI } from '@/lib/satellite-tasks/lightweight-ai';
+import { callLightweightAI } from '@/lib/lightweight-ai';
 import type { ContextEntry, ContextIndexData } from '@/types';
 
 const LOG = '[CodeCardUpdater]';

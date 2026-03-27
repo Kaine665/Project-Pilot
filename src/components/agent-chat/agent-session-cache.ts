@@ -5,7 +5,9 @@
  * panel-local state to survive SPA route changes while the canonical session
  * data is reloaded from the server on remount.
  *
- * Cache entries are keyed by a composite of agentId + projectKey + initialSessionId.
+ * Cache entries are keyed by agentId + projectKey + session anchor.
+ * For explicit new chats (initialSessionId === null), an optional draftSlot disambiguates
+ * multiple draft panels (e.g. Agents workspace) so one tab cannot restore another's session.
  * Entries auto-expire after 5 minutes (stale data is worse than a re-fetch).
  */
 
@@ -36,8 +38,18 @@ export function buildCacheKey(
   agentId: string,
   projectKey?: string | null,
   initialSessionId?: string | null,
+  /** When there is no fixed session id yet, separates draft panels (Agents workspace tabs). */
+  draftSlot?: string | number | null,
 ): string {
-  return `${agentId}::${projectKey ?? ''}::${initialSessionId ?? ''}`;
+  const pk = projectKey ?? '';
+  if (initialSessionId != null && initialSessionId !== '') {
+    return `${agentId}::${pk}::${initialSessionId}`;
+  }
+  const slot =
+    draftSlot !== undefined && draftSlot !== null && `${draftSlot}` !== ''
+      ? String(draftSlot)
+      : 'default';
+  return `${agentId}::${pk}::@draft@${slot}`;
 }
 
 /**

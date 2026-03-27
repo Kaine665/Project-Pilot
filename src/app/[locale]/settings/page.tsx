@@ -91,7 +91,6 @@ export default function SettingsPage() {
 
   // Privacy state
   const [telemetry, setTelemetry] = useState(false);
-  const [satelliteTasksEnabled, setSatelliteTasksEnabled] = useState(true);
   const [schedulesPageEnabled, setSchedulesPageEnabled] = useState(true);
   const [taskTriggersPageEnabled, setTaskTriggersPageEnabled] = useState(true);
 
@@ -243,7 +242,6 @@ export default function SettingsPage() {
         setDefaultExposePromptPath(data.claude.defaultExposePromptPath !== false);
         setBaseUrl(data.claude.baseUrl || '');
         setTelemetry(data.general?.telemetry || false);
-        setSatelliteTasksEnabled(data.developer?.satelliteTasksEnabled !== false);
         setSchedulesPageEnabled(data.developer?.schedulesPageEnabled !== false);
         setTaskTriggersPageEnabled(data.developer?.taskTriggersPageEnabled !== false);
         setDangerSettings({ ...DEFAULT_DANGER_SETTINGS, ...data.dangerDetector });
@@ -517,7 +515,6 @@ export default function SettingsPage() {
           },
           general: { telemetry },
           developer: {
-            satelliteTasksEnabled,
             schedulesPageEnabled,
             taskTriggersPageEnabled,
           },
@@ -874,8 +871,6 @@ export default function SettingsPage() {
             {activeSection === 'developer' && (
               <SettingsDeveloperSection
                 t={t} tActions={tActions} btnActive={btnActive} btnInactive={btnInactive}
-                satelliteTasksEnabled={satelliteTasksEnabled}
-                onSatelliteTasksEnabledChange={setSatelliteTasksEnabled}
                 schedulesPageEnabled={schedulesPageEnabled}
                 onSchedulesPageEnabledChange={setSchedulesPageEnabled}
                 taskTriggersPageEnabled={taskTriggersPageEnabled}

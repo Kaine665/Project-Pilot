@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, Menu, ipcMain, shell, Notification } from 'electron';
 import type { NotificationConstructorOptions } from 'electron';
-import { ChildProcess } from 'child_process';
+import { ChildProcess, execSync } from 'child_process';
 import path from 'path';
 import { findAvailablePort } from './port-finder';
 import { startBackendServer } from './server';
@@ -12,7 +12,10 @@ const APP_ENTRY_PATH = '/flows/projects';
 
 let mainWindow: BrowserWindow | null = null;
 let serverProcess: ChildProcess | null = null;
-let serverPort: number = DEV_PORT;
+let backendShutdownDone = false;
+let serverPort = loadDevServerConfig(projectRoot).clientPort;
+/** 主窗口 loadURL 使用的 origin（开发态来自 config/dev-server.json） */
+let windowLoadOrigin = `http://127.0.0.1:${serverPort}`;
 
 // ── 单实例锁 ──────────────────────────────────────────
 const gotLock = app.requestSingleInstanceLock();
@@ -119,11 +122,19 @@ function createMainWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
+      // 开发态加载 Vite：需允许 eval/inline，否则脚本不执行 → 白屏（生产仍为 true）
+      webSecurity: !isDev,
     },
   });
   mainWindow.removeMenu();
 
-  mainWindow.loadURL(`http://127.0.0.1:${serverPort}${APP_ENTRY_PATH}`);
+  if (isDev) {
+    mainWindow.webContents.on('did-fail-load', (_e, code, desc, validatedURL) => {
+      console.error('[electron] did-fail-load', code, desc, validatedURL);
+    });
+  }
+
+  mainWindow.loadURL(`${windowLoadOrigin}${APP_ENTRY_PATH}`);
 
   mainWindow.once('ready-to-show', () => {
     if (!mainWindow) return;
@@ -162,6 +173,7 @@ app.whenReady().then(async () => {
 
     splash.close();
     splash = null;
+    windowLoadOrigin = `http://127.0.0.1:${serverPort}`;
     createMainWindow();
 
     setTimeout(() => {
@@ -188,9 +200,32 @@ app.on('before-quit', () => {
   gracefulShutdown();
 });
 
+/**
+ * 结束内嵌 Hono 进程；Windows 上 child.kill 常杀不干净子进程，用 taskkill /T /F 清进程树。
+ */
+function killChildProcessTree(child: ChildProcess | null): void {
+  if (!child?.pid) return;
+  const pid = child.pid;
+  try {
+    if (process.platform === 'win32') {
+      execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore', windowsHide: true });
+    } else {
+      child.kill('SIGTERM');
+    }
+  } catch {
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      /* 已退出 */
+    }
+  }
+}
+
 function gracefulShutdown() {
+  if (backendShutdownDone) return;
+  backendShutdownDone = true;
   if (serverProcess) {
-    serverProcess.kill();
+    killChildProcessTree(serverProcess);
     serverProcess = null;
   }
 }

@@ -71,7 +71,7 @@ interface DailyUsageStats {
 // ── Paths ──
 
 function getUsageDir(): string {
-  return path.join(getDataDir(), 'usage');
+  return path.join(getDataDir(), 'config', 'usage');
 }
 
 function getUsageJSONLPath(): string {

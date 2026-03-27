@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Bot, X, Maximize2,
   Terminal, FileText, Globe, Users, ShieldOff, ListTodo, Eye, Check,
@@ -13,6 +13,8 @@ import type {
 import type { ProjectEntry } from '@/components/project-context';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
+import { resolveAgentAvatarSrc } from '@/lib/agent-avatar';
+import { cn } from '@/lib/utils';
 
 // ── Icon picker presets ──
 
@@ -39,6 +41,40 @@ ICON_MAP['sparkles'] = Bot;
 export function AgentIcon({ iconKey, className }: { iconKey?: string; className?: string }) {
   const Icon = (iconKey && ICON_MAP[iconKey]) || Bot;
   return <Icon className={className} />;
+}
+
+/** 卡通/职业风静态头像（/public/agents）；加载失败时回退 Lucide 图标 */
+export function AgentAvatar({
+  slug,
+  iconKey,
+  className,
+  alt,
+}: {
+  slug?: string | null;
+  iconKey?: string | null;
+  className?: string;
+  alt?: string;
+}) {
+  const src = useMemo(() => resolveAgentAvatarSrc(slug, iconKey), [slug, iconKey]);
+  const [failed, setFailed] = useState(false);
+  const onError = useCallback(() => setFailed(true), []);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  if (failed) {
+    return <AgentIcon iconKey={iconKey ?? undefined} className={className} />;
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt ?? ''}
+      className={cn('pointer-events-none select-none object-cover', className)}
+      onError={onError}
+    />
+  );
 }
 
 // ── Capability items config ──
@@ -318,7 +354,7 @@ export function SettingsForm({
               图标
             </label>
             <div className="grid grid-cols-5 gap-3">
-              {AGENT_ICON_OPTIONS.map(({ key, icon: Icon, label }) => {
+              {AGENT_ICON_OPTIONS.map(({ key, label }) => {
                 const selected = form.icon === key || (!form.icon && key === 'bot');
                 return (
                   <button
@@ -332,7 +368,7 @@ export function SettingsForm({
                         : 'border-zinc-200 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:text-zinc-300'
                     }`}
                   >
-                    <Icon className="h-6 w-6" />
+                    <AgentAvatar iconKey={key} className="h-9 w-9 rounded-lg" />
                     <span className="truncate w-full text-center">{label}</span>
                   </button>
                 );

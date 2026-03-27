@@ -35,6 +35,11 @@ export interface AgentChatPanelProps {
   };
   /** Workspace mode hides legacy runtime/config chrome so the parent page owns the three-column shell. */
   workspaceMode?: boolean;
+  /**
+   * When `initialSessionId` is null, scopes SPA panel cache so each draft tab is isolated.
+   * Pass a stable per-tab id from the parent (e.g. panel key).
+   */
+  draftCacheSlot?: string | number | null;
 }
 
 export type IndexedSSEEvent = ChatSSEEvent & { _idx: number };

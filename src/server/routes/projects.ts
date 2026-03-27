@@ -1,8 +1,7 @@
 import { Hono } from 'hono';
 import {
-  getFlowIndexPath,
-  readJsonFile,
-  writeJsonFile,
+  readProjectIndex,
+  writeProjectIndex,
   ensureDataDirV2Migrated,
 } from '@/lib/file-store';
 import type { ProjectConfig, ProjectEntry, ProjectIndex } from '@/types';
@@ -15,7 +14,7 @@ const app = new Hono();
 
 async function readIndex(): Promise<ProjectIndex> {
   await ensureDataDirV2Migrated();
-  return readJsonFile<ProjectIndex>(getFlowIndexPath(), { projects: [] });
+  return readProjectIndex();
 }
 
 function entryToConfig(entry: ProjectEntry): ProjectConfig {
@@ -126,7 +125,7 @@ app.delete('/', async (c) => {
 
   project.archived = true;
   project.archivedAt = new Date().toISOString();
-  await writeJsonFile(getFlowIndexPath(), index);
+  await writeProjectIndex(index);
 
   return c.json({ projects: buildLegacyResponse(index) });
 });

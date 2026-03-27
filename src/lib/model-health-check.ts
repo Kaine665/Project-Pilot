@@ -42,7 +42,7 @@ const REQUEST_TIMEOUT_MS = 30_000;
 const SKIP_PROVIDERS = new Set<string>(['custom', 'ollama']);
 
 function getHealthFilePath(): string {
-  return path.join(getDataDir(), HEALTH_FILE);
+  return path.join(getDataDir(), 'config', HEALTH_FILE);
 }
 
 // ── Read / Write results ──
@@ -342,7 +342,7 @@ function resolveBaseUrl(
  * 运行模型健康巡检。
  *
  * 遍历所有有 credentials 的供应商的所有模型，逐个发最小请求验证。
- * 结果写入 ~/.project-pilot/data/models-health.json。
+ * 结果写入 {DATA_DIR}/config/models-health.json（默认 ~/.project-pilot/config/）。
  */
 export async function runHealthCheck(options: CheckOptions = {}): Promise<ModelsHealth> {
   const settings = await getSettings();

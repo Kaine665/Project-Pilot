@@ -7,8 +7,7 @@
 
 import type { ResourceLoader, LoaderContext } from '../resource-loader';
 import type { ResourceRef, ResolvedResource } from '@/types/resource';
-import { getTodosPath, readJsonFile } from '@/lib/file-store';
-import type { TodosData } from '@/types';
+import { readTodosMerged } from '@/lib/todo-file-store';
 
 const PRIORITY_LABELS: Record<string, string> = { high: '高', medium: '中', low: '低' };
 const STATUS_LABELS: Record<string, string> = {
@@ -49,7 +48,7 @@ export class TodoListLoader implements ResourceLoader {
   readonly type = 'todo-list' as const;
 
   async resolve(ref: ResourceRef, ctx: LoaderContext): Promise<ResolvedResource> {
-    const data = await readJsonFile<TodosData>(getTodosPath(), { todos: [] });
+    const data = await readTodosMerged();
     let todos = ref.id === 'all'
       ? data.todos
       : data.todos.filter(t => t.status !== 'done');

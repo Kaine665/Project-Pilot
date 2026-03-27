@@ -169,8 +169,6 @@ export interface GeneralSettings {
 }
 
 export interface DeveloperSettings {
-  /** 卫星任务总开关 */
-  satelliteTasksEnabled?: boolean;
   /** 是否显示定时任务入口与页面 */
   schedulesPageEnabled?: boolean;
   /** 是否显示事件驱动任务触发入口与页面 */
@@ -178,7 +176,6 @@ export interface DeveloperSettings {
 }
 
 export const DEFAULT_DEVELOPER_SETTINGS: DeveloperSettings = {
-  satelliteTasksEnabled: true,
   schedulesPageEnabled: true,
   taskTriggersPageEnabled: true,
 };
@@ -351,20 +348,14 @@ export type ChatSSEEvent =
   | { type: 'session_title_set'; title: string }
   | { type: 'knowledge_draft_created'; entryId: string; label: string }
   | { type: 'doc_created'; docId: string; title: string; projectKey: string }
-  | { type: 'task_suspended'; taskId: string; title: string }
-  | { type: 'task_completed'; taskId: string }
   /** 会话检查点已生成（提示前端可显示续接按钮） */
   | { type: 'checkpoint_saved'; checkpoint: import('@/types/agent-chat').SessionCheckpoint }
   /** 模型 token 用量（来自 SDK result.modelUsage 或 streaming message_start/message_delta） */
   | { type: 'token_usage'; inputTokens: number; outputTokens: number; contextWindow?: number; final?: boolean }
   | { type: 'error'; message: string }
   | { type: 'awaiting_sub_agents' }
-  /** 卫星任务：主题完成检测结果 */
-  | { type: 'topic_completion'; completed: boolean; confidence: number; summary: string }
-  /** 卫星任务：任务卡片已更新 */
-  | { type: 'task_card_updated'; card: import('@/lib/task-card-store').TaskCard }
   | { type: 'done' }
-  /** 所有卫星任务完成，SSE 连接可以关闭。前端收到 'done' 后即可更新 UI，收到此事件后 SSE 才真正结束。 */
+  /** SSE 流结束信号；前端在 `done` 后已可更新 UI，收到本事件后连接关闭。 */
   | { type: 'stream_end' };
 
 // ==================== Agent ====================
@@ -385,7 +376,7 @@ export interface AgentCapabilities {
   todoRead: boolean;
   /** Expose the prompt file path in the system prompt so the AI can read/edit its own instructions */
   exposePromptPath: boolean;
-  /** Grant agent read/write access to its private data store (agent-data/{agentId}/) */
+  /** Grant agent read/write access to its private workspace (agents/workspaces/{agentId}/) */
   dataStore: boolean;
 }
 
@@ -593,35 +584,6 @@ export interface TodoItem {
 
 export interface TodosData {
   todos: TodoItem[];
-}
-
-// ==================== Suspended Tasks（跨会话任务交接） ====================
-
-export type SuspendedTaskStatus = 'suspended' | 'resumed' | 'completed';
-
-export interface SuspendedTask {
-  id: string;                    // suspend-{timestamp}-{random}
-  title: string;                 // 任务简述
-  projectKey?: string;           // 关联项目
-  agentId: string;               // 挂起时的 Agent
-  sessionId: string;             // 挂起时的会话 ID
-
-  // 交接内容（Agent 生成）
-  progress: string;              // 当前进度
-  blockReason: string;           // 阻塞原因
-  nextSteps: string;             // 恢复建议 / 下一步
-  context?: string;              // 补充上下文（相关文件、分支等）
-
-  // 状态
-  status: SuspendedTaskStatus;
-  suspendedAt: string;
-  resumedAt?: string;
-  resumedBy?: string;            // 接续的会话 ID
-  completedAt?: string;
-}
-
-export interface SuspendedTasksData {
-  tasks: SuspendedTask[];
 }
 
 // ==================== Flow Project ====================

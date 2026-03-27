@@ -26,14 +26,13 @@ import {
   getAgentChatSessionAdjunctsPath,
   getAgentChatMessagesDir,
   getAgentChatMessagePath,
-  getAgentsPath,
   readJsonFile,
   modifyJsonFile,
   parseJsonSafe,
 } from '@/lib/file-store';
 import { deleteRuntimePromptCopy } from '@/lib/agent-prompt-store';
 import { looksLikeCorruptedStoredText, repairStoredTextIfNeeded } from '@/lib/text-repair-server';
-import type { Agent, AgentsData, ContentBlock } from '@/types';
+import type { Agent, ContentBlock } from '@/types';
 import type {
   AgentChatSession,
   AgentChatSessionsData,
@@ -43,6 +42,7 @@ import type {
   SessionMeta,
 } from '@/types/agent-chat';
 import { getDefaultAgents } from '@/lib/default-agents';
+import { getAgentById } from '@/lib/agents-store';
 import type { SessionExecution } from './types';
 
 // ── Constants ──
@@ -387,7 +387,7 @@ function stripActionTags(text: string): string {
     .replace(/<save-doc[^>]*>[\s\S]*?<\/save-doc>/g, '')
     .replace(/<save-knowledge[^>]*>[\s\S]*?<\/save-knowledge>/g, '')
     .replace(/<suspend-task[^>]*>[\s\S]*?<\/suspend-task>/g, '')
-    .replace(/<complete-suspended-task[^>]*/g, '')
+    .replace(/<complete-suspended-task[^/]*\/>\s*/g, '')
     .trim();
 }
 
@@ -1017,19 +1017,13 @@ export async function importSessionsWithMessages(
 
 // ── Agent Loading ──
 
-let _agentsCache: AgentsData | null = null;
-let _agentsCacheTs = 0;
-const AGENTS_CACHE_TTL = 30_000;
-
+/**
+ * Resolve agent for chat runtime. Uses the same source as /api/agents (registry + object model + merge/repair),
+ * not a raw agents.json read — otherwise custom agents stored only under agents/definitions/ fail with 404.
+ */
 export async function loadAgent(agentId: string): Promise<Agent> {
-  const now = Date.now();
-  if (!_agentsCache || now - _agentsCacheTs > AGENTS_CACHE_TTL) {
-    _agentsCache = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
-    _agentsCacheTs = now;
-  }
-  const agentsData = _agentsCache;
-  const agent = agentsData.agents.find(a => a.id === agentId && !a.archived);
-  if (!agent) {
+  const agent = await getAgentById(agentId, { includePrompt: true });
+  if (!agent || agent.archived) {
     const { HttpError } = await import('@/lib/http-error');
     throw new HttpError('Agent not found or archived', 404);
   }

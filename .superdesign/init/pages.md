@@ -1,51 +1,23 @@
-# Page Dependency Trees
+# Docs flow — component dependency tree
 
-## /flows/agents (Agents Page)
+## /flows/docs/:projectKey (文档)
 
-Entry: `src/app/[locale]/flows/agents/page.tsx`
+**Entry**: `src/app/[locale]/flows/docs/[projectKey]/page.tsx`
 
-Dependencies:
-- src/components/agent-chat-panel.tsx
-  - src/components/ui/button.tsx
-  - src/components/chat-bubble.tsx
-  - src/components/chat-input.tsx
-  - src/components/chat-notification-banners.tsx
-  - src/components/save-knowledge-dialog.tsx
-  - src/components/session-dropdown.tsx
-  - src/components/guest-agent-overlay.tsx
-  - src/components/session-config-panel.tsx
-  - src/components/plan-viewer-panel.tsx
-  - src/components/session-compress-dialog.tsx
-  - src/components/agent-session-utils.ts
-- src/components/agent-form.tsx
-  - src/components/project-context.tsx
-  - src/lib/provider-registry.ts
-- src/components/agent-session-utils.ts
-- src/components/project-context.tsx
-- src/lib/provider-registry.ts
+**Dependencies**:
 
-Parent layout (wraps agents page):
-- src/app/[locale]/flows/layout.tsx
-  - src/components/top-nav.tsx
-    - src/components/project-context.tsx
-    - src/components/language-switcher.tsx
-    - src/lib/utils.ts
-  - src/components/sidebar-icon-button.tsx
-    - src/components/ui/tooltip.tsx
-  - src/components/sortable-project-tree.tsx (dynamic, not shown on agents page)
+- `@/client/i18n/routing` — `useRouter`
+- `@/components/project-context` — `useProject`
+- `@/types` — `ContextEntry`, `DocEntry`, `DocStatus`
+- `lucide-react` — icons
+- Parent layout (not imported by page, but wraps content):
+  - `src/client/routes/flows-layout.tsx`
+    - `@/components/top-nav`
+    - `@/components/sidebar-icon-button`
+    - `@/components/ui/tooltip`
+    - `@/components/project-context`
+    - `@/client/i18n/routing`
 
-Root layout:
-- src/app/[locale]/layout.tsx
-- src/app/globals.css
+## /flows/docs (index)
 
-**Required context files for agents page design:**
-- src/app/[locale]/flows/agents/page.tsx
-- src/app/[locale]/flows/layout.tsx
-- src/components/top-nav.tsx
-- src/components/sidebar-icon-button.tsx
-- src/components/agent-form.tsx (AgentIcon, SettingsForm UI)
-- src/components/agent-chat-panel.tsx (simplified: header, input area, message list area)
-- src/components/ui/button.tsx
-- src/components/ui/tooltip.tsx
-- src/app/globals.css
-- src/lib/utils.ts
+**Entry**: `src/app/[locale]/flows/docs/page.tsx` — redirect / empty only.

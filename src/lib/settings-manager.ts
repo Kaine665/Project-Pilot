@@ -5,7 +5,8 @@
  * 优先级：系统环境变量 > App 设置 > 默认值。
  */
 
-import { getSettingsPath, readJsonFile, writeJsonFile } from '@/lib/file-store';
+import { access } from 'fs/promises';
+import { getDataDir, getSettingsPath, readJsonFile, writeJsonFile } from '@/lib/file-store';
 import { getKimiCandidateBaseUrls, getProviderPreset } from '@/lib/provider-registry';
 import type { AgentCapabilities, AppSettings, ClaudeAuthMode, ClaudeSettings, CustomProviderConfig, ProviderCredential, ProviderId } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_APP_SETTINGS } from '@/types';
@@ -18,12 +19,30 @@ const CACHE_TTL_MS = 30_000;
 let cachedSettings: AppSettings | null = null;
 let cacheTimestamp = 0;
 
+async function resolveReadableSettingsPath(): Promise<string> {
+  const primary = getSettingsPath();
+  const fallbacks = [
+    // 旧版曾把 settings.json 放在 DATA_DIR 根下（现为 config/settings.json）
+    path.join(getDataDir(), 'settings.json'),
+  ];
+  for (const p of [primary, ...fallbacks]) {
+    try {
+      await access(p);
+      return p;
+    } catch {
+      /* try next */
+    }
+  }
+  return primary;
+}
+
 export async function getSettings(): Promise<AppSettings> {
   const now = Date.now();
   if (cachedSettings && now - cacheTimestamp < CACHE_TTL_MS) {
     return cachedSettings;
   }
-  const raw = await readJsonFile<AppSettings>(getSettingsPath(), DEFAULT_APP_SETTINGS);
+  const p = await resolveReadableSettingsPath();
+  const raw = await readJsonFile<AppSettings>(p, DEFAULT_APP_SETTINGS);
   cachedSettings = migrateCredentials(raw);
   cacheTimestamp = now;
   return cachedSettings;

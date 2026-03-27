@@ -7,7 +7,7 @@ import {
   MessageSquare, Archive, ArchiveRestore,
   Settings,
   Download, Upload, Search, Folder, FolderOpen,
-  Command, Terminal, Globe,
+  Bot, Command, Terminal, Globe,
   Files, GitBranch, Eye, Database, ListTodo, HardDrive,
   FileText, FileJson,
   ChevronDown, ChevronRight, Clock, Play,
@@ -15,8 +15,8 @@ import {
 import { lazy, Suspense } from 'react';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
-import { FolderExplorerPanel } from '@/components/folder-explorer-panel';
-import { AgentSessionPromptStack, type PromptStackSeedItem } from '@/components/agent-session-prompt-stack';
+import { AgentsWorkspaceRail } from '@/components/agents-workspace-rail';
+import { type PromptStackSeedItem } from '@/components/agent-session-prompt-stack';
 
 const AgentChatPanelLazy = lazy(() =>
   import('@/components/agent-chat-panel').then(m => ({ default: m.AgentChatPanel }))
@@ -39,6 +39,7 @@ import { type AllSessionItem, type OpenedSession, syncUrlParams } from '@/compon
 import { useProject } from '@/components/project-context';
 import { getProviderPreset } from '@/lib/provider-registry';
 import { repairTextIfNeeded } from '@/lib/text-repair';
+import { cn } from '@/lib/utils';
 
 
 // ── Helpers ──
@@ -73,15 +74,21 @@ function formatTokenCount(tokens: number | null | undefined): string {
   return `~${tokens}`;
 }
 
-function getBaseName(pathValue: string | undefined): string {
-  if (!pathValue) return 'develop-static';
-  const normalized = pathValue.replace(/\\/g, '/').replace(/\/+$/, '');
-  const segments = normalized.split('/').filter(Boolean);
-  return segments[segments.length - 1] ?? 'develop-static';
-}
-
 function displayText(value: string | undefined, fallback = '--'): string {
   return repairTextIfNeeded(value) ?? value ?? fallback;
+}
+
+/** Provider / model line for workspace header (avoid raw "— · —"). */
+function formatAgentRuntimeCaption(
+  agent: Agent,
+  t: (key: string, values?: Record<string, unknown>) => string,
+): string {
+  const provider = agent.defaultProvider?.trim() ?? '';
+  const model = agent.defaultModel?.trim() ?? '';
+  if (!provider && !model) return t('workspace.modelFollowsGlobal');
+  if (provider && !model) return t('workspace.runtimeProviderInheritModel', { provider });
+  if (!provider && model) return model;
+  return `${provider} · ${model}`;
 }
 
 // ── Session card (memo-ized to avoid re-render on listClockNow ticks) ──
@@ -150,9 +157,11 @@ const SessionCard = memo(function SessionCard({
         </span>
       )}
       <button
+        type="button"
         onClick={(e) => onArchiveToggle(s, e)}
-        className="shrink-0 rounded-lg p-1.5 text-zinc-400 opacity-0 transition-all hover:bg-muted hover:text-foreground group-hover/session:opacity-100 dark:text-zinc-500"
+        className="shrink-0 rounded-lg p-1.5 text-muted-foreground opacity-0 transition-all hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover/session:opacity-100"
         title={s.archived ? unarchiveTitle : archiveTitle}
+        aria-label={s.archived ? unarchiveTitle : archiveTitle}
       >
         {s.archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
       </button>
@@ -165,6 +174,7 @@ const SessionCard = memo(function SessionCard({
 export default function AgentsPage() {
   const { projects, activeKey } = useProject();
   const t = useTranslations('agentsWorkspace');
+  const tAgents = useTranslations('agents');
   const tActions = useTranslations('actions');
 
   // ── Core data ──
@@ -396,6 +406,7 @@ export default function AgentsPage() {
           updatedAt: s.updatedAt,
           agentId: s.agentId,
           agentName: agent?.name ?? s.agentId ?? '已删除 Agent',
+          agentSlug: agent?.slug,
           agentIcon: agent?.icon,
           unreadCount: s.unreadCount,
           archived: s.archived,
@@ -483,6 +494,7 @@ export default function AgentsPage() {
   // ── Handlers: Conversations tab ──
 
   const handleSessionClick = useCallback((session: AllSessionItem) => {
+    setHistoryExpanded(false);
     // Mark as read (fire-and-forget + clear local state immediately)
     if (session.unreadCount) {
       setAllSessions(prev => prev.map(s => s.id === session.id ? { ...s, unreadCount: 0 } : s));
@@ -509,6 +521,7 @@ export default function AgentsPage() {
   }, []);
 
   const handleNewSession = (agent: Agent) => {
+    setHistoryExpanded(false);
     const key = nextKeyRef.current++;
     setOpenedSessions(prev => [...prev, { sessionId: null, agentId: agent.id, key }]);
     setActivePanel({ type: 'session', key });
@@ -771,10 +784,15 @@ export default function AgentsPage() {
   const resolvedSessions = useMemo(() => allSessions.map((session) => {
     const agent = agentLookup.get(session.agentId);
     if (!agent) return session;
-    if (session.agentName === agent.name && session.agentIcon === agent.icon) return session;
+    if (
+      session.agentName === agent.name
+      && session.agentIcon === agent.icon
+      && session.agentSlug === agent.slug
+    ) return session;
     return {
       ...session,
       agentName: agent.name,
+      agentSlug: agent.slug,
       agentIcon: agent.icon,
     };
   }), [allSessions, agentLookup]);
@@ -798,10 +816,15 @@ export default function AgentsPage() {
     setAllSessions(prev => prev.map((session) => {
       const agent = agentLookup.get(session.agentId);
       if (!agent) return session;
-      if (session.agentName === agent.name && session.agentIcon === agent.icon) return session;
+      if (
+        session.agentName === agent.name
+        && session.agentIcon === agent.icon
+        && session.agentSlug === agent.slug
+      ) return session;
       return {
         ...session,
         agentName: agent.name,
+        agentSlug: agent.slug,
         agentIcon: agent.icon,
       };
     }));
@@ -811,11 +834,6 @@ export default function AgentsPage() {
     activeOpened?.sessionId ? resolvedSessions.find(s => s.id === activeOpened.sessionId) ?? null : null,
     [activeOpened, resolvedSessions]);
 
-  const activeProject = useMemo(
-    () => projects.find((project) => project.key === effectiveProjectKey) ?? null,
-    [projects, effectiveProjectKey],
-  );
-
   const fallbackWorkspaceAgent = filteredAgents.find((agent) => agent.id === 'agent-builtin-self-dev') ?? filteredAgents[0] ?? null;
   const workspaceAgent = selectedAgent ?? activeSessionAgent ?? fallbackWorkspaceAgent;
   const workspaceSessionId = activeSessionInfo?.id ?? activeOpened?.sessionId ?? null;
@@ -824,31 +842,34 @@ export default function AgentsPage() {
   const workspaceAgentCapabilities = workspaceAgent?.capabilities ?? DEFAULT_AGENT_CAPABILITIES;
   const workspaceAgentName = displayText(workspaceAgent?.name, t('workspace.defaultAgentName'));
   const workspaceAgentId = workspaceAgent?.id ?? 'agent-builtin-self-dev';
-  const workspaceAgentDataDirName = workspaceAgent?.slug ?? workspaceAgentId;
-  const workspaceAgentDataPath = `agents/data/${workspaceAgentDataDirName}`;
+
+  const handleRailCapabilitiesUpdated = useCallback((next: AgentCapabilities) => {
+    setAgents((prev) => prev.map((a) => (a.id === workspaceAgentId ? { ...a, capabilities: next } : a)));
+    setForm((f) => (selectedAgentId === workspaceAgentId ? { ...f, capabilities: next } : f));
+  }, [workspaceAgentId, selectedAgentId]);
+
+  /** 与 ~/.project-pilot/agents/README.md 一致：agents/workspaces/<agentId>/ */
+  const workspaceAgentDataPath = `agents/workspaces/${workspaceAgentId}`;
   const workspaceAgentDescription = displayText(
     workspaceAgent?.description,
     t('workspace.defaultAgentDescription', { agentName: workspaceAgentName }),
   );
-  const projectRootLabel = `${getBaseName(activeProject?.path)}/`;
   const projectPromptLabel = effectiveProjectKey ? `${effectiveProjectKey}.md` : 'project-pilot.md';
   const projectPromptPath = effectiveProjectKey
-    ? `~/.project-pilot/data/project-prompts/${effectiveProjectKey}.md`
-    : '~/.project-pilot/data/project-prompts/project-pilot.md';
+    ? `~/.project-pilot/prompts/projects/${effectiveProjectKey}.md`
+    : '~/.project-pilot/prompts/projects/project-pilot.md';
   const agentPromptLabel = workspaceAgent
     ? `${workspaceAgent.id}.md`
     : 'agent-builtin-self-dev.md';
   const agentPromptPath = workspaceAgent
-    ? (workspaceAgent.builtIn
-        ? `~/.project-pilot/data/prompts/${workspaceAgent.id}.md`
-        : `~/.project-pilot/data/prompts/agents/${workspaceAgent.id}.md`)
-    : '~/.project-pilot/data/prompts/agent-builtin-self-dev.md';
+    ? `~/.project-pilot/prompts/agents/${workspaceAgent.id}.md`
+    : '~/.project-pilot/prompts/agents/agent-builtin-self-dev.md';
   const runtimePromptLabel = workspaceSessionId && workspaceAgent
     ? `${workspaceSessionId}.md`
     : 'session-runtime.md';
   const runtimePromptPath = workspaceSessionId && workspaceAgent
-    ? `~/.project-pilot/data/prompts/runtime/${workspaceAgent.id}/${workspaceSessionId}.md`
-    : '~/.project-pilot/data/prompts/runtime/<agent>/<session>.md';
+    ? `~/.project-pilot/prompts/runtime/${workspaceAgent.id}/${workspaceSessionId}.md`
+    : '~/.project-pilot/prompts/runtime/<agent>/<session>.md';
   const agentPromptTokens = estimateTokenCount(workspaceAgent?.systemPrompt);
   const combinedPromptTokens = (promptMetrics.global ?? 0) + (promptMetrics.project ?? 0) + agentPromptTokens;
   const promptUsagePercent = Math.min(100, Math.round((combinedPromptTokens / 128000) * 100));
@@ -857,7 +878,7 @@ export default function AgentsPage() {
       scope: 'Global',
       accent: 'bg-blue-50 text-blue-700 border-blue-100',
       label: t('promptStack.items.global.label'),
-      path: '~/.project-pilot/data/prompts/global.md',
+      path: '~/.project-pilot/prompts/global.md',
       tokens: promptMetrics.global,
       description: t('promptStack.items.global.description'),
       target: 'global',
@@ -908,103 +929,89 @@ export default function AgentsPage() {
     {
       depth: 0,
       kind: 'folder',
-      label: projectRootLabel,
-      path: activeProject?.path ?? 'D:/Desktop/ProgrammingProjects/',
-      detail: t('projectWorkspace.tree.root'),
+      label: `agents/workspaces/${workspaceAgentId}/`,
+      path: `~/.project-pilot/agents/workspaces/${workspaceAgentId}/`,
+      detail: t('projectWorkspace.tree.agentWorkspaceRoot'),
     },
     {
       depth: 1,
-      kind: 'folder',
-      label: 'develop-static/',
-      path: activeProject?.path ?? 'D:/Desktop/ProgrammingProjects/personal-projects/03-In-Development/project-pilot/develop-static/',
-      detail: t('projectWorkspace.tree.worktree'),
-    },
-    {
-      depth: 2,
       kind: 'folder',
       label: '.project-pilot/',
       path: '~/.project-pilot/',
       detail: t('projectWorkspace.tree.ppHome'),
     },
     {
-      depth: 3,
-      kind: 'folder',
-      label: 'data/',
-      path: '~/.project-pilot/data/',
-      detail: t('projectWorkspace.tree.sharedData'),
-    },
-    {
-      depth: 4,
+      depth: 2,
       kind: 'folder',
       label: 'prompts/',
-      path: '~/.project-pilot/data/prompts/',
+      path: '~/.project-pilot/prompts/',
       detail: t('projectWorkspace.tree.promptRoot'),
     },
     {
-      depth: 5,
+      depth: 3,
       kind: 'folder',
       label: 'agents/',
-      path: '~/.project-pilot/data/prompts/agents/',
+      path: '~/.project-pilot/prompts/agents/',
       detail: t('projectWorkspace.tree.agentPrompts'),
     },
     {
-      depth: 6,
+      depth: 4,
       kind: 'file',
       label: agentPromptLabel,
       path: agentPromptPath,
       detail: t('projectWorkspace.tree.active'),
     },
     {
-      depth: 5,
+      depth: 3,
       kind: 'file',
       label: 'global.md',
-      path: '~/.project-pilot/data/prompts/global.md',
+      path: '~/.project-pilot/prompts/global.md',
       detail: t('projectWorkspace.tree.global'),
     },
     {
-      depth: 5,
+      depth: 3,
       kind: 'file',
       label: projectPromptLabel,
       path: projectPromptPath,
       detail: t('projectWorkspace.tree.project'),
     },
     {
-      depth: 3,
+      depth: 2,
       kind: 'folder',
       label: 'runtime/',
-      path: `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/`,
+      path: `~/.project-pilot/prompts/runtime/${workspaceAgentId}/`,
       detail: 'runtime',
+    },
+    {
+      depth: 3,
+      kind: 'folder',
+      label: `${workspaceAgentId}/`,
+      path: `~/.project-pilot/prompts/runtime/${workspaceAgentId}/`,
+      detail: 'agent scope',
     },
     {
       depth: 4,
       kind: 'folder',
-      label: `${workspaceAgentId}/`,
-      path: `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/`,
-      detail: 'agent scope',
-    },
-    {
-      depth: 5,
-      kind: 'folder',
       label: workspaceSessionId ? `${workspaceSessionId}/` : '<session>/',
       path: workspaceSessionId
-        ? `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/${workspaceSessionId}/`
-        : `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/<session>/`,
+        ? `~/.project-pilot/prompts/runtime/${workspaceAgentId}/${workspaceSessionId}/`
+        : `~/.project-pilot/prompts/runtime/${workspaceAgentId}/<session>/`,
       detail: 'active session',
     },
     {
-      depth: 6,
+      depth: 5,
       kind: 'file',
       label: runtimePromptLabel,
       path: runtimePromptPath,
       detail: 'runtime copy',
     },
     {
-      depth: 6,
+      depth: 5,
       kind: 'block',
       label: 'memory.snapshot.json',
       path: workspaceSessionId
-        ? `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/${workspaceSessionId}/memory.snapshot.json`
-        : '~/.project-pilot/data/prompts/runtime/<agent>/<session>/memory.snapshot.json',
+        ? `~/.project-pilot/prompts/runtime/${workspaceAgentId}/${workspaceSessionId}/memory.snapshot.json`
+        : '~/.project-pilot/prompts/runtime/<agent>/<session>/memory.snapshot.json',
       detail: 'memory',
     },
   ] as const;
@@ -1016,12 +1023,12 @@ export default function AgentsPage() {
       summary: t('promptTree.global.summary'),
       file: {
         label: 'global.md',
-        path: '~/.project-pilot/data/prompts/global.md',
+        path: '~/.project-pilot/prompts/global.md',
         tokens: promptMetrics.global,
       },
       nodes: [
-        { kind: 'folder', label: 'prompt-blocks/_global/', path: '~/.project-pilot/data/prompt-blocks/_global/' },
-        { kind: 'block', label: 'safety-rules.block.md', path: '~/.project-pilot/data/prompt-blocks/_global/safety-rules.block.md' },
+        { kind: 'folder', label: 'blocks/', path: '~/.project-pilot/prompts/blocks/' },
+        { kind: 'block', label: 'safety-rules.block.md', path: '~/.project-pilot/prompts/blocks/safety-rules.block.md' },
       ],
     },
     {
@@ -1034,9 +1041,9 @@ export default function AgentsPage() {
         tokens: promptMetrics.project,
       },
       nodes: [
-        { kind: 'folder', label: `prompt-blocks/_projects/${effectiveProjectKey ?? 'project-pilot'}/`, path: `~/.project-pilot/data/prompt-blocks/_projects/${effectiveProjectKey ?? 'project-pilot'}/` },
-        { kind: 'folder', label: `docs/${effectiveProjectKey ?? 'project-pilot'}/`, path: `~/.project-pilot/data/docs/${effectiveProjectKey ?? 'project-pilot'}/` },
-        { kind: 'block', label: 'workspace-context.block.md', path: `~/.project-pilot/data/prompt-blocks/_projects/${effectiveProjectKey ?? 'project-pilot'}/workspace-context.block.md` },
+        { kind: 'folder', label: `projects/${effectiveProjectKey ?? 'project-pilot'}.d/`, path: `~/.project-pilot/prompts/projects/${effectiveProjectKey ?? 'project-pilot'}.d/` },
+        { kind: 'folder', label: `docs/${effectiveProjectKey ?? 'project-pilot'}/`, path: `~/.project-pilot/knowledge/design-docs/${effectiveProjectKey ?? 'project-pilot'}/` },
+        { kind: 'block', label: 'workspace-context.block.md', path: `~/.project-pilot/prompts/projects/${effectiveProjectKey ?? 'project-pilot'}.d/workspace-context.block.md` },
       ],
     },
     {
@@ -1049,30 +1056,30 @@ export default function AgentsPage() {
         tokens: agentPromptTokens,
       },
       nodes: [
-        { kind: 'folder', label: `skills/_agents/${workspaceAgentId}/`, path: `~/.project-pilot/data/skills/_agents/${workspaceAgentId}/` },
-        { kind: 'folder', label: `agent-data/${workspaceAgentId}/`, path: `~/.project-pilot/data/agent-data/${workspaceAgentId}/` },
-        { kind: 'block', label: 'agent-capabilities.block.md', path: `~/.project-pilot/data/prompt-blocks/_agents/${workspaceAgentId}/agent-capabilities.block.md` },
+        { kind: 'folder', label: `skills/_agents/${workspaceAgentId}/`, path: `~/.project-pilot/skills/_agents/${workspaceAgentId}/` },
+        { kind: 'folder', label: `workspaces/${workspaceAgentId}/`, path: `~/.project-pilot/agents/workspaces/${workspaceAgentId}/` },
+        { kind: 'block', label: 'agent-capabilities.block.md', path: '~/.project-pilot/prompts/blocks/agent-capabilities.block.md' },
         ...(workspaceSessionId
           ? [
-            { kind: 'folder', label: `${workspaceSessionId}/`, path: `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/${workspaceSessionId}/` },
-            { kind: 'block', label: 'memory.snapshot.json', path: `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/${workspaceSessionId}/memory.snapshot.json` },
+            { kind: 'folder', label: `${workspaceSessionId}/`, path: `~/.project-pilot/prompts/runtime/${workspaceAgentId}/${workspaceSessionId}/` },
+            { kind: 'block', label: 'memory.snapshot.json', path: `~/.project-pilot/prompts/runtime/${workspaceAgentId}/${workspaceSessionId}/memory.snapshot.json` },
           ]
           : [
-            { kind: 'folder', label: 'runtime/<session>/', path: `~/.project-pilot/data/prompts/runtime/${workspaceAgentId}/<session>/` },
+            { kind: 'folder', label: 'runtime/<session>/', path: `~/.project-pilot/prompts/runtime/${workspaceAgentId}/<session>/` },
           ]),
       ],
     },
   ] as const;
 
   const capabilityCards = [
-    { label: t('capabilities.terminal.label'), hint: t('capabilities.terminal.hint'), enabled: workspaceAgentCapabilities.bash, icon: Terminal },
-    { label: t('capabilities.web.label'), hint: t('capabilities.web.hint'), enabled: workspaceAgentCapabilities.web, icon: Globe },
-    { label: t('capabilities.files.label'), hint: t('capabilities.files.hint'), enabled: workspaceAgentCapabilities.fileAccess, icon: Files },
-    { label: t('capabilities.subAgent.label'), hint: t('capabilities.subAgent.hint'), enabled: workspaceAgentCapabilities.subAgent, icon: GitBranch },
-    { label: t('capabilities.todo.label'), hint: t('capabilities.todo.hint'), enabled: workspaceAgentCapabilities.todoRead, icon: ListTodo },
-    { label: t('capabilities.data.label'), hint: t('capabilities.data.hint'), enabled: workspaceAgentCapabilities.dataStore, icon: HardDrive },
-    { label: t('capabilities.promptPath.label'), hint: t('capabilities.promptPath.hint'), enabled: workspaceAgentCapabilities.exposePromptPath, icon: Eye },
-    { label: t('capabilities.skipReview.label'), hint: t('capabilities.skipReview.hint'), enabled: workspaceAgentCapabilities.skipReview, icon: Database },
+    { label: t('capabilities.terminal.label'), hint: t('capabilities.terminal.hint'), icon: Terminal, capabilityKey: 'bash' as const },
+    { label: t('capabilities.web.label'), hint: t('capabilities.web.hint'), icon: Globe, capabilityKey: 'web' as const },
+    { label: t('capabilities.files.label'), hint: t('capabilities.files.hint'), icon: Files, capabilityKey: 'fileAccess' as const },
+    { label: t('capabilities.subAgent.label'), hint: t('capabilities.subAgent.hint'), icon: GitBranch, capabilityKey: 'subAgent' as const },
+    { label: t('capabilities.todo.label'), hint: t('capabilities.todo.hint'), icon: ListTodo, capabilityKey: 'todoRead' as const },
+    { label: t('capabilities.data.label'), hint: t('capabilities.data.hint'), icon: HardDrive, capabilityKey: 'dataStore' as const },
+    { label: t('capabilities.promptPath.label'), hint: t('capabilities.promptPath.hint'), icon: Eye, capabilityKey: 'exposePromptPath' as const },
+    { label: t('capabilities.skipReview.label'), hint: t('capabilities.skipReview.hint'), icon: Database, capabilityKey: 'skipReview' as const },
   ] as const;
 
   const inboxSummary = t('workspace.inboxSummary', { count: visibleSessions.length });
@@ -1120,6 +1127,7 @@ export default function AgentsPage() {
                 updatedAt: newSession.updatedAt,
                 agentId: agent.id,
                 agentName: displayText(agent.name, agent.id),
+                agentSlug: agent.slug,
                 agentIcon: agent.icon,
                 ...(newSession.isRunning !== undefined && {
                   isRunning: newSession.isRunning,
@@ -1137,6 +1145,7 @@ export default function AgentsPage() {
           updatedAt: newSession.updatedAt,
           agentId: agent.id,
           agentName: displayText(agent.name, agent.id),
+          agentSlug: agent.slug,
           agentIcon: agent.icon,
           isRunning: newSession.isRunning,
           runningStartedAt: newSession.runningStartedAt,
@@ -1209,6 +1218,7 @@ export default function AgentsPage() {
           <div className="flex items-center gap-2 rounded-md bg-muted/50 px-2 py-1.5 text-muted-foreground">
             <Search className="h-3.5 w-3.5 shrink-0" />
             <input
+              id="agents-sidebar-search"
               value={sessionQuery}
               onChange={(e) => setSessionQuery(e.target.value)}
               placeholder={t('workspace.searchPlaceholder')}
@@ -1297,7 +1307,7 @@ export default function AgentsPage() {
       </aside>
 
       <div className="flex min-w-0 flex-1">
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#fcfbf8] dark:bg-[#0f141b]">
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
         {creating ? (
           /* ── Creating new agent ── */
           expandedPrompt ? (
@@ -1363,47 +1373,53 @@ export default function AgentsPage() {
             </div>
           ) : (
             <>
-              <div className="flex items-start justify-between border-b border-zinc-200 px-6 py-4">
-                <div className="flex min-w-0 items-start gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-600">
-                    <AgentIcon iconKey={selectedAgent.icon} className="h-5 w-5" />
+              <div className="flex items-start justify-between gap-4 border-b border-border bg-card/50 px-6 py-5 backdrop-blur-sm">
+                <div className="flex min-w-0 items-start gap-4">
+                  <div className="h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-muted ring-1 ring-border">
+                    <AgentAvatar slug={selectedAgent.slug} iconKey={selectedAgent.icon} className="h-full w-full object-cover" />
                   </div>
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-[15px] font-semibold text-zinc-950">{selectedAgent.name}</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate text-base font-semibold tracking-tight text-foreground">{selectedAgent.name}</span>
                       {selectedAgent.builtIn && (
-                        <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
-                          内置
+                        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          {t('agent.builtInBadge')}
                         </span>
                       )}
                     </div>
-                    <div className="mt-1 truncate text-[12px] text-zinc-500">{selectedAgent.id}</div>
-                    <div className="mt-2 text-[12px] text-zinc-600">
-                      {selectedAgent.description || '当前 agent 的默认工作区入口。'}
+                    <div className="mt-1 truncate font-mono text-xs text-muted-foreground">{selectedAgent.id}</div>
+                    <div className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                      {selectedAgent.description || t('workspace.defaultAgentDescription', { agentName: selectedAgent.name })}
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex shrink-0 items-center gap-1">
                   <button
+                    type="button"
                     onClick={() => handleExport(selectedAgent)}
-                    className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                    className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     title="导出 .ppagent"
+                    aria-label="导出 .ppagent"
                   >
                     <Download className="h-4 w-4" />
                   </button>
                   {!selectedAgent.builtIn && (
                     <button
+                      type="button"
                       onClick={() => handleDelete(selectedAgentId!)}
-                      className="rounded-md p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-500 transition-colors dark:hover:bg-red-900/20"
-                      title="删除"
+                      className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      title={tActions('delete')}
+                      aria-label={tActions('delete')}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   )}
                   <button
+                    type="button"
                     onClick={handleClose}
-                    className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                    title="关闭"
+                    className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    title={tActions('close')}
+                    aria-label={tActions('close')}
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -1427,7 +1443,7 @@ export default function AgentsPage() {
             </>
           )
         ) : (
-          <div className="flex flex-1 flex-col overflow-hidden bg-[linear-gradient(180deg,#ffffff_0%,#faf8f3_100%)] dark:bg-[linear-gradient(180deg,#0f141b_0%,#111722_100%)]">
+          <div className="flex flex-1 flex-col overflow-hidden bg-linear-to-b from-background via-background to-muted/20">
             {activeWorkspaceAgent ? (
               <>
                 {/* ── Top: Agent info + Sessions ── */}
@@ -1583,8 +1599,11 @@ export default function AgentsPage() {
                 </div>
               </>
             ) : (
-              <div className="flex h-full items-center justify-center px-8 text-sm text-zinc-500">
-                暂无可用 Agent。
+              <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+                  <Bot className="h-7 w-7" />
+                </div>
+                <p className="max-w-sm text-sm text-muted-foreground">{t('workspace.noAgentsInWorkspace')}</p>
               </div>
             )}
           </div>
@@ -1603,7 +1622,7 @@ export default function AgentsPage() {
               </div>
               <div className="mt-1 flex items-center gap-2 text-[11px] text-zinc-500">
                 <Command className="h-3.5 w-3.5" />
-                <span className="truncate">{`workspace/${activeProject?.key ?? 'project-pilot'}`}</span>
+                <span className="truncate font-mono text-[11px]">{workspaceAgentDataPath}</span>
               </div>
             </div>
             <div className="flex items-center gap-1.5">
@@ -1636,15 +1655,15 @@ export default function AgentsPage() {
               </div>
               <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)] dark:border-zinc-800 dark:bg-zinc-900/90 dark:shadow-none">
                 <div className="flex items-start gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-200">
-                    <AgentIcon iconKey={workspaceAgent?.icon} className="h-5 w-5" />
+                  <div className="h-11 w-11 shrink-0 overflow-hidden rounded-2xl bg-zinc-100 dark:bg-zinc-800">
+                    <AgentAvatar slug={workspaceAgent?.slug} iconKey={workspaceAgent?.icon} className="h-full w-full object-cover" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-100">{workspaceDisplayTitle}</div>
                     <div className="mt-1 text-[12px] text-zinc-500">{workspaceAgentId}</div>
                     <div className="mt-3 inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-300">
                       <Command className="h-3 w-3" />
-                      {activeProject?.key ?? 'project-pilot'}
+                      {workspaceAgentDataPath}
                     </div>
                   </div>
                 </div>
@@ -1751,10 +1770,11 @@ export default function AgentsPage() {
               <div className="rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/90">
                 {capabilityCards.map((item) => {
                   const Icon = item.icon;
+                  const capOn = workspaceAgentCapabilities[item.capabilityKey];
                   return (
                     <div key={item.label} className="flex items-center justify-between border-b border-zinc-100 px-1 py-2.5 last:border-b-0 dark:border-zinc-800">
                       <div className="flex items-center gap-2.5">
-                        <div className={`flex h-7 w-7 items-center justify-center rounded-md ${item.enabled ? 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-100' : 'bg-zinc-50 text-zinc-300 dark:bg-zinc-900 dark:text-zinc-600'}`}>
+                        <div className={`flex h-7 w-7 items-center justify-center rounded-md ${capOn ? 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-100' : 'bg-zinc-50 text-zinc-300 dark:bg-zinc-900 dark:text-zinc-600'}`}>
                           <Icon className="h-4 w-4" />
                         </div>
                         <div className="min-w-0">
@@ -1763,8 +1783,8 @@ export default function AgentsPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 dark:text-zinc-400">
-                        <span className={`h-1.5 w-1.5 rounded-full ${item.enabled ? 'bg-zinc-700 dark:bg-zinc-200' : 'bg-zinc-300 dark:bg-zinc-600'}`} />
-                        <span>{item.enabled ? t('capabilities.enabled') : t('capabilities.disabled')}</span>
+                        <span className={`h-1.5 w-1.5 rounded-full ${capOn ? 'bg-zinc-700 dark:bg-zinc-200' : 'bg-zinc-300 dark:bg-zinc-600'}`} />
+                        <span>{capOn ? t('capabilities.enabled') : t('capabilities.disabled')}</span>
                       </div>
                     </div>
                   );

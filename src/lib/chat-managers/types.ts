@@ -14,7 +14,7 @@ import type { ChatSSEEvent, ChatToolCall, ContentBlock, DangerDetectorSettings }
  * Run lifecycle:
  *   running -> finalizing -> completed | failed | stopped
  *
- * `finalizing`: stream has ended, satellite tasks and persistence are in progress.
+ * `finalizing`: stream has ended, persistence and post-processing are in progress.
  * `completed`: result has been persisted to disk - safe to read from any source.
  */
 export type RunStatus = 'running' | 'finalizing' | 'awaiting' | 'completed' | 'failed' | 'stopped';

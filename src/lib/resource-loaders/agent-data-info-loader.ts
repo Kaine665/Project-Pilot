@@ -1,5 +1,5 @@
 /**
- * AgentDataInfoLoader — 告知 Agent 其私有数据目录的路径和已有文件列表。
+ * AgentDataInfoLoader — 告知 Agent 其私有工作区（agents/workspaces/<agentId>/）的路径与文件列表。
  *
  * ref.id = agentId（通常从 ctx.agentId 获取）。
  * 仅在 Agent 开启 dataStore 能力时才会注入此资源。
