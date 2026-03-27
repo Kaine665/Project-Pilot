@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { useLocale, useTranslations } from '@/client/i18n/use-translations';
+import { useTranslations } from '@/client/i18n/use-translations';
 import {
   Archive,
   ChevronDown,

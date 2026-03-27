@@ -16,9 +16,6 @@ i18next
     supportedLngs: ['zh', 'en'],
     interpolation: {
       escapeValue: false,
-      // Align with messages/*.json placeholders (`{name}`, `{count}`) — i18next default is `{{name}}`.
-      prefix: '{',
-      suffix: '}',
     },
     detection: {
       order: ['path', 'localStorage', 'navigator'],

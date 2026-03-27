@@ -95,6 +95,24 @@ export function parseJsonSafe<T>(raw: string): T {
   }
 }
 
+export function parseJsonSafe<T>(raw: string): T {
+  const cleaned = raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw;
+  try {
+    return JSON.parse(cleaned);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) {
+      throw error;
+    }
+
+    const recovered = extractFirstJsonDocument(cleaned);
+    if (recovered && recovered !== cleaned) {
+      return JSON.parse(recovered) as T;
+    }
+
+    throw error;
+  }
+}
+
 /** 产品数据根固定为 ~/.project-pilot，不再使用 ~/.project-pilot/data/ 作为默认 DATA_DIR。 */
 function resolveDefaultDataDir(): string {
   return path.join(os.homedir(), '.project-pilot');
@@ -179,6 +197,7 @@ async function ensureDataDirInitialized(): Promise<void> {
     path.join(DATA_DIR, 'todos', 'entries'),
     path.join(DATA_DIR, 'prompts', 'agents'),
     path.join(DATA_DIR, 'prompts', 'history'),
+    // Compatibility path: session prompt overrides are still stored under prompts/runtime/
     path.join(DATA_DIR, 'prompts', 'runtime'),
     path.join(DATA_DIR, 'prompts', 'blocks'),
     getProjectPromptsDir(),
@@ -190,8 +209,10 @@ async function ensureDataDirInitialized(): Promise<void> {
     getSkillsDir(),
     getSkillsVendorDir(),
     path.join(DATA_DIR, 'usage'),
+    // runs/
     path.join(DATA_DIR, '_next', 'runs', 'by-id'),
     path.join(DATA_DIR, '_next', 'runs', 'latest-by-session'),
+    // top-level
     path.join(DATA_DIR, '_snapshots'),
   ];
   await Promise.all(dirs.map(d => fs.mkdir(d, { recursive: true })));

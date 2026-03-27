@@ -101,7 +101,7 @@ app.post('/', async (c) => {
     index.projects.push(entry);
   }
 
-  await writeProjectIndex(index);
+  await writeJsonFile(getFlowIndexPath(), index);
   return c.json({ projects: buildLegacyResponse(index) });
 });
 

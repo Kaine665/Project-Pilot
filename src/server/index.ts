@@ -27,12 +27,11 @@ import recycleBinRoutes from './routes/recycle-bin';
 import uploadRoutes from './routes/upload';
 import projectsRoutes from './routes/projects';
 import dialoguesRoutes from './routes/dialogues';
+import satelliteTasksRoutes from './routes/satellite-tasks';
 import aiDiscussRoutes from './routes/ai-discuss';
 import agentChatRoutes from './routes/agent-chat';
 import schedulesRoutes from './routes/schedules';
 import eventTriggersRoutes from './routes/event-triggers';
-
-import { ensureDataDirV2Migrated } from '@/lib/file-store';
 
 const app = new Hono();
 
@@ -60,6 +59,7 @@ app.route('/api/recycle-bin', recycleBinRoutes);
 app.route('/api/upload', uploadRoutes);
 app.route('/api/projects', projectsRoutes);
 app.route('/api/dialogues', dialoguesRoutes);
+app.route('/api/satellite-tasks', satelliteTasksRoutes);
 app.route('/api/ai-discuss', aiDiscussRoutes);
 app.route('/api/agent-chat', agentChatRoutes);
 app.route('/api/schedules', schedulesRoutes);
@@ -81,27 +81,17 @@ if (fs.existsSync(clientDistPath)) {
 // --- Start server ---
 const port = parseInt(process.env.PORT ?? '4500', 10);
 
-async function startServer(): Promise<void> {
-  await ensureDataDirV2Migrated();
+console.log(`[server] Starting Hono backend on http://127.0.0.1:${port}`);
 
-  console.log(`[server] Starting Hono backend on http://127.0.0.1:${port}`);
+serve(
+  {
+    fetch: app.fetch,
+    port,
+    hostname: '127.0.0.1',
+  },
+  (info) => {
+    console.log(`[server] Hono backend ready on http://127.0.0.1:${info.port}`);
+  },
+);
 
-  serve(
-    {
-      fetch: app.fetch,
-      port,
-      hostname: '127.0.0.1',
-    },
-    (info) => {
-      console.log(`[server] Hono backend ready on http://127.0.0.1:${info.port}`);
-    },
-  );
-}
-
-void startServer().catch((err) => {
-  console.error('[server] Failed to start:', err);
-  process.exit(1);
-});
-
-/** Named export only — default export would make `bun ./src/server/index.ts` start a second listener on :3000. */
-export { app };
+export default app;

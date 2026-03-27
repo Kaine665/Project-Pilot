@@ -1,6 +1,5 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
-import path from 'path';
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import {
   agentChatManager,
@@ -33,11 +32,8 @@ import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import { getModelContextWindow } from '@/lib/provider-registry';
 import { normalizeImageAttachments } from '@/lib/image-assets';
 import type { ImageAttachment } from '@/lib/image-assets';
-import { readJsonFile, readProjectIndex, ensureDataDirV2Migrated } from '@/lib/file-store';
-import {
-  getLegacySessionPromptOverridePath,
-  getPromptRuntimePath,
-} from '@/lib/file-store';
+import { getFlowDataPath, getFlowIndexPath, readJsonFile, ensureDataDirV2Migrated } from '@/lib/file-store';
+import { getPromptRuntimeDir, getPromptRuntimePath } from '@/lib/file-store';
 import { HttpError } from '@/lib/http-error';
 import { spawnClaude } from '@/lib/claude-cli';
 import { readTaskCard } from '@/lib/task-card-store';
@@ -159,14 +155,15 @@ app.post('/', async (c) => {
     if (projectKey) {
       await ensureDataDirV2Migrated();
 
+      const flowDataPath = getFlowDataPath(projectKey);
       let projectName = projectKey;
       try {
-        const projectIndex = await readProjectIndex();
+        const projectIndex = await readJsonFile<ProjectIndex>(getFlowIndexPath(), { projects: [] });
         const found = projectIndex.projects.find(p => p.key === projectKey);
         if (found) projectName = found.name;
       } catch { /* ignore */ }
 
-      flowContext = { projectKey, projectName };
+      flowContext = { projectKey, projectName, flowDataPath };
     }
 
     // Compute effective depth for recursive sub-agent protection
@@ -404,22 +401,15 @@ app.get('/runtime-prompt', async (c) => {
     return c.json({ error: 'agentId and sessionId are required' }, 400);
   }
 
-  const primary = getPromptRuntimePath(agentId, sessionId);
-  const legacy = getLegacySessionPromptOverridePath(agentId, sessionId);
   try {
-    const content = await readFile(primary, 'utf-8');
+    const content = await readFile(
+      getPromptRuntimePath(agentId, sessionId),
+      'utf-8',
+    );
     return c.json({ content });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      try {
-        const content = await readFile(legacy, 'utf-8');
-        return c.json({ content });
-      } catch (e2) {
-        if ((e2 as NodeJS.ErrnoException).code === 'ENOENT') {
-          return c.json({ content: '' });
-        }
-        throw e2;
-      }
+      return c.json({ content: '' });
     }
     console.error('[runtime-prompt] GET error:', error);
     return c.json({ error: 'Failed to read runtime prompt' }, 500);
@@ -442,9 +432,12 @@ app.put('/runtime-prompt', async (c) => {
       return c.json({ error: 'content must be a string' }, 400);
     }
 
-    const overridePath = getPromptRuntimePath(agentId, sessionId);
-    await mkdir(path.dirname(overridePath), { recursive: true });
-    await writeFile(overridePath, content, 'utf-8');
+    await mkdir(getPromptRuntimeDir(agentId), { recursive: true });
+    await writeFile(
+      getPromptRuntimePath(agentId, sessionId),
+      content,
+      'utf-8',
+    );
 
     return c.json({ ok: true });
   } catch (error) {

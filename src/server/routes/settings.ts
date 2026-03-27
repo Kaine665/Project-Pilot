@@ -29,16 +29,14 @@ import {
 import {
   getDataDir,
   getProjectsPath,
-  getProjectsIndexPath,
   getAgentsPath,
   getAgentChatSessionsPath,
   getAgentChatMessagesDir,
-  getLegacyFlowsDir,
+  getFlowsDir,
+  getFlowIndexPath,
   getPromptsDir,
   writeJsonFile,
   readJsonFile,
-  readProjectIndex,
-  writeProjectIndex,
 } from '@/lib/file-store';
 import { importSessionsWithMessages, readMessages, listAllSessions, deleteAllMessageFiles } from '@/lib/chat-managers/agent-chat-session-store';
 import { getDefaultAgents } from '@/lib/default-agents';
@@ -63,8 +61,6 @@ import type {
   Agent,
   AgentsData,
   TitleGenerationChainEntry,
-  ProjectConfig,
-  ProjectEntry,
 } from '@/types';
 import type { AgentChatSession, AgentChatSessionsData } from '@/types/agent-chat';
 import { DEFAULT_DANGER_SETTINGS, DEFAULT_DEVELOPER_SETTINGS, DEFAULT_NOTIFICATION_SETTINGS, BUILT_IN_PROVIDER_IDS } from '@/types';
@@ -222,6 +218,9 @@ app.post('/', async (c) => {
   if (body.developer !== undefined) {
     if (typeof body.developer !== 'object' || body.developer === null) {
       return c.json({ error: 'developer must be an object' }, 400);
+    }
+    if (body.developer.satelliteTasksEnabled !== undefined && typeof body.developer.satelliteTasksEnabled !== 'boolean') {
+      return c.json({ error: 'developer.satelliteTasksEnabled must be a boolean' }, 400);
     }
     if (body.developer.schedulesPageEnabled !== undefined && typeof body.developer.schedulesPageEnabled !== 'boolean') {
       return c.json({ error: 'developer.schedulesPageEnabled must be a boolean' }, 400);
@@ -877,7 +876,7 @@ app.post('/import', async (c) => {
     const backupDir = path.join(dataDir, `_backup_${timestamp}`);
     await fs.mkdir(backupDir, { recursive: true });
 
-    const filesToBackup = [getProjectsPath(), getProjectsIndexPath(), getAgentsPath(), getAgentChatSessionsPath()];
+    const filesToBackup = [getProjectsPath(), getAgentsPath(), getAgentChatSessionsPath()];
     for (const src of filesToBackup) {
       try {
         await fs.stat(src);
@@ -897,50 +896,22 @@ app.post('/import', async (c) => {
       }
     } catch { /* messages dir doesn't exist */ }
 
-    const legacyFlows = getLegacyFlowsDir();
+    const flowsDir = getFlowsDir();
     try {
-      const flowsBackup = path.join(backupDir, 'flows-legacy');
+      const flowsBackup = path.join(backupDir, 'flows');
       await fs.mkdir(flowsBackup, { recursive: true });
-      const flowFiles = await fs.readdir(legacyFlows);
+      const flowFiles = await fs.readdir(flowsDir);
       for (const file of flowFiles) {
         if (file.endsWith('.json')) {
-          await fs.copyFile(path.join(legacyFlows, file), path.join(flowsBackup, file));
+          await fs.copyFile(path.join(flowsDir, file), path.join(flowsBackup, file));
         }
       }
-    } catch { /* legacy flows dir doesn't exist */ }
+    } catch { /* flows dir doesn't exist */ }
 
     const stats = { flows: 0, agents: 0 };
 
     if (data.projects) {
-      const raw = data.projects as { projects?: unknown };
-      if (Array.isArray(raw.projects)) {
-        await writeProjectIndex({ projects: raw.projects as ProjectEntry[] });
-      } else if (raw.projects && typeof raw.projects === 'object') {
-        const record = raw.projects as Record<string, ProjectConfig>;
-        const now = new Date().toISOString();
-        const entries: ProjectEntry[] = Object.entries(record).map(([key, config]) => {
-          const safe = key.replace(/[^a-zA-Z0-9_-]/g, '') || key;
-          return {
-            key: safe,
-            name: config.name,
-            path: config.path,
-            location: 'local' as const,
-            ...(config.type && { techStack: config.type as ProjectEntry['techStack'] }),
-            ...(config.description && { description: config.description }),
-            ...(config.defaultBranch && { repository: { defaultBranch: config.defaultBranch } }),
-            ...((config.webCommand || config.webUrl) && {
-              devServer: {
-                ...(config.webCommand && { command: config.webCommand }),
-                ...(config.webUrl && { url: config.webUrl }),
-              },
-            }),
-            createdAt: now,
-          };
-        });
-        await writeProjectIndex({ projects: entries });
-      } else {
-        await writeJsonFile(getProjectsPath(), data.projects);
-      }
+      await writeJsonFile(getProjectsPath(), data.projects);
     }
     if (data.agents) {
       const imported = data.agents as { agents?: Agent[] };
@@ -982,7 +953,13 @@ app.post('/import', async (c) => {
       }
     }
 
-    // 旧导出中的 flows 域已废弃，不再写入磁盘
+    if (data.flows && typeof data.flows === 'object') {
+      await fs.mkdir(flowsDir, { recursive: true });
+      for (const [key, value] of Object.entries(data.flows)) {
+        await writeJsonFile(path.join(flowsDir, `${key}.json`), value);
+        if (key !== '_index') stats.flows++;
+      }
+    }
 
     return c.json({
       success: true,
@@ -999,8 +976,8 @@ app.post('/import', async (c) => {
 
 app.get('/export', async (c) => {
   try {
-    const [projectIndex, agents] = await Promise.all([
-      readProjectIndex(),
+    const [projects, agents] = await Promise.all([
+      readJsonFile(getProjectsPath(), {}),
       readJsonFile(getAgentsPath(), {}),
     ]);
 
@@ -1022,14 +999,31 @@ app.get('/export', async (c) => {
       );
     }
 
+    const flows: Record<string, unknown> = {};
+    const flowsDir = getFlowsDir();
+    try {
+      const files = await fs.readdir(flowsDir);
+      const jsonFiles = files.filter(f => f.endsWith('.json'));
+      const flowEntries = await Promise.all(
+        jsonFiles.map(async (file) => {
+          const key = file.replace('.json', '');
+          const data = await readJsonFile(path.join(flowsDir, file), {});
+          return [key, data] as const;
+        }),
+      );
+      for (const [key, data] of flowEntries) {
+        flows[key] = data;
+      }
+    } catch { /* flows dir doesn't exist */ }
+
     const exportData = {
       version: 1,
       exportedAt: new Date().toISOString(),
       data: {
-        projects: projectIndex,
+        projects,
         agents,
         agentChatSessions,
-        flows: {} as Record<string, unknown>,
+        flows,
       },
     };
 
@@ -1117,12 +1111,13 @@ app.post('/clear', async (c) => {
     }
 
     if (target === 'flows' || target === 'all') {
-      const legacyFlows = getLegacyFlowsDir();
-      await backupDirRecursive(legacyFlows);
+      await backupDirRecursive(getFlowsDir());
+
       try {
-        await fs.rm(legacyFlows, { recursive: true, force: true });
+        await fs.rm(getFlowsDir(), { recursive: true, force: true });
       } catch { /* ignore */ }
-      await fs.mkdir(legacyFlows, { recursive: true }).catch(() => {});
+      await fs.mkdir(getFlowsDir(), { recursive: true });
+      await writeJsonFile(getFlowIndexPath(), { projects: [] });
     }
 
     if (target === 'all') {

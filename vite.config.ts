@@ -1,14 +1,6 @@
-import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-
-const require = createRequire(import.meta.url);
-const { loadDevServerConfig } = require('./config/load-dev-server.cjs') as typeof import('./config/load-dev-server.cjs');
-
-const root = path.dirname(fileURLToPath(import.meta.url));
-const dev = loadDevServerConfig(root);
 
 export default defineConfig({
   plugins: [react()],
@@ -24,11 +16,9 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
-    port: dev.clientPort,
-    strictPort: true,
-    host: dev.clientBindHost,
+    port: 4000,
     proxy: {
-      '/api': dev.viteProxyTarget,
+      '/api': 'http://127.0.0.1:4500',
     },
   },
 });

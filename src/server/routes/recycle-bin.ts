@@ -3,10 +3,11 @@ import fsPromises from 'fs/promises';
 import {
   getAgentsPath,
   getDimensionsPath,
+  getFlowIndexPath,
+  getFlowDataPath,
+  getFlowsDir,
   readJsonFile,
   writeJsonFile,
-  readProjectIndex,
-  writeProjectIndex,
   ensureDataDirV2Migrated,
 } from '@/lib/file-store';
 import { deletePromptFile } from '@/lib/agent-prompt-store';
@@ -34,7 +35,7 @@ app.get('/', async (c) => {
   const [agentsData, dimensionsData, projectIndex] = await Promise.all([
     readJsonFile<AgentsData>(getAgentsPath(), { agents: [] }),
     readJsonFile<DimensionsData>(getDimensionsPath(), { dimensions: [] }),
-    readProjectIndex(),
+    readJsonFile<ProjectIndex>(getFlowIndexPath(), { projects: [] }),
   ]);
 
   const items: RecycleBinItem[] = [];
@@ -75,12 +76,18 @@ app.delete('/', async (c) => {
   switch (category as RecycleBinCategory) {
     case 'project': {
       await ensureDataDirV2Migrated();
-      const index = await readProjectIndex();
+      const raw = await fsPromises.readFile(getFlowIndexPath(), 'utf-8').catch(() => '{"projects":[]}');
+      const index: ProjectIndex = JSON.parse(raw);
       const idx = index.projects.findIndex(p => p.key === id);
       if (idx === -1) return c.json({ error: 'not found' }, 404);
 
       index.projects.splice(idx, 1);
-      await writeProjectIndex(index);
+      await writeJsonFile(getFlowIndexPath(), index);
+
+      const safe = (id as string).replace(/[^a-zA-Z0-9_-]/g, '');
+      if (safe) {
+        await fsPromises.unlink(getFlowDataPath(safe)).catch(() => {});
+      }
       break;
     }
 
@@ -127,13 +134,13 @@ app.post('/restore', async (c) => {
   switch (category as RecycleBinCategory) {
     case 'project': {
       await ensureDataDirV2Migrated();
-      const index = await readProjectIndex();
+      const index = await readJsonFile<ProjectIndex>(getFlowIndexPath(), { projects: [] });
       const project = index.projects.find(p => p.key === id);
       if (!project) return c.json({ error: 'not found' }, 404);
 
       project.archived = undefined;
       project.archivedAt = undefined;
-      await writeProjectIndex(index);
+      await writeJsonFile(getFlowIndexPath(), index);
       break;
     }
 
