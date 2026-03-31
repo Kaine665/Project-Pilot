@@ -1,46 +1,60 @@
 ---
-name: Feature Request
-about: Suggest an idea for this project
+name: 功能建议 · Feature Request
+about: 提出想法或需求 · Suggest an idea for this project
 title: '[FEATURE] '
 labels: enhancement
 assignees: ''
 ---
 
-## 🚀 Feature Description
+## 🚀 功能描述 · Feature description
 
-A clear and concise description of the feature you'd like to see.
+**中文**：你希望增加或改进什么能力。
 
-## 🎯 Problem / Use Case
+**English**: Clear description of the feature you want.
 
-Describe the problem you're trying to solve or the use case this feature would enable.
+## 🎯 问题或使用场景 · Problem / use case
 
-**Is your feature request related to a problem? Please describe.**
-E.g., I'm always frustrated when [...]
+**中文**：要解决什么问题、谁在什么场景下需要它。
 
-## 💡 Proposed Solution
+**English**: Problem to solve or use case enabled.  
+*Is your request related to a problem? E.g. I'm frustrated when [...]*
 
-Describe how you think this feature should work.
+## 💡 建议方案 · Proposed solution
 
-## 🔄 Alternatives Considered
+**中文**：你认为可以怎样实现或交互。
 
-Describe any alternative solutions or features you've considered.
+**English**: How you think it should work.
 
-## 📊 Benefits
+## 🔄 备选方案 · Alternatives considered
 
-Who would benefit from this feature and how?
+**中文**：是否考虑过其它做法。
 
-## 📸 Mockups / Examples
+**English**: Other options you considered.
 
-If applicable, add mockups, wireframes, or examples from other tools.
+## 📊 收益 · Benefits
 
-## 📝 Additional Context
+**中文**：谁会受益、如何受益。
 
-Add any other context or screenshots about the feature request here.
+**English**: Who benefits and how.
 
-## ✅ Acceptance Criteria
+## 📸 示意 / 参考 · Mockups / examples
 
-What needs to be done for this feature to be considered complete?
+**中文**：（如有）线框图、参考产品截图等。
 
-- [ ] Criterion 1
-- [ ] Criterion 2
-- [ ] Criterion 3
+**English**: Mockups, wireframes, or examples from other tools.
+
+## 📝 其它说明 · Additional context
+
+**中文**：其它背景信息。
+
+**English**: Any other context.
+
+## ✅ 验收标准 · Acceptance criteria
+
+**中文**：怎样算「做完」（可勾选列表）。
+
+**English**: What must be true for this to be considered done.
+
+- [ ] …
+- [ ] …
+- [ ] …

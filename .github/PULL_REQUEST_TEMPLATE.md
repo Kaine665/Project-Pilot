@@ -1,44 +1,106 @@
-# Pull Request
+# 合并请求 · Pull Request
 
-## 📝 Description
+[中文说明优先；下方含 English / Chinese first; English below]
 
-Please include a summary of the changes and the related issue.
+## 🌿 目标分支 / Base branch
+
+**中文**
+
+- [ ] 合并到 **`next`**（常规功能、重构、文档；对应 `feature/*`）
+- [ ] 合并到 **`main`**（仅 `hotfix/*` 稳定线紧急修复）
+
+**English**
+
+- [ ] **Into `next`** (features, refactors, docs; `feature/*`)
+- [ ] **Into `main`** (stable-line hotfixes only; `hotfix/*`)
+
+> 分支约定 · Branching rules: [`CONTRIBUTING.md`](../CONTRIBUTING.md) · Maintainer settings: [`docs/github-branch-policy.md`](../docs/github-branch-policy.md)
+
+---
+
+## 📝 说明 / Description
+
+**中文**：请简要说明改动内容，并关联 Issue（如 `Fixes #123`）。
+
+**English**: Summarize the change and link the issue (e.g. `Fixes #123`).
 
 Fixes # (issue)
 
-## 🎯 Type of Change
+---
 
-- [ ] 🐛 Bug fix (non-breaking change which fixes an issue)
-- [ ] ✨ New feature (non-breaking change which adds functionality)
-- [ ] 💥 Breaking change (fix or feature that would cause existing functionality to not work as expected)
-- [ ] 📚 Documentation update
-- [ ] ♻️ Code refactoring
-- [ ] 🎨 Style update (formatting, renaming)
-- [ ] 🔧 Configuration change
-- [ ] 🧪 Test update
+## 🎯 改动类型 / Type of change
 
-## ✅ Checklist
+**中文**
 
-- [ ] My code follows the style guidelines of this project
-- [ ] I have performed a self-review of my own code
-- [ ] I have commented my code, particularly in hard-to-understand areas
-- [ ] I have made corresponding changes to the documentation
-- [ ] My changes generate no new warnings
-- [ ] I have added tests that prove my fix is effective or that my feature works
-- [ ] New and existing unit tests pass locally with my changes
-- [ ] Any dependent changes have been merged and published
+- [ ] 🐛 缺陷修复
+- [ ] ✨ 新功能（非破坏性）
+- [ ] 💥 破坏性变更
+- [ ] 📚 文档
+- [ ] ♻️ 重构
+- [ ] 🎨 样式与格式（不改变语义）
+- [ ] 🔧 配置
+- [ ] 🧪 测试
 
-## 🧪 Testing
+**English**
 
-Please describe the tests that you ran to verify your changes.
+- [ ] 🐛 Bug fix
+- [ ] ✨ New feature (non-breaking)
+- [ ] 💥 Breaking change
+- [ ] 📚 Documentation
+- [ ] ♻️ Refactoring
+- [ ] 🎨 Style (formatting, renaming)
+- [ ] 🔧 Configuration
+- [ ] 🧪 Tests
 
-- [ ] Test A
-- [ ] Test B
+---
 
-## 📸 Screenshots (if applicable)
+## ✅ 自检清单 / Checklist
 
-Add screenshots to help explain your changes.
+**中文**
 
-## 📝 Additional Notes
+- [ ] 代码符合本项目风格约定
+- [ ] 已自行审阅改动
+- [ ] 难懂处已加注释
+- [ ] 已更新对应文档（如需要）
+- [ ] 无新增明显告警
+- [ ] 已补充证明修复/功能有效的测试（如适用）
+- [ ] 本地测试通过
+- [ ] 依赖变更已处理（如适用）
 
-Any additional information that reviewers should know.
+**English**
+
+- [ ] Code follows project style
+- [ ] Self-reviewed
+- [ ] Commented where non-obvious
+- [ ] Documentation updated if needed
+- [ ] No new warnings
+- [ ] Tests added where appropriate
+- [ ] Tests pass locally
+- [ ] Dependent changes merged/published if any
+
+---
+
+## 🧪 测试说明 / Testing
+
+**中文**：说明如何验证本 PR（手动步骤或命令）。
+
+**English**: Describe how you verified this change.
+
+- [ ] …
+- [ ] …
+
+---
+
+## 📸 截图 / Screenshots
+
+**中文**：（如适用）请附截图帮助评审。
+
+**English**: Add screenshots if they help reviewers.
+
+---
+
+## 📝 备注 / Additional notes
+
+**中文**：其他需要评审者知晓的信息。
+
+**English**: Anything else reviewers should know.
