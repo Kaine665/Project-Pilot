@@ -17,6 +17,7 @@
 | **Cursor 规则** | `.cursor/rules/*.mdc` | Cursor Agent | 沙箱、终端等 | 若涉及数据路径则对齐 `data-storage.md` |
 | **内置 Agent 提示词** | `develop-static/src/data/defaults/builtin-prompts.ts` | 产品内 Butler / Self-Dev 等 | 用户数据路径、能力描述 | **`docs/data-storage.md`（路径事实必须一致）** |
 | **人类 docs 总入口** | `develop-static/docs/README.md` | 人类 + AI | `docs/` 分层与权威关系 | `data-storage.md` |
+| **Git 分支与 GitHub 保护** | `develop-static/docs/github-branch-policy.md` | 维护者 + 贡献者 | `main` / `next` / `feature/*` / `hotfix/*`；Rulesets 清单 | `CONTRIBUTING.md` |
 | **数据路径（代码对齐）** | `develop-static/docs/data-storage.md` | 所有 | 与 `get*Path` 一致的树与表 | `src/lib/file-store.ts` |
 | **本机磁盘规范（不在 Git）** | `~/.project-pilot/README.md`、`数据文件夹现状.md` | 人类排错、迁移 | 真实目录与进度 | 由 `data-storage.md` 引用，重大变更时人工同步 |
 
@@ -31,6 +32,7 @@
 | 数据规范索引 | [`data-spec/README.md`](./data-spec/README.md) |
 | Agent Chat 架构 | [`agent-chat-architecture.md`](./agent-chat-architecture.md) |
 | 统一文档（设计 + 知识） | [`context-system.md`](./context-system.md) |
+| Git 分支策略与 GitHub 权限（维护者） | [`github-branch-policy.md`](./github-branch-policy.md) |
 | 产品说明与快速开始 | [`../README.md`](../README.md) |
 
 ## 变更时同步检查清单
@@ -57,7 +59,16 @@
 - [ ] `develop-static/docs/as-is/` 与 `docs/design/` 新页或更新
 - [ ] 视需要在 `MEMORY.md` 增加一行索引
 
-### D. 完成后的「多工具可见性」
+### D. Git 分支策略 / 贡献流程 / GitHub 保护规则
+
+- [ ] `develop-static/CONTRIBUTING.md`（分支表、PR base）
+- [ ] `develop-static/docs/github-branch-policy.md`（维护者权限清单）
+- [ ] `develop-static/.github/PULL_REQUEST_TEMPLATE.md`（base 分支勾选）
+- [ ] `develop-static/docs/README.md`（docs 速查表链接，若新增独立文档）
+- [ ] `develop-static/MEMORY.md`（若需 AI 一句速记）
+- [ ] `develop-static/CLAUDE.md`（若贡献流程与文档驱动并列时加一句索引）
+
+### E. 完成后的「多工具可见性」
 
 - [ ] 在本文件底部 **变更记录** 表追加一行（日期、摘要、已更新的入口文件）
 - [ ] 若某入口文件被删或重命名，**同步更新本文件「多入口一览」表**
@@ -68,5 +79,8 @@
 |------|------|---------------------|
 | 2026-03-31 | 初版：多 AI 入口地图、同步清单 | 本文件、`AGENTS.md`、`MEMORY.md`、`CLAUDE.md`、`docs/README.md`、`.cursor/rules/ai-knowledge-sync.mdc` |
 | 2026-03-31 | 数据根与文档与 `file-store` 对齐 | `data-storage.md`、`builtin-prompts.ts`、`MEMORY.md`、`CLAUDE.md` 等 |
+| 2026-03-31 | 统一 Git 分支模型（`main`/`next`/`feature`/`hotfix`）与 GitHub 保护说明 | `CONTRIBUTING.md`、`docs/github-branch-policy.md`、`.github/PULL_REQUEST_TEMPLATE.md`、`docs/README.md`、`MEMORY.md`、`CLAUDE.md`、仓库根 `AGENTS.md`、`.cursor/rules/ai-knowledge-sync.mdc`、本文件 |
+| 2026-03-31 | 贡献相关文档与模板：中文优先、中英对照 | `CONTRIBUTING.md`、`docs/github-branch-policy.md`、`.github/PULL_REQUEST_TEMPLATE.md`、`.github/ISSUE_TEMPLATE/*`、本文件 `github-branch-policy` 变更记录 |
+| 2026-03-31 | `CONTRIBUTING`：Issue/PR/Push 分工与「文档模板如何修改」 | `CONTRIBUTING.md`、本文件 |
 
 （后续变更请继续追加表格行，勿删历史。）

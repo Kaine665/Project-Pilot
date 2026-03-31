@@ -1,45 +1,68 @@
 ---
-name: Bug Report
-about: Create a report to help us improve
+name: 缺陷报告 · Bug Report
+about: 报告问题，帮助我们改进 · Report a problem to help us improve
 title: '[BUG] '
 labels: bug
 assignees: ''
 ---
 
-## 🐛 Bug Description
+## 🐛 问题描述 · Bug description
 
-A clear and concise description of what the bug is.
+**中文**：请简明描述缺陷现象。
 
-## 📋 Steps to Reproduce
+**English**: A clear and concise description of the bug.
+
+## 📋 复现步骤 · Steps to reproduce
+
+**中文**
+
+1.
+2.
+3.
+
+**English**
 
 1. Go to '...'
 2. Click on '...'
-3. Scroll down to '...'
-4. See error
+3. See error
 
-## ✅ Expected Behavior
+## ✅ 预期行为 · Expected behavior
 
-A clear and concise description of what you expected to happen.
+**中文**：你期望发生什么。
 
-## ❌ Actual Behavior
+**English**: What you expected to happen.
 
-What actually happened.
+## ❌ 实际行为 · Actual behavior
 
-## 📸 Screenshots
+**中文**：实际发生了什么。
 
-If applicable, add screenshots to help explain your problem.
+**English**: What actually happened.
 
-## 💻 Environment
+## 📸 截图 · Screenshots
+
+**中文**：（如有）请附截图。
+
+**English**: If applicable, add screenshots.
+
+## 💻 环境 · Environment
+
+**中文**：操作系统、运行时版本、应用版本等。
+
+**English**
 
 - OS: [e.g. Windows 11, macOS 14, Ubuntu 22.04]
-- Node Version: [e.g. 18.17.0]
-- Browser: [e.g. Chrome 120, Firefox 121]
+- Bun / Node: [e.g. Bun 1.2.x, Node 20]
+- Browser: [e.g. Chrome 120]（若与 Web 相关）
 - ProjectPilot Version: [e.g. 0.1.0]
 
-## 📝 Additional Context
+## 📝 其它上下文 · Additional context
 
-Add any other context about the problem here.
+**中文**：其它有助于定位的信息。
 
-## 🔍 Possible Solution
+**English**: Any other context.
 
-If you have suggestions on how to fix the bug, please share them here.
+## 🔍 可能方案 · Possible solution
+
+**中文**：（可选）若你有修复思路请写出。
+
+**English**: Optional ideas for a fix.
