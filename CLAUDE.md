@@ -45,6 +45,11 @@
 
 > 随项目演进补充更多行。未覆盖的域：先检查 `docs/as-is/` 和 `docs/design/` 是否已有对应页面；若无，改动后创建。
 
+### 协作与分支
+
+- 贡献流程与分支约定：**[`CONTRIBUTING.md`](./CONTRIBUTING.md)**（`main` / `next` / `feature/*` / `hotfix/*`）
+- 维护者配置 GitHub 分支保护：**[`docs/github-branch-policy.md`](docs/github-branch-policy.md)**
+
 ### 参考
 
 - 体系说明：[`docs/documentation-system/README.md`](docs/documentation-system/README.md)
