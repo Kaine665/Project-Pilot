@@ -34,6 +34,19 @@
 
 **发版**：将已验收的 `next` **合并入 `main`**（或 PR `next` → `main`），在 `main` 上打 tag（与现有 [`release.yml`](../.github/workflows/release.yml) 的 `v*` tag 流程一致）。
 
+### 2.1 `main` 与 `next` 对齐（避免协作各说各话）
+
+日常改动落在 **`next`** 时，若 **`main` 长期不更新**，会出现「有人以 `main` 为准、有人以 `next` 为准」的割裂。**应在里程碑或发版前把 `next` 合入 `main`**，并在团队内说明当前以哪条线为默认参照。
+
+当 **`main` 受 Rulesets 限制、禁止直推**（`Changes must be made through a pull request`）时，**不能** `git push origin main`。可选用：
+
+1. **GitHub 上直接 PR**：**base = `main`**，**compare = `next`**（无不可合并冲突时，这是最简路径）。
+2. **本地合并再推临时分支**：`git fetch origin && git checkout main && git pull origin main && git merge origin/next`，再执行  
+   `git push origin main:chore/sync-main-from-next-<日期>`，  
+   然后对 **`main`** 开 PR（将临时分支合入 `main`）。
+
+**默认分支（GitHub）**：若日常协作以 **`next`** 为真·集成线，可在 **Settings → General → Default branch** 把默认分支设为 **`next`**，让新克隆、新 PR 的直觉基线与文档一致；**`main`** 仍可作为稳定 / 发版线保留，二者职责不矛盾。
+
 ### 3. GitHub 上建议开启的约束（防越权）
 
 以下在 **Settings → Rules → Rulesets**（推荐）或 **Settings → Branches → Branch protection rules**（经典）中配置。团队规模小时也建议尽早打开，避免误推。
@@ -96,6 +109,7 @@
 |------|------|
 | 2026-03-31 | 初版：`main` / `next` / `feature/*` / `hotfix/*` 与 GitHub 权限清单 |
 | 2026-03-31 | 增补英文对照节 |
+| 2026-03-31 | 增加 §2.1：`main` 受保护时与 `next` 对齐、默认分支说明 |
 
 ---
 
@@ -128,6 +142,19 @@ This document defines **branch semantics** for the **ProjectPilot** main reposit
 **Hotfix**: branch `hotfix/...` **from `main`** → PR **into `main`** → **merge/cherry-pick into `next`** so the next release does not drop the fix.
 
 **Release**: merge reviewed **`next` into `main`** (or PR `next` → `main`), tag on `main` (consistent with [`release.yml`](../.github/workflows/release.yml) `v*` tags).
+
+### 2.1 Keep `main` aligned with `next` (shared baseline)
+
+If day-to-day work lands on **`next`** but **`main` is left behind**, people will disagree on the source of truth. **Before milestones or releases, merge `next` into `main`** and tell the team which branch is the default reference.
+
+When **`main` is protected** and rejects direct pushes (`Changes must be made through a pull request`), you **cannot** `git push origin main`. Options:
+
+1. **PR on GitHub**: **base = `main`**, **compare = `next`** (simplest when GitHub allows a clean merge).
+2. **Merge locally, then push a side branch**: `git fetch origin && git checkout main && git pull origin main && git merge origin/next`, then  
+   `git push origin main:chore/sync-main-from-next-<date>`  
+   and open a PR **into `main`** from that branch.
+
+**Default branch (GitHub)**: If **`next`** is the real integration line, set **Settings → General → Default branch** to **`next`** so clones and PRs match your docs. **`main`** can remain the stable/release line; roles stay distinct.
 
 ### 3. Recommended GitHub constraints (prevent bypass)
 
@@ -189,3 +216,4 @@ Similar to `main`, can be slightly looser:
 |------|---------|
 | 2026-03-31 | First version: branch model + GitHub permissions |
 | 2026-03-31 | Added English section |
+| 2026-03-31 | §2.1: sync `main` with `next` when protected; default branch note |

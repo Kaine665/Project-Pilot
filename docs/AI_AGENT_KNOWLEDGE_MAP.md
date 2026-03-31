@@ -82,5 +82,6 @@
 | 2026-03-31 | 统一 Git 分支模型（`main`/`next`/`feature`/`hotfix`）与 GitHub 保护说明 | `CONTRIBUTING.md`、`docs/github-branch-policy.md`、`.github/PULL_REQUEST_TEMPLATE.md`、`docs/README.md`、`MEMORY.md`、`CLAUDE.md`、仓库根 `AGENTS.md`、`.cursor/rules/ai-knowledge-sync.mdc`、本文件 |
 | 2026-03-31 | 贡献相关文档与模板：中文优先、中英对照 | `CONTRIBUTING.md`、`docs/github-branch-policy.md`、`.github/PULL_REQUEST_TEMPLATE.md`、`.github/ISSUE_TEMPLATE/*`、本文件 `github-branch-policy` 变更记录 |
 | 2026-03-31 | `CONTRIBUTING`：Issue/PR/Push 分工与「文档模板如何修改」 | `CONTRIBUTING.md`、本文件 |
+| 2026-03-31 | `github-branch-policy`：§2.1 `main`/`next` 对齐与受保护时 PR 路径 | `docs/github-branch-policy.md`、本文件 |
 
 （后续变更请继续追加表格行，勿删历史。）
