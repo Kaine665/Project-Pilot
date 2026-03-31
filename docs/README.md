@@ -46,6 +46,11 @@ docs/
 
 **文档三层入口**：[documentation-system/README.md](./documentation-system/README.md)。
 
+### 协作与 Git
+
+- **分支语义与 GitHub 权限（维护者清单）**：[github-branch-policy.md](./github-branch-policy.md)
+- **贡献者日常流程**：仓库 [`../CONTRIBUTING.md`](../CONTRIBUTING.md)
+
 ## 子层说明
 
 ### `data-spec/`

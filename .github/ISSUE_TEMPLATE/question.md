@@ -1,27 +1,35 @@
 ---
-name: Question
-about: Ask a question about using ProjectPilot
+name: 提问 · Question
+about: 使用或贡献上的疑问 · Ask about using or contributing to ProjectPilot
 title: '[QUESTION] '
 labels: question
 assignees: ''
 ---
 
-## ❓ Question
+## ❓ 问题 · Question
 
-Please describe your question clearly.
+**中文**：请清楚描述你的问题。
 
-## 🔍 Context
+**English**: Describe your question clearly.
 
-Provide any relevant context that might help us answer your question better.
+## 🔍 上下文 · Context
 
-## 💭 What I've Tried
+**中文**：背景信息（版本、环境、你在做什么）。
 
-Have you checked the documentation or searched for similar questions?
+**English**: Context that helps us answer.
 
-- [ ] I've read the [README](../README.md)
-- [ ] I've checked the [documentation](../docs/)
-- [ ] I've searched existing issues
+## 💭 已尝试 · What I've tried
 
-## 📝 Additional Information
+**中文**：是否查过文档或已有 Issue。
 
-Any other information that might be helpful.
+**English**: Documentation / prior issues checked.
+
+- [ ] 已阅读 [`README`](../README.md) · Read the README
+- [ ] 已查看 [`docs/`](../docs/) · Checked documentation
+- [ ] 已搜索已有 Issue · Searched existing issues
+
+## 📝 其它信息 · Additional information
+
+**中文**：其它可能有用的信息。
+
+**English**: Anything else that might help.
