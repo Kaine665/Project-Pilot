@@ -172,6 +172,7 @@ async function ensureDataDirInitialized(): Promise<void> {
     path.join(DATA_DIR, '_snapshots'),
   ];
   await Promise.all(dirs.map(d => fs.mkdir(d, { recursive: true })));
+  await migrateLegacyAgentsDataToWorkspacesOnce();
 }
 
 type DiskProjectRow = Record<string, unknown>;
@@ -440,10 +441,83 @@ let _v2Migrated = false;
 
 /** 确保目录存在并完成 projects/index.json 的 legacy 合并。历史一次性目录迁移已移除。 */
 export async function ensureDataDirV2Migrated(): Promise<void> {
-  if (_v2Migrated) return;
+  if (_v2Migrated) {
+    await ensureLegacyNestedDataHoisted();
+    return;
+  }
   _v2Migrated = true;
   await ensureProjectsMigrated();
 }
+
+/** 文件名保留历史，避免已迁移用户重复执行合并逻辑 */
+const LEGACY_NESTED_DATA_HOIST_MARKER = path.join(DATA_DIR, '.pp-hoisted-legacy-storage');
+let _legacyNestedDataHoistChecked = false;
+
+/** 旧版曾把部分数据放在 `{DATA_DIR}/storage/` 下；当前规范为根下 `artifacts/`、`skills/`。 */
+const LEGACY_DATA_NEST_DIR = 'storage' as const;
+
+/**
+ * 将历史嵌套目录下的 `artifacts`、`skills` 合并到规范路径 `{DATA_DIR}/artifacts`、`{DATA_DIR}/skills`，
+ * 并在为空时移除该嵌套目录（若仍有未识别子项则打日志，由用户手动处理）。
+ * 幂等；写标记文件避免每次启动重复扫描。
+ */
+export async function ensureLegacyNestedDataHoisted(): Promise<void> {
+  if (_legacyNestedDataHoistChecked) return;
+  _legacyNestedDataHoistChecked = true;
+
+  try {
+    await fs.access(LEGACY_NESTED_DATA_HOIST_MARKER);
+    return;
+  } catch {
+    /* proceed */
+  }
+
+  const nestedRoot = path.join(DATA_DIR, LEGACY_DATA_NEST_DIR);
+
+  try {
+    await fs.access(nestedRoot);
+  } catch {
+    await fs.writeFile(LEGACY_NESTED_DATA_HOIST_MARKER, new Date().toISOString(), 'utf-8').catch(() => {});
+    return;
+  }
+
+  const hoists: { src: string; dest: string; label: string }[] = [
+    { src: path.join(nestedRoot, 'artifacts'), dest: getArtifactsDir(), label: 'artifacts' },
+    { src: path.join(nestedRoot, 'skills'), dest: getSkillsDir(), label: 'skills' },
+  ];
+
+  for (const { src, dest, label } of hoists) {
+    try {
+      await fs.stat(src);
+    } catch {
+      continue;
+    }
+    if (path.resolve(src) === path.resolve(dest)) continue;
+
+    await fs.mkdir(dest, { recursive: true });
+    await _migrateCopyDir(src, dest);
+    await fs.rm(src, { recursive: true, force: true }).catch(() => {});
+    console.log(`[migration] 已合并历史嵌套目录中的 ${label}/ → ${label}/`);
+  }
+
+  try {
+    const left = await fs.readdir(nestedRoot);
+    if (left.length === 0) {
+      await fs.rm(nestedRoot, { recursive: false });
+    } else if (left.length > 0) {
+      console.warn(
+        `[migration] ${nestedRoot} 仍有未识别子项 (${left.join(', ')}); 请手动检查后删除该目录`,
+      );
+    }
+  } catch {
+    /* 嵌套目录已不存在 */
+  }
+
+  await fs.writeFile(LEGACY_NESTED_DATA_HOIST_MARKER, new Date().toISOString(), 'utf-8').catch(() => {});
+}
+
+/** @deprecated 请使用 ensureLegacyNestedDataHoisted */
+export const ensureLegacyStorageHoisted = ensureLegacyNestedDataHoisted;
 
 export function getSettingsPath(): string {
   return path.join(DATA_DIR, 'config', 'settings.json');
@@ -540,6 +614,11 @@ export function getTodosPath(): string {
 }
 
 /** 单条待办 JSON：`todos/entries/<todoId>.json`（与数据根 `todos.json` 聚合并存，读取时合并，分文件优先） */
+export function getTodosEntriesDir(): string {
+  return path.join(DATA_DIR, 'todos', 'entries');
+}
+
+/** 单条待办 JSON：`todos/entries/<todoId>.json`（与聚合文件 `tasks/todos.json` 并存，读取时合并，分文件优先） */
 export function getTodosEntriesDir(): string {
   return path.join(DATA_DIR, 'todos', 'entries');
 }

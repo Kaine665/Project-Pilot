@@ -126,7 +126,6 @@ npm run dev
 - [数据目录（与 file-store 对齐）](docs/data-storage.md)
 - [Agent Chat Architecture](docs/agent-chat-architecture.md)
 - [Context System](docs/context-system.md)
-- [Data Storage](docs/data-storage.md)
 - [AI Task Workflow](docs/ai-task-workflow.md)
 - [Artifact Retry](docs/artifact-retry.md)
 - [Frontend Design](docs/frontend-design.md)
