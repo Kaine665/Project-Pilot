@@ -9,15 +9,12 @@
 // ── Resource Types ──
 
 export type ResourceType =
-  | 'context'                     // ContextEntry — expand content inline
-  | 'context-index'               // Global context index table (AI cats on demand)
   | 'design-docs-index'           // Design docs index table (AI cats on demand)
   | 'active-tasks'                // Shared active tasks board (parallel awareness)
   | 'available-agents'            // Callable agents list (sub-agent invocation)
   | 'system-prompt'               // Agent system prompt text
   | 'todo-list'                   // Pending todo items
   | 'inline-text'                 // Inline text snippet (content stored in ref)
-  | 'knowledge-instructions'      // Static: knowledge save instructions
   | 'doc-save-instructions'       // Static: design doc save instructions
   | 'session-title-instructions'  // Static: session title generation instructions
   | 'flow-context'                // Project flow context (for flow-bound chats)
@@ -36,12 +33,10 @@ export interface ResourceRef {
   type: ResourceType;
   /**
    * Resource identifier — semantics depend on type:
-   * - context: ContextEntry.id
    * - system-prompt: agentId (or '_fallback' for auto-generated prompt)
    * - todo-list: 'pending' | 'all'
    * - inline-text: arbitrary key
-   * - knowledge-instructions / doc-save-instructions / session-title-instructions: '_static'
-   * - context-index: '_all'
+   * - doc-save-instructions / session-title-instructions: '_static'
    * - design-docs-index: '_all'
    * - active-tasks: '_running'
    * - available-agents: '_callable'
@@ -57,12 +52,6 @@ export interface ResourceRef {
   priority?: number;
   /** Human-readable label for UI display */
   label?: string;
-  /**
-   * 注入模式（仅对 context 类型生效）：
-   * - 'summary'（默认）：注入摘要文本，节省 token
-   * - 'full'：注入完整文件内容（向后兼容：明确配置到 Agent 资源列表的 context）
-   */
-  injectMode?: 'summary' | 'full';
 }
 
 // ── Specialised Refs ──

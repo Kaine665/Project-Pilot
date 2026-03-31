@@ -20,6 +20,7 @@
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx",
+    "src/**/*.d.ts",
     "**/*.mts"
   ],
   "exclude": ["node_modules", "elapp", "task-agent-original", "electron/dist"]

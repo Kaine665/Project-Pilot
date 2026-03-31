@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { getTodosPath, readJsonFile, modifyJsonFile } from '@/lib/file-store';
+import { modifyTodosMerged, readTodosMerged } from '@/lib/todo-file-store';
 import { HttpError } from '@/lib/http-error';
 import { dispatchTodoToAgent } from '@/lib/todo-dispatch';
 import type { TodosData, TodoItem, TodoLifecycle, TodoSubTask } from '@/types';
@@ -27,13 +27,14 @@ app.onError((err, c) => {
 
 app.get('/', async (c) => {
   const project = c.req.query('project');
-  const data = await readJsonFile<TodosData>(getTodosPath(), DEFAULT);
+  const data = await readTodosMerged();
 
   let todos = data.todos;
   if (project === '_global') {
     todos = todos.filter((t) => !t.projectKey);
   } else if (project) {
-    todos = todos.filter((t) => t.projectKey === project);
+    // 未写 projectKey 的历史待办在「选中项目」时也应可见，否则修复/绑定项目后列表会突然变空
+    todos = todos.filter((t) => !t.projectKey || t.projectKey === project);
   }
 
   return c.json({ todos });
@@ -78,7 +79,7 @@ app.post('/', async (c) => {
     updatedAt: now,
   };
 
-  await modifyJsonFile<TodosData>(getTodosPath(), DEFAULT, (data) => ({
+  await modifyTodosMerged((data) => ({
     ...data,
     todos: [...data.todos, newTodo],
   }));
@@ -114,7 +115,7 @@ app.post('/batch', async (c) => {
   const idSet = new Set(ids);
   let affected = 0;
 
-  await modifyJsonFile<TodosData>(getTodosPath(), DEFAULT, (data) => {
+  await modifyTodosMerged((data) => {
     if (action === 'delete') {
       const before = data.todos.length;
       const filtered = data.todos.filter((t) => !idSet.has(t.id));
@@ -169,7 +170,7 @@ app.patch('/:id', async (c) => {
 
   let updated: TodosData['todos'][number] | null = null;
 
-  await modifyJsonFile<TodosData>(getTodosPath(), DEFAULT, (data) => ({
+  await modifyTodosMerged((data) => ({
     ...data,
     todos: data.todos.map((t) => {
       if (t.id !== id) return t;
@@ -209,7 +210,7 @@ app.delete('/:id', async (c) => {
 
   let found = false;
 
-  await modifyJsonFile<TodosData>(getTodosPath(), DEFAULT, (data) => ({
+  await modifyTodosMerged((data) => ({
     ...data,
     todos: data.todos.filter((t) => {
       if (t.id === id) { found = true; return false; }

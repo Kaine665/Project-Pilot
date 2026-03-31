@@ -1,14 +1,15 @@
 /**
  * Agent Package (.ppagent) — 导出/导入逻辑
  *
- * 导出：Agent 元数据 + systemPrompt + 关联 context 内容内联化 → AgentPackage JSON
- * 导入：AgentPackage → 创建新 Agent + 写 prompt 文件 + 可选导入 context
+ * 导出：Agent 元数据 + systemPrompt → AgentPackage JSON
+ * 导入：AgentPackage → 创建新 Agent；可选将包内 contexts 写入知识类文档（documents/）
  */
 
-import { readJsonFile, getContextIndexPath, getContextFilePath, getAgentsPath, writeJsonFile } from './file-store';
+import { readJsonFile, getAgentsPath, writeJsonFile, getDocumentContentPath, getDocumentsContentDir } from './file-store';
 import { readPromptFile, writePromptFile } from './agent-prompt-store';
+import { readDocsIndexFromDocuments, saveDocsIndexToDocuments } from './documents-store';
 import { getSettings } from './settings-manager';
-import type { Agent, AgentsData, ContextIndexData, ContextEntry, AgentCapabilities } from '@/types';
+import type { Agent, AgentsData, AgentCapabilities, DocEntry } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import type { AgentPackage, PackagedContext } from '@/types/agent-package';
 import type { ResourceRef } from '@/types/resource';
@@ -18,36 +19,8 @@ import { invalidateAgentsCache } from '@/lib/agents-store';
 // ── 导出 ──
 
 export async function exportAgent(agent: Agent): Promise<AgentPackage> {
-  // 1. 读取 systemPrompt
   const systemPrompt = await readPromptFile(agent.id) || agent.systemPrompt || '';
 
-  // 2. 收集关联的 context 内容
-  const contexts: PackagedContext[] = [];
-  const contextRefs = (agent.defaultResources || []).filter(r => r.type === 'context');
-
-  if (contextRefs.length > 0) {
-    const contextIndex = await readJsonFile<ContextIndexData>(getContextIndexPath(), { entries: [] });
-
-    for (const ref of contextRefs) {
-      const entry = contextIndex.entries.find(e => e.id === ref.id && (!e.status || e.status === 'active'));
-      if (!entry) continue;
-
-      try {
-        const filePath = getContextFilePath(entry.fileName);
-        const content = await fs.readFile(filePath, 'utf-8');
-        contexts.push({
-          label: entry.label,
-          description: entry.description,
-          format: entry.format,
-          content,
-        });
-      } catch {
-        // 文件不存在，跳过
-      }
-    }
-  }
-
-  // 3. 组装包
   const pkg: AgentPackage = {
     format: 'ppagent',
     version: 1,
@@ -63,10 +36,6 @@ export async function exportAgent(agent: Agent): Promise<AgentPackage> {
     systemPrompt,
   };
 
-  if (contexts.length > 0) {
-    pkg.contexts = contexts;
-  }
-
   return pkg;
 }
 
@@ -77,9 +46,6 @@ export interface ImportResult {
   contextsImported: number;
 }
 
-/**
- * 验证 .ppagent 包的基本格式
- */
 export function validatePackage(data: unknown): data is AgentPackage {
   if (!data || typeof data !== 'object') return false;
   const pkg = data as Record<string, unknown>;
@@ -95,16 +61,12 @@ export function validatePackage(data: unknown): data is AgentPackage {
 
 /**
  * 导入 .ppagent 包，创建新 Agent。
- *
- * - 始终生成新 ID（不会覆盖已有 agent）
- * - contexts 作为新的 ContextEntry 导入（如果有）
- * - 返回创建的 Agent 和导入的 context 数量
+ * 旧版包中的 contexts[] 会写入知识类文档（projectKey=_imported）。
  */
 export async function importAgent(pkg: AgentPackage): Promise<ImportResult> {
   const now = new Date().toISOString();
   const agentId = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
-  // 1. 确定 capabilities
   let capabilities: AgentCapabilities;
   if (pkg.agent.capabilities) {
     capabilities = pkg.agent.capabilities;
@@ -114,67 +76,42 @@ export async function importAgent(pkg: AgentPackage): Promise<ImportResult> {
     capabilities = { ...DEFAULT_AGENT_CAPABILITIES, exposePromptPath: exposeByDefault };
   }
 
-  // 2. 导入 contexts（如果有）
   let contextsImported = 0;
-  const contextRefs: ResourceRef[] = [];
 
   if (pkg.contexts && pkg.contexts.length > 0) {
-    const { modifyJsonFile, getContextDir } = await import('./file-store');
+    await fs.mkdir(getDocumentsContentDir(), { recursive: true });
+    const idx = await readDocsIndexFromDocuments();
+    const pk = '_imported';
+    if (!idx.projects[pk]) idx.projects[pk] = [];
 
-    // 确保 context 目录存在
-    const contextDir = getContextDir();
-    await fs.mkdir(contextDir, { recursive: true });
+    for (const ctx of pkg.contexts as PackagedContext[]) {
+      const docId = `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const ext = ctx.format === 'json' ? 'json' : ctx.format === 'markdown' ? 'md' : 'txt';
+      const fileName = `${docId}.${ext}`;
+      await fs.writeFile(getDocumentContentPath(fileName), ctx.content, 'utf-8');
 
-    for (const ctx of pkg.contexts) {
-      const contextId = `ctx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      const ext = ctx.format === 'json' ? '.json' : ctx.format === 'markdown' ? '.md' : '.txt';
-      const fileName = `${contextId}${ext}`;
-
-      // 写上下文文件
-      const filePath = getContextFilePath(fileName);
-      await fs.writeFile(filePath, ctx.content, 'utf-8');
-
-      // 写索引
-      const entry: ContextEntry = {
-        id: contextId,
-        label: ctx.label,
+      const entry: DocEntry = {
+        id: docId,
+        title: ctx.label,
         description: ctx.description,
         fileName,
-        format: ctx.format,
+        projectKey: pk,
+        documentKind: 'knowledge',
         createdAt: now,
         updatedAt: now,
       };
-
-      await modifyJsonFile<ContextIndexData>(
-        getContextIndexPath(),
-        { entries: [] },
-        (d) => { d.entries.push(entry); return d; },
-      );
-
-      contextRefs.push({
-        type: 'context',
-        id: contextId,
-        priority: 30,
-        label: ctx.label,
-      });
-
+      idx.projects[pk].push(entry);
       contextsImported++;
     }
+    await saveDocsIndexToDocuments(idx);
   }
 
-  // 3. 构建 defaultResources
-  // 基础资源（和 resource-migration.ts 一致）+ 导入的 context
   const defaultResources: ResourceRef[] = [
     { type: 'system-prompt', id: agentId, priority: 0 },
-    { type: 'context-index', id: '_all', priority: 20 },
     { type: 'design-docs-index', id: '_all', priority: 25 },
-    ...contextRefs,
-    { type: 'knowledge-instructions', id: '_static', priority: 80 },
     { type: 'doc-save-instructions', id: '_static', priority: 85 },
-    // session-title-instructions 已移除：标题由 session-title-generator 异步生成
   ];
 
-  // 4. 创建 Agent
   const agent: Agent = {
     id: agentId,
     name: pkg.agent.name,
@@ -187,12 +124,10 @@ export async function importAgent(pkg: AgentPackage): Promise<ImportResult> {
     updatedAt: now,
   };
 
-  // 5. 写 systemPrompt 文件
   if (pkg.systemPrompt) {
     await writePromptFile(agentId, pkg.systemPrompt);
   }
 
-  // 6. 写 agents.json
   const data = await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
   data.agents.push(agent);
   await writeJsonFile(getAgentsPath(), data);

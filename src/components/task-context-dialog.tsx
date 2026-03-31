@@ -30,7 +30,7 @@ import type {
   SiblingBrief,
   SectionBrief,
 } from '@/types/flow-context';
-import type { ContextEntry } from '@/types/index';
+import type { DocEntry } from '@/types/index';
 
 // --- Auto-collected category definitions ---
 
@@ -161,7 +161,7 @@ export function TaskContextDialog({
   const [excludes, setExcludes] = useState<string[]>([]);
   const [customItems, setCustomItems] = useState<ContextItem[]>([]);
   const [globalContextIds, setGlobalContextIds] = useState<string[]>([]);
-  const [globalEntries, setGlobalEntries] = useState<ContextEntry[]>([]);
+  const [globalEntries, setGlobalEntries] = useState<DocEntry[]>([]);
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -182,9 +182,13 @@ export function TaskContextDialog({
       setFormLabel('');
       setFormContent('');
 
-      fetch('/api/context')
-        .then(r => r.ok ? r.json() : { entries: [] })
-        .then((data: { entries: ContextEntry[] }) => setGlobalEntries(data.entries))
+      fetch('/api/docs?documentKind=knowledge')
+        .then(r => (r.ok ? r.json() : { docs: [] }))
+        .then((data: { docs?: DocEntry[] }) =>
+          setGlobalEntries(
+            (data.docs ?? []).filter(e => !e.status || e.status === 'active'),
+          ),
+        )
         .catch(() => setGlobalEntries([]));
     }
   }, [open, item.context]);
@@ -351,9 +355,7 @@ export function TaskContextDialog({
           {/* Divider */}
           <div className="border-t border-zinc-200 dark:border-zinc-800 my-3" />
 
-          {/* Global context — 来自 /flows/context 页面的全局条目（ContextEntry）
-               选中的 ID 存入 TreeItem.context.globalContextIds
-               发起 AI 时经 collectFlowTaskContext → FlowTaskContext.globalContextIds → prompt-builder 读文件内联 */}
+          {/* 全局知识文档（documents，documentKind=knowledge） */}
           <div className="mb-4">
             <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
               {t('globalContext')}
@@ -362,12 +364,12 @@ export function TaskContextDialog({
               <div className="flex flex-col gap-1">
                 {/* Grouped entries */}
                 {(() => {
-                  const groups = [...new Set(globalEntries.map(e => e.group).filter((g): g is string => !!g))].sort();
-                  const ungrouped = globalEntries.filter(e => !e.group);
+                  const groups = [...new Set(globalEntries.map(e => e.category).filter((g): g is string => !!g))].sort();
+                  const ungrouped = globalEntries.filter(e => !e.category);
                   return (
                     <>
                       {groups.map(group => {
-                        const groupEntries = globalEntries.filter(e => e.group === group);
+                        const groupEntries = globalEntries.filter(e => e.category === group);
                         return (
                           <div key={group}>
                             <div className="flex items-center gap-1.5 px-2 pt-1.5 pb-0.5">
@@ -383,7 +385,7 @@ export function TaskContextDialog({
                                 >
                                   <div className="flex items-center gap-2 min-w-0 flex-1">
                                     <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                                    <span className="text-sm font-medium shrink-0">{entry.label}</span>
+                                    <span className="text-sm font-medium shrink-0">{entry.title}</span>
                                     <span className={`text-xs truncate ${enabled ? 'text-muted-foreground' : 'text-muted-foreground/40'}`}>
                                       {entry.description}
                                     </span>
@@ -404,7 +406,7 @@ export function TaskContextDialog({
                           >
                             <div className="flex items-center gap-2 min-w-0 flex-1">
                               <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                              <span className="text-sm font-medium shrink-0">{entry.label}</span>
+                              <span className="text-sm font-medium shrink-0">{entry.title}</span>
                               <span className={`text-xs truncate ${enabled ? 'text-muted-foreground' : 'text-muted-foreground/40'}`}>
                                 {entry.description}
                               </span>

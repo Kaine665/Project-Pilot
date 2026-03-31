@@ -1,17 +1,28 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { X, Check, ChevronDown, Search, FileText, BookOpen, Cpu, Code, Shield, Zap } from 'lucide-react';
-import type { Agent, AgentCapabilities, ContextEntry, OpenAIReasoningEffort, ProviderId } from '@/types';
+import { X, Check, ChevronDown, Search, FileText, Cpu, Code, Shield, Zap } from 'lucide-react';
+import type {
+  Agent,
+  AgentCapabilities,
+  OpenAIReasoningEffort,
+  ProviderId,
+} from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import type { SessionConfig } from '@/types/agent-chat';
-import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
+import { getProviderPreset } from '@/lib/provider-registry';
 import { CAPABILITY_ITEMS } from '@/components/agent-form';
+import { useAvailableModels } from '@/hooks/use-available-models';
+import {
+  compositeKeyForAggregateItem,
+  modelSelectOptionsFromAggregate,
+  parseAggregateCompositeKey,
+} from '@/lib/aggregate-model-key';
+import { PROVIDER_LABELS } from '@/components/agent-chat/types';
 
 /** 仅用于 useEffect 依赖：避免父组件每次渲染传入新 config 引用导致无限同步循环 */
 function sessionConfigSyncKey(config: SessionConfig): string {
   return JSON.stringify({
-    contextIds: config.contextIds ?? [],
     skillNames: config.skillNames ?? [],
     supplementaryPrompt: config.supplementaryPrompt ?? '',
     provider: config.provider ?? '',
@@ -45,7 +56,6 @@ export function SessionConfigPanel({
   agentSystemPrompt,
   agentCapabilities,
 }: SessionConfigPanelProps) {
-  const [contextIds, setContextIds] = useState<string[]>(config.contextIds ?? []);
   const [skillNames, setSkillNames] = useState<string[]>(config.skillNames ?? []);
   const [supplementaryPrompt, setSupplementaryPrompt] = useState(config.supplementaryPrompt ?? '');
   const [sessionProvider, setSessionProvider] = useState<ProviderId | ''>(config.provider ?? '');
@@ -54,11 +64,7 @@ export function SessionConfigPanel({
   const [sessionOpenAIFastMode, setSessionOpenAIFastMode] = useState<boolean | ''>(config.openaiFastMode ?? '');
   const [systemPromptOverride, setSystemPromptOverride] = useState(config.systemPrompt ?? '');
   const [capsOverride, setCapsOverride] = useState<Partial<AgentCapabilities>>(config.capabilities ?? {});
-  const [contextEntries, setContextEntries] = useState<ContextEntry[]>([]);
   const [availableSkills, setAvailableSkills] = useState<{ name: string; description: string }[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [contextOpen, setContextOpen] = useState(true);
-  const [contextFilter, setContextFilter] = useState('');
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [skillFilter, setSkillFilter] = useState('');
   const [promptSectionOpen, setPromptSectionOpen] = useState(false);
@@ -66,9 +72,35 @@ export function SessionConfigPanel({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const { items: aggregateItems } = useAvailableModels();
+
   // Agent 的有效能力基线
   const baseCaps = useMemo(() => ({ ...DEFAULT_AGENT_CAPABILITIES, ...agentCapabilities }), [agentCapabilities]);
   const effectiveSessionProvider = (sessionProvider || agent?.defaultProvider || '') as ProviderId | '';
+
+  const sessionModelOptions = useMemo(() => {
+    const base = modelSelectOptionsFromAggregate(
+      aggregateItems,
+      (id) => PROVIDER_LABELS[id] || id,
+    );
+    if (sessionProvider && sessionModel) {
+      const cur = compositeKeyForAggregateItem({
+        providerId: sessionProvider as ProviderId,
+        value: sessionModel,
+        label: sessionModel,
+      });
+      if (!base.some((o) => o.value === cur)) {
+        return [
+          {
+            value: cur,
+            label: `${sessionModel} · ${PROVIDER_LABELS[sessionProvider as ProviderId] || sessionProvider}（当前）`,
+          },
+          ...base,
+        ];
+      }
+    }
+    return base;
+  }, [aggregateItems, sessionProvider, sessionModel]);
 
   // Auto-resize textarea
   const autoResize = useCallback(() => {
@@ -76,17 +108,6 @@ export function SessionConfigPanel({
     if (!ta) return;
     ta.style.height = 'auto';
     ta.style.height = Math.min(ta.scrollHeight, 200) + 'px';
-  }, []);
-
-  // Fetch available context entries
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch('/api/context');
-        const data = await res.json();
-        setContextEntries((data.entries ?? []).filter((e: ContextEntry) => !e.status || e.status === 'active'));
-      } catch { setContextEntries([]); }
-    })();
   }, []);
 
   // Fetch available skills
@@ -103,7 +124,6 @@ export function SessionConfigPanel({
   // Reset form when config changes (session switch). 依赖内容快照而非 config 引用，避免父组件每帧新对象导致死循环。
   const configKey = sessionConfigSyncKey(config);
   useEffect(() => {
-    setContextIds(config.contextIds ?? []);
     setSkillNames(config.skillNames ?? []);
     setSupplementaryPrompt(config.supplementaryPrompt ?? '');
     setSessionProvider(config.provider ?? '');
@@ -118,50 +138,16 @@ export function SessionConfigPanel({
   // Auto-resize on content change
   useEffect(() => { autoResize(); }, [supplementaryPrompt, autoResize]);
 
-  const toggleContext = useCallback((id: string) => {
-    setContextIds(prev =>
-      prev.includes(id) ? prev.filter(cid => cid !== id) : [...prev, id],
-    );
-  }, []);
-
   const toggleSkill = useCallback((name: string) => {
     setSkillNames(prev =>
       prev.includes(name) ? prev.filter(s => s !== name) : [...prev, name],
     );
   }, []);
 
-  // Group context entries with optional filter
-  const contextGroups = useMemo(() => {
-    let filtered = contextEntries;
-    if (contextFilter.trim()) {
-      const q = contextFilter.toLowerCase();
-      filtered = contextEntries.filter(e =>
-        e.label.toLowerCase().includes(q) ||
-        (e.description ?? '').toLowerCase().includes(q) ||
-        (e.group ?? '').toLowerCase().includes(q)
-      );
-    }
-    const groups: Array<{ group: string | null; entries: ContextEntry[] }> = [];
-    const groupNames = [...new Set(filtered.map(e => e.group).filter((g): g is string => !!g))].sort();
-    const ungrouped = filtered.filter(e => !e.group);
-    if (ungrouped.length > 0) groups.push({ group: null, entries: ungrouped });
-    for (const g of groupNames) {
-      groups.push({ group: g, entries: filtered.filter(e => e.group === g) });
-    }
-    return groups;
-  }, [contextEntries, contextFilter]);
-
-  // Selected context entries for chips display
-  const selectedEntries = useMemo(() => {
-    return contextEntries.filter(e => contextIds.includes(e.id));
-  }, [contextEntries, contextIds]);
-
   // Check if there are changes
   const hasChanges = useMemo(() => {
-    const origIds = config.contextIds ?? [];
     const origSkills = config.skillNames ?? [];
     const origPrompt = config.supplementaryPrompt ?? '';
-    const idsChanged = JSON.stringify([...contextIds].sort()) !== JSON.stringify([...origIds].sort());
     const skillsChanged = JSON.stringify([...skillNames].sort()) !== JSON.stringify([...origSkills].sort());
     const promptChanged = supplementaryPrompt !== origPrompt;
     const providerChanged = sessionProvider !== (config.provider ?? '');
@@ -170,13 +156,11 @@ export function SessionConfigPanel({
     const fastModeChanged = sessionOpenAIFastMode !== (config.openaiFastMode ?? '');
     const sysPromptChanged = systemPromptOverride !== (config.systemPrompt ?? '');
     const capsChanged = JSON.stringify(capsOverride) !== JSON.stringify(config.capabilities ?? {});
-    return idsChanged || skillsChanged || promptChanged || providerChanged || modelChanged || effortChanged || fastModeChanged || sysPromptChanged || capsChanged;
-  }, [contextIds, skillNames, supplementaryPrompt, sessionProvider, sessionModel, sessionOpenAIEffort, sessionOpenAIFastMode, systemPromptOverride, capsOverride, config]);
+    return skillsChanged || promptChanged || providerChanged || modelChanged || effortChanged || fastModeChanged || sysPromptChanged || capsChanged;
+  }, [skillNames, supplementaryPrompt, sessionProvider, sessionModel, sessionOpenAIEffort, sessionOpenAIFastMode, systemPromptOverride, capsOverride, config]);
 
-  const handleSave = async () => {
-    setSaving(true);
+  const buildPendingConfig = useCallback((): SessionConfig => {
     const newConfig: SessionConfig = {};
-    if (contextIds.length > 0) newConfig.contextIds = contextIds;
     if (skillNames.length > 0) newConfig.skillNames = skillNames;
     if (supplementaryPrompt.trim()) newConfig.supplementaryPrompt = supplementaryPrompt.trim();
     if (sessionProvider) newConfig.provider = sessionProvider as ProviderId;
@@ -189,9 +173,26 @@ export function SessionConfigPanel({
     }
     if (systemPromptOverride.trim()) newConfig.systemPrompt = systemPromptOverride.trim();
     if (Object.keys(capsOverride).length > 0) newConfig.capabilities = capsOverride;
-    onSave(newConfig);
-    setSaving(false);
-  };
+    return newConfig;
+  }, [
+    capsOverride,
+    effectiveSessionProvider,
+    sessionModel,
+    sessionOpenAIEffort,
+    sessionOpenAIFastMode,
+    sessionProvider,
+    skillNames,
+    supplementaryPrompt,
+    systemPromptOverride,
+  ]);
+
+  useEffect(() => {
+    if (!hasChanges) return;
+    const id = setTimeout(() => {
+      onSave(buildPendingConfig());
+    }, 450);
+    return () => clearTimeout(id);
+  }, [hasChanges, buildPendingConfig, onSave]);
 
   return (
     <div className="flex flex-col h-full">
@@ -204,15 +205,6 @@ export function SessionConfigPanel({
           )}
         </div>
         <div className="flex items-center gap-2">
-          {hasChanges && (
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="min-h-[40px] rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
-            >
-              {saving ? '保存中...' : '保存'}
-            </button>
-          )}
           <button
             onClick={onClose}
             className="flex h-10 w-10 min-h-[40px] min-w-[40px] items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
@@ -238,41 +230,46 @@ export function SessionConfigPanel({
           </div>
           <div className="space-y-3">
             <select
-              value={sessionProvider}
-              onChange={e => {
-                const nextProvider = e.target.value as ProviderId | '';
-                setSessionProvider(nextProvider);
-                setSessionModel('');
-                if (nextProvider && nextProvider !== 'openai') {
+              value={
+                sessionProvider && sessionModel
+                  ? compositeKeyForAggregateItem({
+                      providerId: sessionProvider as ProviderId,
+                      value: sessionModel,
+                      label: sessionModel,
+                    })
+                  : ''
+              }
+              onChange={(e) => {
+                const v = e.target.value;
+                if (!v) {
+                  setSessionProvider('');
+                  setSessionModel('');
+                  setSessionOpenAIEffort('');
+                  setSessionOpenAIFastMode('');
+                  return;
+                }
+                const parsed = parseAggregateCompositeKey(v);
+                if (!parsed) return;
+                setSessionProvider(parsed.providerId);
+                setSessionModel(parsed.modelId);
+                if (parsed.providerId !== 'openai') {
                   setSessionOpenAIEffort('');
                   setSessionOpenAIFastMode('');
                 }
               }}
               className="h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500"
             >
-              <option value="">{agent?.defaultProvider ? `继承 Agent (${agent.defaultProvider})` : '继承全局默认'}</option>
-              {PROVIDER_REGISTRY.map(p => (
-                <option key={p.id} value={p.id}>{p.id}</option>
+              <option value="">
+                {agent?.defaultProvider
+                  ? `继承 Agent（${agent.defaultProvider}${agent.defaultModel ? ` / ${agent.defaultModel}` : ''}）`
+                  : '继承全局默认'}
+              </option>
+              {sessionModelOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
               ))}
             </select>
-            {sessionProvider ? (
-              <select
-                value={sessionModel}
-                onChange={e => setSessionModel(e.target.value)}
-                className="h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500"
-              >
-                <option value="">{agent?.defaultModel ? `继承 Agent (${agent.defaultModel})` : '继承默认'}</option>
-                {getProviderPreset(sessionProvider as ProviderId).models.map(m => (
-                  <option key={m.id} value={m.id}>{m.label || m.id}</option>
-                ))}
-              </select>
-            ) : (
-              <input
-                disabled
-                placeholder={agent?.defaultModel ? `继承 Agent 默认: ${agent.defaultModel}` : '先选择供应商'}
-                className="h-11 w-full rounded-lg border border-zinc-200 px-3 py-2.5 text-sm text-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/50"
-              />
-            )}
             {effectiveSessionProvider === 'openai' && (
               <div className="space-y-3">
                 <div>
@@ -589,138 +586,27 @@ export function SessionConfigPanel({
             )}
           </div>
 
-        {/* ── 上下文绑定 ── */}
-        {contextEntries.length > 0 && (
-          <div className="rounded-xl border border-zinc-200 bg-zinc-50/50 p-4 shadow-sm dark:border-zinc-700/50 dark:bg-zinc-800/30">
-            <button
-              type="button"
-              onClick={() => setContextOpen(v => !v)}
-              className="mb-2 flex min-h-[44px] w-full items-center gap-2 rounded-lg px-2 -mx-2 transition-colors hover:bg-zinc-100/50 dark:hover:bg-zinc-700/30"
-            >
-              <BookOpen className="h-4 w-4 text-zinc-400" />
-              <span className="text-sm font-medium text-zinc-600 dark:text-zinc-400">追加上下文</span>
-              {contextIds.length > 0 && (
-                <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-400">
-                  {contextIds.length}
-                </span>
-              )}
-              <ChevronDown className={`ml-auto h-4 w-4 text-zinc-400 transition-transform ${contextOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {/* 已选上下文 chips */}
-            {selectedEntries.length > 0 && !contextOpen && (
-              <div className="flex flex-wrap gap-2 mt-2">
-                {selectedEntries.map(entry => (
-                  <button
-                    key={entry.id}
-                    onClick={() => toggleContext(entry.id)}
-                    className="group flex min-h-[36px] items-center gap-4 rounded-full bg-blue-50 px-3 py-1.5 text-xs text-blue-700 transition-colors hover:bg-red-50 hover:text-red-600 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-                  >
-                    <span className="truncate max-w-[120px]">{entry.label}</span>
-                    <X className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {contextOpen && (
-              <div className="mt-2 space-y-2">
-                {/* 搜索 */}
-                {contextEntries.length > 5 && (
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-                    <input
-                      type="text"
-                      value={contextFilter}
-                      onChange={e => setContextFilter(e.target.value)}
-                      placeholder="搜索上下文…"
-                      className="h-11 w-full rounded-lg border border-zinc-200 bg-white py-2.5 pl-10 pr-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-blue-500"
-                    />
-                  </div>
-                )}
-
-                {/* 列表 */}
-                <div className="max-h-52 space-y-1 overflow-y-auto">
-                  {contextGroups.map(({ group, entries }) => (
-                    <div key={group ?? '__ungrouped'}>
-                      {group && (
-                        <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                          {group}
-                        </div>
-                      )}
-                      <div className="space-y-1">
-                        {entries.map(entry => {
-                          const checked = contextIds.includes(entry.id);
-                          return (
-                            <button
-                              key={entry.id}
-                              type="button"
-                              onClick={() => toggleContext(entry.id)}
-                              className={`flex min-h-[48px] w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
-                                checked
-                                  ? 'bg-blue-50 dark:bg-blue-900/20'
-                                  : 'hover:bg-zinc-100 dark:hover:bg-zinc-700/50'
-                              }`}
-                            >
-                              <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
-                                checked
-                                  ? 'border-blue-600 bg-blue-600 dark:border-blue-500 dark:bg-blue-500'
-                                  : 'border-zinc-300 dark:border-zinc-600'
-                              }`}>
-                                {checked && <Check className="h-3 w-3 text-white" />}
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="truncate text-sm text-zinc-900 dark:text-zinc-100">
-                                  {entry.label}
-                                </div>
-                                {entry.description && (
-                                  <div className="truncate text-xs text-zinc-400">
-                                    {entry.description}
-                                  </div>
-                                )}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                  {contextGroups.length === 0 && contextFilter && (
-                    <p className="py-4 text-center text-sm text-zinc-400">无匹配结果</p>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
-      {/* Footer - simplified */}
+      {/* Footer：配置已改为自动保存，仅保留撤销 */}
       {hasChanges && (
         <div className="border-t border-zinc-100 px-4 py-3 dark:border-zinc-800">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="min-h-[44px] flex-1 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
-            >
-              {saving ? '保存中...' : '保存配置'}
-            </button>
-            <button
-              onClick={() => {
-                setContextIds(config.contextIds ?? []);
-                setSkillNames(config.skillNames ?? []);
-                setSupplementaryPrompt(config.supplementaryPrompt ?? '');
-                setSessionProvider(config.provider ?? '');
-                setSessionModel(config.model ?? '');
-                setSystemPromptOverride(config.systemPrompt ?? '');
-                setCapsOverride(config.capabilities ?? {});
-              }}
-              className="min-h-[44px] px-4 py-2.5 text-sm text-zinc-400 transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
-            >
-              撤销修改
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSkillNames(config.skillNames ?? []);
+              setSupplementaryPrompt(config.supplementaryPrompt ?? '');
+              setSessionProvider(config.provider ?? '');
+              setSessionModel(config.model ?? '');
+              setSessionOpenAIEffort(config.openaiReasoningEffort ?? '');
+              setSessionOpenAIFastMode(config.openaiFastMode ?? '');
+              setSystemPromptOverride(config.systemPrompt ?? '');
+              setCapsOverride(config.capabilities ?? {});
+            }}
+            className="text-sm text-zinc-400 transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
+          >
+            撤销修改
+          </button>
         </div>
       )}
     </div>

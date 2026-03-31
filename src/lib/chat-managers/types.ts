@@ -6,7 +6,7 @@
  */
 
 import type { ChildProcess } from 'child_process';
-import type { ChatSSEEvent, ChatToolCall, ContentBlock, DangerDetectorSettings } from '@/types';
+import type { AgentEvent, ChatToolCall, ContentBlock, DangerDetectorSettings } from '@/types';
 
 // Run lifecycle
 
@@ -76,8 +76,8 @@ export interface BaseRun {
   runId: string;
   process: ChildProcess | null;
   status: RunStatus;
-  events: ChatSSEEvent[];
-  listeners: Set<(event: ChatSSEEvent, index: number) => void>;
+  events: AgentEvent[];
+  listeners: Set<(event: AgentEvent, index: number) => void>;
   startedAt: number;
   completedAt?: number;
 

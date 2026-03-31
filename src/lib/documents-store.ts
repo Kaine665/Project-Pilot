@@ -1,19 +1,16 @@
 /**
- * documents/ 域与旧版 Context / Design Docs API 的桥接。
- * 真相源：documents/entries/<docId>.json + documents/content/
+ * documents/ 域 — 真相源：documents/entries/<docId>.json + documents/content/
  */
 
 import { promises as fs } from 'fs';
 import path from 'path';
 import {
-  getDocumentsContentDir,
   getDocumentsEntriesDir,
   getDocumentsIndexPath,
   readJsonFile,
   writeJsonFile,
 } from './file-store';
-import type { ContextEntry, ContextIndexData, DocsIndexData } from '@/types';
-import type { DocEntry, DocStatus } from '@/types';
+import type { DocsIndexData, DocumentKind, DocEntry, DocStatus } from '@/types';
 
 /** 磁盘上的 document entry（与迁移脚本写入形状兼容） */
 export interface DocumentDiskEntry {
@@ -24,12 +21,18 @@ export interface DocumentDiskEntry {
   projectKey?: string;
   agentId?: string | null;
   format: 'json' | 'markdown' | 'text';
+  /** 正文文件名（documents/content/ 下）；缺省为 {id}.{ext} */
+  contentFileName?: string;
+  documentKind?: DocumentKind;
   category?: string | null;
   tags?: string[];
   status?: string;
   sourcePath?: string | null;
   supersededBy?: string | null;
   supersedes?: string | null;
+  summary?: string | null;
+  coveredPaths?: string[] | null;
+  lastCheckedCommit?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -40,58 +43,26 @@ function formatToExt(f: string): string {
   return 'md';
 }
 
-export function documentToContextEntry(d: DocumentDiskEntry): ContextEntry {
-  const ext = formatToExt(d.format);
-  const fileName = `${d.id}.${ext}`;
-  return {
-    id: d.id,
-    label: d.title,
-    description: d.description ?? '',
-    fileName,
-    format: d.format,
-    ...(d.category ? { group: d.category as string } : {}),
-    ...(d.projectKey ? { projectKey: d.projectKey } : {}),
-    ...(d.sourcePath ? { sourcePath: d.sourcePath } : {}),
-    ...(d.tags?.length ? { tags: d.tags } : {}),
-    ...(d.status === 'draft' ? { status: 'draft' } : {}),
-    createdAt: d.createdAt,
-    updatedAt: d.updatedAt,
-  };
-}
-
-export function contextEntryToDocument(e: ContextEntry): DocumentDiskEntry {
-  return {
-    id: e.id,
-    title: e.label,
-    description: e.description,
-    scope: e.projectKey ? 'project' : 'global',
-    projectKey: e.projectKey,
-    agentId: null,
-    format: e.format,
-    category: e.group ?? null,
-    tags: e.tags,
-    status: e.status === 'draft' ? 'draft' : 'active',
-    sourcePath: e.sourcePath ?? null,
-    supersededBy: null,
-    supersedes: null,
-    createdAt: e.createdAt,
-    updatedAt: e.updatedAt,
-  };
-}
-
 export function documentToDocEntry(d: DocumentDiskEntry): DocEntry {
   const ext = formatToExt(d.format);
-  const fileName = `${d.id}.${ext}`;
+  const fileName = d.contentFileName ?? `${d.id}.${ext}`;
   const st = (d.status ?? 'active') as DocStatus;
+  const pk = d.projectKey ?? (d.scope === 'global' ? '_global' : '_other');
+  const kind: DocumentKind = d.documentKind ?? 'design_doc';
   return {
     id: d.id,
     title: d.title,
     description: d.description,
     fileName,
-    projectKey: d.projectKey ?? (d.scope === 'global' ? '_global' : '_other'),
+    projectKey: pk,
+    documentKind: kind,
     ...(d.category ? { category: d.category } : {}),
     ...(d.tags?.length ? { tags: d.tags } : {}),
     status: st === 'deprecated' || st === 'draft' || st === 'active' ? st : 'active',
+    ...(d.summary ? { summary: d.summary } : {}),
+    ...(d.sourcePath ? { sourcePath: d.sourcePath } : {}),
+    ...(d.coveredPaths?.length ? { coveredPaths: d.coveredPaths } : {}),
+    ...(d.lastCheckedCommit ? { lastCheckedCommit: d.lastCheckedCommit } : {}),
     createdAt: d.createdAt,
     updatedAt: d.updatedAt,
   };
@@ -117,22 +88,6 @@ export async function loadAllDocumentEntries(): Promise<DocumentDiskEntry[]> {
   return out;
 }
 
-export async function readContextIndexFromDocuments(): Promise<ContextIndexData> {
-  const docs = await loadAllDocumentEntries();
-  if (docs.length === 0) {
-    const legacy = await readJsonFile<ContextIndexData>(getDocumentsIndexPath(), { entries: [] });
-    if (legacy.entries?.length) return legacy;
-    const raw = await readJsonFile<{ documents?: unknown[] }>(getDocumentsIndexPath(), {});
-    if (Array.isArray(raw.documents) && raw.documents.length > 0) {
-      return {
-        entries: (raw.documents as DocumentDiskEntry[]).map((d) => documentToContextEntry(d)),
-      };
-    }
-    return { entries: [] };
-  }
-  return { entries: docs.map(documentToContextEntry) };
-}
-
 export async function readDocsIndexFromDocuments(): Promise<DocsIndexData> {
   const docs = await loadAllDocumentEntries();
   if (docs.length === 0) {
@@ -153,36 +108,6 @@ export async function readDocsIndexFromDocuments(): Promise<DocsIndexData> {
   return idx.categories?.length ? { projects, categories: idx.categories } : { projects };
 }
 
-/** 将当前 Context 列表写回 documents（entries + index 摘要） */
-export async function saveContextIndexToDocuments(data: ContextIndexData): Promise<void> {
-  const entriesDir = getDocumentsEntriesDir();
-  await fs.mkdir(entriesDir, { recursive: true });
-  const touch = new Set(data.entries.map((e) => e.id));
-  const prevAll = await loadAllDocumentEntries();
-  const merged: DocumentDiskEntry[] = [
-    ...prevAll.filter((d) => !touch.has(d.id)),
-    ...data.entries.map(contextEntryToDocument),
-  ];
-  const keep = new Set(merged.map((d) => d.id));
-  try {
-    const existing = await fs.readdir(entriesDir);
-    for (const f of existing) {
-      if (!f.endsWith('.json')) continue;
-      const id = f.replace(/\.json$/, '');
-      if (!keep.has(id)) {
-        await fs.unlink(path.join(entriesDir, f)).catch(() => {});
-      }
-    }
-  } catch {
-    /* ok */
-  }
-  for (const d of merged) {
-    await writeJsonFile(path.join(entriesDir, `${d.id}.json`), d);
-  }
-  const prev = await readJsonFile<DocsIndexData>(getDocumentsIndexPath(), { projects: {} });
-  await rebuildDocumentsIndexSummary(merged, prev.categories);
-}
-
 export async function rebuildDocumentsIndexSummary(
   docs: DocumentDiskEntry[],
   categories?: import('@/types').CategoryDef[],
@@ -194,6 +119,7 @@ export async function rebuildDocumentsIndexSummary(
     projectKey: d.projectKey,
     agentId: d.agentId,
     format: d.format,
+    documentKind: d.documentKind,
     tags: d.tags,
     status: d.status,
     category: d.category,
@@ -223,6 +149,8 @@ function formatFromFileName(fileName: string): 'json' | 'markdown' | 'text' {
 
 export function docEntryToDocumentDisk(de: DocEntry): DocumentDiskEntry {
   const isGlobal = de.projectKey === '_global';
+  const ext = formatToExt(formatFromFileName(de.fileName));
+  const defaultName = `${de.id}.${ext}`;
   return {
     id: de.id,
     title: de.title,
@@ -231,12 +159,17 @@ export function docEntryToDocumentDisk(de: DocEntry): DocumentDiskEntry {
     projectKey: isGlobal ? undefined : de.projectKey,
     agentId: null,
     format: formatFromFileName(de.fileName),
+    ...(de.fileName !== defaultName ? { contentFileName: de.fileName } : {}),
+    documentKind: de.documentKind ?? 'design_doc',
     category: de.category ?? null,
     tags: de.tags,
     status: de.status ?? 'active',
-    sourcePath: null,
+    sourcePath: de.sourcePath ?? null,
     supersededBy: de.supersededBy ?? null,
     supersedes: de.supersedes ?? null,
+    summary: de.summary ?? null,
+    coveredPaths: de.coveredPaths ?? null,
+    lastCheckedCommit: de.lastCheckedCommit ?? null,
     createdAt: de.createdAt,
     updatedAt: de.updatedAt,
   };
@@ -280,6 +213,7 @@ export async function saveDocsIndexToDocuments(data: DocsIndexData): Promise<voi
     projectKey: d.projectKey,
     agentId: d.agentId,
     format: d.format,
+    documentKind: d.documentKind,
     tags: d.tags,
     status: d.status,
     category: d.category,

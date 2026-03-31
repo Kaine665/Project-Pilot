@@ -2,8 +2,9 @@
  * Agent Chat Session Store — JSONL-backed message storage (v2).
  *
  * Architecture:
- *   - Index file (agent-chat-sessions.json): lightweight metadata per session (no messages)
- *   - Message files (agent-chat-messages/{sessionId}.jsonl): one JSON line per message
+ *   - Index file (sessions/index.json): lightweight metadata per session (no messages)
+ *   - Message files (sessions/messages/{sessionId}.jsonl): one JSON line per message
+ *   - Adjuncts (sessions/adjuncts.json): per-session deferred input queue, etc.
  *
  * Benefits over the v1 monolithic JSON:
  *   - Appending a message is O(1) (appendFileSync), not O(total-messages) rewrite
@@ -385,7 +386,6 @@ export async function deleteStreamingDraft(sessionId: string): Promise<void> {
 function stripActionTags(text: string): string {
   return text
     .replace(/<save-doc[^>]*>[\s\S]*?<\/save-doc>/g, '')
-    .replace(/<save-knowledge[^>]*>[\s\S]*?<\/save-knowledge>/g, '')
     .replace(/<suspend-task[^>]*>[\s\S]*?<\/suspend-task>/g, '')
     .replace(/<complete-suspended-task[^/]*\/>\s*/g, '')
     .trim();

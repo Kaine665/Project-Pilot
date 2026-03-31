@@ -22,7 +22,7 @@ import { spawnClaude } from '@/lib/claude-cli';
 import { StreamParser, LineBuffer } from '@/lib/claude-stream-parser';
 import { detectDangerousCommand } from '@/lib/danger-detector';
 import { getSettings } from '@/lib/settings-manager';
-import type { ChatSSEEvent, ChatToolCall, ContentBlock } from '@/types';
+import type { AgentEvent, ChatToolCall, ContentBlock } from '@/types';
 import { DEFAULT_DANGER_SETTINGS } from '@/types';
 import type { BaseRun, RunStatus, RunStatusInfo, SpawnConfig } from './types';
 
@@ -61,7 +61,7 @@ export abstract class BaseChatManager<TRun extends BaseRun> {
   subscribe(
     runKey: string,
     since: number,
-    listener: (event: ChatSSEEvent, index: number) => void,
+    listener: (event: AgentEvent, index: number) => void,
   ): (() => void) | null {
     const run = this.runs.get(runKey);
     if (!run) return null;
@@ -346,7 +346,7 @@ export abstract class BaseChatManager<TRun extends BaseRun> {
    * Track an SSE event in the run's accumulation state, perform danger
    * detection, and broadcast to all live listeners.
    */
-  protected trackAndEmit(run: TRun, event: ChatSSEEvent): void {
+  protected trackAndEmit(run: TRun, event: AgentEvent): void {
     // ── Accumulate ──
     if (event.type === 'text_delta') {
       run.assistantText += event.text;
@@ -370,7 +370,7 @@ export abstract class BaseChatManager<TRun extends BaseRun> {
       if (event.toolName === 'Bash') {
         const danger = detectDangerousCommand(event.input, run.dangerSettings);
         if (danger) {
-          const warningEvent: ChatSSEEvent = {
+          const warningEvent: AgentEvent = {
             type: 'dangerous_tool_warning',
             toolCallId: event.id,
             toolName: event.toolName,

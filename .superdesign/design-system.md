@@ -1,33 +1,32 @@
-# ProjectPilot / develop-static — Design system (SuperDesign)
+# develop-static — Design system (settings / AI)
 
-## Product context
+## Product
+Desktop-style web app: zinc neutral palette, light/dark, cards with border + shadow-sm.
 
-- **Product**: ProjectPilot (PP) — desktop-first workspace for projects, agents, docs, and context assets.
-- **This screen**: **文档** (`/flows/docs/:projectKey`) — unified library for **设计文档** and **上下文** assets: search, type/scope filters, list + detail/editor split, stats hero, project selector.
-- **Shell**: `TopNav` + narrow icon **sidebar** (`w-13`) + `main` scroll area; optional right **Butler** panel (360px).
+## Typography
+- UI: system / sans, `text-sm` body, `text-xs` hints, `text-lg font-semibold` card titles.
 
-## Visual language (must not drift)
+## Colors (Tailwind zinc + semantic)
+- Background: `bg-white` / `dark:bg-zinc-950`
+- Borders: `border-zinc-200` / `dark:border-zinc-800`
+- Muted text: `text-zinc-500`, secondary `text-zinc-600` / `dark:text-zinc-400`
+- Active pill/button: `bg-zinc-900 text-white` / `dark:bg-zinc-100 dark:text-zinc-900`
+- Inactive outline control: `border border-zinc-200 text-zinc-600 hover:bg-zinc-50` + dark variants
+- Success: `text-green-600 dark:text-green-400`
+- Error: `text-red-600 dark:text-red-400`
+- AI accent (top nav CTA only): `bg-ai-subtle text-ai` (purple family from CSS vars)
 
-- **Font**: `system-ui, -apple-system, sans-serif` (see `globals.css` body).
-- **Radius**: large soft cards — `rounded-2xl` / `rounded-3xl` on panels; inputs `rounded-2xl`.
-- **Neutrals**: zinc scale — `zinc-50`…`zinc-950`, borders `border-zinc-200` / `dark:border-zinc-800`.
-- **Accents**: doc type **violet**, context type **sky** (badges on list rows). Destructive actions **rose**.
-- **Semantic CSS variables** (Tailwind v4 `@theme`): `--color-ai`, `--color-user`, etc. — use for AI assistant chip only where relevant; docs page is mostly zinc + violet/sky.
+## Components
+- **Card**: `rounded-lg border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950`
+- **CardHeader**: `p-4`, **CardTitle**: `text-lg font-semibold`, **CardContent**: `p-4 pt-0 space-y-*`
+- **Input**: h-9, rounded-md, border zinc, px-3, text-sm
+- **Button outline**: border zinc, sm size h-7 text-xs
+- **Settings layout**: `max-w-[1100px] mx-auto px-6 py-8`, left nav `w-52`, content `pl-8 border-l border-zinc-200`, vertical `space-y-6`
 
-## Layout conventions
+## Icons
+Lucide outline, h-4 w-4 in nav, h-5 w-5 in card titles.
 
-- **Page container**: `max-w-[1380px] mx-auto`, `px-6 py-8`, vertical `gap-6`.
-- **Hero section**: single top card with title, subtitle, project `<select>`, two primary actions (新建设计文档 / 新建上下文), four stat tiles in a row.
-- **Below**: two-column grid `xl:grid-cols-[minmax(0,1.1fr)_minmax(380px,0.9fr)]` — left list, right editor or empty state.
-- **List rows**: full-width buttons, `rounded-2xl`, selected row inverts to `bg-zinc-950 text-white` (dark mode: `bg-zinc-100 text-zinc-950`).
-- **Density**: marketing-style padding (`p-5`/`p-6`); **not** IDE-dense (redesign target may increase density).
-
-## Components (reference)
-
-- **SidebarIconButton**: 40×40, `rounded-lg`, active = filled zinc inverse.
-- **TopNav**: `border-b`, `px-6 py-3`, segment nav pills.
-- Docs page uses mostly native `<button>`, `<input>`, `<select>`, `<textarea>` with Tailwind — no heavy shadcn on this page.
-
-## Redesign goal (for iteration prompts)
-
-Explore **desktop application** patterns: fixed chrome, **master–detail** or **three-pane**, optional **toolbar**, **resizable** panes (visual suggestion), higher information density, less “landing page” hero — while **keeping** the existing color tokens and font stack above.
+## Rules for this task
+- Do **not** introduce new fonts, neon colors, or gradients outside zinc + existing semantic colors.
+- **Fixed chrome** (must match current app): full-width top header with border-b; settings page title「设置」; left sidebar section list with icons; right column top border-l; bottom save row when on AI section.
+- **Change area only**: the blocks for **AI 供应商选择** and **默认模型** (and their immediate helper text / sub-controls visible in the reference). Authentication card and advanced base URL may stay as in reference unless the variation explicitly redesigns provider+model strip only.

@@ -2,7 +2,7 @@
  * Task Card Store — read/write task card JSON files.
  *
  * Each session can have at most one task card, stored as:
- *   {DATA_DIR}/chat/messages/{sessionId}.task-card.json（默认 ~/.project-pilot/chat/）
+ *   {DATA_DIR}/sessions/messages/{sessionId}.task-card.json
  *
  * Optional per-session summary; may be written by tooling or future automation.
  */

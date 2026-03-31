@@ -20,7 +20,8 @@ export interface TreeItem {
   context?: {
     items?: ContextItem[];          // 用户手动添加的上下文
     excludes?: string[];            // 关掉的自动采集类别 key
-    globalContextIds?: string[];    // 选中的全局上下文条目 ID（来自 /flows/context 页面的 ContextEntry.id）
+    /** @deprecated 旧版「全局 context」ID；现统一为文档条目 id（DocEntry），产品侧已收口到 /api/docs。保留字段仅兼容历史 flows JSON */
+    globalContextIds?: string[];
   };
 }
 

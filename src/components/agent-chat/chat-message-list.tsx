@@ -20,7 +20,7 @@ export interface ChatMessageListProps {
   thinkingText: string;
   /** Assistant bubble avatar (cartoon portrait URL) */
   assistantAvatarSrc?: string;
-  onSaveAsKnowledge: (messageId: string, content: string) => void;
+  onSaveAsKnowledge?: (messageId: string, content: string) => void;
   onDelete: (messageId: string) => void;
   onRegenerate: () => void;
   onBranch: (messageId: string) => void;

@@ -140,7 +140,7 @@ function mergeWithFallbackModels(models: OpenAIModelSummary[]): OpenAIModelSumma
   return Array.from(merged.values());
 }
 
-async function fetchLiveOpenAIModels(): Promise<OpenAIModelSummary[]> {
+async function fetchLiveOpenAIModels(options: { omitRegistryFallback?: boolean } = {}): Promise<OpenAIModelSummary[]> {
   const child = spawnCodex(['app-server', '--listen', 'stdio://'], {
     detached: false,
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -260,7 +260,7 @@ async function fetchLiveOpenAIModels(): Promise<OpenAIModelSummary[]> {
       cursor = typeof page.nextCursor === 'string' && page.nextCursor.trim() ? page.nextCursor : null;
     } while (cursor);
 
-    return mergeWithFallbackModels(allModels);
+    return options.omitRegistryFallback ? allModels : mergeWithFallbackModels(allModels);
   } finally {
     cleanup();
     await exitPromise;
@@ -294,7 +294,7 @@ export async function listOpenAIModels(options: { forceRefresh?: boolean } = {})
     };
   }
 
-  inflightFetch = fetchLiveOpenAIModels()
+  inflightFetch = fetchLiveOpenAIModels({ omitRegistryFallback: false })
     .then((models) => {
       cacheState = {
         models,
@@ -316,6 +316,11 @@ export async function listOpenAIModels(options: { forceRefresh?: boolean } = {})
 
 export function clearOpenAIModelCatalogCache(): void {
   cacheState = null;
+}
+
+/** Codex RPC 拉取的模型列表，不合并 registry 兜底（供设置页聚合列表等） */
+export async function fetchOpenAiCodexModelsLiveOnly(): Promise<OpenAIModelSummary[]> {
+  return fetchLiveOpenAIModels({ omitRegistryFallback: true });
 }
 
 export function resolveOpenAIEffortForModel(

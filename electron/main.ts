@@ -7,8 +7,16 @@ import { startBackendServer } from './server';
 import { checkCliHealth } from './cli-check';
 
 const isDev = !!process.env.ELECTRON_DEV;
-const DEV_PORT = 4000;
 const APP_ENTRY_PATH = '/flows/projects';
+
+/** develop-static 根目录（main 编译在 electron/dist 下） */
+const projectRoot = path.join(__dirname, '..', '..');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { loadDevServerConfig } = require(path.join(
+  projectRoot,
+  'config',
+  'load-dev-server.cjs',
+)) as { loadDevServerConfig: (root: string) => { clientPort: number; clientLoadOrigin: string } };
 
 let mainWindow: BrowserWindow | null = null;
 let serverProcess: ChildProcess | null = null;
@@ -149,7 +157,9 @@ function createMainWindow() {
 // ── 启动流程 ──────────────────────────────────────────
 app.whenReady().then(async () => {
   if (isDev) {
-    serverPort = DEV_PORT;
+    const devCfg = loadDevServerConfig(projectRoot);
+    serverPort = devCfg.clientPort;
+    windowLoadOrigin = devCfg.clientLoadOrigin;
     createMainWindow();
     return;
   }
@@ -167,7 +177,8 @@ app.whenReady().then(async () => {
     });
     splash.loadFile(path.join(__dirname, 'splash.html'));
 
-    serverPort = await findAvailablePort(4000);
+    const devDefaults = loadDevServerConfig(projectRoot);
+    serverPort = await findAvailablePort(devDefaults.clientPort);
 
     serverProcess = await startBackendServer(serverPort);
 

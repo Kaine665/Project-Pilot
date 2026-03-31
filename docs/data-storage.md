@@ -1,138 +1,121 @@
-# 数据存储位置
+# 数据目录（与实现对齐）
 
-> **分层权威**：磁盘布局与迁移以本机 **`~/.project-pilot/数据文件夹现状.md`**（及同目录 `README.md`）为准；环境变量与当前代码默认根以仓库根 **[`README.md`](../../README.md#pp-data-directory)** + `file-store.ts` 为准。  
-> **本文定位**：历史/摘录式的子目录树与路径函数索引，可能与「本机已迁移树」不一致。  
-> **对齐日期**：2026-03-26。引用：`../../README.md`。
+> **权威分层**  
+> - **本机目标结构**：`~/.project-pilot/README.md`  
+> - **本机迁移与现实**：`~/.project-pilot/数据文件夹现状.md`  
+> - **代码中的路径**：[`src/lib/file-store.ts`](../src/lib/file-store.ts)（`PROJECT_PILOT_DATA_DIR` 未设置时默认 `path.join(os.homedir(), '.project-pilot')`）  
+> - **本文**：与当前 `develop-static` 实现一致的目录树与主要 getter 索引，便于人类与 Agent 对齐认知。  
+> **对齐日期**：2026-03-31。  
+> **给 AI**：多厂商入口（Cursor / Claude / 内置提示词）如何一起更新，见 [`AI_AGENT_KNOWLEDGE_MAP.md`](./AI_AGENT_KNOWLEDGE_MAP.md)。
 
-## 概述
+## 默认数据根
 
-ProjectPilot 的用户数据默认存储在**用户目录**，与代码分离，符合软件分发规范。具体路径与自定义方式见根 `README`，勿以本节为并列权威。
+- **Windows**：`%USERPROFILE%\.project-pilot\`
+- **macOS / Linux**：`~/.project-pilot/`
 
-## 数据位置
+**不再**使用 `~/.project-pilot/data/` 作为默认根（历史遗留；若磁盘上仍存在该子目录，仅为旧数据或未清理目录，不是当前默认）。
 
-### 默认位置（摘录：代码 `file-store` 默认根；本机树见 `数据文件夹现状.md`）
-
-- **Windows**: `C:\Users\<用户名>\.project-pilot\data\`
-- **macOS**: `/Users/<用户名>/.project-pilot/data/`
-- **Linux**: `/home/<用户名>/.project-pilot/data/`
-
-### 自定义位置（摘录）
-
-可通过环境变量 `PROJECT_PILOT_DATA_DIR` 自定义数据目录；完整说明见根 `README`。
+自定义根：
 
 ```bash
-# .env 文件
-PROJECT_PILOT_DATA_DIR=/path/to/custom/data/dir
+export PROJECT_PILOT_DATA_DIR=/path/to/custom-root
 ```
 
-## 数据迁移
+应用与脚本需在同一进程中、在首次 `import` `file-store` 之前设置该变量（见 `scripts/run-layout-migrations.ts`）。
 
-### 从旧版本（v0.1.0 之前）迁移
+## 当前目录树（相对 `DATA_DIR`）
 
-旧版本数据存储在项目根目录的 `data/` 文件夹；迁移命令与执行目录见根 `README`。摘录：
+与 `ensureDataDirInitialized` 及路径函数一致的一级结构：
+
+```text
+{DATA_DIR}/
+  config/
+    settings.json
+    dimensions.json
+    worktree-ports.json
+    models-health.json          # 若已生成
+    usage/                      # token 用量等
+  projects/
+    index.json
+    inboxes/
+  agents/
+    registry.json
+    definitions/  bindings/  statuses/  teams/
+    schedules/  schedule-runs/  catalog/
+    schedules.json            # 聚合（若使用）
+    schedule-runs.json
+    event-triggers.json
+    event-trigger-runs.json
+    event-trigger-states.json
+    workspaces/                 # 每 Agent 工作区文件
+    active-tasks.json           # 共享「正在执行」任务看板（非用户 todo）
+  documents/
+    index.json
+    entries/   content/
+  sessions/
+    index.json
+    adjuncts.json
+    messages/                   # *.jsonl
+    prompt-overrides/
+  todos.json                    # 聚合待办（与 todos/entries 并存）
+  todos/
+    entries/
+  prompts/
+    global.md
+    agents/  history/  runtime/  blocks/  projects/
+  artifacts/
+  skills/
+    _global/  _projects/  _agents/
+    _vendor/
+  mcp/                          # 若已使用
+  _snapshots/                   # 关键 JSON 写入前滚动备份
+```
+
+**可选 / 遗留只读路径**（代码仍可能读取，一般不新建）：
+
+- 根级 `projects.json`（扁平项目表，`getProjectsPath()`）
+- `workflows/flows/`（`getLegacyWorkflowsFlowsDir()`，合并进 `projects/index.json` 用）
+- `DATA_DIR/data/projects/...`（`ensureLegacyDataSubdirProjectsMerged`）
+
+## 主要路径 ↔ `file-store` 函数
+
+| 相对路径 | 说明 | 导出函数（节选） |
+|----------|------|------------------|
+| `config/settings.json` | 用户设置 | `getSettingsPath` |
+| `config/dimensions.json` | 维度 | `getDimensionsPath` |
+| `config/worktree-ports.json` | Worktree 端口 | `getWorktreePortsPath` |
+| `projects/index.json` | 项目索引 | `getProjectsIndexPath` |
+| `agents/registry.json` | Agent 注册表 | `getAgentsPath` |
+| `agents/active-tasks.json` | 并行任务看板 | `getActiveTasksPath` |
+| `agents/workspaces/<id>/` | Agent 工作区 | `getAgentDataPath` |
+| `sessions/index.json` | 会话索引 | `getAgentChatSessionsPath` |
+| `sessions/messages/<id>.jsonl` | 会话消息 | `getAgentChatMessagePath` |
+| `sessions/adjuncts.json` | 会话附属状态 | `getAgentChatSessionAdjunctsPath` |
+| `documents/index.json` | 文档索引 | `getDocumentsIndexPath` |
+| `todos.json` + `todos/entries/` | 待办 | `getTodosPath`, `getTodosEntriesDir` |
+| `prompts/global.md` | 全局提示词 | `getGlobalPromptPath` |
+| `prompts/agents/<id>.md` | Agent 提示词 | `getPromptFilePath` |
+
+完整列表以 `file-store.ts` 为准。
+
+## 备份与排查
+
+- 备份整个 **`{DATA_DIR}`**（即默认 `~/.project-pilot/`，不要假设下面还有一层 `data/`）。
+- 若读不到数据：检查 `echo $PROJECT_PILOT_DATA_DIR`（或 Windows 环境变量）是否与预期一致。
+
+## 运行时迁移
+
+当前 **`develop-static` 不在启动时执行**旧版「扁平根 → 分域」等一次性迁移；磁盘布局应已通过历史版本或手工整理完成。离线可做布局检查：
 
 ```bash
-npm run migrate:data
+cd develop-static
+npx tsx scripts/run-layout-migrations.ts
 ```
 
-迁移脚本会：
-1. 检查旧数据目录是否存在
-2. 将数据复制到新位置
-3. **不会自动删除旧数据**（需手动确认后删除）
-
-### 手动迁移
-
-如果迁移脚本失败，可手动操作：
-
-**Windows**:
-```cmd
-xcopy /E /I /Y data C:\Users\<用户名>\.project-pilot\data
-```
-
-**macOS/Linux**:
-```bash
-cp -r data ~/.project-pilot/data/
-```
-
-## 数据结构
-
-> 更新时间：2026-03-02
-
-```
-.project-pilot/
-└── data/
-    ├── projects.json              # 项目注册表
-    ├── tasks.json                 # 任务列表（Task Worker 用）
-    ├── agents.json                # Agent 配置列表
-    ├── agent-chat-sessions.json   # Agent 对话会话（含未读计数）
-    ├── ai-plans.json              # AI 计划
-    ├── settings.json              # 用户设置（含 API key）
-    ├── todos.json                 # 待办事项
-    ├── conversations/             # AI 对话历史
-    ├── task-artifacts/            # 任务产物（understanding/plan/result）
-    ├── artifacts/                 # 其他产物
-    ├── prompts/                   # Prompt 记录
-    ├── context/                   # 上下文信息（详见 docs/context-system.md）
-    │   ├── index.json             #   索引文件（元数据）
-    │   └── {fileName}            #   内容文件（JSON/Markdown/Text）
-    ├── design-docs/               # 设计文档
-    │   ├── _index.json            #   文档索引
-    │   └── {fileName}            #   文档内容文件
-    ├── flows/                     # Flow 项目数据（每项目一个 JSON）
-    │   └── {projectKey}.json
-    ├── dimensions/                # 信息维度
-    ├── recycle-bin/               # 回收站
-    └── logs/                      # 日志文件
-```
-
-### 关键数据文件说明
-
-| 文件 | 说明 | 路径函数 |
-|------|------|---------|
-| `agents.json` | 所有 Agent（含内置 Butler、Task Worker）的配置 | `getAgentsPath()` |
-| `agent-chat-sessions.json` | Agent 对话会话列表（含消息、claudeSessionId、unreadCount） | `getAgentChatSessionsPath()` |
-| `projects.json` | 项目注册表（项目名、key、路径等） | `getProjectsPath()` |
-| `tasks.json` | Task Worker 会话列表 | `getTasksPath()` |
-| `settings.json` | 用户设置（API key、偏好等） | `getSettingsPath()` |
-| `design-docs/_index.json` | 设计文档索引 | `getDesignDocsIndexPath()` |
-| `context/index.json` | 上下文条目索引 | `getContextIndexPath()` |
-
-## 注意事项
-
-1. **数据隔离** — 每个用户有独立的数据目录
-2. **版本控制** — 数据目录不纳入 Git 管理（已在 `.gitignore` 中排除旧位置）
-3. **备份建议** — 定期备份 `~/.project-pilot/data/` 目录
-4. **权限问题** — 确保应用有读写用户目录的权限
-
-## 故障排查
-
-### 应用无法读取数据
-
-1. 检查数据目录是否存在：
-   ```bash
-   ls ~/.project-pilot/data/
-   ```
-
-2. 检查环境变量（如果自定义了位置）：
-   ```bash
-   echo $PROJECT_PILOT_DATA_DIR
-   ```
-
-3. 检查文件权限：
-   ```bash
-   ls -la ~/.project-pilot/data/
-   ```
-
-### 数据丢失
-
-如果旧数据还在项目目录：
-```bash
-# 重新运行迁移脚本
-npm run migrate:data
-```
+说明与遗留路径验收见 [`scripts/data-layout-migration.md`](../scripts/data-layout-migration.md)。
 
 ## 相关文件
 
-- [src/lib/file-store.ts](../src/lib/file-store.ts) — 数据存储逻辑
-- [scripts/migrate-data.js](../scripts/migrate-data.js) — 迁移脚本
-- [.env.example](../.env.example) — 环境变量示例
+- [`src/lib/file-store.ts`](../src/lib/file-store.ts)
+- [`scripts/run-layout-migrations.ts`](../scripts/run-layout-migrations.ts)
+- [`scripts/migrate-data.js`](../scripts/migrate-data.js) — 从仓库内 `./data/` 拷到默认 `DATA_DIR`（极旧场景）

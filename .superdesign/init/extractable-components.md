@@ -1,22 +1,9 @@
-# Extractable components
-
 ## TopNav
 - Source: `src/components/top-nav.tsx`
 - Category: layout
-- Description: Top bar with nav, project switcher, AI assistant, locale
-- Extractable props: plannerOpen (boolean)
-- Hardcoded: labels via i18n, structure, classes
+- Extractable props: activePath (string)
 
-## SidebarIconButton
-- Source: `src/components/sidebar-icon-button.tsx`
-- Category: basic
-- Description: Icon rail button with tooltip
-- Extractable props: isActive (boolean)
-- Hardcoded: size, radius, icon slot
-
-## FlowsLayout shell (sidebar rail)
-- Source: `src/client/routes/flows-layout.tsx`
+## SettingsSidebar
+- Source: inline in `settings/page.tsx`
 - Category: layout
-- Description: Icon sidebar + main outlet
-- Extractable props: active route indicators (conceptual)
-- Hardcoded: icon set, routing targets
+- Extractable props: activeSection (string, e.g. "ai")

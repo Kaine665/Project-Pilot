@@ -17,13 +17,13 @@ import {
 } from 'lucide-react';
 import { useRouter } from '@/client/i18n/routing';
 import { useProject } from '@/components/project-context';
-import type { ContextEntry, DocEntry, DocStatus } from '@/types';
+import type { DocEntry, DocStatus } from '@/types';
 
-type AssetType = 'doc' | 'context';
+type AssetType = 'doc' | 'knowledge';
 type Scope = 'project' | 'global';
 type Status = 'active' | 'draft' | 'deprecated';
 type RailKey = 'scope' | 'type' | 'tag' | null;
-type DetailMode = 'idle' | 'preview' | 'create-doc' | 'create-context' | 'edit-doc' | 'edit-context';
+type DetailMode = 'idle' | 'preview' | 'create-doc' | 'create-knowledge' | 'edit-doc' | 'edit-knowledge';
 
 type Asset = {
   id: string;
@@ -53,34 +53,10 @@ type DocForm = {
   content: string;
 };
 
-type ContextForm = {
-  label: string;
-  description: string;
-  fileName: string;
-  format: ContextEntry['format'];
-  group: string;
-  sourcePath: string;
-  tags: string;
-  status: 'active' | 'draft';
-  content: string;
-};
-
 const EMPTY_DOC: DocForm = {
   title: '',
   description: '',
   category: '',
-  tags: '',
-  status: 'active',
-  content: '',
-};
-
-const EMPTY_CONTEXT: ContextForm = {
-  label: '',
-  description: '',
-  fileName: '',
-  format: 'markdown',
-  group: '',
-  sourcePath: '',
   tags: '',
   status: 'active',
   content: '',
@@ -101,29 +77,16 @@ const fmt = (iso: string) =>
     minute: '2-digit',
   });
 
-const slug = (value: string) =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '') || `asset-${Date.now()}`;
-
-const formatToExtension = (format: ContextEntry['format']) => (format === 'markdown' ? 'md' : format === 'json' ? 'json' : 'txt');
-
-const withFormatExtension = (fileName: string, label: string, format: ContextEntry['format']) => {
-  const trimmed = fileName.trim();
-  const base = (trimmed || slug(label)).replace(/\.[^./\\]+$/, '');
-  return `${base}.${formatToExtension(format)}`;
-};
-
 function parseScope(value: string | null): Scope {
   return value === 'global' ? 'global' : 'project';
 }
 
-function parseType(scope: Scope, typeValue: string | null, legacyViewValue: string | null): AssetType {
-  const raw = typeValue ?? (legacyViewValue === 'context' ? 'context' : legacyViewValue === 'docs' ? 'doc' : 'doc');
-  if (scope === 'global') return 'context';
-  return raw === 'context' ? 'context' : 'doc';
+function parseType(_scope: Scope, typeValue: string | null, legacyViewValue: string | null): AssetType {
+  if (typeValue === 'doc' || typeValue === 'knowledge') return typeValue;
+  if (typeValue === 'context') return 'knowledge';
+  if (legacyViewValue === 'docs') return 'doc';
+  if (legacyViewValue === 'context' || legacyViewValue === 'knowledge') return 'knowledge';
+  return 'doc';
 }
 
 function parseTagValue(value: string | null): string | null {
@@ -136,7 +99,7 @@ function parseTagValue(value: string | null): string | null {
 }
 
 function getDisplayType(assetType: AssetType): string {
-  return assetType === 'doc' ? '设计文档' : '上下文';
+  return assetType === 'doc' ? '设计文档' : '知识文档';
 }
 
 function getDisplayScope(scope: Scope): string {
@@ -174,33 +137,26 @@ function getQueryString({
   return params.toString();
 }
 
-function fromDoc(entry: DocEntry): Asset {
+function inferFormatLabel(fileName: string): string {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith('.json')) return 'JSON';
+  if (lower.endsWith('.md') || lower.endsWith('.markdown')) return 'MD';
+  return 'TXT';
+}
+
+function fromDocEntry(entry: DocEntry): Asset {
+  const isKnowledge = (entry.documentKind ?? 'design_doc') === 'knowledge';
+  const scope: Scope = entry.projectKey === '_global' ? 'global' : 'project';
   return {
     id: entry.id,
-    type: 'doc',
+    type: isKnowledge ? 'knowledge' : 'doc',
     title: entry.title,
     description: entry.description ?? '',
-    scope: 'project',
+    scope,
     status: entry.status ?? 'active',
     projectKey: entry.projectKey,
     tags: entry.tags ?? [],
-    meta: entry.category,
-    createdAt: entry.createdAt,
-    updatedAt: entry.updatedAt,
-  };
-}
-
-function fromContext(entry: ContextEntry): Asset {
-  return {
-    id: entry.id,
-    type: 'context',
-    title: entry.label,
-    description: entry.description,
-    scope: entry.projectKey ? 'project' : 'global',
-    status: entry.status === 'draft' ? 'draft' : 'active',
-    projectKey: entry.projectKey,
-    tags: entry.tags ?? [],
-    meta: entry.group ?? entry.format.toUpperCase(),
+    meta: entry.category ?? inferFormatLabel(entry.fileName),
     createdAt: entry.createdAt,
     updatedAt: entry.updatedAt,
   };
@@ -227,7 +183,7 @@ export default function DocsProjectPage() {
 
   const [projects, setProjects] = useState<Array<{ key: string; name: string }>>([]);
   const [docs, setDocs] = useState<DocEntry[]>([]);
-  const [contexts, setContexts] = useState<ContextEntry[]>([]);
+  const [knowledgeCreateScope, setKnowledgeCreateScope] = useState<Scope>('project');
   const [scope, setScope] = useState<Scope>(() => parseScope(searchParams.get('scope')));
   const [assetType, setAssetType] = useState<AssetType>(() => parseType(parseScope(searchParams.get('scope')), searchParams.get('type'), searchParams.get('view')));
   const [selectedTag, setSelectedTag] = useState<string | null>(() => parseTagValue(searchParams.get('tags')));
@@ -236,9 +192,7 @@ export default function DocsProjectPage() {
   const [selected, setSelected] = useState<Asset | null>(null);
   const [mode, setMode] = useState<DetailMode>('idle');
   const [docForm, setDocForm] = useState<DocForm>(EMPTY_DOC);
-  const [contextForm, setContextForm] = useState<ContextForm>(EMPTY_CONTEXT);
   const [docBase, setDocBase] = useState<DocForm>(EMPTY_DOC);
-  const [contextBase, setContextBase] = useState<ContextForm>(EMPTY_CONTEXT);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -256,12 +210,6 @@ export default function DocsProjectPage() {
     setQuery(prev => (prev === nextQuery ? prev : nextQuery));
   }, [searchParamsKey, searchParams]);
 
-  useEffect(() => {
-    if (scope === 'global' && assetType === 'doc') {
-      setAssetType('context');
-    }
-  }, [scope, assetType]);
-
   const fetchProjects = useCallback(async () => {
     const res = await fetch('/api/data/projects');
     const data = await res.json();
@@ -273,14 +221,21 @@ export default function DocsProjectPage() {
   }, []);
 
   const fetchAssets = useCallback(async () => {
-    const [docsRes, ctxRes] = await Promise.all([
-      fetch(`/api/docs?project=${encodeURIComponent(projectKey)}`),
-      fetch(`/api/context?projectKey=${encodeURIComponent(projectKey)}`),
-    ]);
+    const docsRes = await fetch(`/api/docs?project=${encodeURIComponent(projectKey)}`);
     const docsData = await docsRes.json();
-    const ctxData = await ctxRes.json();
-    setDocs(docsData.docs ?? []);
-    setContexts(ctxData.entries ?? []);
+    let merged: DocEntry[] = [...(docsData.docs ?? [])];
+    if (projectKey !== '_global') {
+      const gRes = await fetch('/api/docs?project=_global');
+      const gData = await gRes.json();
+      const seen = new Set(merged.map(e => e.id));
+      for (const e of (gData.docs ?? []) as DocEntry[]) {
+        if (!seen.has(e.id)) {
+          seen.add(e.id);
+          merged.push(e);
+        }
+      }
+    }
+    setDocs(merged);
   }, [projectKey]);
 
   useEffect(() => {
@@ -299,15 +254,15 @@ export default function DocsProjectPage() {
   });
 
   const assets = useMemo(
-    () => [...docs.map(fromDoc), ...contexts.map(fromContext)].sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt)),
-    [docs, contexts],
+    () => [...docs.map(fromDocEntry)].sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt)),
+    [docs],
   );
 
   const stats = useMemo(
     () => ({
       total: assets.length,
       docs: assets.filter(asset => asset.type === 'doc').length,
-      context: assets.filter(asset => asset.type === 'context').length,
+      knowledge: assets.filter(asset => asset.type === 'knowledge').length,
       global: assets.filter(asset => asset.scope === 'global').length,
     }),
     [assets],
@@ -355,11 +310,12 @@ export default function DocsProjectPage() {
   );
 
   const dirty =
-    mode === 'create-doc' || mode === 'edit-doc'
+    mode === 'create-doc' ||
+    mode === 'edit-doc' ||
+    mode === 'create-knowledge' ||
+    mode === 'edit-knowledge'
       ? JSON.stringify(docForm) !== JSON.stringify(docBase)
-      : mode === 'create-context' || mode === 'edit-context'
-        ? JSON.stringify(contextForm) !== JSON.stringify(contextBase)
-        : false;
+      : false;
 
   const confirmDiscardIfDirty = useCallback(() => {
     if (!dirty) return true;
@@ -372,50 +328,28 @@ export default function DocsProjectPage() {
     setMode('idle');
     setExpandedRail(null);
     setDocForm(EMPTY_DOC);
-    setContextForm(EMPTY_CONTEXT);
     setDocBase(EMPTY_DOC);
-    setContextBase(EMPTY_CONTEXT);
   }, []);
 
   const load = useCallback(async (asset: Asset, nextMode: 'preview' | 'edit' = 'preview') => {
     const requestId = loadRequestRef.current + 1;
     loadRequestRef.current = requestId;
     setSelected(asset);
-    if (asset.type === 'doc') {
-      const res = await fetch(`/api/docs/${asset.id}`);
-      const data = await res.json();
-      if (loadRequestRef.current !== requestId) return;
-      const next = {
-        title: data.entry.title,
-        description: data.entry.description ?? '',
-        category: data.entry.category ?? '',
-        tags: (data.entry.tags ?? []).join(', '),
-        status: data.entry.status ?? 'active',
-        content: data.content ?? '',
-      };
-      setDocForm(next);
-      setDocBase(next);
-      setMode(nextMode === 'edit' ? 'edit-doc' : 'preview');
-      return;
-    }
-
-    const res = await fetch(`/api/context/${asset.id}`);
+    const res = await fetch(`/api/docs/${asset.id}`);
     const data = await res.json();
     if (loadRequestRef.current !== requestId) return;
-    const next: ContextForm = {
-      label: data.entry.label,
-      description: data.entry.description,
-      fileName: data.entry.fileName,
-      format: data.entry.format,
-      group: data.entry.group ?? '',
-      sourcePath: data.entry.sourcePath ?? '',
+    const next = {
+      title: data.entry.title,
+      description: data.entry.description ?? '',
+      category: data.entry.category ?? '',
       tags: (data.entry.tags ?? []).join(', '),
-      status: data.entry.status === 'draft' ? 'draft' : 'active',
+      status: data.entry.status ?? 'active',
       content: data.content ?? '',
     };
-    setContextForm(next);
-    setContextBase(next);
-    setMode(nextMode === 'edit' ? 'edit-context' : 'preview');
+    setDocForm(next);
+    setDocBase(next);
+    const editMode = asset.type === 'doc' ? 'edit-doc' : 'edit-knowledge';
+    setMode(nextMode === 'edit' ? editMode : 'preview');
   }, []);
 
   const clearSelectedAsset = useCallback(() => {
@@ -474,22 +408,20 @@ export default function DocsProjectPage() {
     });
   }, [confirmDiscardIfDirty, replaceUrlState]);
 
-  const startCreateContext = useCallback(() => {
+  const startCreateKnowledge = useCallback(() => {
     if (!confirmDiscardIfDirty()) return;
     loadRequestRef.current += 1;
     const nextScope = scope;
-    setAssetType('context');
+    setAssetType('knowledge');
     setExpandedRail(null);
     setSelected(null);
-    setMode('create-context');
-    setContextForm({
-      ...EMPTY_CONTEXT,
-      fileName: withFormatExtension('', '', 'markdown'),
-    });
-    setContextBase(EMPTY_CONTEXT);
+    setMode('create-knowledge');
+    setKnowledgeCreateScope(nextScope === 'global' ? 'global' : 'project');
+    setDocForm(EMPTY_DOC);
+    setDocBase(EMPTY_DOC);
     replaceUrlState({
       nextScope,
-      nextType: 'context',
+      nextType: 'knowledge',
       nextAssetId: null,
     });
   }, [confirmDiscardIfDirty, replaceUrlState, scope]);
@@ -556,7 +488,7 @@ export default function DocsProjectPage() {
     const isSameAsset = selected?.id === asset.id;
     const isSameView =
       (requestedMode === 'preview' && mode === 'preview') ||
-      (requestedMode === 'edit' && (mode === 'edit-doc' || mode === 'edit-context'));
+      (requestedMode === 'edit' && (mode === 'edit-doc' || mode === 'edit-knowledge'));
 
     if (!isSameAsset || !isSameView) {
       void load(asset, requestedMode);
@@ -586,7 +518,7 @@ export default function DocsProjectPage() {
 
   const remove = async (asset: Asset) => {
     if (!window.confirm(`删除“${asset.title}”吗？`)) return;
-    const res = await fetch(asset.type === 'doc' ? `/api/docs/${asset.id}` : `/api/context/${asset.id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/docs/${asset.id}`, { method: 'DELETE' });
     if (!res.ok) return;
     await fetchAssets();
     if (selected?.id === asset.id) reset();
@@ -634,25 +566,20 @@ export default function DocsProjectPage() {
         }
       }
 
-      if (mode === 'create-context') {
-        const fileName =
-          contextForm.fileName.trim() ||
-          `${slug(contextForm.label)}.${contextForm.format === 'markdown' ? 'md' : contextForm.format === 'json' ? 'json' : 'txt'}`;
-        const payloadProjectKey = scope === 'global' ? undefined : projectKey;
-        const res = await fetch('/api/context', {
+      if (mode === 'create-knowledge') {
+        const pk = knowledgeCreateScope === 'global' ? '_global' : projectKey;
+        const res = await fetch('/api/docs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            label: contextForm.label.trim(),
-            description: contextForm.description.trim(),
-            fileName,
-            format: contextForm.format,
-            group: contextForm.group.trim() || undefined,
-            sourcePath: contextForm.sourcePath.trim() || undefined,
-            tags: tagsToArray(contextForm.tags),
-            status: contextForm.status === 'draft' ? 'draft' : undefined,
-            projectKey: payloadProjectKey,
-            content: contextForm.content,
+            projectKey: pk,
+            title: docForm.title.trim(),
+            description: docForm.description.trim() || undefined,
+            content: docForm.content,
+            category: docForm.category.trim() || undefined,
+            tags: tagsToArray(docForm.tags),
+            status: docForm.status === 'active' ? undefined : docForm.status,
+            documentKind: 'knowledge',
           }),
         });
         if (res.ok) {
@@ -661,27 +588,22 @@ export default function DocsProjectPage() {
         }
       }
 
-      if (mode === 'edit-context' && selected) {
-        const payloadProjectKey = scope === 'global' ? undefined : projectKey;
-        const res = await fetch(`/api/context/${selected.id}`, {
+      if (mode === 'edit-knowledge' && selected) {
+        const res = await fetch(`/api/docs/${selected.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            label: contextForm.label.trim(),
-            description: contextForm.description.trim(),
-            fileName: contextForm.fileName.trim(),
-            format: contextForm.format,
-            group: contextForm.group.trim(),
-            sourcePath: contextForm.sourcePath.trim(),
-            tags: tagsToArray(contextForm.tags),
-            status: contextForm.status,
-            projectKey: payloadProjectKey,
-            content: contextForm.content,
+            title: docForm.title.trim(),
+            description: docForm.description.trim(),
+            content: docForm.content,
+            category: docForm.category.trim(),
+            tags: tagsToArray(docForm.tags),
+            status: docForm.status === 'active' ? undefined : docForm.status,
           }),
         });
         if (res.ok) {
           await fetchAssets();
-          setContextBase(contextForm);
+          setDocBase(docForm);
         }
       }
     } finally {
@@ -691,28 +613,22 @@ export default function DocsProjectPage() {
 
   const currentProjectName = projects.find(project => project.key === projectKey)?.name ?? projectKey;
   const canSave =
-    mode === 'create-doc'
+    mode === 'create-doc' || mode === 'create-knowledge'
       ? !!docForm.title.trim()
-      : mode === 'edit-doc'
+      : mode === 'edit-doc' || mode === 'edit-knowledge'
         ? !!docForm.title.trim() && dirty
-        : mode === 'create-context'
-          ? !!contextForm.label.trim() && !!contextForm.fileName.trim()
-          : mode === 'edit-context'
-            ? !!contextForm.label.trim() && !!contextForm.fileName.trim() && dirty
-            : false;
+        : false;
 
   const railScopeSummary = scope === 'project' ? '当前项目' : '全局资源';
-  const railTypeSummary = assetType === 'doc' ? '设计文档' : '上下文资产';
+  const railTypeSummary = assetType === 'doc' ? '设计文档' : '知识文档';
   const railTagSummary = selectedTag ?? '全部标签';
-  const projectContextCount = assets.filter(asset => asset.scope === 'project').length;
-  const globalContextCount = stats.global;
+  const projectScopedCount = assets.filter(asset => asset.scope === 'project').length;
+  const globalScopedCount = stats.global;
 
   const previewTitle =
-    selected?.type === 'doc'
+    selected?.type === 'doc' || selected?.type === 'knowledge'
       ? docForm.title || selected.title
-      : selected?.type === 'context'
-        ? contextForm.label || selected.title
-        : '选择一条资产开始浏览';
+      : '选择一条资产开始浏览';
 
   return (
     <div className="h-full overflow-y-auto bg-zinc-50/60">
@@ -764,11 +680,11 @@ export default function DocsProjectPage() {
                   新建设计文档
                 </button>
                 <button
-                  onClick={startCreateContext}
+                  onClick={startCreateKnowledge}
                   className="rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
                 >
                   <Plus className="mr-2 inline h-4 w-4" />
-                  新建上下文
+                  新建知识文档
                 </button>
               </div>
             </div>
@@ -804,7 +720,7 @@ export default function DocsProjectPage() {
                   >
                     <span>当前项目</span>
                     <span className={`text-xs ${scope === 'project' ? 'text-zinc-300 dark:text-zinc-700' : 'text-zinc-400'}`}>
-                      {projectContextCount}
+                      {projectScopedCount}
                     </span>
                   </button>
                   <button
@@ -822,7 +738,7 @@ export default function DocsProjectPage() {
                   >
                     <span>全局资源</span>
                     <span className={`text-xs ${scope === 'global' ? 'text-zinc-300 dark:text-zinc-700' : 'text-zinc-400'}`}>
-                      {globalContextCount}
+                      {globalScopedCount}
                     </span>
                   </button>
                 </div>
@@ -847,17 +763,17 @@ export default function DocsProjectPage() {
                     onClick={() => {
                       if (!confirmDiscardIfDirty()) return;
                       clearSelectedAsset();
-                      setAssetType('context');
+                      setAssetType('knowledge');
                       setExpandedRail(null);
                     }}
                     className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition ${
-                      assetType === 'context'
+                      assetType === 'knowledge'
                         ? 'bg-zinc-950 text-white dark:bg-zinc-100 dark:text-zinc-950'
                         : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900'
                     }`}
                   >
                     <BookOpen className="h-4 w-4" />
-                    上下文资产
+                    知识文档
                   </button>
                   <button
                     disabled={scope === 'global'}
@@ -1054,7 +970,7 @@ export default function DocsProjectPage() {
                   <div className="rounded-3xl border border-zinc-200 bg-zinc-50/70 p-5 dark:border-zinc-800 dark:bg-zinc-900/70">
                     <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">知识概况</div>
                     <div className="mt-2 text-sm leading-6 text-zinc-500 dark:text-zinc-400">
-                      共 {stats.total} 条资产，其中 {stats.docs} 条设计文档，{stats.context} 条上下文，{stats.global} 条全局上下文。
+                      共 {stats.total} 条资产，其中 {stats.docs} 条设计文档，{stats.knowledge} 条知识文档，{stats.global} 条全局范围条目。
                     </div>
                   </div>
                 </div>
@@ -1066,19 +982,19 @@ export default function DocsProjectPage() {
                     <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">
                       {mode === 'create-doc'
                         ? '创建设计文档'
-                        : mode === 'create-context'
-                          ? '创建上下文'
+                        : mode === 'create-knowledge'
+                          ? '创建知识文档'
                           : mode === 'preview'
                             ? '内容预览'
                             : selected?.type === 'doc'
                               ? '编辑设计文档'
-                              : '编辑上下文'}
+                              : '编辑知识文档'}
                     </div>
                     <h2 className="mt-2 truncate text-[20px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
                       {mode === 'create-doc'
                         ? '新建设计文档'
-                        : mode === 'create-context'
-                          ? '新建上下文资产'
+                        : mode === 'create-knowledge'
+                          ? '新建知识文档'
                           : previewTitle}
                     </h2>
                   </div>
@@ -1110,7 +1026,7 @@ export default function DocsProjectPage() {
                       </>
                     ) : null}
 
-                    {(mode === 'edit-doc' || mode === 'edit-context') && selected ? (
+                    {(mode === 'edit-doc' || mode === 'edit-knowledge') && selected ? (
                       <button
                         onClick={() => {
                           if (!confirmDiscardIfDirty()) return;
@@ -1159,7 +1075,7 @@ export default function DocsProjectPage() {
                         {getDisplayScope(selected.scope)}
                       </span>
                       <span className="rounded-full bg-zinc-100 px-3 py-1 text-[11px] font-medium text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
-                        {selected.type === 'doc' ? getStatusText(docForm.status) : getStatusText(contextForm.status)}
+                        {getStatusText(docForm.status)}
                       </span>
                       <span className="rounded-full bg-zinc-100 px-3 py-1 text-[11px] font-medium text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
                         更新于 {fmt(selected.updatedAt)}
@@ -1167,22 +1083,9 @@ export default function DocsProjectPage() {
                     </div>
 
                     <div className="mt-4 grid gap-3 xl:grid-cols-2">
-                      {selected.type === 'doc' ? (
-                        <>
-                          <PreviewBlock label="描述" value={docForm.description} />
-                          <PreviewBlock label="分类" value={docForm.category} />
-                          <PreviewBlock label="标签" value={docForm.tags} />
-                        </>
-                      ) : (
-                        <>
-                          <PreviewBlock label="描述" value={contextForm.description} />
-                          <PreviewBlock label="分组" value={contextForm.group} />
-                          <PreviewBlock label="文件名" value={contextForm.fileName} />
-                          <PreviewBlock label="格式" value={contextForm.format} />
-                          <PreviewBlock label="源路径" value={contextForm.sourcePath} />
-                          <PreviewBlock label="标签" value={contextForm.tags} />
-                        </>
-                      )}
+                      <PreviewBlock label="描述" value={docForm.description} />
+                      <PreviewBlock label="分类" value={docForm.category} />
+                      <PreviewBlock label="标签" value={docForm.tags} />
                     </div>
 
                     <div className="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50/60 dark:border-zinc-800 dark:bg-zinc-900/60">
@@ -1191,15 +1094,42 @@ export default function DocsProjectPage() {
                       </div>
                       <div className="px-4 py-4">
                         <pre className="whitespace-pre-wrap break-words font-mono text-[12.5px] leading-[1.75] text-zinc-700 dark:text-zinc-300">
-                          {selected.type === 'doc' ? docForm.content || '暂无内容。' : contextForm.content || '暂无内容。'}
+                          {docForm.content || '暂无内容。'}
                         </pre>
                       </div>
                     </div>
                   </div>
                 ) : (
                   <div className="flex-1 overflow-y-auto px-6 py-5">
-                    {(mode === 'create-doc' || mode === 'edit-doc') && (
+                    {(mode === 'create-doc' || mode === 'edit-doc' || mode === 'create-knowledge' || mode === 'edit-knowledge') && (
                       <div className="space-y-4">
+                        {mode === 'create-knowledge' ? (
+                          <div className="flex flex-wrap gap-2 rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900">
+                            <span className="self-center text-xs text-zinc-500">保存到</span>
+                            <button
+                              type="button"
+                              onClick={() => setKnowledgeCreateScope('project')}
+                              className={`rounded-xl px-3 py-1.5 text-xs font-medium transition ${
+                                knowledgeCreateScope === 'project'
+                                  ? 'bg-zinc-950 text-white dark:bg-zinc-100 dark:text-zinc-950'
+                                  : 'text-zinc-600 hover:bg-zinc-200/60 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                              }`}
+                            >
+                              当前项目
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setKnowledgeCreateScope('global')}
+                              className={`rounded-xl px-3 py-1.5 text-xs font-medium transition ${
+                                knowledgeCreateScope === 'global'
+                                  ? 'bg-zinc-950 text-white dark:bg-zinc-100 dark:text-zinc-950'
+                                  : 'text-zinc-600 hover:bg-zinc-200/60 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                              }`}
+                            >
+                              全局（_global）
+                            </button>
+                          </div>
+                        ) : null}
                         <input
                           value={docForm.title}
                           onChange={event => setDocForm(current => ({ ...current, title: event.target.value }))}
@@ -1245,96 +1175,6 @@ export default function DocsProjectPage() {
                       </div>
                     )}
 
-                    {(mode === 'create-context' || mode === 'edit-context') && (
-                      <div className="space-y-4">
-                        <input
-                          value={contextForm.label}
-                          onChange={event =>
-                            setContextForm(current => ({
-                              ...current,
-                              label: event.target.value,
-                              fileName:
-                                mode === 'create-context'
-                                  ? withFormatExtension(current.fileName, event.target.value, current.format)
-                                  : current.fileName,
-                            }))
-                          }
-                          placeholder="名称"
-                          className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
-                        />
-                        <input
-                          value={contextForm.description}
-                          onChange={event => setContextForm(current => ({ ...current, description: event.target.value }))}
-                          placeholder="描述"
-                          className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
-                        />
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <input
-                            value={contextForm.group}
-                            onChange={event => setContextForm(current => ({ ...current, group: event.target.value }))}
-                            placeholder="分组"
-                            className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
-                          />
-                          <select
-                            value={contextForm.status}
-                            onChange={event => setContextForm(current => ({ ...current, status: event.target.value as 'active' | 'draft' }))}
-                            className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
-                          >
-                            <option value="active">生效中</option>
-                            <option value="draft">草稿</option>
-                          </select>
-                        </div>
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <input
-                            value={contextForm.fileName}
-                            onChange={event => setContextForm(current => ({ ...current, fileName: event.target.value }))}
-                            placeholder="文件名"
-                            className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
-                          />
-                          <select
-                            value={contextForm.format}
-                            onChange={event =>
-                              setContextForm(current => {
-                                const nextFormat = event.target.value as ContextEntry['format'];
-                                return {
-                                  ...current,
-                                  format: nextFormat,
-                                  fileName:
-                                    mode === 'create-context'
-                                      ? withFormatExtension(current.fileName, current.label, nextFormat)
-                                      : current.fileName,
-                                };
-                              })
-                            }
-                            className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
-                          >
-                            <option value="markdown">Markdown</option>
-                            <option value="json">JSON</option>
-                            <option value="text">Text</option>
-                          </select>
-                        </div>
-                        <input
-                          value={contextForm.tags}
-                          onChange={event => setContextForm(current => ({ ...current, tags: event.target.value }))}
-                          placeholder="标签，使用逗号分隔"
-                          className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
-                        />
-                        <input
-                          value={contextForm.sourcePath}
-                          onChange={event => setContextForm(current => ({ ...current, sourcePath: event.target.value }))}
-                          placeholder="源文件路径（可选）"
-                          className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
-                        />
-                        <textarea
-                          value={contextForm.content}
-                          onChange={event => setContextForm(current => ({ ...current, content: event.target.value }))}
-                          rows={18}
-                          placeholder="上下文内容"
-                          className="min-h-[340px] w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 font-mono text-sm outline-none transition focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
-                        />
-                      </div>
-                    )}
-
                     <div className="mt-6 flex items-center gap-3 border-t border-zinc-200 pt-5 dark:border-zinc-800">
                       <button
                         onClick={save}
@@ -1345,7 +1185,7 @@ export default function DocsProjectPage() {
                       </button>
                       <button
                         onClick={() => {
-                          if (selected && (mode === 'edit-doc' || mode === 'edit-context')) {
+                          if (selected && (mode === 'edit-doc' || mode === 'edit-knowledge')) {
                             if (!confirmDiscardIfDirty()) return;
                             replaceUrlState({
                               nextAssetId: selected.id,

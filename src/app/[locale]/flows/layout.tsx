@@ -32,7 +32,6 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
   const isTaskTriggersPage = pathname.startsWith('/flows/task-triggers');
   const isSchedulesPage = pathname.startsWith('/flows/schedules');
   const isChatPage = pathname.startsWith('/flows/chat');
-  const isDialoguesPage = pathname.startsWith('/flows/dialogues');
   const isSkillsPage = pathname.startsWith('/flows/skills');
   const isKnowledgePage = pathname.startsWith('/flows/knowledge');
   const isPromptsPage = pathname.startsWith('/flows/prompts');
@@ -46,7 +45,6 @@ export default function FlowsLayout({ children }: { children: React.ReactNode })
     isTaskTriggersPage ||
     isSchedulesPage ||
     isChatPage ||
-    isDialoguesPage ||
     isSkillsPage ||
     isKnowledgePage ||
     isPromptsPage;

@@ -11,18 +11,21 @@
  * - StreamParser → SdkEventAdapter
  */
 
+import path from 'path';
+import { promises as fs } from 'fs';
 import { getAppWorkingDir } from '@/lib/app-paths';
-import { getPromptFilePath, getContextIndexPath, getContextDir, readJsonFile } from '@/lib/file-store';
+import { getPromptFilePath, getDocumentsContentDir, readJsonFile, readProjectIndex } from '@/lib/file-store';
+import { readDocsIndexFromDocuments } from '@/lib/documents-store';
+import { isValidWorkingDir } from '@/lib/security';
 import { readTodosMerged } from '@/lib/todo-file-store';
 import { matchCodeCards, buildCodeCardIndex } from '@/lib/code-card-matcher';
 import { listRunningTasks } from '@/lib/active-tasks';
-import type { ContextIndexData } from '@/types';
 import { resolveSystemPrompt, createRuntimePromptCopy } from '@/lib/agent-prompt-store';
 import { resolveSkillsForSession } from '@/lib/skill-store';
 import { getSettings } from '@/lib/settings-manager';
 import { createAgentRunner, type IAgentRunner } from './agent-runner';
 import { detectDangerousCommand } from '@/lib/danger-detector';
-import type { ChatSSEEvent, ContentBlock, Agent, AgentCapabilities, ProviderId } from '@/types';
+import type { AgentEvent, ContentBlock, Agent, AgentCapabilities, ProviderId } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_DANGER_SETTINGS } from '@/types';
 import type { AgentChatSession, SessionConfig, SessionCheckpoint, SessionSourceType } from '@/types/agent-chat';
 import type { ResourceRef, InlineTextRef, FlowContextRef, ReferenceTurnsRef } from '@/types/resource';
@@ -67,8 +70,47 @@ export interface ImageAttachment {
 export interface FlowContext {
   projectKey: string;
   projectName: string;
+  /** 本地项目根目录（projects/index.json 的 path；可为独立 git worktree 路径） */
+  projectRoot?: string;
   /** @deprecated 已无服务端 flow 文件 */
   flowDataPath?: string;
+}
+
+/**
+ * Agent 工具与 SDK 的工作目录：优先项目登记路径（含用户配置的 worktree），避免误用后端 process.cwd()。
+ */
+async function resolveAgentChatCwd(
+  flowContext: FlowContext | undefined,
+  projectKey: string | undefined,
+): Promise<string> {
+  async function tryDir(raw: string | undefined | null): Promise<string | null> {
+    if (!raw || typeof raw !== 'string') return null;
+    const resolved = path.normalize(path.resolve(raw.trim()));
+    if (!isValidWorkingDir(resolved)) return null;
+    try {
+      const st = await fs.stat(resolved);
+      return st.isDirectory() ? resolved : null;
+    } catch {
+      return null;
+    }
+  }
+
+  const fromFlow = await tryDir(flowContext?.projectRoot);
+  if (fromFlow) return fromFlow;
+
+  const pk = flowContext?.projectKey ?? projectKey;
+  if (pk) {
+    try {
+      const index = await readProjectIndex();
+      const found = index.projects.find((p) => p.key === pk);
+      const fromIndex = await tryDir(found?.path);
+      if (fromIndex) return fromIndex;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return getAppWorkingDir();
 }
 
 /** ChatToolCall 类型（与 UI 事件对齐） */
@@ -99,8 +141,8 @@ export interface AgentChatRun {
   completedAt?: number;
 
   // Event streaming
-  events: ChatSSEEvent[];
-  listeners: Set<(event: ChatSSEEvent, index: number) => void>;
+  events: AgentEvent[];
+  listeners: Set<(event: AgentEvent, index: number) => void>;
 
   // Accumulation
   assistantText: string;
@@ -360,6 +402,8 @@ class AgentChatManager {
 
     // ── Launch runner（provider 无关）──
     try {
+      const cwd = await resolveAgentChatCwd(flowContext, sessionProjectKey);
+      console.log(`${LOG_PREFIX} [${sessionId}] Creating runner: provider=${resolvedProvider ?? 'anthropic'} model=${resolvedModel} cwd=${cwd} resumeSessionId=${resumeSessionId ?? 'none'} promptLen=${promptContent.length}`);
       const runner = await createAgentRunner({
         provider: resolvedProvider ?? 'anthropic',
         capabilities: effectiveCaps,
@@ -367,8 +411,9 @@ class AgentChatManager {
         effortOverride: resolvedOpenAIEffort,
         fastModeOverride: resolvedOpenAIFastMode,
         resumeSessionId,
-        cwd: getAppWorkingDir(),
+        cwd,
       });
+      console.log(`${LOG_PREFIX} [${sessionId}] Runner created successfully`);
       run.runner = runner;
 
       run._completionPromise = new Promise<void>(resolve => { run._resolveCompletion = resolve; });
@@ -378,6 +423,7 @@ class AgentChatManager {
     } catch (err) {
       this.trackAndEmit(run, { type: 'error', message: `Failed to start runner: ${err instanceof Error ? err.message : String(err)}` });
       this.trackAndEmit(run, { type: 'done' });
+      this.trackAndEmit(run, { type: 'stream_end' });
       run.status = 'failed';
       run.completedAt = Date.now();
       run.runner = null;
@@ -476,12 +522,14 @@ class AgentChatManager {
 
     // ── Launch runner（provider 无关）──
     try {
+      const guestProjectKey = diskSession?.projectKey ?? hostSession.projectKey;
+      const cwd = await resolveAgentChatCwd(undefined, guestProjectKey);
       const runner = await createAgentRunner({
         provider: resolvedProvider,
         capabilities: agent.capabilities,
         model: agent.defaultModel,
         resumeSessionId: isResume ? (existingRun?.claudeSessionId ?? diskSession?.claudeSessionId) : undefined,
-        cwd: getAppWorkingDir(),
+        cwd,
       });
       run.runner = runner;
 
@@ -492,6 +540,7 @@ class AgentChatManager {
     } catch (err) {
       this.trackAndEmit(run, { type: 'error', message: `Failed to start runner: ${err instanceof Error ? err.message : String(err)}` });
       this.trackAndEmit(run, { type: 'done' });
+      this.trackAndEmit(run, { type: 'stream_end' });
       run.status = 'failed';
       run.completedAt = Date.now();
       run.runner = null;
@@ -507,7 +556,7 @@ class AgentChatManager {
   subscribe(
     runKey: string,
     since: number,
-    listener: (event: ChatSSEEvent, index: number) => void,
+    listener: (event: AgentEvent, index: number) => void,
   ): (() => void) | null {
     const run = this.runs.get(runKey);
     if (!run) return null;
@@ -649,12 +698,27 @@ class AgentChatManager {
     prompt: string,
     images?: ImageAttachment[],
   ): Promise<void> {
+    console.log(`${LOG_PREFIX} [${run.sessionId}] consumeRunnerStream started, promptLen=${prompt.length}`);
+
+    const firstEventTimer = setTimeout(() => {
+      console.warn(`${LOG_PREFIX} [${run.sessionId}] ⚠ No runner events after 30s — SDK may be hanging`);
+    }, 30000);
+
     try {
+      let eventCount = 0;
       for await (const event of runner.stream(prompt, { images })) {
+        if (eventCount === 0) clearTimeout(firstEventTimer);
         if (run.status === 'stopped') break;
+        eventCount++;
+        if (eventCount <= 5 || event.type === 'error' || event.type === 'done') {
+          console.log(`${LOG_PREFIX} [${run.sessionId}] runner event #${eventCount}: type=${event.type}`);
+        }
         this.trackAndEmit(run, event);
       }
+      clearTimeout(firstEventTimer);
+      console.log(`${LOG_PREFIX} [${run.sessionId}] runner stream ended, total events: ${eventCount}`);
     } catch (err) {
+      console.error(`${LOG_PREFIX} [${run.sessionId}] runner stream threw:`, err);
       if (run.status !== 'stopped') {
         const errMsg = err instanceof Error ? err.message : String(err);
         this.trackAndEmit(run, { type: 'error', message: errMsg });
@@ -692,7 +756,7 @@ class AgentChatManager {
         sessionId: string;
         agentId: string;
         projectKey?: string;
-        emit: (event: ChatSSEEvent) => void;
+        emit: (event: AgentEvent) => void;
         setSessionTitle: (title: string) => void;
         setCheckpoint: (checkpoint: SessionCheckpoint) => void;
         _awaitingSubAgents?: SessionExecution['awaiting'];
@@ -700,7 +764,7 @@ class AgentChatManager {
         sessionId: run.sessionId,
         agentId: run.agentId,
         projectKey: run.projectKey,
-        emit: (event: ChatSSEEvent) => this.trackAndEmit(run, event),
+        emit: (event: AgentEvent) => this.trackAndEmit(run, event),
         setSessionTitle: (title: string) => { if (!run.sessionTitle) run.sessionTitle = title; },
         setCheckpoint: (checkpoint: SessionCheckpoint) => { run.checkpoint = checkpoint; },
       };
@@ -810,7 +874,7 @@ class AgentChatManager {
   // Private: event tracking + broadcast
   // ═══════════════════════════════════════════════════════════════════════
 
-  private trackAndEmit(run: AgentChatRun, event: ChatSSEEvent): void {
+  private trackAndEmit(run: AgentChatRun, event: AgentEvent): void {
     if (event.type === 'text_delta') {
       run.assistantText += event.text;
       const last = run.contentBlocks[run.contentBlocks.length - 1];
@@ -827,6 +891,13 @@ class AgentChatManager {
         run._lastDraftWriteTs = now;
         writeStreamingDraft(run.sessionId, run.assistantText).catch(() => {});
       }
+    } else if (event.type === 'thinking_delta') {
+      const last = run.contentBlocks[run.contentBlocks.length - 1];
+      if (last && last.type === 'thinking') {
+        last.text += event.text;
+      } else {
+        run.contentBlocks.push({ type: 'thinking', text: event.text });
+      }
     } else if (event.type === 'tool_use_start') {
       const tc: ChatToolCall = {
         id: event.id,
@@ -841,7 +912,7 @@ class AgentChatManager {
       if (event.toolName === 'Bash') {
         const danger = detectDangerousCommand(event.input, run.dangerSettings);
         if (danger) {
-          const warningEvent: ChatSSEEvent = {
+          const warningEvent: AgentEvent = {
             type: 'dangerous_tool_warning',
             toolCallId: event.id,
             toolName: event.toolName,
@@ -933,7 +1004,7 @@ class AgentChatManager {
   private buildExecutionSummary(run: AgentChatRun): SessionExecution {
     const lastError = [...run.events]
       .reverse()
-      .find((event): event is Extract<ChatSSEEvent, { type: 'error' }> => event.type === 'error');
+      .find((event): event is Extract<AgentEvent, { type: 'error' }> => event.type === 'error');
 
     const tokenUsage = (run._tokenInputs > 0 || run._tokenOutputs > 0 || run._contextWindow)
       ? {
@@ -1004,7 +1075,7 @@ async function buildResourcePrompt(
   projectKey?: string,
 ): Promise<string> {
   const baseRefs = agent.defaultResources ?? migrateAgentToResources(agent);
-  const merged: ResourceRef[] = [...baseRefs];
+  const merged: Array<ResourceRef | InlineTextRef> = [...baseRefs];
 
   merged.push({ type: 'global-prompt', id: '_global', priority: 1 });
 
@@ -1019,37 +1090,20 @@ async function buildResourcePrompt(
     }
   }
 
-  // Load context index (hoisted — needed by both auto-inject and code cards)
-  const ctxIndex = projectKey
-    ? await readJsonFile<ContextIndexData>(getContextIndexPath(), { entries: [] })
-    : { entries: [] };
-
-  // Auto-inject project-level contexts (skip when agent uses 'exclusive' strategy)
-  if (projectKey && agent.contextStrategy !== 'exclusive') {
-    const existingCtxIds = new Set([
-      ...(baseRefs.filter(r => r.type === 'context').map(r => r.id)),
-      ...(sessionConfig?.contextIds ?? []),
-    ]);
-    const agentTags = agent.contextTags;
-    for (const entry of ctxIndex.entries) {
-      if (entry.projectKey !== projectKey) continue;
-      if (entry.status && entry.status !== 'active') continue;
-      if (existingCtxIds.has(entry.id)) continue;
-      if (agentTags?.length && (!entry.tags?.length || !entry.tags.some(t => agentTags.includes(t)))) continue;
-      merged.push({ type: 'context', id: entry.id, priority: 32, injectMode: 'summary' });
-    }
-  }
-
-  // ── Auto-inject Code Cards matching active task scope ──
+  // ── Code Cards（知识类文档 + tag code-card）与 ActiveTask scope 匹配 ──
   {
-    const allCodeCards = ctxIndex.entries.filter(
-      e => e.coveredPaths?.length &&
+    const docsIdx = await readDocsIndexFromDocuments();
+    const flatEntries = Object.values(docsIdx.projects).flat();
+    const allCodeCards = flatEntries.filter(
+      e =>
+        e.documentKind === 'knowledge' &&
+        e.coveredPaths?.length &&
         e.tags?.includes('code-card') &&
-        (!e.status || e.status === 'active'),
+        (!e.status || e.status === 'active') &&
+        (!projectKey || e.projectKey === projectKey || e.projectKey === '_global'),
     );
 
     if (allCodeCards.length > 0) {
-      // Try to find active task scope for this session
       let scopePaths: string[] = [];
       if (sessionId) {
         try {
@@ -1061,39 +1115,47 @@ async function buildResourcePrompt(
         } catch { /* active-tasks may not exist yet */ }
       }
 
-      const matched = scopePaths.length > 0
-        ? matchCodeCards(scopePaths, ctxIndex.entries)
-        : [];
+      const matched =
+        scopePaths.length > 0 ? matchCodeCards(scopePaths, flatEntries) : [];
 
       if (matched.length > 0) {
-        // Scope matched → inject full content at high priority
         for (const card of matched) {
-          merged.push({ type: 'context', id: card.id, priority: 15, injectMode: 'full' });
+          let inlineContent = '';
+          try {
+            const p = card.sourcePath ?? path.join(getDocumentsContentDir(), card.fileName);
+            inlineContent = await fs.readFile(p, 'utf-8');
+          } catch {
+            /* missing file */
+          }
+          merged.push({
+            type: 'inline-text',
+            id: `_code-card-${card.id}`,
+            priority: 15,
+            label: `Code Card: ${card.title}`,
+            inlineContent,
+          });
         }
       } else {
-        // No scope match (cold start or unrelated task) → inject index table
-        const indexTable = buildCodeCardIndex(allCodeCards, getContextDir());
+        const indexTable = buildCodeCardIndex(allCodeCards, getDocumentsContentDir());
         if (indexTable) {
-          const indexRef: InlineTextRef = {
+          merged.push({
             type: 'inline-text',
             id: '_code-card-index',
             priority: 40,
             label: 'Code Cards 索引',
             inlineContent: indexTable,
-          };
-          merged.push(indexRef);
+          });
         }
       }
 
-      // Append update reminder (low priority, always present when code cards exist)
-      const reminderRef: InlineTextRef = {
+      merged.push({
         type: 'inline-text',
         id: '_code-card-update-reminder',
         priority: 90,
         label: 'Code Card 维护提醒',
-        inlineContent: '任务完成后，如果你修改了 Code Card 覆盖范围内的文件（新增函数、改变数据流、修复重要 bug），请更新对应的 Code Card 内容，保持代码理解层的准确性。使用 PATCH /api/context/[id] 更新内容。',
-      };
-      merged.push(reminderRef);
+        inlineContent:
+          '任务完成后，若修改了 Code Card 覆盖范围内的代码，请更新对应知识文档正文。使用 PATCH /api/docs/[id] 更新内容。',
+      });
     }
   }
 
@@ -1132,12 +1194,6 @@ async function buildResourcePrompt(
     // Phase 4: unified resourceRefs take precedence over legacy contextIds/skillNames
     if (sessionConfig.resourceRefs?.length) {
       merged.push(...sessionConfig.resourceRefs);
-    }
-    // Legacy fields still work (backward compatible)
-    if (sessionConfig.contextIds?.length) {
-      for (const cid of sessionConfig.contextIds) {
-        merged.push({ type: 'context', id: cid, priority: 35 });
-      }
     }
     if (sessionConfig.skillNames?.length) {
       for (const name of sessionConfig.skillNames) {

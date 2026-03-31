@@ -11,7 +11,7 @@ import {
   updateAgent,
 } from '@/lib/agents-store';
 import { validatePackage, importAgent } from '@/lib/agent-package';
-import { getAgentsPath, readJsonFile, getDataDir, getAgentDataPath } from '@/lib/file-store';
+import { getAgentsPath, readJsonFile, getDataDir, getAgentDataPath, getLegacyAgentDataPath } from '@/lib/file-store';
 import { mergeAndRepairAgentsData } from '@/lib/agent-metadata-repair';
 import { resolveSystemPrompt } from '@/lib/agent-prompt-store';
 import { exportAgent } from '@/lib/agent-package';
@@ -48,20 +48,27 @@ function extractLegacyDataDirName(systemPrompt?: string): string | null {
 async function resolveAgentDataStoreDir(agentId: string): Promise<string> {
   const agent = await getAgentById(agentId, { includeArchived: true, includePrompt: true });
   const legacyDataDirName = extractLegacyDataDirName(agent?.systemPrompt);
+  const canonical = getAgentDataPath(agentId);
   const candidates = [
-    agent?.slug ? getAgentDataPath(agent.slug) : null,
+    canonical,
+    agent?.slug && agent.slug !== agentId ? getAgentDataPath(agent.slug) : null,
+    agent?.slug && agent.slug !== agentId ? getLegacyAgentDataPath(agent.slug) : null,
     legacyDataDirName ? getAgentDataPath(legacyDataDirName) : null,
-    getAgentDataPath(agentId),
+    legacyDataDirName ? getLegacyAgentDataPath(legacyDataDirName) : null,
+    getLegacyAgentDataPath(agentId),
   ].filter((value): value is string => !!value);
 
-  for (const candidate of candidates) {
+  const unique = [...new Set(candidates)];
+
+  for (const candidate of unique) {
     if (await fileExists(candidate)) return candidate;
   }
 
-  return candidates[0];
+  return canonical;
 }
 
 async function ensureAgentDataStoreDir(dirPath: string): Promise<void> {
+  await fs.mkdir(dirPath, { recursive: true });
   await fs.mkdir(path.join(dirPath, 'data'), { recursive: true });
 }
 
@@ -409,7 +416,7 @@ app.get('/files', async (c) => {
   const dataStoreDir = await resolveAgentDataStoreDir(agentId);
   await ensureAgentDataStoreDir(dataStoreDir);
   entries.push({
-    name: '数据',
+    name: '私有工作空间',
     path: dataStoreDir,
     isDirectory: true,
     category: 'data',

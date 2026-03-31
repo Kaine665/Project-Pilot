@@ -9,7 +9,6 @@
 
 export type ActionTagType =
   | 'save-doc'
-  | 'save-knowledge'
   | 'save-checkpoint'
   | 'await-sub-agents'
   | 'session-title';
@@ -58,21 +57,6 @@ const TAG_DEFS: TagDef[] = [
       body: m[4]?.trim() ?? '',
       title: m[2],
       subtitle: m[3],
-      hasPreviewContent: true,
-    }),
-  },
-  {
-    type: 'save-knowledge',
-    regex: /<save-knowledge\s+label="([^"]+)"\s+description="([^"]+)"\s+format="(text|json|markdown)">([\s\S]*?)<\/save-knowledge>/g,
-    extract: (m, start) => ({
-      type: 'save-knowledge',
-      raw: m[0],
-      start,
-      end: start + m[0].length,
-      attrs: { label: m[1], description: m[2], format: m[3] },
-      body: m[4]?.trim() ?? '',
-      title: m[1],
-      subtitle: m[2],
       hasPreviewContent: true,
     }),
   },
@@ -146,7 +130,6 @@ export function detectStreamingTag(text: string): StreamingTag | null {
   // Match opening tags that are NOT closed
   const openingPatterns: Array<{ type: ActionTagType; regex: RegExp }> = [
     { type: 'save-doc', regex: /<save-doc\s+project="[^"]*"\s+title="[^"]*"\s+description="[^"]*">(?![\s\S]*<\/save-doc>)/g },
-    { type: 'save-knowledge', regex: /<save-knowledge\s+label="[^"]*"\s+description="[^"]*"\s+format="[^"]*">(?![\s\S]*<\/save-knowledge>)/g },
     { type: 'save-checkpoint', regex: /<save-checkpoint>(?![\s\S]*<\/save-checkpoint>)/g },
     { type: 'await-sub-agents', regex: /<await-sub-agents\s+session-ids="[^"]*"\s*>(?![\s\S]*<\/await-sub-agents>)/g },
   ];
@@ -296,16 +279,6 @@ export const ACTION_COLORS: Record<ActionTagType, ActionColorConfig> = {
     badgeText: 'text-blue-600 dark:text-blue-400',
     badgeBg: 'bg-blue-100 dark:bg-blue-900/30',
     label: '设计文档',
-    acceptedLabel: '已保存',
-  },
-  'save-knowledge': {
-    border: 'border-l-amber-500',
-    bg: 'bg-amber-50/80 dark:bg-amber-950/20',
-    bgHover: 'hover:bg-amber-50 dark:hover:bg-amber-950/30',
-    iconColor: 'text-amber-500',
-    badgeText: 'text-amber-600 dark:text-amber-400',
-    badgeBg: 'bg-amber-100 dark:bg-amber-900/30',
-    label: '知识条目',
     acceptedLabel: '已保存',
   },
   'save-checkpoint': {

@@ -17,7 +17,6 @@ import settingsRoutes from './routes/settings';
 import todosRoutes from './routes/todos';
 import dataRoutes from './routes/data';
 import docsRoutes from './routes/docs';
-import contextRoutes from './routes/context';
 import dimensionsRoutes from './routes/dimensions';
 import usageRoutes from './routes/usage';
 import promptsRoutes from './routes/prompts';
@@ -26,12 +25,12 @@ import fsRoutes from './routes/fs';
 import recycleBinRoutes from './routes/recycle-bin';
 import uploadRoutes from './routes/upload';
 import projectsRoutes from './routes/projects';
-import dialoguesRoutes from './routes/dialogues';
-import satelliteTasksRoutes from './routes/satellite-tasks';
 import aiDiscussRoutes from './routes/ai-discuss';
 import agentChatRoutes from './routes/agent-chat';
 import schedulesRoutes from './routes/schedules';
 import eventTriggersRoutes from './routes/event-triggers';
+
+import { ensureDataDirV2Migrated } from '@/lib/file-store';
 
 const app = new Hono();
 
@@ -49,7 +48,6 @@ app.route('/api/settings', settingsRoutes);
 app.route('/api/todos', todosRoutes);
 app.route('/api/data', dataRoutes);
 app.route('/api/docs', docsRoutes);
-app.route('/api/context', contextRoutes);
 app.route('/api/dimensions', dimensionsRoutes);
 app.route('/api/usage', usageRoutes);
 app.route('/api', promptsRoutes);
@@ -58,8 +56,6 @@ app.route('/api/fs', fsRoutes);
 app.route('/api/recycle-bin', recycleBinRoutes);
 app.route('/api/upload', uploadRoutes);
 app.route('/api/projects', projectsRoutes);
-app.route('/api/dialogues', dialoguesRoutes);
-app.route('/api/satellite-tasks', satelliteTasksRoutes);
 app.route('/api/ai-discuss', aiDiscussRoutes);
 app.route('/api/agent-chat', agentChatRoutes);
 app.route('/api/schedules', schedulesRoutes);
@@ -70,6 +66,10 @@ const clientDistPath = path.resolve(__dirname, '../../dist/client');
 if (fs.existsSync(clientDistPath)) {
   app.use('/*', serveStatic({ root: clientDistPath }));
   app.get('*', async (c) => {
+    // 勿把未匹配的 /api 当成 SPA：否则前端会收到 HTML 且难排查
+    if (c.req.path.startsWith('/api')) {
+      return c.json({ ok: false, error: 'API route not found', path: c.req.path }, 404);
+    }
     const html = await fs.promises.readFile(
       path.join(clientDistPath, 'index.html'),
       'utf-8',
@@ -81,17 +81,26 @@ if (fs.existsSync(clientDistPath)) {
 // --- Start server ---
 const port = parseInt(process.env.PORT ?? '4500', 10);
 
-console.log(`[server] Starting Hono backend on http://127.0.0.1:${port}`);
+async function startServer(): Promise<void> {
+  await ensureDataDirV2Migrated();
+  console.log(`[server] Starting Hono backend on http://127.0.0.1:${port}`);
 
-serve(
-  {
-    fetch: app.fetch,
-    port,
-    hostname: '127.0.0.1',
-  },
-  (info) => {
-    console.log(`[server] Hono backend ready on http://127.0.0.1:${info.port}`);
-  },
-);
+  serve(
+    {
+      fetch: app.fetch,
+      port,
+      hostname: '127.0.0.1',
+    },
+    (info) => {
+      console.log(`[server] Hono backend ready on http://127.0.0.1:${info.port}`);
+    },
+  );
+}
 
-export default app;
+void startServer().catch((err) => {
+  console.error('[server] Failed to start:', err);
+  process.exit(1);
+});
+
+/** Named export only — default export would make `bun ./src/server/index.ts` start a second listener on :3000. */
+export { app };

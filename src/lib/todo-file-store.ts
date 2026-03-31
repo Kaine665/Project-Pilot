@@ -1,5 +1,5 @@
 /**
- * 待办存储：兼容 `tasks/todos.json`（聚合）与 `todos/entries/<id>.json`（分文件）。
+ * 待办存储：数据根 `todos.json`（聚合）与 `todos/entries/<id>.json`（分文件）。
  * 读取时合并，同 id 以分文件为准；写入时按来源回写对应位置。
  */
 
@@ -77,7 +77,7 @@ function mergeTodoLists(legacyTodos: TodoItem[], entryTodos: TodoItem[]): TodosD
   return { todos: [...map.values()] };
 }
 
-/** 合并读取：`todos/entries/*.json` 覆盖 `tasks/todos.json` 中同 id 条目 */
+/** 合并读取：`todos/entries/*.json` 覆盖数据根 `todos.json` 中同 id 条目 */
 export async function readTodosMerged(): Promise<TodosData> {
   const legacy = await readJsonFile<TodosData>(getTodosPath(), TODO_DEFAULT);
   const { todos: entryTodos } = await loadTodoEntriesIndex();
@@ -100,7 +100,7 @@ let todosMergeChain: Promise<unknown> = Promise.resolve();
 
 /**
  * 原子读-改-写（进程内串行），持久化到分文件或聚合文件。
- * 新建、且此前无分文件的 id 写入 `tasks/todos.json`。
+ * 新建、且此前无分文件的 id 写入数据根 `todos.json`。
  */
 export async function modifyTodosMerged(
   modifier: (data: TodosData) => TodosData,

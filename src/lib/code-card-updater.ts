@@ -3,27 +3,18 @@
  *
  * Detects which Code Cards are stale (their covered source files changed
  * since the card was last updated), regenerates content via AI, and
- * updates the context entries.
- *
- * Can be used as:
- * 1. CLI: `npx tsx src/lib/code-card-updater.ts [--dry-run] [--since <commit>] [--card <id>]`
- * 2. Library: import { refreshStaleCodeCards } from './code-card-updater'
+ * updates documents/content + documents/entries.
  */
 
 import { execSync } from 'child_process';
 import { readFile, writeFile } from 'fs/promises';
-import {
-  getContextIndexPath,
-  getContextFilePath,
-  modifyJsonFile,
-} from '@/lib/file-store';
+import { getDocumentContentPath } from '@/lib/file-store';
+import { readDocsIndexFromDocuments, saveDocsIndexToDocuments } from '@/lib/documents-store';
 import { getAppWorkingDir } from '@/lib/app-paths';
 import { callLightweightAI } from '@/lib/lightweight-ai';
-import type { ContextEntry, ContextIndexData } from '@/types';
+import type { DocEntry } from '@/types';
 
 const LOG = '[CodeCardUpdater]';
-
-// ── Types ──
 
 export interface RefreshResult {
   checked: number;
@@ -41,28 +32,18 @@ export interface CardRefreshDetail {
   error?: string;
 }
 
-// ── Core logic ──
-
-/**
- * Load all Code Cards from the context index.
- */
-async function loadCodeCards(): Promise<ContextEntry[]> {
-  try {
-    const raw = await readFile(getContextIndexPath(), 'utf-8');
-    const data: ContextIndexData = JSON.parse(raw);
-    return data.entries.filter(
-      e => e.tags?.includes('code-card') &&
-        e.coveredPaths?.length &&
-        (!e.status || e.status === 'active'),
-    );
-  } catch {
-    return [];
-  }
+async function loadCodeCards(): Promise<DocEntry[]> {
+  const idx = await readDocsIndexFromDocuments();
+  const flat = Object.values(idx.projects).flat();
+  return flat.filter(
+    e =>
+      e.documentKind === 'knowledge' &&
+      e.tags?.includes('code-card') &&
+      e.coveredPaths?.length &&
+      (!e.status || e.status === 'active'),
+  );
 }
 
-/**
- * Get list of files changed since a given commit ref.
- */
 function getChangedFiles(sinceRef: string): string[] {
   const cwd = getAppWorkingDir();
   try {
@@ -78,32 +59,19 @@ function getChangedFiles(sinceRef: string): string[] {
   }
 }
 
-/**
- * Get the last commit hash stored in a card's metadata.
- * Falls back to checking git log for the card's updatedAt timestamp.
- */
-function getCardLastCommit(card: ContextEntry): string | undefined {
+function getCardLastCommit(card: DocEntry): string | undefined {
   return card.lastCheckedCommit;
 }
 
-/**
- * Get the current HEAD commit hash.
- */
 function getCurrentCommit(): string {
   const cwd = getAppWorkingDir();
   return execSync('git rev-parse HEAD', { cwd, encoding: 'utf-8' }).trim();
 }
 
-/**
- * Normalize path for comparison (forward slashes, no trailing slash).
- */
 function normalizePath(p: string): string {
   return p.replace(/\\/g, '/').replace(/\/+$/, '');
 }
 
-/**
- * Check if a file path matches any of the card's coveredPaths (prefix match).
- */
 function fileMatchesCoveredPaths(file: string, coveredPaths: string[]): boolean {
   const nf = normalizePath(file);
   return coveredPaths.some(cp => {
@@ -112,9 +80,6 @@ function fileMatchesCoveredPaths(file: string, coveredPaths: string[]): boolean 
   });
 }
 
-/**
- * Read source files covered by a card (up to a budget) for AI context.
- */
 async function readCoveredSources(
   coveredPaths: string[],
   changedFiles: string[],
@@ -122,9 +87,6 @@ async function readCoveredSources(
 ): Promise<string> {
   const cwd = getAppWorkingDir();
   const relevantFiles = changedFiles.filter(f => fileMatchesCoveredPaths(f, coveredPaths));
-
-  // Also include key files from coveredPaths that might not be in changedFiles
-  // to give AI full context
   const allFiles = [...new Set([...relevantFiles])];
 
   let totalChars = 0;
@@ -139,20 +101,17 @@ async function readCoveredSources(
       sections.push(`### ${file}\n\`\`\`typescript\n${truncated}\n\`\`\``);
       totalChars += truncated.length;
     } catch {
-      // File might have been deleted
+      /* file missing */
     }
   }
 
   return sections.join('\n\n');
 }
 
-/**
- * Build a prompt for AI to regenerate a Code Card's content.
- */
-function buildRegeneratePrompt(card: ContextEntry, sourceCode: string): string {
+function buildRegeneratePrompt(card: DocEntry, sourceCode: string): string {
   return `你是一个代码理解助手。请根据以下源代码更新模块理解文档。
 
-当前 Code Card 标题：${card.label}
+当前 Code Card 标题：${card.title}
 当前 Code Card 描述：${card.description || ''}
 覆盖路径：${card.coveredPaths?.join(', ')}
 
@@ -172,9 +131,19 @@ ${sourceCode}
 直接输出 Markdown 内容，不要加额外包裹。控制在 300-800 字。`;
 }
 
-/**
- * Main entry: check all Code Cards for staleness and optionally refresh.
- */
+async function patchCardCommit(cardId: string, currentCommit: string): Promise<void> {
+  const idx = await readDocsIndexFromDocuments();
+  const now = new Date().toISOString();
+  for (const pk of Object.keys(idx.projects)) {
+    const arr = idx.projects[pk];
+    const i = arr.findIndex(e => e.id === cardId);
+    if (i >= 0) {
+      arr[i] = { ...arr[i], updatedAt: now, lastCheckedCommit: currentCommit };
+    }
+  }
+  await saveDocsIndexToDocuments(idx);
+}
+
 export async function refreshStaleCodeCards(options: {
   dryRun?: boolean;
   sinceCommit?: string;
@@ -199,11 +168,10 @@ export async function refreshStaleCodeCards(options: {
     const lastCommit = sinceCommit || getCardLastCommit(card);
 
     if (!lastCommit) {
-      // No baseline — skip unless explicit sinceCommit provided
       if (!sinceCommit) {
         result.details.push({
           id: card.id,
-          label: card.label,
+          label: card.title,
           status: 'skipped',
           error: 'No lastCheckedCommit baseline',
         });
@@ -211,7 +179,7 @@ export async function refreshStaleCodeCards(options: {
       }
     }
 
-    const ref = lastCommit || 'HEAD~10'; // fallback: last 10 commits
+    const ref = lastCommit || 'HEAD~10';
     const changedFiles = getChangedFiles(ref);
     const relevantChanges = changedFiles.filter(
       f => fileMatchesCoveredPaths(f, card.coveredPaths!),
@@ -220,33 +188,31 @@ export async function refreshStaleCodeCards(options: {
     if (relevantChanges.length === 0) {
       result.details.push({
         id: card.id,
-        label: card.label,
+        label: card.title,
         status: 'up-to-date',
       });
       continue;
     }
 
-    // Card is stale
     result.stale++;
-    console.log(`${LOG} Stale: "${card.label}" — ${relevantChanges.length} file(s) changed`);
+    console.log(`${LOG} Stale: "${card.title}" — ${relevantChanges.length} file(s) changed`);
 
     if (dryRun) {
       result.details.push({
         id: card.id,
-        label: card.label,
+        label: card.title,
         status: 'skipped',
         changedFiles: relevantChanges,
       });
       continue;
     }
 
-    // Regenerate via AI
     try {
       const sourceCode = await readCoveredSources(card.coveredPaths!, changedFiles);
       if (!sourceCode.trim()) {
         result.details.push({
           id: card.id,
-          label: card.label,
+          label: card.title,
           status: 'skipped',
           changedFiles: relevantChanges,
           error: 'No readable source files',
@@ -261,7 +227,7 @@ export async function refreshStaleCodeCards(options: {
         result.failed++;
         result.details.push({
           id: card.id,
-          label: card.label,
+          label: card.title,
           status: 'failed',
           changedFiles: relevantChanges,
           error: 'AI returned empty or too short',
@@ -269,74 +235,48 @@ export async function refreshStaleCodeCards(options: {
         continue;
       }
 
-      // Write updated content file
-      await writeFile(getContextFilePath(card.fileName), newContent, 'utf-8');
-
-      // Update index: set lastCheckedCommit and updatedAt
-      await modifyJsonFile<ContextIndexData>(
-        getContextIndexPath(),
-        { entries: [] },
-        (data) => {
-          const entry = data.entries.find(e => e.id === card.id);
-          if (entry) {
-            entry.updatedAt = new Date().toISOString();
-            entry.lastCheckedCommit = currentCommit;
-          }
-          return data;
-        },
-      );
+      const writePath = card.sourcePath || getDocumentContentPath(card.fileName);
+      await writeFile(writePath, newContent, 'utf-8');
+      await patchCardCommit(card.id, currentCommit);
 
       result.updated++;
       result.details.push({
         id: card.id,
-        label: card.label,
+        label: card.title,
         status: 'updated',
         changedFiles: relevantChanges,
       });
 
-      console.log(`${LOG} Updated: "${card.label}"`);
+      console.log(`${LOG} Updated: "${card.title}"`);
     } catch (err) {
       result.failed++;
       result.details.push({
         id: card.id,
-        label: card.label,
+        label: card.title,
         status: 'failed',
         changedFiles: relevantChanges,
         error: err instanceof Error ? err.message : String(err),
       });
-      console.error(`${LOG} Failed to update "${card.label}":`, err);
+      console.error(`${LOG} Failed to update "${card.title}":`, err);
     }
   }
 
   return result;
 }
 
-/**
- * Stamp all existing Code Cards with the current commit as baseline.
- * Call this once after initial card creation to establish the baseline.
- */
 export async function stampAllCardsWithCurrentCommit(): Promise<number> {
   const currentCommit = getCurrentCommit();
   const cards = await loadCodeCards();
 
-  await modifyJsonFile<ContextIndexData>(
-    getContextIndexPath(),
-    { entries: [] },
-    (data) => {
-      for (const entry of data.entries) {
-        if (entry.tags?.includes('code-card') && entry.coveredPaths?.length) {
-          entry.lastCheckedCommit = currentCommit;
-        }
-      }
-      return data;
-    },
-  );
+  for (const card of cards) {
+    if (card.tags?.includes('code-card') && card.coveredPaths?.length) {
+      await patchCardCommit(card.id, currentCommit);
+    }
+  }
 
   console.log(`${LOG} Stamped ${cards.length} Code Cards with commit ${currentCommit.slice(0, 8)}`);
   return cards.length;
 }
-
-// ── CLI ──
 
 async function main() {
   const args = process.argv.slice(2);

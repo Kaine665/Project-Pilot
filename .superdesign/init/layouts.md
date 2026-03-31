@@ -1,11 +1,5 @@
-# Layouts
+# TopNav
+`src/components/top-nav.tsx` — see project file (header: flex, border-b border-zinc-200, px-6 py-3, nav links with rounded-lg active bg-zinc-100).
 
-## `src/client/routes/flows-layout.tsx`
-
-App shell: full viewport column — `TopNav` + row with icon sidebar + `main` (`flex-1 overflow-auto`) + optional Butler drawer.
-
-## `src/components/top-nav.tsx`
-
-Header: border-bottom, project switcher, AI assistant button, language switcher, nav links to flows/settings.
-
-Full source should be passed via `--context-file` when designing (files in repo).
+# Settings shell
+In `page.tsx`: flex column h-screen; TopNav; inner `max-w-[1100px]` row with sidebar `w-52` and content `flex-1 pl-8 border-l`.

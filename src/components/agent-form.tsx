@@ -8,11 +8,18 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type {
-  Agent, AgentCapabilities, ContextEntry, OpenAIReasoningEffort, ProviderId,
+  Agent, AgentCapabilities, OpenAIReasoningEffort, ProviderId,
 } from '@/types';
 import type { ProjectEntry } from '@/components/project-context';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
-import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
+import { getProviderPreset } from '@/lib/provider-registry';
+import { useAvailableModels } from '@/hooks/use-available-models';
+import {
+  compositeKeyForAggregateItem,
+  modelSelectOptionsFromAggregate,
+  parseAggregateCompositeKey,
+} from '@/lib/aggregate-model-key';
+import { PROVIDER_LABELS } from '@/components/agent-chat/types';
 import { resolveAgentAvatarSrc } from '@/lib/agent-avatar';
 import { cn } from '@/lib/utils';
 
@@ -203,18 +210,6 @@ export function SettingsForm({
   onExpandPrompt: () => void;
   projects?: ProjectEntry[];
 }) {
-  // Fetch available context entries for the picker
-  const [contextEntries, setContextEntries] = useState<ContextEntry[]>([]);
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch('/api/context');
-        const data = await res.json();
-        setContextEntries((data.entries ?? []).filter((e: ContextEntry) => !e.status || e.status === 'active'));
-      } catch { setContextEntries([]); }
-    })();
-  }, []);
-
   // Fetch available skills for the picker
   const [availableSkills, setAvailableSkills] = useState<{ name: string; description: string }[]>([]);
   useEffect(() => {
@@ -227,6 +222,31 @@ export function SettingsForm({
     })();
   }, []);
 
+  const { items: aggregateItems } = useAvailableModels();
+  const agentDefaultModelOptions = useMemo(() => {
+    const base = modelSelectOptionsFromAggregate(
+      aggregateItems,
+      (id) => PROVIDER_LABELS[id] || id,
+    );
+    if (form.defaultProvider && form.defaultModel) {
+      const cur = compositeKeyForAggregateItem({
+        providerId: form.defaultProvider as ProviderId,
+        value: form.defaultModel,
+        label: form.defaultModel,
+      });
+      if (!base.some((o) => o.value === cur)) {
+        return [
+          {
+            value: cur,
+            label: `${form.defaultModel} · ${PROVIDER_LABELS[form.defaultProvider as ProviderId] || form.defaultProvider}（当前）`,
+          },
+          ...base,
+        ];
+      }
+    }
+    return base;
+  }, [aggregateItems, form.defaultProvider, form.defaultModel]);
+
   const toggleSkill = (name: string) => {
     setForm(f => ({
       ...f,
@@ -235,27 +255,6 @@ export function SettingsForm({
         : [...f.skillIds, name],
     }));
   };
-
-  const toggleContext = (id: string) => {
-    setForm(f => ({
-      ...f,
-      contextIds: f.contextIds.includes(id)
-        ? f.contextIds.filter(cid => cid !== id)
-        : [...f.contextIds, id],
-    }));
-  };
-
-  // Group context entries
-  const contextGroups = useMemo(() => {
-    const groups: Array<{ group: string | null; entries: ContextEntry[] }> = [];
-    const groupNames = [...new Set(contextEntries.map(e => e.group).filter((g): g is string => !!g))].sort();
-    const ungrouped = contextEntries.filter(e => !e.group);
-    if (ungrouped.length > 0) groups.push({ group: null, entries: ungrouped });
-    for (const g of groupNames) {
-      groups.push({ group: g, entries: contextEntries.filter(e => e.group === g) });
-    }
-    return groups;
-  }, [contextEntries]);
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -463,100 +462,6 @@ export function SettingsForm({
             </div>
           </div>
 
-          {/* Context Strategy */}
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              上下文注入策略
-            </label>
-            <div className="flex gap-2">
-              {([
-                { value: 'additive' as const, label: '叠加模式', desc: '自动注入项目级上下文 + Agent 绑定的上下文' },
-                { value: 'exclusive' as const, label: '排他模式', desc: '只注入 Agent 绑定的上下文，跳过项目级自动注入' },
-              ] as const).map(opt => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setForm(f => ({ ...f, contextStrategy: opt.value }))}
-                  className={`flex-1 rounded-lg border px-4 py-3 text-left transition-colors ${
-                    form.contextStrategy === opt.value
-                      ? 'border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-800'
-                      : 'border-zinc-200 hover:border-zinc-400 dark:border-zinc-700 dark:hover:border-zinc-500'
-                  }`}
-                >
-                  <div className={`text-sm font-medium ${
-                    form.contextStrategy === opt.value
-                      ? 'text-zinc-900 dark:text-zinc-100'
-                      : 'text-zinc-500 dark:text-zinc-400'
-                  }`}>{opt.label}</div>
-                  <div className="mt-0.5 text-xs text-zinc-400">{opt.desc}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Context Binding */}
-          {contextEntries.length > 0 && (
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                预加载上下文
-              </label>
-              <p className="mb-2 text-xs text-zinc-400">
-                选中的上下文内容将在对话时自动展开注入，Agent 无需手动读取
-              </p>
-              <div className="space-y-1 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700 max-h-60 overflow-y-auto">
-                {contextGroups.map(({ group, entries }) => (
-                  <div key={group ?? '__ungrouped'}>
-                    {group && (
-                      <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                        {group}
-                      </div>
-                    )}
-                    <div className="space-y-0.5">
-                      {entries.map(entry => {
-                        const checked = form.contextIds.includes(entry.id);
-                        return (
-                          <button
-                            key={entry.id}
-                            type="button"
-                            onClick={() => toggleContext(entry.id)}
-                            className={`flex min-h-[48px] w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
-                              checked
-                                ? 'bg-zinc-100 dark:bg-zinc-800'
-                                : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
-                            }`}
-                          >
-                            <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
-                              checked
-                                ? 'border-zinc-900 bg-zinc-900 dark:border-zinc-100 dark:bg-zinc-100'
-                                : 'border-zinc-300 dark:border-zinc-600'
-                            }`}>
-                              {checked && <Check className="h-3 w-3 text-white dark:text-zinc-900" />}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                                {entry.label}
-                              </div>
-                              {entry.description && (
-                                <div className="truncate text-xs text-zinc-400">
-                                  {entry.description}
-                                </div>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {form.contextIds.length > 0 && (
-                <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-                  已选 {form.contextIds.length} 项
-                </p>
-              )}
-            </div>
-          )}
-
           {/* Skills Binding */}
           {availableSkills.length > 0 && (
             <div>
@@ -615,57 +520,48 @@ export function SettingsForm({
               默认模型
             </label>
             <p className="mb-2 text-xs text-zinc-400">
-              此 Agent 创建新会话时预选的模型。留空则继承全局设置，用户仍可在会话中切换。
+              仅显示设置中已配置且检测可用的模型；留空则继承全局默认。供应商在「设置」中管理。
             </p>
-            <div className="flex gap-2">
-              <select
-                value={form.defaultProvider}
-                onChange={e => setForm(f => ({
+            <select
+              value={
+                form.defaultProvider && form.defaultModel
+                  ? compositeKeyForAggregateItem({
+                      providerId: form.defaultProvider as ProviderId,
+                      value: form.defaultModel,
+                      label: form.defaultModel,
+                    })
+                  : ''
+              }
+              onChange={(e) => {
+                const v = e.target.value;
+                if (!v) {
+                  setForm((f) => ({
+                    ...f,
+                    defaultProvider: '',
+                    defaultModel: '',
+                    defaultOpenAIReasoningEffort: '',
+                  }));
+                  return;
+                }
+                const parsed = parseAggregateCompositeKey(v);
+                if (!parsed) return;
+                setForm((f) => ({
                   ...f,
-                  defaultProvider: e.target.value as ProviderId | '',
-                  defaultModel: '',
-                  defaultOpenAIReasoningEffort: '',
-                }))}
-                className="h-11 w-36 shrink-0 rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
-              >
-                <option value="">继承全局</option>
-                {PROVIDER_REGISTRY.map(p => (
-                  <option key={p.id} value={p.id}>{p.id}</option>
-                ))}
-              </select>
-              {form.defaultProvider ? (
-                <div className="flex-1 space-y-2">
-                  <input
-                    list="agent-default-model-options"
-                    value={form.defaultModel}
-                    onChange={e => setForm(f => ({ ...f, defaultModel: e.target.value }))}
-                    placeholder="鐣欑┖缁ф壙鍏ㄥ眬锛屾垨鐩存帴杈撳叆妯″瀷 ID"
-                    className="h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
-                  />
-                  <datalist id="agent-default-model-options">
-                    {getProviderPreset(form.defaultProvider as ProviderId).models.map(m => (
-                      <option key={m.id} value={m.id}>{m.label || m.id}</option>
-                    ))}
-                  </datalist>
-                <select
-                  value={form.defaultModel}
-                  onChange={e => setForm(f => ({ ...f, defaultModel: e.target.value }))}
-                  className="h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
-                >
-                  <option value="">继承全局</option>
-                  {getProviderPreset(form.defaultProvider as ProviderId).models.map(m => (
-                    <option key={m.id} value={m.id}>{m.label || m.id}</option>
-                  ))}
-                </select>
-                </div>
-              ) : (
-                <input
-                  disabled
-                  placeholder="先选择供应商"
-                  className="flex-1 rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/50"
-                />
-              )}
-            </div>
+                  defaultProvider: parsed.providerId,
+                  defaultModel: parsed.modelId,
+                  defaultOpenAIReasoningEffort:
+                    parsed.providerId === 'openai' ? f.defaultOpenAIReasoningEffort : '',
+                }));
+              }}
+              className="h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+            >
+              <option value="">继承全局默认</option>
+              {agentDefaultModelOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
             {form.defaultProvider && (
               <p className="mt-1.5 text-xs text-zinc-500">
                 {form.defaultProvider} / {form.defaultModel || '继承全局默认'}

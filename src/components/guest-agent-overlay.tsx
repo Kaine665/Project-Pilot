@@ -5,9 +5,9 @@ import { Send, Loader2, Square, ArrowLeft, UserPlus } from 'lucide-react';
 import { useTranslations } from '@/client/i18n/use-translations';
 import { ChatBubble } from '@/components/chat-bubble';
 import type { Agent } from '@/types';
-import type { ChatMessage, ChatToolCall, ChatSSEEvent, ContentBlock } from '@/types';
+import type { ChatMessage, ChatToolCall, AgentEvent, ContentBlock } from '@/types';
 
-type IndexedSSEEvent = ChatSSEEvent & { _idx: number };
+type IndexedSSEEvent = AgentEvent & { _idx: number };
 
 // 向后兼容：旧 AI 回复中可能仍含标签
 function stripSessionTitleTag(text: string): string {
@@ -157,7 +157,7 @@ export function GuestAgentOverlay({
             continue;
           }
 
-          const event = raw as unknown as ChatSSEEvent;
+          const event = raw as unknown as AgentEvent;
 
           switch (event.type) {
             case 'text_delta': {
@@ -167,6 +167,16 @@ export function GuestAgentOverlay({
                 lastBlock.text += event.text;
               } else {
                 blocks.push({ type: 'text', text: event.text });
+              }
+              chunkHasDisplayEvents = true;
+              break;
+            }
+            case 'thinking_delta': {
+              const lastThink = blocks[blocks.length - 1];
+              if (lastThink && lastThink.type === 'thinking') {
+                lastThink.text += event.text;
+              } else {
+                blocks.push({ type: 'thinking', text: event.text });
               }
               chunkHasDisplayEvents = true;
               break;

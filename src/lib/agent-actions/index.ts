@@ -8,14 +8,12 @@
 import { actionRegistry } from './registry';
 import { resourceRegistry } from '../resource-registry';
 
-import { saveKnowledgeAction } from './save-knowledge';
 import { saveDocAction } from './save-doc';
 import { sessionTitleAction } from './session-title';
 import { awaitSubAgentsAction } from './await-sub-agents';
 import { sessionCheckpointAction } from './session-checkpoint';
 
 // Register all actions
-actionRegistry.register(saveKnowledgeAction);
 actionRegistry.register(saveDocAction);
 actionRegistry.register(sessionTitleAction);
 actionRegistry.register(awaitSubAgentsAction);

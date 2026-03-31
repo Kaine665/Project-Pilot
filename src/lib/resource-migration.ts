@@ -11,14 +11,10 @@ import type { ResourceRef } from '@/types/resource';
  *
  * Maps the legacy fields:
  *   agent.systemPrompt / fallback  → system-prompt ref (priority 0)
- *   context-index                  → always included (priority 20)
  *   design-docs-index              → always included (priority 25)
  *   subAgent capability             → available-agents ref (priority 18)
- *   agent.contextIds               → context refs (priority 30 each)
  *   todoRead capability            → todo-list ref (priority 40)
- *   knowledge-instructions         → always included (priority 80)
  *   doc-save-instructions          → always included (priority 85)
- *   session-title-instructions     → always included (priority 90)
  */
 export function migrateAgentToResources(agent: Agent): ResourceRef[] {
   const refs: ResourceRef[] = [];
@@ -29,14 +25,6 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
     id: agent.id,
     priority: 0,
     label: '系统提示词',
-  });
-
-  // Global context index table — always present
-  refs.push({
-    type: 'context-index',
-    id: '_all',
-    priority: 20,
-    label: '上下文索引',
   });
 
   // Design docs index table — always present
@@ -73,17 +61,6 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
     });
   }
 
-  // Preloaded context entries
-  if (agent.contextIds && agent.contextIds.length > 0) {
-    for (const cid of agent.contextIds) {
-      refs.push({
-        type: 'context',
-        id: cid,
-        priority: 30,
-      });
-    }
-  }
-
   // Agent private data store (if agent has dataStore capability)
   if (agent.capabilities?.dataStore) {
     refs.push({
@@ -103,14 +80,6 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
       label: '待办事项',
     });
   }
-
-  // Knowledge save instructions — always present
-  refs.push({
-    type: 'knowledge-instructions',
-    id: '_static',
-    priority: 80,
-    label: '知识保存指令',
-  });
 
   // Design doc save instructions — always present
   refs.push({

@@ -10,7 +10,6 @@ import { useNotificationManager } from '@/hooks/use-notification-manager';
 import { useModelConfig } from '@/hooks/use-model-config';
 import { AgentAvatar } from '@/components/agent-form';
 import { resolveAgentAvatarSrc } from '@/lib/agent-avatar';
-import { SaveKnowledgeDialog } from '@/components/save-knowledge-dialog';
 import { GuestAgentOverlay } from '@/components/guest-agent-overlay';
 import { SessionConfigPanel } from '@/components/session-config-panel';
 import { PlanViewerPanel } from '@/components/plan-viewer-panel';
@@ -23,7 +22,6 @@ import { RuntimePanel } from '@/components/runtime-panel';
 import { useProject } from '@/components/project-context';
 import type { SessionNavLink } from '@/components/agent-session-utils';
 import { buildSessionUrl } from '@/components/agent-session-utils';
-import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import { imageAttachmentFromDataUrl } from '@/lib/image-assets';
 import { repairTextIfNeeded } from '@/lib/text-repair';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
@@ -31,7 +29,7 @@ import type { DeferredInputBufferItem, DeferredInputBufferState, SessionConfig }
 import type { ChatMessage, ChatToolCall, ContentBlock } from '@/types';
 
 import type { AgentChatPanelProps, IndexedSSEEvent } from './types';
-import { PROVIDER_LABELS, stripSessionTitleTag, cloneDeferredInputBufferItems } from './types';
+import { stripSessionTitleTag, cloneDeferredInputBufferItems } from './types';
 import { chatReducer, chatInitialState } from './chat-reducer';
 import { sessionReducer, upsertSessionListItem, patchSessionListItem } from './session-reducer';
 import type { SessionState } from './session-reducer';
@@ -118,22 +116,19 @@ export function AgentChatPanel({
   const {
     provider: chatProvider,
     model: chatModel,
+    compositeValue: chatModelComposite,
     options: chatModelOptions,
     effort: chatEffort,
     fastMode: chatFastMode,
     contextWindow,
     promptEstimate,
   } = modelConfig;
-  const setChatProvider = modelConfig.setProvider;
   const setChatModel = modelConfig.setModel;
   const setChatEffort = modelConfig.setEffort;
 
   // Guest Agent (observer)
   const [guestAgent, setGuestAgent] = useState<Agent | null>(null);
   const [guestAgents, setGuestAgents] = useState<Agent[]>([]);
-
-  // Knowledge draft notifications (auto-path)
-  const [knowledgeDrafts, setKnowledgeDrafts] = useState<Array<{ entryId: string; label: string }>>([]);
 
   // Design doc saved notifications (auto-path)
   const [docsSaved, setDocsSaved] = useState<Array<{ docId: string; title: string; projectKey: string }>>([]);
@@ -144,9 +139,6 @@ export function AgentChatPanel({
   // Session checkpoint notification
   const [checkpointSaved, setCheckpointSaved] = useState(false);
   const checkpointRef = useRef<import('@/types/agent-chat').SessionCheckpoint | null>(null);
-
-  // Save as knowledge dialog
-  const [saveDialogContent, setSaveDialogContent] = useState<string | null>(null);
 
   // Session compression
   const [compressDialogOpen, setCompressDialogOpen] = useState(false);
@@ -344,11 +336,6 @@ export function AgentChatPanel({
     })();
   }, [agent.id, cachedAgents]);
 
-  // Provider/model selector options
-  const providerOptions = useMemo(
-    () => PROVIDER_REGISTRY.map((p) => ({ value: p.id, label: PROVIDER_LABELS[p.id] || p.id })),
-    [],
-  );
   const effortOptions = useMemo(
     () => [
       { value: 'minimal', label: 'Minimal' },
@@ -698,7 +685,7 @@ export function AgentChatPanel({
             lastEventIdxRef.current = raw._idx;
           }
 
-          const event = raw as unknown as import('@/types').ChatSSEEvent;
+          const event = raw as unknown as import('@/types').AgentEvent;
 
           switch (event.type) {
             case 'text_delta': {
@@ -708,6 +695,17 @@ export function AgentChatPanel({
                 lastBlock.text += event.text;
               } else {
                 blocks.push({ type: 'text', text: event.text });
+              }
+              chunkHasDisplayEvents = true;
+              break;
+            }
+
+            case 'thinking_delta': {
+              const lastThink = blocks[blocks.length - 1];
+              if (lastThink && lastThink.type === 'thinking') {
+                lastThink.text += event.text;
+              } else {
+                blocks.push({ type: 'thinking', text: event.text });
               }
               chunkHasDisplayEvents = true;
               break;
@@ -770,10 +768,6 @@ export function AgentChatPanel({
                 title: event.title,
                 updatedAt: new Date().toISOString(),
               });
-              break;
-
-            case 'knowledge_draft_created':
-              setKnowledgeDrafts(prev => [...prev, { entryId: event.entryId, label: event.label }]);
               break;
 
             case 'doc_created':
@@ -1367,10 +1361,6 @@ export function AgentChatPanel({
     await loadSessionData(target.id, token);
   }, [isStreaming, loadSessionData, replacePendingUserQueue]);
 
-  const handleSaveAsKnowledge = useCallback((_messageId: string, content: string) => {
-    setSaveDialogContent(content);
-  }, []);
-
   const handleCompressConfirm = useCallback((compressedMessages: ChatMessage[]) => {
     chatDispatch({ type: 'SET_MESSAGES', messages: compressedMessages });
     setCompressDialogOpen(false);
@@ -1512,7 +1502,6 @@ export function AgentChatPanel({
   const showGuestPicker = !!sessionId && !isStreaming && messages.length > 0;
 
   // Dismiss callbacks (stable references)
-  const handleDismissKnowledge = useCallback(() => setKnowledgeDrafts([]), []);
   const handleDismissDocs = useCallback(() => setDocsSaved([]), []);
   const handleScrollToAction = useCallback((actionType: string) => {
     const el = document.querySelector(`[data-action-type="${actionType}"]`);
@@ -1581,12 +1570,8 @@ export function AgentChatPanel({
     onSubmit: handleChatInputSubmit,
     onAbort: handleAbort,
     isStreaming,
-    providerOptions,
-    providerValue: chatProvider,
-    onProviderChange: (next: string) => setChatProvider(next as ProviderId),
-    modelProviderLabel: PROVIDER_LABELS[chatProvider],
     modelOptions: chatModelOptions,
-    modelValue: chatModel,
+    modelValue: chatModelComposite,
     onModelChange: setChatModel,
     effortLabel: chatProvider === 'openai' ? '推理档位' : undefined,
     effortOptions: chatProvider === 'openai' ? effortOptions : undefined,
@@ -1602,9 +1587,7 @@ export function AgentChatPanel({
 
   const notificationBanners = !isStreaming ? (
     <ChatNotificationBanners
-      knowledgeDrafts={knowledgeDrafts}
       docsSaved={docsSaved}
-      onDismissKnowledge={handleDismissKnowledge}
       onDismissDocs={handleDismissDocs}
       onScrollToAction={handleScrollToAction}
       checkpointSaved={checkpointSaved}
@@ -1620,12 +1603,6 @@ export function AgentChatPanel({
           agent={guestAgent}
           parentSessionId={sessionId}
           onClose={() => setGuestAgent(null)}
-        />
-      )}
-      {saveDialogContent !== null && (
-        <SaveKnowledgeDialog
-          content={saveDialogContent}
-          onClose={() => setSaveDialogContent(null)}
         />
       )}
       {previewFilePath && (
@@ -1689,7 +1666,6 @@ export function AgentChatPanel({
     inPlanMode,
     thinkingText,
     assistantAvatarSrc,
-    onSaveAsKnowledge: handleSaveAsKnowledge,
     onDelete: handleDeleteMessage,
     onRegenerate: handleRegenerate,
     onBranch: handleBranch,

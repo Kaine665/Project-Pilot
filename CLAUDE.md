@@ -21,6 +21,36 @@
 - **包管理**: Bun (运行时 + 包管理器)
 - **开发端口**: 前端 4000, 后端 4500
 
+## 文档驱动开发（必须遵循）
+
+本项目采用**文档优先**工作方式。对任何非琐碎改动（不仅仅是修错字、调间距），**必须**按以下顺序操作：
+
+### 改动前
+
+1. **确定涉及的能力域**（见下方域索引表）。
+2. **先读该域的 as-is**（`docs/as-is/`）了解当前行为与入口，**再读 design**（`docs/design/`）了解原则与目标态。
+3. 若存在 `active` 状态的 **contract**（`docs/contracts/`），以契约为准确定范围与验收标准。
+4. **之后**再酌情读代码。
+
+### 改动后
+
+5. 若行为发生变化，**必须更新**对应 **as-is** 文档（刷新 `last_reviewed` 日期）。
+6. 若改变了长期方向或做了重大技术取舍，**补充 design** 或新建 **ADR**（`docs/design/decisions/`）。
+
+### 域索引
+
+| 能力域 | as-is | design |
+|--------|-------|--------|
+| Agents 工作区（布局/侧栏/会话） | `docs/as-is/agents-workspace.md` | `docs/design/agents-workspace.md` |
+
+> 随项目演进补充更多行。未覆盖的域：先检查 `docs/as-is/` 和 `docs/design/` 是否已有对应页面；若无，改动后创建。
+
+### 参考
+
+- 体系说明：[`docs/documentation-system/README.md`](docs/documentation-system/README.md)
+- 契约模板：[`docs/contracts/TEMPLATE.md`](docs/contracts/TEMPLATE.md)
+- **多 AI 入口地图与变更检查清单**：[`docs/AI_AGENT_KNOWLEDGE_MAP.md`](docs/AI_AGENT_KNOWLEDGE_MAP.md)（Cursor / Claude / 内置提示词等须交叉感知）
+
 ## 开发命令
 
 ```bash
@@ -59,8 +89,7 @@ vite.config.ts           # Vite 配置
 ### 数据层
 
 - **磁盘树目标与现实**：本机 `~/.project-pilot/README.md`、`数据文件夹现状.md`（不在仓库）。  
-- **代码当前默认根**：`src/lib/file-store.ts` → 未设置 `PROJECT_PILOT_DATA_DIR` 时为 **`~/.project-pilot`**（不再默认使用 `~/.project-pilot/data/`）。与上述目标可能不一致时，以 **`数据文件夹现状.md` 中「代码是否已适配」** 为准。  
-- 仓库说明：根 [`README.md`](../README.md#pp-data-directory)。对齐 2026-03-26。
+- **代码当前默认根**：`src/lib/file-store.ts` → 未设置 `PROJECT_PILOT_DATA_DIR` 时为 **`~/.project-pilot`**（不再默认使用 `~/.project-pilot/data/`）。仓库内路径索引：**[`docs/data-storage.md`](docs/data-storage.md)**。与上述目标可能不一致时，以 **`数据文件夹现状.md`** 为准。对齐 2026-03-31。
 - 数据操作通过 `src/lib/file-store.ts`，使用原子写入（先写 .tmp 再 rename）
 - `modifyJsonFile()` 带进程级写入队列（同文件路径串行）
 

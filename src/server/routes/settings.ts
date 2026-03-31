@@ -12,7 +12,7 @@ import {
 import { normalizeOpenAIFastMode } from '@/lib/openai-fast-mode';
 import { OPENAI_REASONING_EFFORTS } from '@/lib/openai-reasoning-effort';
 import { checkClaudeCliHealth, execClaude } from '@/lib/claude-cli';
-import { checkAuthFromCredentials, createOAuthSession, extractAuthCode, exchangeCodeForTokens, saveTokens } from '@/lib/oauth-flow';
+import { checkAuthFromCredentials, extractAuthCode, exchangeCodeForTokens, saveTokens } from '@/lib/oauth-flow';
 import { parseAuthState, parseAuthStatusText, type AuthState } from '@/lib/oauth-status';
 import {
   getPkceSession,
@@ -29,20 +29,23 @@ import {
 import {
   getDataDir,
   getProjectsPath,
+  getProjectsIndexPath,
   getAgentsPath,
   getAgentChatSessionsPath,
   getAgentChatMessagesDir,
-  getFlowsDir,
-  getFlowIndexPath,
+  getLegacyWorkflowsFlowsDir,
   getPromptsDir,
   writeJsonFile,
   readJsonFile,
+  readProjectIndex,
+  writeProjectIndex,
 } from '@/lib/file-store';
 import { importSessionsWithMessages, readMessages, listAllSessions, deleteAllMessageFiles } from '@/lib/chat-managers/agent-chat-session-store';
 import { getDefaultAgents } from '@/lib/default-agents';
 import { writePromptFile, resolveSystemPrompt } from '@/lib/agent-prompt-store';
 import { invalidateAgentsCache } from '@/lib/agents-store';
 import { listOpenAIModels } from '@/lib/codex-model-catalog';
+import { getAggregateLiveModels, probeSupplierLive, type AggregateLiveModelsResult } from '@/lib/aggregate-models-live';
 import { getKimiCandidateBaseUrls, getProviderPreset } from '@/lib/provider-registry';
 import { agentChatManager, deleteSessionFromDisk } from '@/lib/agent-chat-manager';
 import { BUTLER_AGENT_ID } from '@/lib/default-agents';
@@ -61,6 +64,8 @@ import type {
   Agent,
   AgentsData,
   TitleGenerationChainEntry,
+  ProjectConfig,
+  ProjectEntry,
 } from '@/types';
 import type { AgentChatSession, AgentChatSessionsData } from '@/types/agent-chat';
 import { DEFAULT_DANGER_SETTINGS, DEFAULT_DEVELOPER_SETTINGS, DEFAULT_NOTIFICATION_SETTINGS, BUILT_IN_PROVIDER_IDS } from '@/types';
@@ -168,6 +173,9 @@ app.post('/', async (c) => {
   if (body.claude?.openaiFastMode !== undefined && normalizeOpenAIFastMode(body.claude.openaiFastMode) === undefined) {
     return c.json({ error: 'Invalid openaiFastMode' }, 400);
   }
+  if (body.claude?.openaiOAuthEnabled !== undefined && typeof body.claude.openaiOAuthEnabled !== 'boolean') {
+    return c.json({ error: 'openaiOAuthEnabled must be a boolean' }, 400);
+  }
   if (body.claude?.providerApiKeys !== undefined) {
     if (typeof body.claude.providerApiKeys !== 'object' || body.claude.providerApiKeys === null) {
       return c.json({ error: 'providerApiKeys must be an object' }, 400);
@@ -218,9 +226,6 @@ app.post('/', async (c) => {
   if (body.developer !== undefined) {
     if (typeof body.developer !== 'object' || body.developer === null) {
       return c.json({ error: 'developer must be an object' }, 400);
-    }
-    if (body.developer.satelliteTasksEnabled !== undefined && typeof body.developer.satelliteTasksEnabled !== 'boolean') {
-      return c.json({ error: 'developer.satelliteTasksEnabled must be a boolean' }, 400);
     }
     if (body.developer.schedulesPageEnabled !== undefined && typeof body.developer.schedulesPageEnabled !== 'boolean') {
       return c.json({ error: 'developer.schedulesPageEnabled must be a boolean' }, 400);
@@ -510,7 +515,13 @@ app.post('/', async (c) => {
   if (body.claude?.openaiFastMode !== undefined) {
     updated.claude.openaiFastMode = body.claude.openaiFastMode;
   }
-
+  if (body.claude?.openaiOAuthEnabled !== undefined) {
+    updated.claude.openaiOAuthEnabled = body.claude.openaiOAuthEnabled;
+    if (!body.claude.openaiOAuthEnabled && updated.claude.providerCredentials?.openai) {
+      const o = updated.claude.providerCredentials.openai;
+      updated.claude.providerCredentials.openai = { ...o, authMode: 'api_key' };
+    }
+  }
   if (body.claude?.customProviders !== undefined) {
     const incoming = body.claude.customProviders as CustomProviderConfig[];
     const existing = current.claude.customProviders ?? [];
@@ -674,6 +685,20 @@ app.post('/auth-login', async (c) => {
     }
   } catch { /* use default */ }
 
+  const appSettings = await getSettings();
+  if (provider === 'anthropic') {
+    return c.json(
+      { error: 'Anthropic OAuth is disabled in this app. Use an API key in settings.' },
+      403,
+    );
+  }
+  if (provider === 'openai' && appSettings.claude.openaiOAuthEnabled !== true) {
+    return c.json(
+      { error: 'OpenAI OAuth is disabled. Turn on “OpenAI Codex OAuth” in AI settings first.' },
+      403,
+    );
+  }
+
   const currentProvider = getLoginProvider();
   const currentProcess = getLoginProcess();
 
@@ -743,15 +768,7 @@ app.post('/auth-login', async (c) => {
       }
     }
 
-    // Anthropic PKCE flow
-    const session = createOAuthSession();
-    setPkceSession(session);
-
-    return c.json({
-      success: true,
-      loginUrl: session.authorizeUrl,
-      message: 'OAuth session created. Open the URL and paste the authorization code.',
-    });
+    return c.json({ error: 'OAuth login is only available for OpenAI Codex when enabled in settings.' }, 400);
   } catch (err) {
     setLoginProcess(null);
     setPkceSession(null);
@@ -768,6 +785,15 @@ app.post('/auth-login', async (c) => {
 // ─── POST /auth-code — exchange authorization code ──────────────
 
 app.post('/auth-code', async (c) => {
+  if (getPkceSession()) {
+    setPkceSession(null);
+    setLoginProvider(null);
+    return c.json(
+      { error: 'Anthropic OAuth login is no longer supported. Use an API key in settings.' },
+      403,
+    );
+  }
+
   const { code } = await c.req.json() as { code?: string };
 
   const extracted = extractAuthCode(code ?? '');
@@ -876,7 +902,7 @@ app.post('/import', async (c) => {
     const backupDir = path.join(dataDir, `_backup_${timestamp}`);
     await fs.mkdir(backupDir, { recursive: true });
 
-    const filesToBackup = [getProjectsPath(), getAgentsPath(), getAgentChatSessionsPath()];
+    const filesToBackup = [getProjectsPath(), getProjectsIndexPath(), getAgentsPath(), getAgentChatSessionsPath()];
     for (const src of filesToBackup) {
       try {
         await fs.stat(src);
@@ -896,22 +922,50 @@ app.post('/import', async (c) => {
       }
     } catch { /* messages dir doesn't exist */ }
 
-    const flowsDir = getFlowsDir();
+    const legacyFlows = getLegacyWorkflowsFlowsDir();
     try {
-      const flowsBackup = path.join(backupDir, 'flows');
+      const flowsBackup = path.join(backupDir, 'flows-legacy');
       await fs.mkdir(flowsBackup, { recursive: true });
-      const flowFiles = await fs.readdir(flowsDir);
+      const flowFiles = await fs.readdir(legacyFlows);
       for (const file of flowFiles) {
         if (file.endsWith('.json')) {
-          await fs.copyFile(path.join(flowsDir, file), path.join(flowsBackup, file));
+          await fs.copyFile(path.join(legacyFlows, file), path.join(flowsBackup, file));
         }
       }
-    } catch { /* flows dir doesn't exist */ }
+    } catch { /* legacy flows dir doesn't exist */ }
 
     const stats = { flows: 0, agents: 0 };
 
     if (data.projects) {
-      await writeJsonFile(getProjectsPath(), data.projects);
+      const raw = data.projects as { projects?: unknown };
+      if (Array.isArray(raw.projects)) {
+        await writeProjectIndex({ projects: raw.projects as ProjectEntry[] });
+      } else if (raw.projects && typeof raw.projects === 'object') {
+        const record = raw.projects as Record<string, ProjectConfig>;
+        const now = new Date().toISOString();
+        const entries: ProjectEntry[] = Object.entries(record).map(([key, config]) => {
+          const safe = key.replace(/[^a-zA-Z0-9_-]/g, '') || key;
+          return {
+            key: safe,
+            name: config.name,
+            path: config.path,
+            location: 'local' as const,
+            ...(config.type && { techStack: config.type as ProjectEntry['techStack'] }),
+            ...(config.description && { description: config.description }),
+            ...(config.defaultBranch && { repository: { defaultBranch: config.defaultBranch } }),
+            ...((config.webCommand || config.webUrl) && {
+              devServer: {
+                ...(config.webCommand && { command: config.webCommand }),
+                ...(config.webUrl && { url: config.webUrl }),
+              },
+            }),
+            createdAt: now,
+          };
+        });
+        await writeProjectIndex({ projects: entries });
+      } else {
+        await writeJsonFile(getProjectsPath(), data.projects);
+      }
     }
     if (data.agents) {
       const imported = data.agents as { agents?: Agent[] };
@@ -953,13 +1007,7 @@ app.post('/import', async (c) => {
       }
     }
 
-    if (data.flows && typeof data.flows === 'object') {
-      await fs.mkdir(flowsDir, { recursive: true });
-      for (const [key, value] of Object.entries(data.flows)) {
-        await writeJsonFile(path.join(flowsDir, `${key}.json`), value);
-        if (key !== '_index') stats.flows++;
-      }
-    }
+    // 旧导出中的 flows 域已废弃，不再写入磁盘
 
     return c.json({
       success: true,
@@ -976,8 +1024,8 @@ app.post('/import', async (c) => {
 
 app.get('/export', async (c) => {
   try {
-    const [projects, agents] = await Promise.all([
-      readJsonFile(getProjectsPath(), {}),
+    const [projectIndex, agents] = await Promise.all([
+      readProjectIndex(),
       readJsonFile(getAgentsPath(), {}),
     ]);
 
@@ -999,31 +1047,14 @@ app.get('/export', async (c) => {
       );
     }
 
-    const flows: Record<string, unknown> = {};
-    const flowsDir = getFlowsDir();
-    try {
-      const files = await fs.readdir(flowsDir);
-      const jsonFiles = files.filter(f => f.endsWith('.json'));
-      const flowEntries = await Promise.all(
-        jsonFiles.map(async (file) => {
-          const key = file.replace('.json', '');
-          const data = await readJsonFile(path.join(flowsDir, file), {});
-          return [key, data] as const;
-        }),
-      );
-      for (const [key, data] of flowEntries) {
-        flows[key] = data;
-      }
-    } catch { /* flows dir doesn't exist */ }
-
     const exportData = {
       version: 1,
       exportedAt: new Date().toISOString(),
       data: {
-        projects,
+        projects: projectIndex,
         agents,
         agentChatSessions,
-        flows,
+        flows: {} as Record<string, unknown>,
       },
     };
 
@@ -1111,13 +1142,11 @@ app.post('/clear', async (c) => {
     }
 
     if (target === 'flows' || target === 'all') {
-      await backupDirRecursive(getFlowsDir());
-
+      const legacyFlows = getLegacyWorkflowsFlowsDir();
+      await backupDirRecursive(legacyFlows);
       try {
-        await fs.rm(getFlowsDir(), { recursive: true, force: true });
+        await fs.rm(legacyFlows, { recursive: true, force: true });
       } catch { /* ignore */ }
-      await fs.mkdir(getFlowsDir(), { recursive: true });
-      await writeJsonFile(getFlowIndexPath(), { projects: [] });
     }
 
     if (target === 'all') {
@@ -1209,6 +1238,53 @@ app.get('/openai-models', async (c) => {
   } catch (err) {
     return c.json(
       { error: err instanceof Error ? err.message : 'Failed to list OpenAI models' },
+      500,
+    );
+  }
+});
+
+// ─── GET /aggregate-models — 各供应商真实 /v1/models（及 Ollama tags、Codex RPC）聚合 ──
+
+let aggregateModelsHttpCache: { at: number; data: AggregateLiveModelsResult } | null = null;
+const AGGREGATE_MODELS_HTTP_CACHE_MS = 60_000;
+
+app.get('/aggregate-models', async (c) => {
+  const now = Date.now();
+  if (
+    aggregateModelsHttpCache &&
+    now - aggregateModelsHttpCache.at < AGGREGATE_MODELS_HTTP_CACHE_MS
+  ) {
+    return c.json(aggregateModelsHttpCache.data);
+  }
+  const result = await getAggregateLiveModels();
+  aggregateModelsHttpCache = { at: now, data: result };
+  return c.json(result);
+});
+
+// ─── POST /probe-supplier — 单供应商可用性（输入框旁自动检测） ──
+
+app.post('/probe-supplier', async (c) => {
+  let body: { providerId?: string; apiKey?: string | null; ollamaBaseUrl?: string | null };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: 'Invalid JSON' }, 400);
+  }
+  const pid = body.providerId as ProviderId | undefined;
+  if (!pid || typeof pid !== 'string') {
+    return c.json({ ok: false, error: 'providerId required' }, 400);
+  }
+  try {
+    const row = await probeSupplierLive(pid, body.apiKey, {
+      ollamaBaseUrl: typeof body.ollamaBaseUrl === 'string' ? body.ollamaBaseUrl : undefined,
+    });
+    return c.json({ ok: true, row });
+  } catch (err) {
+    return c.json(
+      {
+        ok: false,
+        error: err instanceof Error ? err.message : 'probe failed',
+      },
       500,
     );
   }
@@ -1437,6 +1513,12 @@ app.post('/test-connection', async (c) => {
     }
 
     if (authMode === 'oauth') {
+      if (provider === 'anthropic') {
+        return c.json({ ok: false, error: 'Anthropic OAuth is disabled. Use an API key.' });
+      }
+      if (provider === 'openai' && settings.claude.openaiOAuthEnabled !== true) {
+        return c.json({ ok: false, error: 'OpenAI OAuth is disabled in settings.' });
+      }
       const result = await testOAuthConnection(provider as ProviderId);
       return c.json(result, result.ok ? 200 : 200);
     }

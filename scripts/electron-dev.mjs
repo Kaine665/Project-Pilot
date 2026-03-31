@@ -66,8 +66,14 @@ async function startDevStackWithElectron() {
     }
   }
 
-  return probe(`http://127.0.0.1:${DEV_PORT}/health`);
-}
+  const killChildren = () => {
+    shuttingDown = true;
+    for (const c of children) {
+      if (c && c.pid) {
+        killPidTree(c.pid);
+      }
+    }
+  };
 
   const onUnexpectedChildExit = (name, code, signal) => {
     if (shuttingDown) return;
@@ -155,13 +161,7 @@ if (reuseExisting) {
   });
 } else {
   console.log(
-    `[electron-dev] No reusable dev server detected on port ${DEV_PORT}, starting Vite + Hono and Electron together`,
+    `[electron-dev] No reusable dev stack (${cfg.clientProbeOrigin} + ${cfg.apiHealthUrl}), starting Vite + Hono and Electron together`,
   );
-  run(getCommand("npx"), [
-    "concurrently",
-    "--kill-others",
-    `"vite"`,
-    `"bun run --tsconfig tsconfig.json src/server/index.ts"`,
-    `"wait-on tcp:127.0.0.1:${DEV_PORT} && cross-env ELECTRON_DEV=1 electron ."`,
-  ]);
+  await startDevStackWithElectron();
 }

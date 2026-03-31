@@ -21,6 +21,35 @@ import type { ParsedActionTag } from '@/lib/action-tag-parser';
 import { isRepetitiveTool } from '@/lib/tool-utils';
 import type { ChatMessage, ChatToolCall, ContentBlock } from '@/types';
 
+const ThinkingFoldable = memo(function ThinkingFoldable({
+  text,
+  label,
+  showPulse,
+}: {
+  text: string;
+  label: string;
+  showPulse: boolean;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <details
+      className="my-2 rounded-lg border border-violet-200/80 bg-violet-50/50 text-sm dark:border-violet-900/50 dark:bg-violet-950/25"
+      open={open}
+      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+    >
+      <summary className="cursor-pointer select-none px-3 py-1.5 text-violet-800 dark:text-violet-200">
+        {label}
+      </summary>
+      <div className="whitespace-pre-wrap border-t border-violet-100 px-3 py-2 font-mono text-xs leading-relaxed text-zinc-600 wrap-break-word dark:border-violet-900/40 dark:text-zinc-400">
+        {text}
+        {showPulse && (
+          <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-current opacity-60" />
+        )}
+      </div>
+    </details>
+  );
+});
+
 interface ChatBubbleProps {
   message: ChatMessage;
   streamingBlocks?: ContentBlock[];
@@ -218,6 +247,18 @@ export const ChatBubble = memo(function ChatBubble({
               <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-current opacity-60" />
             )}
           </div>
+        );
+      }
+
+      if (block.type === 'thinking') {
+        const isLastBlock = index === filteredBlocks.length - 1;
+        return (
+          <ThinkingFoldable
+            key={index}
+            text={block.text}
+            label={t('chat.thinkingSection')}
+            showPulse={!!isStreaming && isLastBlock}
+          />
         );
       }
 

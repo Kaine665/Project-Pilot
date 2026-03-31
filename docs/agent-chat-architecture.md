@@ -216,27 +216,24 @@ importedTurnIndices?: number[];  // 从宿主会话导入的轮次索引
 
 ---
 
-## 知识草稿 & 设计文档提取
+## 设计文档与知识文档
 
-Agent 对话中可以自动提取知识草稿和设计文档。
+对话中可通过 **`<save-doc>`** 等动作将内容写入统一文档域（`documentKind` 区分设计文档与知识文档）。
 
-### 知识草稿（Knowledge Drafts）
+### 存储（当前）
 
-- Agent 对话中识别出值得保存的知识片段
-- 前端 `knowledgeDrafts` 状态跟踪待保存草稿
-- `SaveKnowledgeDialog` 弹窗让用户确认保存
-- 保存为 context 条目（`/api/context`），文件名 `knowledge-{id}.{ext}`
+- 根路径：`{DATA_DIR}/documents/`（默认 `~/.project-pilot/documents/`，与 `getDocuments*()` 一致）
+- 聚合索引：`documents/index.json`；逐条元数据：`documents/entries/<docId>.json`；正文：`documents/content/<fileName>`
+- HTTP：**`PATCH /api/docs/:id`** / **`POST /api/docs`**（详见 `server/routes/docs.ts`）
 
-### 设计文档（Design Docs）
+### 已移除的路径与能力
 
-- Agent 对话中产出的设计文档
-- 前端 `docsSaved` 状态跟踪已保存文档
-- 保存到 `~/.project-pilot/data/design-docs/` 目录
-- 索引文件 `_index.json` + 内容文件
+- 不再使用独立 **`/api/context`** 与磁盘上的旧 **`context/`**、**`design-docs/`** 域（已并入 `documents/`）。
+- 对话内「知识草稿」弹窗与 `SaveKnowledgeDialog` 已移除；保存走统一文档 API。
 
 ### 通知 Banner
 
-`ChatNotificationBanners` 组件在对话区顶部展示知识草稿和文档保存提示。
+`ChatNotificationBanners` 仍可展示与文档/任务相关的提示（具体以当前组件实现为准）。
 
 ---
 
@@ -251,12 +248,7 @@ Agent 对话中可以自动提取知识草稿和设计文档。
 | Resource 注册表 | `src/lib/resource-registry.ts` |
 | Resource 加载器 | `src/lib/resource-loaders/` |
 | Resource 迁移 | `src/lib/resource-migration.ts` |
-| API 入口（含图片校验） | `src/app/api/agent-chat/route.ts` |
-| SSE 流 | `src/app/api/agent-chat/stream/route.ts` |
-| 停止进程 | `src/app/api/agent-chat/stop/route.ts` |
-| 会话 CRUD | `src/app/api/agent-chat/sessions/route.ts` |
-| 单会话操作（含 markAsRead） | `src/app/api/agent-chat/sessions/[id]/route.ts` |
-| Guest Agent API | `src/app/api/agent-chat/guest/route.ts` |
+| Agent Chat HTTP（Hono，前缀 `/api/agent-chat`） | `src/server/routes/agent-chat.ts` |
 | 前端对话面板 | `src/components/agent-chat-panel.tsx` |
 | 聊天输入框 | `src/components/chat-input.tsx` |
 | 会话下拉菜单 | `src/components/session-dropdown.tsx` |

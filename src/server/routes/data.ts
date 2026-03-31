@@ -1,74 +1,14 @@
 import { Hono } from 'hono';
-import fs from 'fs/promises';
-import fsSync from 'fs';
 import {
-  getFlowDataPath,
-  getFlowsDir,
-  getFlowIndexPath,
-  readJsonFile,
-  writeJsonFile,
+  readProjectIndex,
+  writeProjectIndex,
   readInbox,
   writeInbox,
   ensureDataDirV2Migrated,
 } from '@/lib/file-store';
-import {
-  isLegacyFormat,
-  migrateLegacyToSections,
-  isItemsOnlyFormat,
-  migrateItemsOnlyToSections,
-} from '@/lib/flow-migration';
 import type { ProjectEntry, ProjectIndex, InboxItem } from '@/types';
 
 const app = new Hono();
-
-// ---------------------------------------------------------------------------
-// /api/data  — flow data (per-project)
-// ---------------------------------------------------------------------------
-
-app.get('/', async (c) => {
-  const project = c.req.query('project');
-  if (!project) {
-    return c.json({ error: 'project is required' }, 400);
-  }
-
-  await ensureDataDirV2Migrated();
-  const filePath = getFlowDataPath(project);
-  try {
-    const raw = await fs.readFile(filePath, 'utf-8');
-    let data = JSON.parse(raw);
-
-    if (isLegacyFormat(data)) {
-      data = migrateLegacyToSections(data);
-      await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
-    } else if (isItemsOnlyFormat(data)) {
-      data = migrateItemsOnlyToSections(data);
-      await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
-    }
-
-    return c.json(data);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return c.json({ error: 'project not found' }, 404);
-    }
-    if (err instanceof SyntaxError) {
-      return c.json({ sections: [] });
-    }
-    throw err;
-  }
-});
-
-app.put('/', async (c) => {
-  const project = c.req.query('project');
-  if (!project) {
-    return c.json({ error: 'project is required' }, 400);
-  }
-
-  await ensureDataDirV2Migrated();
-  const data = await c.req.json();
-  const filePath = getFlowDataPath(project);
-  await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
-  return c.json({ ok: true });
-});
 
 // ---------------------------------------------------------------------------
 // /api/data/projects
@@ -76,11 +16,11 @@ app.put('/', async (c) => {
 
 async function readIndex(): Promise<ProjectIndex> {
   await ensureDataDirV2Migrated();
-  return readJsonFile<ProjectIndex>(getFlowIndexPath(), { projects: [] });
+  return readProjectIndex();
 }
 
 async function writeIndex(index: ProjectIndex): Promise<void> {
-  await writeJsonFile(getFlowIndexPath(), index);
+  await writeProjectIndex(index);
 }
 
 app.get('/projects', async (c) => {
@@ -108,11 +48,6 @@ app.post('/projects', async (c) => {
   if (index.projects.some((p) => p.key === safe)) {
     return c.json({ error: 'project already exists' }, 409);
   }
-
-  const emptyData = { sections: [] };
-  const flowPath = getFlowDataPath(safe);
-  await fs.mkdir(getFlowsDir(), { recursive: true });
-  await fs.writeFile(flowPath, JSON.stringify(emptyData, null, 2), 'utf-8');
 
   const now = new Date().toISOString();
   const entry: ProjectEntry = {
@@ -255,64 +190,6 @@ app.delete('/projects', async (c) => {
   await writeIndex(index);
 
   return c.json({ ok: true });
-});
-
-// ---------------------------------------------------------------------------
-// /api/data/stream  — SSE file-watcher stream
-// ---------------------------------------------------------------------------
-
-app.get('/stream', async (c) => {
-  const project = c.req.query('project');
-  if (!project) {
-    return new Response('project is required', { status: 400 });
-  }
-
-  await ensureDataDirV2Migrated();
-  const filePath = getFlowDataPath(project);
-
-  const encoder = new TextEncoder();
-  let watcher: fsSync.FSWatcher | null = null;
-  let heartbeat: ReturnType<typeof setInterval> | null = null;
-
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(encoder.encode(': connected\n\n'));
-
-      watcher = fsSync.watch(filePath, (eventType) => {
-        if (eventType === 'change') {
-          try {
-            const raw = fsSync.readFileSync(filePath, 'utf-8');
-            const data = JSON.parse(raw);
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify(data)}\n\n`),
-            );
-          } catch {
-            // File might be mid-write, ignore parse errors
-          }
-        }
-      });
-
-      heartbeat = setInterval(() => {
-        try {
-          controller.enqueue(encoder.encode(': heartbeat\n\n'));
-        } catch {
-          // Connection closed
-        }
-      }, 30000);
-    },
-    cancel() {
-      watcher?.close();
-      if (heartbeat) clearInterval(heartbeat);
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-    },
-  });
 });
 
 // ---------------------------------------------------------------------------

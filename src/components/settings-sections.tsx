@@ -1,69 +1,30 @@
 'use client';
 
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Link } from '@/client/i18n/routing';
 import {
-  Shield, Brain, Wrench, Check, X, Loader2, ExternalLink, Server, Copy,
+  Shield, Brain, Wrench, Check, X, Loader2, ExternalLink, Copy,
   Gauge, RotateCw, Eye, Sun, Moon, Monitor,
   Download, Upload, Trash2, FolderOpen, Info, Github, ShieldAlert,
-  Sparkles, Plus, Minus, Zap, ActivitySquare, Timer,
+  Sparkles, Plus, Minus, Zap, Timer, Search, Star,
 } from 'lucide-react';
 import type { DangerCategory, DangerActionLevel, DangerDetectorSettings, TitleGenerationChainEntry } from '@/types';
 import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
+import type { AggregateLiveModelItem, SupplierAvailabilityRow } from '@/lib/aggregate-models-live';
+import { useAvailableModels } from '@/hooks/use-available-models';
+import {
+  compositeKeyForAggregateItem,
+  modelSelectOptionsFromAggregate,
+  parseAggregateCompositeKey,
+} from '@/lib/aggregate-model-key';
+import { PROVIDER_LABELS } from '@/components/agent-chat/types';
+import { partitionBuiltInProviders } from '@/lib/provider-supplier-tier';
+import { cn } from '@/lib/utils';
 import type { Theme } from '@/components/theme-provider';
-import type { CustomProviderConfig, ProviderId, ClaudeAuthMode, EffortLevel, OpenAIReasoningEffort } from '@/types';
-
-// ── Model Health Types ──
-
-export interface ModelHealthResult {
-  status: 'ok' | 'failed' | 'skipped';
-  latencyMs?: number;
-  error?: string;
-  checkedAt?: string;
-}
-
-export interface ModelHealthData {
-  lastRunAt: string;
-  results: Record<string, ModelHealthResult>;
-}
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
-
-function ModelStatusBadge({ status }: { status: 'ok' | 'failed' | 'skipped' }) {
-  if (status === 'ok') {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
-        <Check className="h-3 w-3" />
-        ok
-      </span>
-    );
-  }
-  if (status === 'failed') {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
-        <X className="h-3 w-3" />
-        failed
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-      skipped
-    </span>
-  );
-}
+import type { CustomProviderConfig, ProviderId, EffortLevel } from '@/types';
 
 // ── Shared props ──
 
@@ -81,340 +42,575 @@ interface TranslationProps {
 
 interface AIConfigSectionProps extends TranslationProps {
   provider: ProviderId;
-  authMode: ClaudeAuthMode;
-  apiKey: string;
   model: string;
   customModel: string;
-  baseUrl: string;
-  openaiReasoningEffort: OpenAIReasoningEffort;
-  openaiFastMode: boolean;
-  openaiFastModeEligible: boolean;
-  openaiReasoningOptions: Array<{ value: OpenAIReasoningEffort; label: string }>;
-  oauthStatus: 'unknown' | 'checking' | 'authenticated' | 'not_authenticated';
-  loginPending: boolean;
-  loginUrl: string | null;
-  loginCode: string | null; // OpenAI device code（在网页输入，非粘贴回调）
-  loginFlowActive: boolean;
-  oauthCode: string;
-  codeSubmitting: boolean;
-  oauthSubmitError: string | null;
-  testState: 'idle' | 'testing' | 'success' | 'failed';
-  testMessage: string;
-  preset: { supportsOAuth?: boolean; apiKeyPlaceholder?: string; editableBaseUrl?: boolean; baseUrl?: string; models: Array<{ id: string; label: string }> };
   isPresetModel: boolean;
-  modelSelectOptions: Array<{ value: string; label: string }>;
-  onProviderChange: (p: ProviderId) => void;
-  onAuthModeChange: (m: ClaudeAuthMode) => void;
-  onApiKeyChange: (k: string) => void;
   onModelChange: (m: string) => void;
   onCustomModelChange: (m: string) => void;
-  onBaseUrlChange: (u: string) => void;
-  onOpenAIReasoningEffortChange: (effort: OpenAIReasoningEffort) => void;
-  onOpenAIFastModeChange: (enabled: boolean) => void;
-  onCheckOAuthStatus: () => void;
-  onTriggerOAuthLogin: () => void;
-  onOauthCodeChange: (v: string) => void;
-  onCodeSubmit: () => void;
-  onCancelLoginFlow: () => void;
-  onTestConnection: () => void;
   customProviders?: CustomProviderConfig[];
   onAddCustomProvider?: () => void;
   onDeleteCustomProvider?: (id: `custom-${string}`) => void;
-  modelHealthData?: ModelHealthData | null;
-  healthCheckRunning?: boolean;
-  onRunHealthCheck?: () => void;
+  /** 全部供应商的 API Key 映射 */
+  providerApiKeys: Partial<Record<ProviderId, string>>;
+  onProviderApiKeyChange: (pid: ProviderId, key: string) => void;
+  /** 各供应商自定义根地址（如 Ollama） */
+  providerBaseUrls: Partial<Record<ProviderId, string>>;
+  onProviderBaseUrlChange: (pid: ProviderId, url: string) => void;
+  /** 各供应商接口拉取的聚合模型（非 registry 静态表） */
+  aggregateLiveModels: AggregateLiveModelItem[];
+  aggregateLiveStatus: 'idle' | 'loading' | 'success' | 'error';
+  /** 各供应商可用性（错误原因用 reasonKey + i18n，不在模型页展示原文） */
+  supplierAvailability: SupplierAvailabilityRow[];
+  /** Key 输入旁自动探测结果（优先于聚合结果展示） */
+  supplierProbeRow: Partial<Record<ProviderId, SupplierAvailabilityRow>>;
+  supplierProbeLoading: Partial<Record<ProviderId, boolean>>;
+  /** 某供应商 Key 变化后防抖触发单供应商探测 */
+  onScheduleSupplierProbe: (pid: ProviderId) => void;
+  /** 切换到「供应商」子页时批量调度探测 */
+  onSupplierTabProbes: () => void;
+  /** 整次拉取失败时的可读原因（HTTP/JSON/服务端 fatalError） */
+  aggregateLiveErrorDetail?: string;
+  onRefreshAggregateLiveModels: () => void;
+  /** 从聚合模型列表选择模型（自动切换供应商） */
+  onModelSelectFromAggregate: (pid: ProviderId, mid: string) => void;
 }
 
 export function SettingsAISection({
-  t, tActions, btnActive, btnInactive,
-  provider, authMode, apiKey, model, customModel, baseUrl,
-  openaiReasoningEffort, openaiFastMode, openaiFastModeEligible, openaiReasoningOptions,
-  oauthStatus, loginPending, loginUrl, loginCode, loginFlowActive, oauthCode, codeSubmitting, oauthSubmitError,
-  testState, testMessage,
-  preset, isPresetModel, modelSelectOptions,
-  onProviderChange, onAuthModeChange, onApiKeyChange,
-  onModelChange, onCustomModelChange, onBaseUrlChange,
-  onOpenAIReasoningEffortChange, onOpenAIFastModeChange,
-  onCheckOAuthStatus, onTriggerOAuthLogin, onOauthCodeChange, onCodeSubmit, onCancelLoginFlow,
-  onTestConnection,
+  t, tActions,
+  provider, model, customModel, isPresetModel,
+  onModelChange, onCustomModelChange,
   customProviders = [],
   onAddCustomProvider,
   onDeleteCustomProvider,
-  modelHealthData,
-  healthCheckRunning = false,
-  onRunHealthCheck,
+  providerApiKeys,
+  aggregateLiveModels,
+  aggregateLiveStatus,
+  supplierAvailability,
+  supplierProbeRow,
+  supplierProbeLoading,
+  onScheduleSupplierProbe,
+  onSupplierTabProbes,
+  aggregateLiveErrorDetail = '',
+  onRefreshAggregateLiveModels,
+  onProviderApiKeyChange,
+  providerBaseUrls,
+  onProviderBaseUrlChange,
+  onModelSelectFromAggregate,
 }: AIConfigSectionProps) {
+  const [aiPanel, setAiPanel] = useState<'supplier' | 'model'>('model');
+  const [modelSearch, setModelSearch] = useState('');
+
+  useEffect(() => {
+    if (aiPanel !== 'supplier') return;
+    onSupplierTabProbes();
+  }, [aiPanel, onSupplierTabProbes]);
+
+  const { oem: oemPresets, aggregate: aggregatePresets, builtInCustom } = useMemo(
+    () => partitionBuiltInProviders(PROVIDER_REGISTRY),
+    [],
+  );
+
+  const flatRows = useMemo(
+    () =>
+      aggregateLiveModels.map((m) => ({
+        value: m.value,
+        label: m.label,
+        providerId: m.providerId,
+      })),
+    [aggregateLiveModels],
+  );
+
+  const filteredModels = useMemo(() => {
+    const q = modelSearch.trim().toLowerCase();
+    if (!q) return flatRows;
+    return flatRows.filter(
+      (m) => m.label.toLowerCase().includes(q) || m.value.toLowerCase().includes(q),
+    );
+  }, [flatRows, modelSearch]);
+
+  const listLoading = aggregateLiveStatus === 'idle' || aggregateLiveStatus === 'loading';
+  const listFailed = aggregateLiveStatus === 'error';
+  const availabilityById = useMemo(() => {
+    const m = new Map<ProviderId, SupplierAvailabilityRow>();
+    for (const r of supplierAvailability) m.set(r.providerId, r);
+    return m;
+  }, [supplierAvailability]);
+  const hasUnavailableSuppliers = useMemo(
+    () => supplierAvailability.some((r) => r.status === 'error'),
+    [supplierAvailability],
+  );
+
+  function renderSupplierHealthLine(pid: ProviderId) {
+    const probing = supplierProbeLoading[pid] === true;
+    const row = supplierProbeRow[pid] ?? availabilityById.get(pid);
+    if (probing) {
+      return (
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-zinc-400" aria-hidden />
+          {t('supplierAvailabilityChecking')}
+        </p>
+      );
+    }
+    if (!row) {
+      if (listLoading) {
+        return (
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-zinc-400" aria-hidden />
+            {t('supplierAvailabilityChecking')}
+          </p>
+        );
+      }
+      return (
+        <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500">{t('supplierAvailabilityUnknown')}</p>
+      );
+    }
+    if (row.status === 'skipped') {
+      if (row.reasonKey === 'not_applicable') return null;
+      if (row.reasonKey === 'ollama_not_enabled') {
+        return (
+          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+            {t('supplierAvailabilityReasons.ollama_not_enabled')}
+          </p>
+        );
+      }
+      return (
+        <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">{t('supplierAvailabilityNotConfigured')}</p>
+      );
+    }
+    if (row.status === 'ok') {
+      return (
+        <p className="mt-2 flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+          <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          {t('supplierAvailabilityOk')}
+        </p>
+      );
+    }
+    const rk = row.reasonKey ?? 'generic';
+    const reason = t(`supplierAvailabilityReasons.${rk}` as never);
+    return (
+      <div className="mt-2 rounded-lg bg-amber-50/90 px-2.5 py-2 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+        <p className="flex items-center gap-1 font-medium">
+          <X className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          {t('supplierAvailabilityError')}
+        </p>
+        <p className="mt-1 leading-relaxed text-amber-800/95 dark:text-amber-100/90">{reason}</p>
+      </div>
+    );
+  }
+
   return (
     <>
-      {/* Provider */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Server className="h-5 w-5" />
-            {t('provider')}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-wrap gap-2">
-            {PROVIDER_REGISTRY.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => onProviderChange(p.id)}
-                className={`rounded-md px-3 py-2 text-xs font-medium transition-colors ${
-                  provider === p.id ? btnActive : btnInactive
-                }`}
-              >
-                {t(`providers.${p.id}`)}
-              </button>
-            ))}
-            {customProviders.map((cp) => (
-              <div key={cp.id} className="flex items-center gap-1">
-                <button
-                  onClick={() => onProviderChange(cp.id)}
-                  className={`rounded-md px-3 py-2 text-xs font-medium transition-colors ${
-                    provider === cp.id ? btnActive : btnInactive
-                  }`}
+      <div className="mb-6 border-b border-zinc-200 dark:border-zinc-800">
+        <h2 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+          {t('modelAndSuppliersTitle')}
+        </h2>
+        <nav className="mt-4 flex gap-1" aria-label="AI settings tabs">
+          <button
+            type="button"
+            onClick={() => setAiPanel('model')}
+            className={cn(
+              'border-b-2 px-2 pb-3 text-sm font-medium transition-colors sm:px-4',
+              aiPanel === 'model'
+                ? 'border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100'
+                : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200',
+            )}
+          >
+            {t('aiSubtabModel')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setAiPanel('supplier')}
+            className={cn(
+              'border-b-2 px-2 pb-3 text-sm font-medium transition-colors sm:px-4',
+              aiPanel === 'supplier'
+                ? 'border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100'
+                : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200',
+            )}
+          >
+            {t('aiSubtabSupplier')}
+          </button>
+        </nav>
+      </div>
+
+      {aiPanel === 'supplier' ? (
+        <>
+      <div className="space-y-8">
+        <div className="flex flex-col gap-2 border-b border-zinc-100 pb-4 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">{t('supplierAvailabilityIntro')}</p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 shrink-0 gap-2"
+            onClick={() => onRefreshAggregateLiveModels()}
+            disabled={listLoading}
+          >
+            {listLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            ) : (
+              <RotateCw className="h-4 w-4" aria-hidden />
+            )}
+            {t('supplierAvailabilityRecheckAll')}
+          </Button>
+        </div>
+        <div className="space-y-2">
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+            {t('supplierTierOem')}
+          </h3>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {oemPresets.map((p) => {
+              const keyVal = providerApiKeys[p.id as ProviderId] || '';
+              const configured = !!keyVal.trim();
+              const isOllama = p.id === 'ollama';
+              return (
+                <div
+                  key={p.id}
+                  className="min-w-0 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
                 >
-                  {cp.name}
-                </button>
-                {onDeleteCustomProvider && (
-                  <button
-                    type="button"
-                    onClick={() => onDeleteCustomProvider(cp.id)}
-                    className="rounded p-1 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
-                    title={tActions('delete')}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                )}
+                  <div className="flex items-start gap-3 px-4 py-3.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[15px] font-medium leading-snug text-zinc-900 dark:text-zinc-100">
+                        {t(`providers.${p.id}`)}
+                      </div>
+                      <p className="mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                        {t(`providerHints.${p.id}`)}
+                      </p>
+                    </div>
+                    {configured && !isOllama && (
+                      <span className="mt-0.5 flex shrink-0 items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-medium text-green-600 dark:bg-green-900/20 dark:text-green-400">
+                        <Check className="h-3 w-3" />
+                        {t('supplierConfigured')}
+                      </span>
+                    )}
+                  </div>
+                  {isOllama ? (
+                    <div className="border-t border-zinc-100 px-4 py-3 dark:border-zinc-800">
+                      <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">{t('ollamaNoAuth')}</p>
+                      <label
+                        htmlFor={`ollama-base-${p.id}`}
+                        className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300"
+                      >
+                        {t('ollamaBaseUrlLabel')}
+                      </label>
+                      <Input
+                        id={`ollama-base-${p.id}`}
+                        type="url"
+                        autoComplete="off"
+                        value={providerBaseUrls.ollama ?? ''}
+                        onChange={(e) => {
+                          onProviderBaseUrlChange('ollama', e.target.value);
+                          onScheduleSupplierProbe('ollama');
+                        }}
+                        placeholder={t('ollamaBaseUrlPlaceholder')}
+                        className="h-9"
+                      />
+                      {renderSupplierHealthLine(p.id as ProviderId)}
+                    </div>
+                  ) : (
+                    <div className="border-t border-zinc-100 px-4 py-3 dark:border-zinc-800">
+                      <Input
+                        type="password"
+                        value={keyVal}
+                        onChange={(e) => {
+                          onProviderApiKeyChange(p.id as ProviderId, e.target.value);
+                          onScheduleSupplierProbe(p.id as ProviderId);
+                        }}
+                        placeholder={p.apiKeyPlaceholder || t('apiKeyPlaceholder')}
+                        className="h-9"
+                      />
+                      {renderSupplierHealthLine(p.id as ProviderId)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+            {t('supplierTierAggregate')}
+          </h3>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {aggregatePresets.map((p) => {
+              const keyVal = providerApiKeys[p.id as ProviderId] || '';
+              const configured = !!keyVal.trim();
+              return (
+                <div
+                  key={p.id}
+                  className="min-w-0 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
+                >
+                  <div className="flex items-start gap-3 px-4 py-3.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[15px] font-medium leading-snug text-zinc-900 dark:text-zinc-100">
+                        {t(`providers.${p.id}`)}
+                      </div>
+                      <p className="mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                        {t(`providerHints.${p.id}`)}
+                      </p>
+                    </div>
+                    {configured && (
+                      <span className="mt-0.5 flex shrink-0 items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-medium text-green-600 dark:bg-green-900/20 dark:text-green-400">
+                        <Check className="h-3 w-3" />
+                        {t('supplierConfigured')}
+                      </span>
+                    )}
+                  </div>
+                  <div className="border-t border-zinc-100 px-4 py-3 dark:border-zinc-800">
+                    <Input
+                      type="password"
+                      value={keyVal}
+                      onChange={(e) => {
+                        onProviderApiKeyChange(p.id as ProviderId, e.target.value);
+                        onScheduleSupplierProbe(p.id as ProviderId);
+                      }}
+                      placeholder={p.apiKeyPlaceholder || t('apiKeyPlaceholder')}
+                      className="h-9"
+                    />
+                    {renderSupplierHealthLine(p.id as ProviderId)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+            {t('supplierTierCustom')}
+          </h3>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {builtInCustom && (
+              <div
+                key={builtInCustom.id}
+                className="min-w-0 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
+              >
+                <div className="flex items-start gap-3 px-4 py-3.5">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[15px] font-medium leading-snug text-zinc-900 dark:text-zinc-100">
+                      {t(`providers.${builtInCustom.id}`)}
+                    </div>
+                    <p className="mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                      {t(`providerHints.${builtInCustom.id}`)}
+                    </p>
+                  </div>
+                  {!!(providerApiKeys[builtInCustom.id as ProviderId] || '').trim() && (
+                    <span className="mt-0.5 flex shrink-0 items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-medium text-green-600 dark:bg-green-900/20 dark:text-green-400">
+                      <Check className="h-3 w-3" />
+                      {t('supplierConfigured')}
+                    </span>
+                  )}
+                </div>
+                <div className="border-t border-zinc-100 px-4 py-3 dark:border-zinc-800">
+                  <Input
+                    type="password"
+                    value={providerApiKeys[builtInCustom.id as ProviderId] || ''}
+                    onChange={(e) => {
+                      onProviderApiKeyChange(builtInCustom.id as ProviderId, e.target.value);
+                      onScheduleSupplierProbe(builtInCustom.id as ProviderId);
+                    }}
+                    placeholder={builtInCustom.apiKeyPlaceholder || t('apiKeyPlaceholder')}
+                    className="h-9"
+                  />
+                  {renderSupplierHealthLine(builtInCustom.id as ProviderId)}
+                </div>
               </div>
-            ))}
+            )}
+            {customProviders.map((cp) => {
+              const keyVal = providerApiKeys[cp.id] || '';
+              const configured = !!keyVal.trim();
+              return (
+                <div
+                  key={cp.id}
+                  className="min-w-0 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
+                >
+                  <div className="flex items-start gap-3 px-4 py-3.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[15px] font-medium leading-snug text-zinc-900 dark:text-zinc-100">
+                        {cp.name}
+                      </div>
+                      <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                        {cp.baseUrl}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
+                      {configured && (
+                        <span className="flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-medium text-green-600 dark:bg-green-900/20 dark:text-green-400">
+                          <Check className="h-3 w-3" />
+                          {t('supplierConfigured')}
+                        </span>
+                      )}
+                      {onDeleteCustomProvider && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteCustomProvider(cp.id)}
+                          className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                          title={tActions('delete')}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="border-t border-zinc-100 px-4 py-3 dark:border-zinc-800">
+                    <Input
+                      type="password"
+                      value={keyVal}
+                      onChange={(e) => {
+                        onProviderApiKeyChange(cp.id, e.target.value);
+                        onScheduleSupplierProbe(cp.id);
+                      }}
+                      placeholder={t('customProviderApiKeyPlaceholder')}
+                      className="h-9"
+                    />
+                    {renderSupplierHealthLine(cp.id)}
+                  </div>
+                </div>
+              );
+            })}
             {onAddCustomProvider && (
               <button
                 type="button"
                 onClick={onAddCustomProvider}
-                className={`flex items-center gap-1 rounded-md border border-dashed border-zinc-300 px-3 py-2 text-xs font-medium transition-colors ${btnInactive} hover:border-zinc-400 dark:border-zinc-600 dark:hover:border-zinc-500`}
+                className="col-span-full flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-300 bg-transparent py-3.5 text-sm font-medium text-zinc-500 transition-colors hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:text-zinc-300"
               >
-                <Plus className="h-3 w-3" />
+                <Plus className="h-4 w-4" />
                 {t('addCustomProvider')}
               </button>
             )}
           </div>
-          <p className="text-xs text-zinc-500">{t(`providerHints.${provider}`)}</p>
-        </CardContent>
-      </Card>
-
-      {/* Authentication */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Shield className="h-5 w-5" />
-            {t('authentication')}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {preset.supportsOAuth && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                {t('authMode')}
-              </label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => onAuthModeChange('api_key')}
-                  className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                    authMode === 'api_key' ? btnActive : btnInactive
-                  }`}
-                >
-                  {t('apiKeyMode')}
-                </button>
-                <button
-                  onClick={() => onAuthModeChange('oauth')}
-                  className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                    authMode === 'oauth' ? btnActive : btnInactive
-                  }`}
-                >
-                  {t('oauthMode')}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {(authMode === 'api_key' || !preset.supportsOAuth) && provider !== 'ollama' && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                {t('apiKey')}
-              </label>
-              <Input
-                type="password"
-                value={apiKey}
-                onChange={(e) => onApiKeyChange(e.target.value)}
-                placeholder={preset.apiKeyPlaceholder || t('apiKeyPlaceholder')}
-              />
-              <p className="text-xs text-zinc-500">{t('apiKeyHint')}</p>
-            </div>
-          )}
-
-          {provider === 'ollama' && (
-            <p className="text-xs text-zinc-500">{t('ollamaNoAuth')}</p>
-          )}
-
-          {preset.supportsOAuth && authMode === 'oauth' && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  {t('oauthStatus')}
-                </label>
-                <span className="flex items-center gap-1.5 text-sm">
-                  {oauthStatus === 'checking' && (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-400" />
-                      <span className="text-zinc-400">{t('oauthChecking')}</span>
-                    </>
-                  )}
-                  {oauthStatus === 'authenticated' && (
-                    <>
-                      <Check className="h-3.5 w-3.5 text-green-500" />
-                      <span className="text-green-600 dark:text-green-400">{t('oauthAuthenticated')}</span>
-                    </>
-                  )}
-                  {oauthStatus === 'not_authenticated' && (
-                    <>
-                      <X className="h-3.5 w-3.5 text-red-500" />
-                      <span className="text-red-600 dark:text-red-400">{t('oauthNotAuthenticated')}</span>
-                    </>
-                  )}
-                  {oauthStatus === 'unknown' && (
-                    <span className="text-zinc-400">--</span>
-                  )}
-                </span>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={onTriggerOAuthLogin} disabled={loginPending}>
-                  {loginPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ExternalLink className="h-3.5 w-3.5" />}
-                  {provider === 'openai' ? t('oauthLoginOpenAI') : t('oauthLogin')}
-                </Button>
-                <Button variant="ghost" size="sm" onClick={onCheckOAuthStatus}>
-                  {t('oauthCheckStatus')}
-                </Button>
-              </div>
-
-              {loginFlowActive && (
-                <div className="space-y-2 rounded-md border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
-                  {loginUrl ? (
-                    <>
-                      <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">{t('oauthOpenUrl')}</p>
-                      <div className="flex gap-2">
-                        <Input
-                          readOnly
-                          value={loginUrl}
-                          className="font-mono text-xs"
-                        />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => navigator.clipboard.writeText(loginUrl)}
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={onTriggerOAuthLogin}
-                          title={t('oauthRefreshUrl')}
-                        >
-                          <RotateCw className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </>
-                  ) : (
-                    <p className="text-xs text-zinc-500">{t('oauthWaiting')}</p>
-                  )}
-                  {loginCode ? (
-                    <>
-                      <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">{t('oauthDeviceCodeLabel')}</p>
-                      <div className="flex gap-2 items-center">
-                        <span className="font-mono text-sm font-semibold tracking-wider px-2 py-1 rounded bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700">
-                          {loginCode}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => navigator.clipboard.writeText(loginCode)}
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                      <p className="text-xs text-zinc-500">{t('oauthDeviceCodeHint')}</p>
-                    </>
-                  ) : provider !== 'openai' && (
-                    <p className="text-xs text-zinc-500">{t('oauthPasteCode')}</p>
-                  )}
-                  {oauthSubmitError && (
-                    <p className="text-xs text-red-600 dark:text-red-400">{oauthSubmitError}</p>
-                  )}
-                  {provider !== 'openai' && (
-                    <div className="flex gap-2">
-                      <Input
-                        value={oauthCode}
-                        onChange={(e) => onOauthCodeChange(e.target.value)}
-                        placeholder={t('oauthCodePlaceholder')}
-                        className="font-mono text-xs"
-                      />
-                      <Button
-                        variant="default"
-                        size="sm"
-                        onClick={onCodeSubmit}
-                        disabled={!oauthCode.trim() || codeSubmitting}
-                      >
-                        {codeSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : tActions('submit')}
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={onCancelLoginFlow}>
-                        {tActions('cancel')}
-                      </Button>
-                    </div>
-                  )}
-                  {provider === 'openai' && (
-                    <Button variant="ghost" size="sm" onClick={onCancelLoginFlow}>
-                      {tActions('cancel')}
-                    </Button>
-                  )}
-                </div>
-              )}
-
-              {!loginFlowActive && (
-                <p className="text-xs text-zinc-500">
-                  {provider === 'openai' ? t('oauthHintOpenAI') : t('oauthHint')}
-                </p>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
+        </div>
+      </div>
+        </>
+      ) : (
+        <>
       {/* Model */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Brain className="h-5 w-5" />
-            {t('model')}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {preset.models.length > 0 ? (
-            <>
-              <Select
-                options={modelSelectOptions}
-                value={isPresetModel ? model : '__custom__'}
-                onChange={(v) => {
-                  if (v === '__custom__') {
+      <Card className="border-zinc-200/80 shadow-sm dark:border-zinc-800">
+        <CardContent className="space-y-4 pt-6">
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{t('aggregateModelsHint')}</p>
+              <div className="flex flex-col gap-3 border-b border-zinc-100 pb-4 dark:border-zinc-800 sm:flex-row sm:items-center">
+                <div className="relative min-w-0 flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+                  <Input
+                    value={modelSearch}
+                    onChange={(e) => setModelSearch(e.target.value)}
+                    placeholder={t('modelSearchPlaceholder')}
+                    className="h-10 pl-9"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-10 shrink-0 gap-2"
+                  onClick={() => onRefreshAggregateLiveModels()}
+                  disabled={listLoading}
+                >
+                  {listLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  ) : (
+                    <RotateCw className="h-4 w-4" aria-hidden />
+                  )}
+                  {t('aggregateModelsRefresh')}
+                </Button>
+              </div>
+              {!listFailed && hasUnavailableSuppliers && (
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">{t('modelListUnavailableSuppliersHint')}</p>
+              )}
+              <div className="overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50/40 dark:border-zinc-800 dark:bg-zinc-900/20">
+                <div className="divide-y divide-zinc-200/80 dark:divide-zinc-800">
+                {listLoading && filteredModels.length === 0 && (
+                  <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-sm text-zinc-500 dark:text-zinc-400">
+                    <Loader2 className="h-6 w-6 animate-spin text-zinc-400" aria-hidden />
+                    {t('aggregateModelsLoading')}
+                  </div>
+                )}
+                {listFailed && aggregateLiveModels.length === 0 && !listLoading && (
+                  <div className="space-y-3 px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                    <p>{t('aggregateModelsError')}</p>
+                    {aggregateLiveErrorDetail.trim() ? (
+                      <p className="break-all text-left font-mono text-xs text-zinc-600 dark:text-zinc-500">
+                        {aggregateLiveErrorDetail}
+                      </p>
+                    ) : null}
+                    <Button type="button" variant="outline" size="sm" onClick={() => onRefreshAggregateLiveModels()}>
+                      {t('aggregateModelsRefresh')}
+                    </Button>
+                  </div>
+                )}
+                {!listLoading && !listFailed && filteredModels.length === 0 && (
+                  <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                    {flatRows.length === 0
+                      ? t('modelListNoConfiguredSuppliers')
+                      : t('modelListNoSearchResults')}
+                  </div>
+                )}
+                {filteredModels.map((opt) => {
+                  const rowSelected = model === opt.value && provider === opt.providerId;
+                  const providerLabel = opt.providerId.startsWith('custom-')
+                    ? (customProviders.find((c) => c.id === opt.providerId)?.name ?? opt.providerId)
+                    : t(`providers.${opt.providerId}`);
+                  return (
+                    <button
+                      key={`${opt.providerId}/${opt.value}`}
+                      type="button"
+                      onClick={() => onModelSelectFromAggregate(opt.providerId, opt.value)}
+                      className={cn(
+                        'flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors',
+                        rowSelected
+                          ? 'bg-white dark:bg-zinc-950'
+                          : 'hover:bg-white/80 dark:hover:bg-zinc-950/50',
+                      )}
+                    >
+                      <span className="flex w-5 shrink-0 justify-center">
+                        {rowSelected ? (
+                          <Star className="h-4 w-4 fill-amber-400 text-amber-500" aria-hidden />
+                        ) : (
+                          <span className="block h-4 w-4" aria-hidden />
+                        )}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[15px] font-medium leading-snug text-zinc-900 dark:text-zinc-100">
+                          {opt.label}
+                        </div>
+                        <div className="mt-0.5 truncate font-mono text-xs text-zinc-400 dark:text-zinc-500">
+                          {opt.value}
+                        </div>
+                      </div>
+                      <span className="shrink-0 rounded-md bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                        {providerLabel}
+                      </span>
+                    </button>
+                  );
+                })}
+                {/* Custom model ID row */}
+                <button
+                  type="button"
+                  onClick={() => {
                     onModelChange('__custom__');
-                    onCustomModelChange('');
-                  } else {
-                    onModelChange(v);
-                    onCustomModelChange('');
-                  }
-                }}
-              />
+                    if (!customModel.trim()) onCustomModelChange('');
+                  }}
+                  className={cn(
+                    'flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors',
+                    (model === '__custom__' || !isPresetModel)
+                      ? 'bg-white dark:bg-zinc-950'
+                      : 'hover:bg-white/80 dark:hover:bg-zinc-950/50',
+                  )}
+                >
+                  <span className="flex w-5 shrink-0 justify-center">
+                    {(model === '__custom__' || !isPresetModel) ? (
+                      <Star className="h-4 w-4 fill-amber-400 text-amber-500" aria-hidden />
+                    ) : (
+                      <span className="block h-4 w-4" aria-hidden />
+                    )}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[15px] font-medium leading-snug text-zinc-900 dark:text-zinc-100">
+                      {t('customModel')}
+                    </div>
+                  </div>
+                  <Brain className="h-4 w-4 shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden />
+                </button>
+                </div>
+              </div>
               {(model === '__custom__' || !isPresetModel) && (
                 <Input
                   value={customModel}
@@ -422,183 +618,10 @@ export function SettingsAISection({
                   placeholder={t('customModelPlaceholder')}
                 />
               )}
-            </>
-          ) : (
-            <Input
-              value={customModel || (model === '__custom__' ? '' : model)}
-              onChange={(e) => {
-                onModelChange('__custom__');
-                onCustomModelChange(e.target.value);
-              }}
-              placeholder={t('customModelPlaceholder')}
-            />
-          )}
           <p className="text-xs text-zinc-500">{t('modelHint')}</p>
-
-          {/* OpenAI Reasoning Effort (only for openai provider) */}
-          {provider === 'openai' && (
-            <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                {t('openaiFastMode')}
-              </label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => onOpenAIFastModeChange(false)}
-                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                    !openaiFastMode ? btnActive : btnInactive
-                  }`}
-                >
-                  {t('openaiFastModeOff')}
-                </button>
-                <button
-                  onClick={() => onOpenAIFastModeChange(true)}
-                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                    openaiFastMode ? btnActive : btnInactive
-                  }`}
-                >
-                  {t('openaiFastModeOn')}
-                </button>
-              </div>
-              <p className="text-xs text-zinc-500">
-                {openaiFastModeEligible
-                  ? t('openaiFastModeEligibleHint')
-                  : t('openaiFastModeHint')}
-              </p>
-              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                {t('openaiReasoningMode')}
-              </label>
-              <div className="flex gap-2">
-                {openaiReasoningOptions.map((opt) => (
-                  <button
-                    key={opt.value}
-                    onClick={() => onOpenAIReasoningEffortChange(opt.value)}
-                    className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                      openaiReasoningEffort === opt.value ? btnActive : btnInactive
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Connection Test */}
-          <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800">
-            <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm" onClick={onTestConnection} disabled={testState === 'testing'}>
-                {testState === 'testing' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                {t('testConnection')}
-              </Button>
-              {testState === 'success' && (
-                <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
-                  <Check className="h-3 w-3" />
-                  {testMessage}
-                </span>
-              )}
-              {testState === 'failed' && (
-                <span className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
-                  <X className="h-3 w-3" />
-                  {testMessage}
-                </span>
-              )}
-            </div>
-          </div>
         </CardContent>
       </Card>
-
-      {/* Model Health */}
-      {(modelHealthData || onRunHealthCheck) && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                <ActivitySquare className="h-5 w-5" />
-                {t('modelHealth')}
-              </span>
-              <div className="flex items-center gap-2">
-                {modelHealthData?.lastRunAt && (
-                  <span className="text-xs font-normal text-zinc-400">
-                    {timeAgo(modelHealthData.lastRunAt)}
-                  </span>
-                )}
-                {onRunHealthCheck && (
-                  <Button variant="outline" size="sm" onClick={onRunHealthCheck} disabled={healthCheckRunning}>
-                    {healthCheckRunning
-                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      : <RotateCw className="h-3.5 w-3.5" />}
-                    {t('runHealthCheck')}
-                  </Button>
-                )}
-              </div>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {modelHealthData && preset.models.length > 0 ? (
-              <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {preset.models.map((m) => {
-                  const key = `${provider}/${m.id}`;
-                  const result = modelHealthData.results[key];
-                  const isOAuthVerified = result?.status === 'ok' && !result?.latencyMs;
-                  return (
-                    <div key={m.id} className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
-                      {/* Model name */}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-zinc-700 dark:text-zinc-300 truncate">{m.label}</p>
-                        {result?.status === 'failed' && result.error && (
-                          <p className="mt-0.5 text-xs text-red-500 dark:text-red-400 line-clamp-2">{result.error}</p>
-                        )}
-                      </div>
-                      {/* Status badge */}
-                      {result ? (
-                        <div className="flex items-center gap-2 shrink-0">
-                          <ModelStatusBadge status={result.status} />
-                          {isOAuthVerified ? (
-                            <span className="text-xs font-medium text-blue-500 dark:text-blue-400">OAuth</span>
-                          ) : result.latencyMs ? (
-                            <span className="text-xs text-zinc-400">{result.latencyMs}ms</span>
-                          ) : null}
-                          {result.checkedAt && (
-                            <span className="text-xs text-zinc-400">{timeAgo(result.checkedAt)}</span>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-zinc-400 shrink-0">—</span>
-                      )}
-                      {/* Reserved: quick links (task 2) */}
-                      <div className="w-6 shrink-0" />
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-xs text-zinc-400">{t('noHealthData')}</p>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Advanced: Base URL */}
-      {(preset.editableBaseUrl || provider === 'anthropic') && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Wrench className="h-5 w-5" />
-              {t('advanced')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              {t('baseUrl')}
-            </label>
-            <Input
-              value={baseUrl}
-              onChange={(e) => onBaseUrlChange(e.target.value)}
-              placeholder={preset.baseUrl || t('baseUrlPlaceholder')}
-            />
-            <p className="text-xs text-zinc-500">{t('baseUrlHint')}</p>
-          </CardContent>
-        </Card>
+        </>
       )}
     </>
   );
@@ -1171,9 +1194,38 @@ export function SettingsTitleGenerationSection({
   enabled, chain,
   onEnabledChange, onChainChange,
 }: TitleGenerationSectionProps) {
+  const { items: aggregateItems } = useAvailableModels();
+
   type TestState = 'idle' | 'testing' | 'success' | 'failed';
   const [entryTestStates, setEntryTestStates] = useState<Record<number, TestState>>({});
   const [entryTestMessages, setEntryTestMessages] = useState<Record<number, string>>({});
+
+  const titleChainLabel = useCallback(
+    (id: ProviderId) => t(`providers.${id}`) || PROVIDER_LABELS[id] || id,
+    [t],
+  );
+
+  const titleChainOptionsForEntry = useCallback(
+    (entry: TitleGenerationChainEntry) => {
+      const base = modelSelectOptionsFromAggregate(aggregateItems, titleChainLabel);
+      const cur = compositeKeyForAggregateItem({
+        providerId: entry.provider,
+        value: entry.model,
+        label: entry.model,
+      });
+      if (!base.some((o) => o.value === cur)) {
+        return [
+          {
+            value: cur,
+            label: `${entry.model} · ${titleChainLabel(entry.provider)}（当前）`,
+          },
+          ...base,
+        ];
+      }
+      return base;
+    },
+    [aggregateItems, titleChainLabel],
+  );
 
   const testEntry = async (index: number, entry: TitleGenerationChainEntry) => {
     setEntryTestStates((prev) => ({ ...prev, [index]: 'testing' }));
@@ -1200,31 +1252,26 @@ export function SettingsTitleGenerationSection({
 
   const addEntry = () => {
     if (chain.length >= 10) return;
-    onChainChange([...chain, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }]);
+    const first = aggregateItems[0];
+    if (first) {
+      onChainChange([...chain, { provider: first.providerId, model: first.value }]);
+    } else {
+      onChainChange([...chain, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }]);
+    }
   };
 
   const removeEntry = (index: number) => {
     onChainChange(chain.filter((_, i) => i !== index));
   };
 
-  const updateEntry = (index: number, field: keyof TitleGenerationChainEntry, value: string) => {
-    const next = chain.map((entry, i) => {
-      if (i !== index) return entry;
-      // 切换 provider 时，自动选中新 provider 的第一个模型
-      if (field === 'provider') {
-        const preset = getProviderPreset(value as ProviderId);
-        const firstModel = preset.models[0]?.id ?? '';
-        return { ...entry, provider: value as ProviderId, model: firstModel };
-      }
-      return { ...entry, [field]: value };
-    });
-    onChainChange(next);
-  };
-
-  /** 判断当前 model 是否在 provider 预设列表中 */
-  const isPresetModel = (provider: ProviderId, model: string) => {
-    const preset = getProviderPreset(provider);
-    return preset.models.some((m) => m.id === model);
+  const setEntryFromComposite = (index: number, composite: string) => {
+    const parsed = parseAggregateCompositeKey(composite);
+    if (!parsed) return;
+    onChainChange(
+      chain.map((entry, i) =>
+        i === index ? { provider: parsed.providerId, model: parsed.modelId } : entry,
+      ),
+    );
   };
 
   return (
@@ -1281,48 +1328,20 @@ export function SettingsTitleGenerationSection({
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-zinc-400 w-5 shrink-0 text-center">{index + 1}</span>
                   <select
-                    value={entry.provider}
-                    onChange={(e) => updateEntry(index, 'provider', e.target.value)}
-                    className="h-9 rounded-md border border-zinc-200 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                    value={compositeKeyForAggregateItem({
+                      providerId: entry.provider,
+                      value: entry.model,
+                      label: entry.model,
+                    })}
+                    onChange={(e) => setEntryFromComposite(index, e.target.value)}
+                    className="h-9 min-w-0 flex-1 rounded-md border border-zinc-200 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
                   >
-                    {PROVIDER_REGISTRY.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {t(`providers.${p.id}`)}
+                    {titleChainOptionsForEntry(entry).map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
                       </option>
                     ))}
                   </select>
-                  {(() => {
-                    const preset = getProviderPreset(entry.provider);
-                    const isCustom = !isPresetModel(entry.provider, entry.model);
-                    return (
-                      <>
-                        <select
-                          value={isCustom ? '__custom__' : entry.model}
-                          onChange={(e) => {
-                            if (e.target.value === '__custom__') {
-                              updateEntry(index, 'model', '');
-                            } else {
-                              updateEntry(index, 'model', e.target.value);
-                            }
-                          }}
-                          className="h-9 rounded-md border border-zinc-200 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-                        >
-                          {preset.models.map((m) => (
-                            <option key={m.id} value={m.id}>{m.label}</option>
-                          ))}
-                          <option value="__custom__">{t('titleGenerationCustomModel')}</option>
-                        </select>
-                        {isCustom && (
-                          <Input
-                            value={entry.model}
-                            onChange={(e) => updateEntry(index, 'model', e.target.value)}
-                            placeholder={t('titleGenerationModelPlaceholder')}
-                            className="flex-1 text-xs"
-                          />
-                        )}
-                      </>
-                    );
-                  })()}
                   <button
                     onClick={() => testEntry(index, entry)}
                     disabled={entryTestStates[index] === 'testing'}

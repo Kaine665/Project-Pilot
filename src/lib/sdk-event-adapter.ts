@@ -1,11 +1,11 @@
 /**
- * SDK Event Adapter — 将 Claude Agent SDK 的 SDKMessage 转换为内部 ChatSSEEvent。
+ * SDK Event Adapter — 将 Claude Agent SDK 的 SDKMessage 转换为内部 AgentEvent。
  *
  * SDK query() 配合 includePartialMessages: true 输出类型化的 SDKMessage 事件流。
- * 本适配器将其映射为 UI 前端已适配的 ChatSSEEvent 联合类型。
+ * 本适配器将其映射为 UI 前端已适配的 AgentEvent 联合类型。
  *
  * SDK 消息类型映射：
- * - stream_event (SDKPartialAssistantMessage): 流式增量 → text_delta / tool_use_start
+ * - stream_event (SDKPartialAssistantMessage): 流式增量 → text_delta / thinking_delta / tool_use_start
  * - assistant (SDKAssistantMessage): 完整助手消息（resume 时预填充）
  * - user (SDKUserMessage): 工具结果 → tool_use_end
  * - result (SDKResultMessage): 会话结束（不 emit done，由调用方统一处理）
@@ -13,7 +13,7 @@
  */
 
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { ChatSSEEvent } from '@/types';
+import type { AgentEvent } from '@/types';
 
 /** Tools whose is_error should be treated as completed (flow-control tools) */
 const FLOW_CONTROL_TOOLS = new Set(['ExitPlanMode', 'EnterPlanMode']);
@@ -41,10 +41,10 @@ export class SdkEventAdapter {
   private hasReceivedStreamEvents = false;
 
   /**
-   * 将一个 SDKMessage 转换为零或多个 ChatSSEEvent。
+   * 将一个 SDKMessage 转换为零或多个 AgentEvent。
    */
-  adapt(msg: SDKMessage): ChatSSEEvent[] {
-    const events: ChatSSEEvent[] = [];
+  adapt(msg: SDKMessage): AgentEvent[] {
+    const events: AgentEvent[] = [];
 
     // 用 msg 的 type 字段进行分发
     if (msg.type === 'system' && 'subtype' in msg && msg.subtype === 'init') {
@@ -115,8 +115,8 @@ export class SdkEventAdapter {
    * 这些事件和旧 CLI NDJSON 的 content_block_* 事件同构。
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private handleStreamEvent(event: any): ChatSSEEvent[] {
-    const events: ChatSSEEvent[] = [];
+  private handleStreamEvent(event: any): AgentEvent[] {
+    const events: AgentEvent[] = [];
     const type = event?.type;
 
     switch (type) {
@@ -138,6 +138,8 @@ export class SdkEventAdapter {
         const delta = event.delta;
         if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
           events.push({ type: 'text_delta', text: delta.text });
+        } else if (delta?.type === 'thinking_delta' && typeof delta.thinking === 'string') {
+          events.push({ type: 'thinking_delta', text: delta.thinking });
         } else if (delta?.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
           const acc = this.toolAccumulators.get(index);
           if (acc) {
@@ -193,8 +195,8 @@ export class SdkEventAdapter {
    * 处理完整的 SDKAssistantMessage（resume 预填充或非流式）。
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private handleAssistantMessage(msg: any): ChatSSEEvent[] {
-    const events: ChatSSEEvent[] = [];
+  private handleAssistantMessage(msg: any): AgentEvent[] {
+    const events: AgentEvent[] = [];
     const content = msg.message?.content;
     if (!Array.isArray(content)) return events;
 
@@ -204,6 +206,11 @@ export class SdkEventAdapter {
         // 避免同一句话被显示两次
         if (!this.hasReceivedStreamEvents) {
           events.push({ type: 'text_delta', text: block.text });
+        }
+      } else if (block.type === 'thinking') {
+        const thinkingText = typeof block.thinking === 'string' ? block.thinking : '';
+        if (thinkingText && !this.hasReceivedStreamEvents) {
+          events.push({ type: 'thinking_delta', text: thinkingText });
         }
       } else if (block.type === 'tool_use') {
         const input = typeof block.input === 'string'
@@ -231,8 +238,8 @@ export class SdkEventAdapter {
    * 处理 SDKUserMessage（工具结果）。
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private handleUserMessage(msg: any): ChatSSEEvent[] {
-    const events: ChatSSEEvent[] = [];
+  private handleUserMessage(msg: any): AgentEvent[] {
+    const events: AgentEvent[] = [];
     const content = msg.message?.content;
     if (!Array.isArray(content)) return events;
 

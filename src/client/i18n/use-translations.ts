@@ -7,6 +7,7 @@
  * This shim replicates that by prepending the namespace to the key:
  *   t('nav.projects') in i18next
  */
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 type TranslateFunction = (key: string, values?: Record<string, unknown>) => string;
@@ -22,7 +23,9 @@ export function useLocale(): 'zh' | 'en' {
 
 export function useTranslations(namespace?: string): TranslateFunction {
   const { t } = useTranslation();
-  if (!namespace) return t as TranslateFunction;
-  return (key: string, values?: Record<string, unknown>) =>
-    t(`${namespace}.${key}`, values as Record<string, string>) as string;
+  return useMemo(() => {
+    if (!namespace) return t as TranslateFunction;
+    return (key: string, values?: Record<string, unknown>) =>
+      t(`${namespace}.${key}`, values as Record<string, string>) as string;
+  }, [namespace, t]);
 }

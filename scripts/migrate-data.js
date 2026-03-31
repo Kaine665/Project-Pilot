@@ -1,8 +1,10 @@
 /**
- * 数据迁移脚本：将项目内 data/ 目录迁移到用户目录
+ * 数据迁移脚本：将项目内 data/ 目录迁移到用户数据根
  *
  * 从：./data/
- * 到：~/.project-pilot/data/
+ * 到：~/.project-pilot/（与 file-store 默认 DATA_DIR 一致，可用 PROJECT_PILOT_DATA_DIR 覆盖）
+ *
+ * Flow 片段：从 src/data/flows 复制到 {DATA_DIR}/workflows/flows/（与 getLegacyWorkflowsFlowsDir 一致）
  *
  * 用法：npm run migrate:data
  */
@@ -13,8 +15,8 @@ const os = require('os');
 
 const OLD_DATA_DIR = path.join(process.cwd(), 'data');
 const OLD_FLOWS_DIR = path.join(process.cwd(), 'src', 'data', 'flows');
-const NEW_DATA_DIR = process.env.PROJECT_PILOT_DATA_DIR || path.join(os.homedir(), '.project-pilot', 'data');
-const NEW_FLOWS_DIR = path.join(NEW_DATA_DIR, 'flows');
+const NEW_DATA_DIR = process.env.PROJECT_PILOT_DATA_DIR || path.join(os.homedir(), '.project-pilot');
+const NEW_FLOWS_DIR = path.join(NEW_DATA_DIR, 'workflows', 'flows');
 
 async function copyRecursive(src, dest) {
   const stats = await fs.stat(src);

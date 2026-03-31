@@ -33,6 +33,7 @@ export interface AgentsWorkspaceRailProps {
 }
 
 const STORAGE_KEY = 'pp.agentsRail.folderRatio';
+const FOLDER_COLLAPSED_STORAGE_KEY = 'pp.agentsRail.folderCollapsed';
 
 const FOLDER_HEADER_PX = 32;
 /** resize handle 现在是 0 高度（隐形线），只保留 1px 视觉分隔 */
@@ -54,6 +55,18 @@ function readStoredFolderRatio(): number {
     /* ignore */
   }
   return 0.38;
+}
+
+/** 首次打开默认折叠（true）；用户手动切换后记住偏好 */
+function readStoredFolderCollapsed(): boolean {
+  try {
+    const raw = localStorage.getItem(FOLDER_COLLAPSED_STORAGE_KEY);
+    if (raw === 'false') return false;
+    if (raw === 'true') return true;
+  } catch {
+    /* ignore */
+  }
+  return true;
 }
 
 export function AgentsWorkspaceRail({
@@ -103,7 +116,7 @@ export function AgentsWorkspaceRail({
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [containerHeight, setContainerHeight] = useState(0);
-  const [folderCollapsed, setFolderCollapsed] = useState(false);
+  const [folderCollapsed, setFolderCollapsed] = useState(readStoredFolderCollapsed);
   const [promptCollapsed, setPromptCollapsed] = useState(false);
   const [capCollapsed, setCapCollapsed] = useState(false);
 
@@ -232,7 +245,11 @@ export function AgentsWorkspaceRail({
           title={t('projectWorkspace.title')}
           icon={<FolderOpen className="h-3.5 w-3.5" aria-hidden />}
           collapsed={folderCollapsed}
-          onToggleCollapsed={() => setFolderCollapsed((v) => !v)}
+          onToggleCollapsed={() => setFolderCollapsed((v) => {
+            const next = !v;
+            try { localStorage.setItem(FOLDER_COLLAPSED_STORAGE_KEY, String(next)); } catch { /* ignore */ }
+            return next;
+          })}
           toggleTitle={folderCollapsed ? t('workspaceRail.expandSection') : t('workspaceRail.collapseSection')}
         />
         {!folderCollapsed ? (

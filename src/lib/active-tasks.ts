@@ -5,7 +5,7 @@
  * 每个 Agent 启动任务时注册，完成/失败时注销。
  * 其他 Agent 启动时读取看板，了解当前并行任务全貌，避免冲突。
  *
- * 路径由 getActiveTasksPath() 决定（默认在 DATA_DIR 下 tasks/active.json）；布局权威见本机 ~/.project-pilot/README.md 与 数据文件夹现状.md
+ * 路径由 getActiveTasksPath() 决定（默认在 DATA_DIR 下 agents/active-tasks.json）；布局权威见本机 ~/.project-pilot/README.md 与 数据文件夹现状.md
  *
  * 使用方式（Agent 在 bash 中调用）：
  *   注册：npx tsx src/lib/active-tasks.ts register --title "任务标题" [选项]

@@ -2,7 +2,7 @@
  * Worktree 端口注册表
  *
  * 管理开发 worktree 的端口分配，避免多个并行任务端口冲突。
- * 数据存储在 {DATA_DIR}/workflows/worktree-ports.json（默认 ~/.project-pilot/workflows/）
+ * 数据存储在 {DATA_DIR}/config/worktree-ports.json
  *
  * 使用方式（Agent 在 bash 中调用）：
  *   注册：npx tsx src/lib/worktree-ports.ts register <branch> <description>

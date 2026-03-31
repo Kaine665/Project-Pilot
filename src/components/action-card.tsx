@@ -3,7 +3,6 @@
 import { memo, useState, useCallback } from 'react';
 import {
   FileText,
-  BookMarked,
   Save,
   Users,
   X,
@@ -18,7 +17,6 @@ import { ACTION_COLORS } from '@/lib/action-tag-parser';
 
 const ACTION_ICONS: Record<ActionTagType, React.ComponentType<{ className?: string }>> = {
   'save-doc': FileText,
-  'save-knowledge': BookMarked,
   'save-checkpoint': Save,
   'await-sub-agents': Users,
   'session-title': FileText,

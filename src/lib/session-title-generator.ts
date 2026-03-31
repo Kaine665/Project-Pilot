@@ -8,6 +8,7 @@
 
 import { getSettings, getProviderScopedApiKey, getProviderScopedBaseUrl, buildClaudeEnv } from '@/lib/settings-manager';
 import { getProviderPreset } from '@/lib/provider-registry';
+import { generateShortTextAnthropic, generateShortTextOpenAICompatible } from '@/lib/ai-sdk-short-text';
 import { execClaude } from '@/lib/claude-cli';
 import type { ClaudeSettings, ProviderId, TitleGenerationChainEntry, TitleGenerationSettings } from '@/types';
 import { DEFAULT_TITLE_GENERATION } from '@/types';
@@ -52,7 +53,7 @@ export async function testTitleChainEntry(
     );
     return {
       ok: false,
-      error: hasKey ? '请求超时或模型无响应' : '请先在 AI 配置中填写该供应商的 API Key',
+      error: hasKey ? '请求超时或模型无响应' : '请先在设置 → 模型与供应商中填写该线路的 API Key',
       latencyMs,
     };
   } catch (err) {
@@ -153,7 +154,13 @@ async function callProviderApi(
   const preset = getProviderPreset(entry.provider, claude.customProviders);
 
   if (entry.provider === 'anthropic') {
-    return callAnthropicApi(apiKey, entry.model, prompt, claude.baseUrl);
+    return generateShortTextAnthropic({
+      apiKey,
+      model: entry.model,
+      prompt,
+      maxOutputTokens: 50,
+      baseUrlOverride: claude.baseUrl,
+    });
   }
 
   // OpenAI-compatible API（openai, deepseek, qwen, zhipu, minimax, kimi, openrouter, ollama, custom）
@@ -161,71 +168,13 @@ async function callProviderApi(
   const baseUrl = getProviderScopedBaseUrl(claude, preset, entry.provider, entry.model);
 
   if (!baseUrl) return null;
-  return callOpenAiCompatibleApi(apiKey, entry.model, prompt, baseUrl);
-}
-
-/**
- * 直接调 Anthropic Messages API。
- */
-async function callAnthropicApi(
-  apiKey: string,
-  model: string,
-  prompt: string,
-  baseUrlOverride?: string,
-): Promise<string | null> {
-  const baseUrl = baseUrlOverride || 'https://api.anthropic.com';
-  const res = await fetch(`${baseUrl}/v1/messages`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 50,
-      messages: [{ role: 'user', content: prompt }],
-    }),
+  return generateShortTextOpenAICompatible({
+    apiKey,
+    baseUrl,
+    model: entry.model,
+    prompt,
+    maxOutputTokens: 50,
   });
-
-  if (!res.ok) return null;
-
-  const data = await res.json() as {
-    content?: Array<{ type: string; text?: string }>;
-  };
-  return data.content?.[0]?.text?.trim() ?? null;
-}
-
-/**
- * 调 OpenAI-compatible API（/v1/chat/completions）。
- */
-async function callOpenAiCompatibleApi(
-  apiKey: string,
-  model: string,
-  prompt: string,
-  baseUrl: string,
-): Promise<string | null> {
-  // 标准化 baseUrl（去掉尾部 /v1 等）
-  const cleanBase = baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '');
-  const res = await fetch(`${cleanBase}/v1/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 50,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  });
-
-  if (!res.ok) return null;
-
-  const data = await res.json() as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  return data.choices?.[0]?.message?.content?.trim() ?? null;
 }
 
 function timeout(ms: number): Promise<null> {
