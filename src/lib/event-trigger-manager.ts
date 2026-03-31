@@ -3,9 +3,9 @@ import {
   getEventTriggerRunsPath,
   getEventTriggersPath,
   getEventTriggerStatesPath,
-  getFlowIndexPath,
   modifyJsonFile,
   readJsonFile,
+  readProjectIndex,
 } from './file-store';
 import { agentChatManager, generateSessionId } from '@/lib/agent-chat-manager';
 import { buildFlowContext } from '@/lib/todo-dispatch';
@@ -28,10 +28,6 @@ const MAX_RUNS_PER_TRIGGER = 50;
 const MAX_TOTAL_RUNS = 500;
 const MIN_POLL_INTERVAL_SEC = 30;
 const MAX_POLL_INTERVAL_SEC = 3600;
-
-interface FlowIndexData {
-  projects: ProjectEntry[];
-}
 
 interface GitHubPullRequestApiItem {
   id: number;
@@ -142,7 +138,7 @@ function buildRunSummary(trigger: EventTrigger, pull: EventTriggerPullSnapshot):
 
 async function readProject(projectKey?: string): Promise<ProjectEntry | null> {
   if (!projectKey) return null;
-  const index = await readJsonFile<FlowIndexData>(getFlowIndexPath(), { projects: [] });
+  const index = await readProjectIndex();
   return index.projects.find((project) => project.key === projectKey) ?? null;
 }
 

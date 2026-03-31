@@ -2,14 +2,10 @@
  * save-doc action — AI can save design documents for long-term reference.
  */
 
-import { writeFile, mkdir } from 'fs/promises';
-import {
-  getDesignDocsDir,
-  getDesignDocsIndexPath,
-  getDesignDocFilePath,
-  modifyJsonFile,
-} from '@/lib/file-store';
-import type { DocsIndexData, DocEntry } from '@/types';
+import { mkdir, writeFile } from 'fs/promises';
+import { getDocumentContentPath, getDocumentsContentDir } from '@/lib/file-store';
+import { readDocsIndexFromDocuments, saveDocsIndexToDocuments } from '@/lib/documents-store';
+import type { DocEntry } from '@/types';
 import type { AgentAction, ActionContext } from './types';
 
 // ── Parsed tag data ──
@@ -38,10 +34,9 @@ Markdown 文档内容...
 </save-doc>
 
 注意：
-- project 必须是已注册的项目 key（如 elapp、projct-pilot 等）
+- project 必须是已注册的项目 key（如 elapp、project-pilot 等）
 - 内容使用 Markdown 格式
-- 只在内容具有长期约束力或参考价值时使用（架构决策、迁移规范、设计原则等）
-- 不要用来保存临时笔记或一次性分析结果（那些用 save-knowledge）`,
+- 只在内容具有长期约束力或参考价值时使用（架构决策、迁移规范、设计原则等）`,
 
   parse(text: string): DocTagData[] {
     const results: DocTagData[] = [];
@@ -73,25 +68,20 @@ Markdown 文档内容...
       description: data.description,
       fileName,
       projectKey: data.project,
+      documentKind: 'design_doc',
       createdAt: now,
       updatedAt: now,
     };
 
-    const docsDir = getDesignDocsDir();
-    await mkdir(docsDir, { recursive: true });
-    await writeFile(getDesignDocFilePath(fileName), data.content, 'utf-8');
+    await mkdir(getDocumentsContentDir(), { recursive: true });
+    await writeFile(getDocumentContentPath(fileName), data.content, 'utf-8');
 
-    await modifyJsonFile<DocsIndexData>(
-      getDesignDocsIndexPath(),
-      { projects: {} },
-      (d) => {
-        if (!d.projects[entry.projectKey]) {
-          d.projects[entry.projectKey] = [];
-        }
-        d.projects[entry.projectKey].push(entry);
-        return d;
-      },
-    );
+    const idx = await readDocsIndexFromDocuments();
+    if (!idx.projects[entry.projectKey]) {
+      idx.projects[entry.projectKey] = [];
+    }
+    idx.projects[entry.projectKey].push(entry);
+    await saveDocsIndexToDocuments(idx);
 
     ctx.emit({ type: 'doc_created', docId, title: data.title, projectKey: data.project });
   },

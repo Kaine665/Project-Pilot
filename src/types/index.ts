@@ -50,8 +50,16 @@ export interface ProjectsData {
 
 // ==================== App Settings ====================
 
-/** Claude Code 认证方式 */
+/** Claude Code 认证方式（持久化 / UI 旧字段，与 ResolvedAiCredential 并存） */
 export type ClaudeAuthMode = 'api_key' | 'oauth';
+
+/**
+ * 运行时凭据通道：API Key 与 OAuth 在类型上分离（discriminated union）。
+ * OAuth 仅表示「由 Codex CLI / 本机 OAuth 状态承载」，密钥仍可能并存于设置中。
+ */
+export type ResolvedAiCredential =
+  | { channel: 'api_key'; apiKey?: string }
+  | { channel: 'oauth'; oauth: 'openai_codex' };
 
 /** Supported Claude model IDs */
 export type ClaudeModel = 'claude-opus-4-6' | 'claude-sonnet-4-5-20250929' | 'claude-haiku-4-5-20250929' | 'claude-haiku-4-5-20251001';
@@ -158,6 +166,11 @@ export interface ClaudeSettings {
   openaiReasoningEffort?: OpenAIReasoningEffort;
   /** OpenAI Codex Fast Mode（仅 ChatGPT 登录 + GPT-5.4 生效） */
   openaiFastMode?: boolean;
+  /**
+   * 是否允许 OpenAI Codex 使用 OAuth（默认 false）。
+   * 关闭时仅展示 API Key；开启后可在 API Key 与 OAuth 间切换。Anthropic 不提供应用内 OAuth。
+   */
+  openaiOAuthEnabled?: boolean;
   /** 用户添加的自定义供应商列表（规范 schema） */
   customProviders?: CustomProviderConfig[];
 }
@@ -169,8 +182,6 @@ export interface GeneralSettings {
 }
 
 export interface DeveloperSettings {
-  /** 卫星任务总开关 */
-  satelliteTasksEnabled?: boolean;
   /** 是否显示定时任务入口与页面 */
   schedulesPageEnabled?: boolean;
   /** 是否显示事件驱动任务触发入口与页面 */
@@ -178,7 +189,6 @@ export interface DeveloperSettings {
 }
 
 export const DEFAULT_DEVELOPER_SETTINGS: DeveloperSettings = {
-  satelliteTasksEnabled: true,
   schedulesPageEnabled: true,
   taskTriggersPageEnabled: true,
 };
@@ -298,6 +308,8 @@ export interface ChatToolCall {
 
 export type ContentBlock =
   | { type: 'text'; text: string }
+  /** 模型扩展思考 / 推理摘要（与最终回答正文分离展示） */
+  | { type: 'thinking'; text: string }
   | { type: 'tool_call'; toolCall: ChatToolCall };
 
 export interface ChatMessage {
@@ -343,29 +355,31 @@ export const DEFAULT_DANGER_SETTINGS: DangerDetectorSettings = {
   processKill: 'warning',
 };
 
-export type ChatSSEEvent =
+/**
+ * Agent 领域事件——与传输协议（SSE / WebSocket / gRPC …）无关。
+ * 每种前端 / Bot 消费端自行决定序列化方式。
+ */
+export type AgentEvent =
   | { type: 'text_delta'; text: string }
+  /** 扩展思考 / 推理过程增量（勿并入 assistant 正文与 action 解析） */
+  | { type: 'thinking_delta'; text: string }
   | { type: 'tool_use_start'; id: string; toolName: string; input: string }
   | { type: 'tool_use_end'; id: string; output: string; status: 'completed' | 'failed' }
   | { type: 'dangerous_tool_warning'; toolCallId: string; toolName: string; command: string; reason: string; level: DangerLevel }
   | { type: 'session_title_set'; title: string }
-  | { type: 'knowledge_draft_created'; entryId: string; label: string }
   | { type: 'doc_created'; docId: string; title: string; projectKey: string }
-  | { type: 'task_suspended'; taskId: string; title: string }
-  | { type: 'task_completed'; taskId: string }
   /** 会话检查点已生成（提示前端可显示续接按钮） */
   | { type: 'checkpoint_saved'; checkpoint: import('@/types/agent-chat').SessionCheckpoint }
   /** 模型 token 用量（来自 SDK result.modelUsage 或 streaming message_start/message_delta） */
   | { type: 'token_usage'; inputTokens: number; outputTokens: number; contextWindow?: number; final?: boolean }
   | { type: 'error'; message: string }
   | { type: 'awaiting_sub_agents' }
-  /** 卫星任务：主题完成检测结果 */
-  | { type: 'topic_completion'; completed: boolean; confidence: number; summary: string }
-  /** 卫星任务：任务卡片已更新 */
-  | { type: 'task_card_updated'; card: import('@/lib/task-card-store').TaskCard }
   | { type: 'done' }
-  /** 所有卫星任务完成，SSE 连接可以关闭。前端收到 'done' 后即可更新 UI，收到此事件后 SSE 才真正结束。 */
+  /** 流结束信号；前端在 `done` 后已可更新 UI，Transport 层据此关闭连接。 */
   | { type: 'stream_end' };
+
+/** @deprecated 历史别名，新代码请用 AgentEvent */
+export type ChatSSEEvent = AgentEvent;
 
 // ==================== Agent ====================
 
@@ -385,7 +399,7 @@ export interface AgentCapabilities {
   todoRead: boolean;
   /** Expose the prompt file path in the system prompt so the AI can read/edit its own instructions */
   exposePromptPath: boolean;
-  /** Grant agent read/write access to its private data store (agent-data/{agentId}/) */
+  /** Grant agent read/write access to its private workspace (agents/workspaces/{agentId}/) */
   dataStore: boolean;
 }
 
@@ -487,7 +501,10 @@ export interface DimensionsData {
   dimensions: Dimension[];
 }
 
-// ==================== Context（上下文） ====================
+// ==================== Context（旧版磁盘模型，仅迁移用） ====================
+//
+// 运行时文档统一为 DocEntry + documents/；不再提供 /api/context。
+// Legacy types for historical context/index.json shape (migrate tool removed).
 
 export interface ContextEntry {
   id: string;           // e.g., "ctx-1740464738582-a3f"
@@ -595,35 +612,6 @@ export interface TodosData {
   todos: TodoItem[];
 }
 
-// ==================== Suspended Tasks（跨会话任务交接） ====================
-
-export type SuspendedTaskStatus = 'suspended' | 'resumed' | 'completed';
-
-export interface SuspendedTask {
-  id: string;                    // suspend-{timestamp}-{random}
-  title: string;                 // 任务简述
-  projectKey?: string;           // 关联项目
-  agentId: string;               // 挂起时的 Agent
-  sessionId: string;             // 挂起时的会话 ID
-
-  // 交接内容（Agent 生成）
-  progress: string;              // 当前进度
-  blockReason: string;           // 阻塞原因
-  nextSteps: string;             // 恢复建议 / 下一步
-  context?: string;              // 补充上下文（相关文件、分支等）
-
-  // 状态
-  status: SuspendedTaskStatus;
-  suspendedAt: string;
-  resumedAt?: string;
-  resumedBy?: string;            // 接续的会话 ID
-  completedAt?: string;
-}
-
-export interface SuspendedTasksData {
-  tasks: SuspendedTask[];
-}
-
 // ==================== Flow Project ====================
 
 /** 项目所在位置类型 */
@@ -700,12 +688,17 @@ export interface ProjectIndex {
 /** 文档生命周期状态 */
 export type DocStatus = 'active' | 'draft' | 'deprecated';
 
+/** 统一文档域：设计文档 vs 知识类条目（正文均在 documents/content/） */
+export type DocumentKind = 'design_doc' | 'knowledge';
+
 export interface DocEntry {
   id: string;           // doc-{timestamp}-{random}
   title: string;
   description?: string;
-  fileName: string;     // design-docs/{docId}.md
-  projectKey: string;   // 关联项目
+  fileName: string;     // 相对于 documents/content，如 doc-xxx.md
+  projectKey: string;   // 关联项目；全局知识可用 _global
+  /** 设计文档 | 知识条目，缺省视为 design_doc */
+  documentKind?: DocumentKind;
   /** 分类 ID（对应 categories 中的 id），可选 */
   category?: string;
   /** 自由标签列表 */
@@ -716,6 +709,13 @@ export interface DocEntry {
   supersededBy?: string;
   /** 本文档替代了哪个文档（旧文档 ID） */
   supersedes?: string;
+  /** 摘要（知识条目注入 prompt 时可用） */
+  summary?: string;
+  /** 外部文件绝对路径（内容不复制到 content/ 时） */
+  sourcePath?: string;
+  /** code-card 等：覆盖的源码路径前缀 */
+  coveredPaths?: string[];
+  lastCheckedCommit?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -813,49 +813,6 @@ export interface ScheduleRunRecord {
 
 export interface ScheduleRunsData {
   runs: ScheduleRunRecord[];
-}
-
-// ==================== Agent Dialogue（轮流对话） ====================
-
-export type DialogueStatus = 'pending' | 'running' | 'completed' | 'stopped' | 'error';
-export type DialogueTerminationMode = 'max_rounds' | 'consensus' | 'manual';
-
-/**
- * Agent 轮流对话记录。
- * 两个 Agent 围绕主题交替发言，共享完整对话历史。
- */
-export interface AgentDialogue {
-  id: string;                    // dialogue-{timestamp}
-  title: string;                 // 对话主题
-  description?: string;          // 对话背景/目标描述
-  agentA: { id: string; name: string };
-  agentB: { id: string; name: string };
-  status: DialogueStatus;
-  maxRounds: number;             // 最大轮数，默认 10
-  currentRound: number;          // 当前轮次
-  terminationMode: DialogueTerminationMode;
-  messages: DialogueMessage[];
-  projectKey?: string;
-  createdAt: string;
-  completedAt?: string;
-  error?: string;                // 出错时的错误信息
-}
-
-export interface DialogueMessage {
-  round: number;                 // 第几轮（A+B 算一轮）
-  speaker: 'agentA' | 'agentB';
-  agentId: string;
-  content: string;               // Agent 的回复内容
-  sessionId: string;             // 对应的 PP 会话 ID
-  timestamp: string;
-  tokenUsage?: number;           // 本轮 token 消耗（可选）
-}
-
-/** 列表用的轻量摘要（不含 messages） */
-export type AgentDialogueSummary = Omit<AgentDialogue, 'messages'>;
-
-export interface DialoguesIndexData {
-  dialogues: AgentDialogueSummary[];
 }
 
 // ==================== Segmented Prompts ====================

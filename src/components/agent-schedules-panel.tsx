@@ -45,8 +45,10 @@ interface AgentSchedulesPanelProps {
   emptyLabel?: string;
 }
 
+/** 与后端一致：仅 `todo` 为待办模式；`agent_message` / 旧版 `message` / 缺省均为 Agent 消息模式。 */
 function normalizeTargetType(targetType?: string): ScheduleTargetType {
-  return !targetType || targetType === 'message' ? 'agent_message' : 'todo';
+  if (targetType === 'todo') return 'todo';
+  return 'agent_message';
 }
 
 function formatTime(iso?: string): string {
@@ -650,11 +652,11 @@ export function AgentSchedulesPanel() {
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
         <div>
-          <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">触发规则</h1>
+          <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">定时运行</h1>
           <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-            同时支持定时触发 Agent 消息和定时派发 Todo。
+            按 cron 定时执行：可向 Agent 发送初始消息，或定时派发一条待办。
             {schedules.length > 0 && (
-              <span className="ml-2">共 {schedules.length} 条规则，{enabledCount} 条启用中</span>
+              <span className="ml-2">共 {schedules.length} 条任务，{enabledCount} 条启用中</span>
             )}
           </p>
         </div>
@@ -665,7 +667,7 @@ export function AgentSchedulesPanel() {
             className="flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900"
           >
             <Plus className="h-3.5 w-3.5" />
-            新建规则
+            新建定时任务
           </button>
         )}
       </div>
@@ -674,7 +676,7 @@ export function AgentSchedulesPanel() {
         <div className="mx-auto flex max-w-3xl flex-col gap-4">
           {showCreate && (
             <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
-              <h3 className="mb-3 text-sm font-medium text-zinc-900 dark:text-zinc-100">新建触发规则</h3>
+              <h3 className="mb-3 text-sm font-medium text-zinc-900 dark:text-zinc-100">新建定时任务</h3>
               <ScheduleForm
                 agents={agents}
                 projects={projects}
@@ -689,7 +691,7 @@ export function AgentSchedulesPanel() {
           {schedules.length === 0 && !showCreate ? (
             <div className="rounded-xl border border-dashed border-zinc-300 py-16 text-center dark:border-zinc-800">
               <Clock className="mx-auto h-8 w-8 text-zinc-300 dark:text-zinc-700" />
-              <p className="mt-3 text-sm text-zinc-400">暂无触发规则</p>
+              <p className="mt-3 text-sm text-zinc-400">暂无定时任务</p>
             </div>
           ) : (
             schedules.map((schedule) => (

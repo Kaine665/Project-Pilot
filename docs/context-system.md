@@ -1,281 +1,81 @@
-# 上下文系统（Context System）架构文档
+# 统一文档系统（设计文档与知识）
+
+> **历史说明**：早期版本将「上下文条目」放在 `context/`、设计文档放在 `design-docs/`（均在数据根 `DATA_DIR` 下）。当前产品已**统一**到 `documents/`（正文在 `documents/content/`，元数据在 `documents/entries/` 与聚合索引 `documents/index.json`）。旧路径若仍存在磁盘上，**运行时不再读写**；布局以 [`docs/data-storage.md`](./data-storage.md) 与 `file-store` 为准。  
+> 类型 `ContextEntry` / `ContextIndexData` 仍保留在 `src/types/index.ts`，仅作旧 `context/index.json` 形状的**类型标注**，不是线上 API 模型。
 
 ## 概述
 
-上下文系统允许用户存储个人信息（姓名、邮箱、API key 等）和项目信息（文件夹结构、技术栈等），供 AI Agent 按需读取。
+用户可维护两类文档（均由同一套 API 与存储承载）：
 
-## 核心设计：索引 + 内容文件分离
+| `documentKind` | 含义 |
+|----------------|------|
+| `design_doc` | 项目设计文档（默认） |
+| `knowledge` | 知识类文档（含 Code Card 等，标签与覆盖路径仍用 `DocEntry` 字段） |
 
-```
-                      ┌──────────────────────────────┐
-                      │   Agent 对话启动               │
-                      │                              │
-                      │  1. 读取 index.json           │
-                      │  2. 生成 markdown 表格         │
-                      │  3. 注入 system prompt         │
-                      └──────────┬───────────────────┘
-                                 │
-                                 ▼
-                      ┌──────────────────────────────┐
-                      │   Agent 运行中                 │
-                      │                              │
-                      │  4. 根据 description 判断      │
-                      │     是否需要某个上下文           │
-                      │  5. bash cat 读取具体文件       │
-                      └──────────────────────────────┘
-```
+## 核心设计：索引 + 正文分离
 
-**为什么这样设计？**
+与旧「context 索引表 + 扁平文件」思路一致，但路径与类型已统一为 **`DocEntry`**：
 
-| 问题 | 解法 | 原因 |
-|------|------|------|
-| 索引注入会浪费 token 吗？ | 索引很小（只有 label + description），注入成本极低 | 省掉 agent 每次都要先 `cat index.json` 的 bash 调用 |
-| 内容为什么不也注入？ | 内容可能很大（几百行 JSON/Markdown），按需读取 | 减少 token 消耗，agent 只读需要的文件 |
-| agent 怎么知道有哪些上下文？ | system prompt 里有一张表：标签 / 描述 / 文件路径 | agent 看描述就知道该不该读 |
+1. **聚合索引** `documents/index.json`（`DocsIndexData`）— 供 UI 与 **design-docs-index** 类资源加载器生成表格注入 prompt（仅展示设计文档类条目，逻辑见 `design-docs-index-loader.ts`）。
+2. **逐条元数据** `documents/entries/<id>.json`（`DocumentDiskEntry`）— 真相源之一，由 `documents-store` 读写。
+3. **正文** `documents/content/<fileName>` — 与索引中的 `fileName` 对应；API 使用 `getDocumentContentPath()`。
 
-## 数据模型
+Agent 仍可通过描述/摘要判断是否需要读取某正文文件，避免整库塞进 prompt。
 
-### 文件结构
+## 磁盘布局（当前）
 
 ```
-~/.project-pilot/data/context/
-├── index.json              ← 索引文件（所有条目的元数据）
-├── personal-info.json      ← 内容文件
-├── ai-api-keys.json
-├── dev-environment.md
-└── project-overview.md
+{DATA_DIR}/documents/          # 默认 DATA_DIR = ~/.project-pilot
+├── index.json              # 聚合索引（projects → DocEntry[]，含 categories）
+├── entries/                # 每条文档一条 JSON 元数据
+│   └── <docId>.json
+└── content/                # 正文（.md / .json / .txt 等）
+    └── <fileName>
 ```
 
-### 索引条目（ContextEntry）
+路径函数（节选）：`getDocumentsIndexPath()`、`getDocumentsEntriesDir()`、`getDocumentsContentDir()`、`getDocumentContentPath()`（`file-store.ts`）。
 
-```typescript
-interface ContextEntry {
-  id: string;           // "ctx-1740464738582-a3f"
-  label: string;        // "用户基本信息"
-  description: string;  // "姓名、邮箱、偏好语言" — agent 靠这个决定是否读文件
-  fileName: string;     // "personal-info.json"（扁平化，不支持子目录）
-  format: 'json' | 'markdown' | 'text';
-  createdAt: string;    // ISO 8601
-  updatedAt: string;    // ISO 8601
-}
-```
+## API（当前）
 
-## 安全设计
-
-### 路径穿越防护
-
-`getContextFilePath()` 使用 `path.basename()` 强制扁平化：
-
-```typescript
-// src/lib/file-store.ts
-export function getContextFilePath(fileName: string): string {
-  const safe = path.basename(fileName);
-  if (!safe || safe !== fileName || safe.includes('..')) {
-    throw new Error(`Invalid context file name: ${fileName}`);
-  }
-  return path.join(DATA_DIR, 'context', safe);
-}
-```
-
-**约束：fileName 不能包含 `/`、`\`、`..`，只能是纯文件名。**
-
-### 文件大小限制
-
-所有 JSON 读取有 50MB 限制（`readJsonFile` 内部检查），防止 DoS。
-
-## API 设计
+统一前缀 **`/api/docs`**（Hono 路由 `server/routes/docs.ts`）：
 
 | 方法 | 路径 | 用途 |
 |------|------|------|
-| GET | `/api/context` | 列出所有索引条目 |
-| POST | `/api/context` | 创建条目（索引 + 内容文件） |
-| GET | `/api/context/[id]` | 获取条目元数据 + 内容 |
-| PATCH | `/api/context/[id]` | 更新元数据和/或内容 |
-| DELETE | `/api/context/[id]` | 硬删除（索引 + 内容文件） |
+| GET | `/api/docs` | 列表；支持 `project`、`documentKind`、`category`、`tag`、`status` 等查询参数 |
+| POST | `/api/docs` | 创建；body 含 `documentKind`（`knowledge` 或默认设计文档） |
+| GET | `/api/docs/:id` | 元数据 + 正文 |
+| PATCH | `/api/docs/:id` | 更新元数据与/或正文 |
+| DELETE | `/api/docs/:id` | 删除条目与（若非外链）正文文件 |
 
-### POST 创建流程
+分类：`/api/docs/categories` 等子路由见同文件。
 
-```
-客户端 POST { label, description, fileName, format, content }
-  ↓
-验证 label、fileName 非空
-  ↓
-检查 fileName 唯一性（409 冲突）
-  ↓
-检查 format ∈ ['json', 'markdown', 'text']
-  ↓
-生成 ID: ctx-{Date.now()}-{random4}
-  ↓
-创建 context/ 目录（如不存在）
-  ↓
-写入内容文件
-  ↓
-追加索引条目 + 写回 index.json
-  ↓
-返回 { ok: true, entry }
-```
+## 类型模型（运行时）
 
-### 删除策略
+- **`DocEntry`**、`DocsIndexData`、`DocumentKind` — `src/types/index.ts`
+- 解析旧导出文件时仍可能用到 **`ContextEntry`**（离线/工具，非 API 响应）
 
-**硬删除**，不走回收站。原因：
-- 上下文是配置数据，不是用户创作内容
-- 误删后可以重新创建（有模板 chips）
-- 简化实现，不需要 `deletedAt` / `isDeleted` 字段
+## 前端入口
 
-## Prompt 注入
+- **文档库（按项目）**：`/flows/docs/[projectKey]` — 设计文档与知识文档统一列表与编辑。
+- **旧路径 `/flows/context`**：保留为**跳转页**，重定向到文档库并带 `view=knowledge`（筛选知识类），避免书签失效。
 
-> 更新时间：2026-03-02 — 上下文注入已迁移至 Resource 系统
+## 与 Agent / Resource 的关系
 
-### 新架构：Resource-based 注入
+- 设计文档索引注入：资源类型仍为 `design-docs-index`（命名历史遗留），数据来自统一 `documents` 索引。
+- 知识/Code Card：见 `agent-chat-manager` 与 `readDocsIndexFromDocuments`，不再使用 `context-index` / `context` 资源类型。
 
-上下文系统现在通过 Resource 系统注入 Agent prompt，不再使用旧的 `buildContextSection()` 硬编码拼接。
+## 安全与约束
 
-```
-Agent.resources: ResourceRef[]
-  → ResourceRegistry.loadAll(refs)
-    → ContextIndexLoader (priority 50) — 注入全局索引表
-    → ContextLoader      (priority 60) — 内联指定条目内容
-```
+- 正文路径通过 `getDocumentContentPath` 等对 `fileName` 做 basename 校验，避免路径穿越。
+- JSON 读写仍有大小限制（`readJsonFile`）。
 
-**ContextIndexLoader** — 读取 `context/index.json`，生成 markdown 表格注入 prompt（等效旧 `buildContextSection()`）
-**ContextLoader** — 读取指定条目的完整内容，直接内联到 prompt
-
-### 注入结果示例（ContextIndexLoader 输出）
-
-```markdown
-## 可用上下文信息
-
-以下是用户预设的上下文信息，你可以通过 bash cat 命令按需读取：
-
-| 标签 | 描述 | 文件路径 |
-|------|------|---------|
-| 用户基本信息 | 姓名、邮箱、偏好语言 | /home/user/.project-pilot/data/context/personal-info.json |
-| AI API Keys | OpenAI、Anthropic 等密钥 | /home/user/.project-pilot/data/context/ai-api-keys.json |
-```
-
-### 调用链
-
-```
-AgentChatManager.start()
-  → ResourceRegistry.loadAll(agent.resources)
-    → ContextIndexLoader.load()   ← 读索引，生成表格
-    → ContextLoader.load()        ← 按 ref 内联指定条目
-    → ...其他 ResourceLoader
-  → 拼接为完整 system prompt
-  → 发送给 Claude CLI
-```
-
-### 相关文件
+## 相关代码索引
 
 | 职责 | 文件 |
 |------|------|
-| 索引加载器 | `src/lib/resource-loaders/context-index-loader.ts` |
-| 内容加载器 | `src/lib/resource-loaders/context-loader.ts` |
-| Resource 注册表 | `src/lib/resource-registry.ts` |
-| Resource 迁移 | `src/lib/resource-migration.ts` |
-
-> **历史备注**：旧版使用 `buildContextSection()` 函数（在 `agent-chat-manager.ts` 中）直接拼接索引表。
-> 现已迁移至 Resource Loader 架构，`buildContextSection()` 已移除。
-
-### 任务级全局上下文选择
-
-除了全局索引表注入外，每个任务可以选择性启用部分全局上下文条目。被选中的条目内容**直接内联**到该任务的 prompt 中，确保 AI 一定看到。
-
-```
-两层注入共存：
-
-层1（全局）: buildContextSection()
-  → 索引表（label + description + filePath）
-  → 所有条目，AI 自行 cat 按需读取
-
-层2（任务级）: buildTaskContext() 中 globalContextIds 分支
-  → 选中条目的完整内容直接内联
-  → 用户在 TaskContextDialog 中勾选
-```
-
-**数据流：**
-
-```
-TaskContextDialog (toggle 选中)
-  → TreeItem.context.globalContextIds: string[]    // 存储在项目数据文件
-  → collectFlowTaskContext()                       // 透传
-  → FlowTaskContext.globalContextIds: string[]     // 存储在 session
-  → buildTaskContext()                             // prompt-builder 读文件
-  → 内联到 prompt "用户指定上下文（全局）" 区块
-```
-
-**相关代码：**
-
-| 职责 | 文件 |
-|------|------|
-| 存储字段 | `src/types/flow.ts` — `TreeItem.context.globalContextIds` |
-| 传输字段 | `src/types/flow-context.ts` — `FlowTaskContext.globalContextIds` |
-| UI 选择 | `src/components/task-context-dialog.tsx` — 全局上下文区块 |
-| 透传 | `src/components/flow-shared.tsx` / `flow-chain.tsx` — `collectFlowTaskContext()` |
-| 内联注入 | `src/lib/prompt-builder.ts` — `buildTaskContext()` 中 globalContextIds 分支 |
-
-## 前端设计
-
-### 页面布局
-
-```
-┌─────────────────────────────────────────┐
-│  📖 上下文 (3)               [+ 新建条目] │
-├─────────────────────────────────────────┤
-│  快速创建                                │
-│  [个人信息] [AI API Keys] [服务 API Keys] │
-│  [开发环境] [项目概览] [常用网址] ...       │
-├─────────────────────────────────────────┤
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ │
-│  │ 个人信息  │ │ AI Keys  │ │ 开发环境  │ │
-│  │ json     │ │ json     │ │ markdown │ │
-│  │ 描述...  │ │ 描述...  │ │ 描述...  │ │
-│  │ 2026-02  │ │ 2026-02  │ │ 2026-02  │ │
-│  └──────────┘ └──────────┘ └──────────┘ │
-├─────────────────────────────────────────┤
-│  编辑上下文条目    🕐 创建于 ... 修改于 ... │
-│  ─────────────────────────────────────── │
-│  标签 *: [输入框]    描述: [输入框]        │
-│  文件名 *: [输入框]  格式: [JSON|MD|Text]  │
-│  内容:                                   │
-│  ┌─────────────────────────────────────┐ │
-│  │ (等宽字体 textarea)                  │ │
-│  └─────────────────────────────────────┘ │
-│  [保存]  取消                             │
-└─────────────────────────────────────────┘
-```
-
-### 模板 Chips
-
-预置 8 个模板，点击后预填表单：
-
-| 模板 | 文件名 | 格式 |
-|------|--------|------|
-| 个人信息 | personal-info.json | JSON |
-| AI API Keys | ai-api-keys.json | JSON |
-| 服务 API Keys | service-api-keys.json | JSON |
-| 开发环境 | dev-environment.md | Markdown |
-| 项目概览 | project-overview.md | Markdown |
-| 常用网址 | bookmarks.json | JSON |
-| 数据库连接 | database-connections.json | JSON |
-| 邮件 & 通知 | notifications.json | JSON |
-
-已创建的模板（按 fileName 匹配）自动隐藏。
-
-## 文件清单
-
-| 文件 | 职责 |
-|------|------|
-| `src/types/index.ts` | `ContextEntry`, `ContextIndexData` 类型定义 |
-| `src/types/resource.ts` | `ResourceType`, `ResourceRef` 类型定义 |
-| `src/lib/file-store.ts` | `getContextDir()`, `getContextIndexPath()`, `getContextFilePath()` 路径函数 |
-| `src/app/api/context/route.ts` | GET（列表）/ POST（创建）API |
-| `src/app/api/context/[id]/route.ts` | GET（详情）/ PATCH（更新）/ DELETE（删除）API |
-| `src/lib/resource-loaders/context-index-loader.ts` | 全局索引表注入（替代旧 `buildContextSection()`） |
-| `src/lib/resource-loaders/context-loader.ts` | 指定条目内容内联 |
-| `src/lib/resource-registry.ts` | Resource 加载器注册表 |
-| `src/lib/prompt-builder.ts` | `buildTaskContext()` — 任务级全局上下文内联注入 |
-| `src/lib/default-agents.ts` | Butler agent 的上下文系统说明 |
-| `src/components/task-context-dialog.tsx` | 任务上下文 Dialog（含全局上下文选择） |
-| `src/app/[locale]/flows/context/page.tsx` | 前端管理页面 |
-| `src/app/[locale]/flows/layout.tsx` | 侧边栏 BookOpen 按钮 |
+| 类型 | `src/types/index.ts` — `DocEntry`, `DocsIndexData`, `DocumentKind` |
+| 路径 | `src/lib/file-store.ts` — `documents/*` 路径与 `getDocumentContentPath` |
+| 存储读写 | `src/lib/documents-store.ts` |
+| 数据目录索引 | [`docs/data-storage.md`](./data-storage.md) |
+| HTTP | `src/server/routes/docs.ts` |
+| 设计文档索引加载 | `src/lib/resource-loaders/design-docs-index-loader.ts` |

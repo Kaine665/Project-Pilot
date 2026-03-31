@@ -11,6 +11,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import {
+  getLegacySessionPromptOverridePath,
   getPromptsDir,
   getPromptFilePath,
   getPromptHistoryDir,
@@ -207,9 +208,8 @@ export async function createSessionPromptOverride(
   const content = await readPromptFile(agentId) ?? await readBuiltinPrompt(agentId);
   if (content === undefined) return undefined;
 
-  const overrideDir = getSessionPromptOverrideDir(agentId);
   const overridePath = getSessionPromptOverridePath(agentId, sessionId);
-  await fs.mkdir(overrideDir, { recursive: true });
+  await fs.mkdir(path.dirname(overridePath), { recursive: true });
   await fs.writeFile(overridePath, content, 'utf-8');
   return overridePath;
 }
@@ -222,11 +222,17 @@ export async function deleteSessionPromptOverride(
   agentId: string,
   sessionId: string,
 ): Promise<void> {
-  try {
-    await fs.unlink(getSessionPromptOverridePath(agentId, sessionId));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw error;
+  const paths = [
+    getSessionPromptOverridePath(agentId, sessionId),
+    getLegacySessionPromptOverridePath(agentId, sessionId),
+  ];
+  for (const p of paths) {
+    try {
+      await fs.unlink(p);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error;
+      }
     }
   }
 }

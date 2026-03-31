@@ -2,8 +2,8 @@
  * Usage Store — JSONL-backed token usage tracking.
  *
  * Architecture:
- *   - Main file (usage/token-usage.jsonl): append-only, one JSON record per line
- *   - Summary cache (usage/token-usage-summary.json): aggregated stats, rebuilt on demand
+ *   - Main file (config/usage/token-usage.jsonl): append-only, one JSON record per line
+ *   - Summary cache (config/usage/token-usage-summary.json): aggregated stats, rebuilt on demand
  *
  * Write safety:
  *   - JSONL append is atomic at OS level for small writes (< PIPE_BUF)
@@ -71,7 +71,7 @@ interface DailyUsageStats {
 // ── Paths ──
 
 function getUsageDir(): string {
-  return path.join(getDataDir(), 'usage');
+  return path.join(getDataDir(), 'config', 'usage');
 }
 
 function getUsageJSONLPath(): string {

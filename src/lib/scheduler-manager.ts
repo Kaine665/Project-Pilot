@@ -1,10 +1,14 @@
 import * as cron from 'node-cron';
 import { randomBytes } from 'crypto';
+import { promises as fs } from 'fs';
+import path from 'path';
 import {
+  getScheduleRunsDir,
   getScheduleRunsPath,
+  getSchedulesDir,
   getSchedulesPath,
-  modifyJsonFile,
   readJsonFile,
+  writeJsonFile,
 } from './file-store';
 import { dispatchTodoToAgent, readTodoById } from './todo-dispatch';
 import type {
@@ -26,6 +30,90 @@ function generateScheduleId(): string {
 
 function generateRunId(): string {
   return `run-${Date.now()}-${randomBytes(2).toString('hex')}`;
+}
+
+async function readSchedulesData(): Promise<AgentSchedulesData> {
+  const dir = getSchedulesDir();
+  try {
+    const files = await fs.readdir(dir);
+    const jsonFiles = files.filter((f) => f.endsWith('.json'));
+    if (jsonFiles.length > 0) {
+      const schedules: AgentSchedule[] = [];
+      for (const f of jsonFiles) {
+        const s = await readJsonFile<AgentSchedule | null>(path.join(dir, f), null);
+        if (s?.id) schedules.push(s);
+      }
+      return { schedules };
+    }
+  } catch {
+    /* fall through */
+  }
+  return readJsonFile<AgentSchedulesData>(getSchedulesPath(), { schedules: [] });
+}
+
+async function writeSchedulesData(data: AgentSchedulesData): Promise<void> {
+  const dir = getSchedulesDir();
+  await fs.mkdir(dir, { recursive: true });
+  const keep = new Set(
+    data.schedules.map((s) => s.id.replace(/[^a-zA-Z0-9_-]/g, '')),
+  );
+  try {
+    const existing = await fs.readdir(dir);
+    for (const f of existing) {
+      if (!f.endsWith('.json')) continue;
+      const id = f.replace(/\.json$/, '');
+      if (!keep.has(id)) {
+        await fs.unlink(path.join(dir, f)).catch(() => {});
+      }
+    }
+  } catch {
+    /* ok */
+  }
+  for (const s of data.schedules) {
+    const safe = s.id.replace(/[^a-zA-Z0-9_-]/g, '');
+    await writeJsonFile(path.join(dir, `${safe}.json`), s);
+  }
+}
+
+async function readScheduleRunsData(): Promise<ScheduleRunsData> {
+  const dir = getScheduleRunsDir();
+  try {
+    const files = await fs.readdir(dir);
+    const jsonFiles = files.filter((f) => f.endsWith('.json'));
+    if (jsonFiles.length > 0) {
+      const runs: ScheduleRunRecord[] = [];
+      for (const f of jsonFiles) {
+        const r = await readJsonFile<ScheduleRunRecord | null>(path.join(dir, f), null);
+        if (r?.id) runs.push(r);
+      }
+      return { runs };
+    }
+  } catch {
+    /* fall through */
+  }
+  return readJsonFile<ScheduleRunsData>(getScheduleRunsPath(), { runs: [] });
+}
+
+async function writeScheduleRunsData(data: ScheduleRunsData): Promise<void> {
+  const dir = getScheduleRunsDir();
+  await fs.mkdir(dir, { recursive: true });
+  const keep = new Set(data.runs.map((r) => r.id.replace(/[^a-zA-Z0-9_-]/g, '')));
+  try {
+    const existing = await fs.readdir(dir);
+    for (const f of existing) {
+      if (!f.endsWith('.json')) continue;
+      const id = f.replace(/\.json$/, '');
+      if (!keep.has(id)) {
+        await fs.unlink(path.join(dir, f)).catch(() => {});
+      }
+    }
+  } catch {
+    /* ok */
+  }
+  for (const r of data.runs) {
+    const safe = r.id.replace(/[^a-zA-Z0-9_-]/g, '');
+    await writeJsonFile(path.join(dir, `${safe}.json`), r);
+  }
 }
 
 function calcNextRunAt(_cronExpr: string): string | undefined {
@@ -99,7 +187,7 @@ export class SchedulerManager {
   private jobs = new Map<string, cron.ScheduledTask>();
 
   async init(): Promise<void> {
-    const data = await readJsonFile<AgentSchedulesData>(getSchedulesPath(), { schedules: [] });
+    const data = await readSchedulesData();
     for (const schedule of data.schedules) {
       const normalized = { ...schedule, targetType: normalizeTargetType(schedule.targetType) };
       if (normalized.enabled) {
@@ -147,7 +235,7 @@ export class SchedulerManager {
   }
 
   private async fire(scheduleId: string, trigger: ScheduleTrigger): Promise<ScheduleRunRecord> {
-    const data = await readJsonFile<AgentSchedulesData>(getSchedulesPath(), { schedules: [] });
+    const data = await readSchedulesData();
     const stored = data.schedules.find((item) => item.id === scheduleId);
     if (!stored) {
       throw new Error(`Schedule ${scheduleId} does not exist`);
@@ -205,21 +293,20 @@ export class SchedulerManager {
         );
       }
 
-      await modifyJsonFile<AgentSchedulesData>(getSchedulesPath(), { schedules: [] }, (current) => {
-        const index = current.schedules.findIndex((item) => item.id === scheduleId);
-        if (index >= 0) {
-          current.schedules[index] = {
-            ...current.schedules[index],
-            targetType: schedule.targetType,
-            agentId: schedule.agentId,
-            projectKey: schedule.projectKey,
-            label: schedule.label,
-            lastRunAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          };
-        }
-        return current;
-      });
+      const schedData = await readSchedulesData();
+      const index = schedData.schedules.findIndex((item) => item.id === scheduleId);
+      if (index >= 0) {
+        schedData.schedules[index] = {
+          ...schedData.schedules[index],
+          targetType: schedule.targetType,
+          agentId: schedule.agentId,
+          projectKey: schedule.projectKey,
+          label: schedule.label,
+          lastRunAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        await writeSchedulesData(schedData);
+      }
     } catch (error) {
       runRecord.status = 'failed';
       runRecord.error = error instanceof Error ? error.message : String(error);
@@ -236,12 +323,12 @@ export class SchedulerManager {
 
   private async buildFlowContext(projectKey?: string) {
     if (!projectKey) return undefined;
-    const { ensureDataDirV2Migrated, getFlowDataPath, getFlowIndexPath, readJsonFile: readJson } = await import('./file-store');
+    const { ensureDataDirV2Migrated, readJsonFile: readJson, readProjectIndex } = await import('./file-store');
     await ensureDataDirV2Migrated();
 
     let projectName = projectKey;
     try {
-      const index = await readJson<{ projects: Array<{ key: string; name: string }> }>(getFlowIndexPath(), { projects: [] });
+      const index = await readProjectIndex();
       const found = index.projects.find((project) => project.key === projectKey);
       if (found) projectName = found.name;
     } catch {
@@ -251,7 +338,6 @@ export class SchedulerManager {
     return {
       projectKey,
       projectName,
-      flowDataPath: getFlowDataPath(projectKey),
     };
   }
 
@@ -260,30 +346,29 @@ export class SchedulerManager {
   }
 
   private async saveRunRecord(record: ScheduleRunRecord): Promise<void> {
-    await modifyJsonFile<ScheduleRunsData>(getScheduleRunsPath(), { runs: [] }, (data) => {
-      data.runs.push(record);
+    const data = await readScheduleRunsData();
+    data.runs.push(record);
 
-      const grouped = new Map<string, ScheduleRunRecord[]>();
-      for (const run of data.runs) {
-        const group = grouped.get(run.scheduleId) ?? [];
-        group.push(run);
-        grouped.set(run.scheduleId, group);
-      }
+    const grouped = new Map<string, ScheduleRunRecord[]>();
+    for (const run of data.runs) {
+      const group = grouped.get(run.scheduleId) ?? [];
+      group.push(run);
+      grouped.set(run.scheduleId, group);
+    }
 
-      const trimmed: ScheduleRunRecord[] = [];
-      for (const group of grouped.values()) {
-        group.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-        trimmed.push(...group.slice(0, MAX_RUNS_PER_SCHEDULE));
-      }
+    const trimmed: ScheduleRunRecord[] = [];
+    for (const group of grouped.values()) {
+      group.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+      trimmed.push(...group.slice(0, MAX_RUNS_PER_SCHEDULE));
+    }
 
-      trimmed.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-      data.runs = trimmed.slice(0, MAX_TOTAL_RUNS);
-      return data;
-    });
+    trimmed.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+    data.runs = trimmed.slice(0, MAX_TOTAL_RUNS);
+    await writeScheduleRunsData(data);
   }
 
   async listRuns(scheduleId: string, limit = 20): Promise<ScheduleRunRecord[]> {
-    const data = await readJsonFile<ScheduleRunsData>(getScheduleRunsPath(), { runs: [] });
+    const data = await readScheduleRunsData();
     return data.runs
       .filter((run) => run.scheduleId === scheduleId)
       .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
@@ -291,14 +376,14 @@ export class SchedulerManager {
   }
 
   async listAllRuns(limit = 50): Promise<ScheduleRunRecord[]> {
-    const data = await readJsonFile<ScheduleRunsData>(getScheduleRunsPath(), { runs: [] });
+    const data = await readScheduleRunsData();
     return data.runs
       .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
       .slice(0, limit);
   }
 
   async listSchedules(): Promise<AgentSchedule[]> {
-    const data = await readJsonFile<AgentSchedulesData>(getSchedulesPath(), { schedules: [] });
+    const data = await readSchedulesData();
     return data.schedules.map((schedule) => ({
       ...schedule,
       targetType: normalizeTargetType(schedule.targetType),
@@ -333,10 +418,9 @@ export class SchedulerManager {
 
     const schedule = await validateScheduleInput(candidate);
 
-    await modifyJsonFile<AgentSchedulesData>(getSchedulesPath(), { schedules: [] }, (data) => {
-      data.schedules.push(schedule);
-      return data;
-    });
+    const schedData = await readSchedulesData();
+    schedData.schedules.push(schedule);
+    await writeSchedulesData(schedData);
 
     this.upsert(schedule);
     return schedule;
@@ -346,7 +430,7 @@ export class SchedulerManager {
     scheduleId: string,
     patch: Partial<Omit<Pick<AgentSchedule, 'targetType' | 'agentId' | 'todoId' | 'cron' | 'message' | 'label' | 'enabled' | 'projectKey'>, 'targetType'>> & { targetType?: ScheduleTargetType | 'message' },
   ): Promise<AgentSchedule | null> {
-    const data = await readJsonFile<AgentSchedulesData>(getSchedulesPath(), { schedules: [] });
+    const data = await readSchedulesData();
     const current = data.schedules.find((schedule) => schedule.id === scheduleId);
     if (!current) return null;
 
@@ -359,13 +443,12 @@ export class SchedulerManager {
       updatedAt: new Date().toISOString(),
     });
 
-    await modifyJsonFile<AgentSchedulesData>(getSchedulesPath(), { schedules: [] }, (data) => {
-      const index = data.schedules.findIndex((schedule) => schedule.id === scheduleId);
-      if (index >= 0) {
-        data.schedules[index] = validated!;
-      }
-      return data;
-    });
+    const schedData = await readSchedulesData();
+    const index = schedData.schedules.findIndex((schedule) => schedule.id === scheduleId);
+    if (index >= 0) {
+      schedData.schedules[index] = validated!;
+    }
+    await writeSchedulesData(schedData);
 
     this.upsert(validated);
     return validated;
@@ -374,12 +457,11 @@ export class SchedulerManager {
   async deleteSchedule(scheduleId: string): Promise<boolean> {
     let deleted = false;
 
-    await modifyJsonFile<AgentSchedulesData>(getSchedulesPath(), { schedules: [] }, (data) => {
-      const before = data.schedules.length;
-      data.schedules = data.schedules.filter((schedule) => schedule.id !== scheduleId);
-      deleted = data.schedules.length < before;
-      return data;
-    });
+    const schedData = await readSchedulesData();
+    const before = schedData.schedules.length;
+    schedData.schedules = schedData.schedules.filter((schedule) => schedule.id !== scheduleId);
+    deleted = schedData.schedules.length < before;
+    await writeSchedulesData(schedData);
 
     if (deleted) {
       this.remove(scheduleId);

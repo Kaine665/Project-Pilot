@@ -7,11 +7,8 @@
  */
 
 import { resourceRegistry } from '../resource-registry';
-import { ContextResourceLoader } from './context-loader';
-import { ContextIndexLoader } from './context-index-loader';
 import { DesignDocsIndexLoader } from './design-docs-index-loader';
 import { ActiveTasksLoader } from './active-tasks-loader';
-import { SuspendedTasksLoader } from './suspended-tasks-loader';
 import { AvailableAgentsLoader } from './available-agents-loader';
 import { SystemPromptLoader } from './system-prompt-loader';
 import { TodoListLoader } from './todo-list-loader';
@@ -27,11 +24,8 @@ import { SkillResourceLoader } from './skill-loader';
 import { AgentDataInfoLoader } from './agent-data-info-loader';
 import { PromptBlockLoader } from './prompt-block-loader';
 
-resourceRegistry.register(new ContextResourceLoader());
-resourceRegistry.register(new ContextIndexLoader());
 resourceRegistry.register(new DesignDocsIndexLoader());
 resourceRegistry.register(new ActiveTasksLoader());
-resourceRegistry.register(new SuspendedTasksLoader());
 resourceRegistry.register(new AvailableAgentsLoader());
 resourceRegistry.register(new SystemPromptLoader());
 resourceRegistry.register(new TodoListLoader());

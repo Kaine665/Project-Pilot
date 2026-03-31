@@ -10,7 +10,7 @@
  * by AgentChatManager.onProcessClose().
  */
 
-import type { ChatSSEEvent } from '@/types';
+import type { AgentEvent } from '@/types';
 import type { SessionCheckpoint } from '@/types/agent-chat';
 
 // ── Action execution context ──
@@ -20,7 +20,7 @@ export interface ActionContext {
   agentId: string;
   projectKey?: string;
   /** Emit an SSE event to the frontend */
-  emit: (event: ChatSSEEvent) => void;
+  emit: (event: AgentEvent) => void;
   /** Set the session title (used by session-title action) */
   setSessionTitle: (title: string) => void;
   /** Save a session checkpoint for context-window continuity */

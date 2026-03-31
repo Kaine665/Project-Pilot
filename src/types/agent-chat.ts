@@ -45,7 +45,7 @@ export interface SessionConfig {
   provider?: import('./index').ProviderId;
   /** 会话使用的模型 ID（覆盖 Agent 默认值和全局设置） */
   model?: string;
-  /** 浼氳瘽绾у埆 OpenAI 鎺ㄧ悊妗ｄ綅锛堣鐩?Agent 榛樿鍊煎拰鍏ㄥ眬璁剧疆锛?*/
+  /** 会话级 OpenAI 推理档位（覆盖 Agent 默认值与全局设置） */
   openaiReasoningEffort?: import('./index').OpenAIReasoningEffort;
   /** OpenAI Codex Fast Mode（仅 ChatGPT 登录 + GPT-5.4 生效） */
   openaiFastMode?: boolean;

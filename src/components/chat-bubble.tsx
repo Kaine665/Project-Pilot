@@ -21,6 +21,35 @@ import type { ParsedActionTag } from '@/lib/action-tag-parser';
 import { isRepetitiveTool } from '@/lib/tool-utils';
 import type { ChatMessage, ChatToolCall, ContentBlock } from '@/types';
 
+const ThinkingFoldable = memo(function ThinkingFoldable({
+  text,
+  label,
+  showPulse,
+}: {
+  text: string;
+  label: string;
+  showPulse: boolean;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <details
+      className="my-2 rounded-lg border border-violet-200/80 bg-violet-50/50 text-sm dark:border-violet-900/50 dark:bg-violet-950/25"
+      open={open}
+      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+    >
+      <summary className="cursor-pointer select-none px-3 py-1.5 text-violet-800 dark:text-violet-200">
+        {label}
+      </summary>
+      <div className="whitespace-pre-wrap border-t border-violet-100 px-3 py-2 font-mono text-xs leading-relaxed text-zinc-600 wrap-break-word dark:border-violet-900/40 dark:text-zinc-400">
+        {text}
+        {showPulse && (
+          <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-current opacity-60" />
+        )}
+      </div>
+    </details>
+  );
+});
+
 interface ChatBubbleProps {
   message: ChatMessage;
   streamingBlocks?: ContentBlock[];
@@ -40,6 +69,7 @@ interface ChatBubbleProps {
   onActionReject?: (tag: ParsedActionTag) => void;
   onActionRestore?: (tag: ParsedActionTag) => void;
   onEdit?: (messageId: string, content: string) => Promise<boolean> | boolean;
+  assistantAvatarSrc?: string;
 }
 
 export const ChatBubble = memo(function ChatBubble({
@@ -61,6 +91,7 @@ export const ChatBubble = memo(function ChatBubble({
   onActionReject,
   onActionRestore,
   onEdit,
+  assistantAvatarSrc,
 }: ChatBubbleProps) {
   const t = useTranslations();
   const tActions = useTranslations('actions');
@@ -219,6 +250,18 @@ export const ChatBubble = memo(function ChatBubble({
         );
       }
 
+      if (block.type === 'thinking') {
+        const isLastBlock = index === filteredBlocks.length - 1;
+        return (
+          <ThinkingFoldable
+            key={index}
+            text={block.text}
+            label={t('chat.thinkingSection')}
+            showPulse={!!isStreaming && isLastBlock}
+          />
+        );
+      }
+
       return (
         <div key={`${block.toolCall.id}-${index}`} className="my-1.5">
           <ToolCallCard toolCall={block.toolCall} />
@@ -300,13 +343,19 @@ export const ChatBubble = memo(function ChatBubble({
   return (
     <div className={`group/bubble flex gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
       <div
-        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
+        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full ${
           isUser
             ? 'bg-user-subtle text-user'
             : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
         }`}
       >
-        {isUser ? <User className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
+        {isUser ? (
+          <User className="h-3.5 w-3.5" />
+        ) : assistantAvatarSrc ? (
+          <img src={assistantAvatarSrc} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <Bot className="h-3.5 w-3.5" />
+        )}
       </div>
 
       <div className="max-w-[85%]">

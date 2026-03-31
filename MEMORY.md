@@ -1,49 +1,45 @@
 # MEMORY — AI 快速上下文
 
-> 本文件供 AI（Claude Code 等）进入项目时快速获取关键结论。不要写细节，只写"必须知道"的东西。
+> 本文件供 AI（Claude Code 等）进入项目时快速获取关键结论。不要写细节，只写「必须知道」的东西。
+
+> **多厂商入口与同步协议**（改路径/架构时请联动更新）：[`docs/AI_AGENT_KNOWLEDGE_MAP.md`](docs/AI_AGENT_KNOWLEDGE_MAP.md)。仓库根 [`AGENTS.md`](../AGENTS.md) 供 Cursor 等跳转。
 
 ---
 
-## 上下文系统（Context System）
+## 统一文档系统（设计文档 + 知识文档）
 
-**核心设计：索引 + 内容文件分离**
+**存储（当前）**
 
-- 索引文件 `context/index.json` 很小，通过 Resource 系统自动注入 agent system prompt
-- 内容文件可能很大，agent 通过 bash `cat` **按需读取**，不注入 prompt
-- agent 靠 `description` 字段判断是否需要读某个文件
+- 根：`{DATA_DIR}/documents/`（默认 `~/.project-pilot/documents/`）— `index.json`、`entries/<id>.json`、`content/<fileName>`
+- API：**`/api/docs`**（`server/routes/docs.ts`）；`documentKind`：`design_doc` | `knowledge`
+- 旧 `context/`、`design-docs/` 等若仍存在于数据根，仅为遗留；运行时只认 `documents/`（历史数据应已合并）
 
-**全局上下文 → 任务级选择：**
+**类型说明**
 
-- 每个任务可在上下文 Dialog 中选择启用哪些全局条目（`TreeItem.context.globalContextIds`）
-- 选中的条目内容在 `prompt-builder.ts` 的 `buildTaskContext()` 中**直接读文件内联**到 prompt
-- 未选中的条目通过 ContextIndexLoader 以索引表形式存在，AI 可按需 `cat`
-- 两层注入共存：任务级直接注入（确保 AI 一定看到） + 全局索引表（AI 按需读取）
+- **`DocEntry` / `DocsIndexData`**：当前真相模型
+- **`ContextEntry`**：仍留在 `types/index.ts`，**仅作旧 `context/index.json` 形状的类型标注**，不是线上 API 类型
 
-**不可动摇的约束：**
+**Prompt / Resource**
 
-1. `getContextFilePath()` 必须用 `path.basename()` 做路径安全检查 — 防穿越攻击
-2. 上下文条目是**硬删除**，不走回收站 — 这是配置数据，不需要软删除
-3. `fileName` 创建后不可在前端修改（input disabled），后端 PATCH 支持改名但前端不暴露
-4. `buildPrompt()` 和 `buildTaskContext()` 是 async 函数 — 因为任务级全局上下文需要读文件
+- 设计文档索引表：资源类型名仍为 `design-docs-index`（历史命名），数据来自统一 `documents` 索引
+- Code Card 等：从知识类 `DocEntry` + `documents/content` 匹配，无独立 context API
 
 **相关代码：**
 
 | 职责 | 文件 |
 |------|------|
-| 类型定义 | `src/types/index.ts` — `ContextEntry`, `ContextIndexData` |
-| 路径函数 | `src/lib/file-store.ts` — `getContextDir()`, `getContextIndexPath()`, `getContextFilePath()` |
-| API 集合 | `src/app/api/context/route.ts` — GET 列表 / POST 创建 |
-| API 单项 | `src/app/api/context/[id]/route.ts` — GET 详情 / PATCH 更新 / DELETE 删除 |
-| Prompt 注入（索引） | `src/lib/resource-loaders/context-index-loader.ts` |
-| Prompt 注入（内容） | `src/lib/resource-loaders/context-loader.ts` |
-| Butler 提示 | `src/lib/default-agents.ts` — 数据目录树 + 上下文系统说明 |
-| 前端页面 | `src/app/[locale]/flows/context/page.tsx` — 卡片网格 + 编辑区 + 模板 chips |
+| 类型 | `src/types/index.ts` — `DocEntry`, `DocumentKind`, `DocsIndexData` |
+| 路径 | `src/lib/file-store.ts` — `getDocumentsIndexPath`, `getDocumentContentPath`, … |
+| 存储 | `src/lib/documents-store.ts` |
+| 布局说明 | `docs/data-storage.md`（与 `file-store` 对齐） |
+| 前端文档库 | `src/app/[locale]/flows/docs/[projectKey]/page.tsx` |
+| 旧入口跳转 | `src/app/[locale]/flows/context/page.tsx` → `?view=knowledge` |
 
 ---
 
 ## 数据存储
 
-- 所有用户数据在 `~/.project-pilot/data/`，不在项目目录内
+- 数据布局：本机 `~/.project-pilot/README.md` + **`数据文件夹现状.md`**；仓库内与代码对齐的索引 **[`docs/data-storage.md`](docs/data-storage.md)**（`file-store` 默认 **`~/.project-pilot`**，不再默认 `~/.project-pilot/data/`）。对齐 2026-03-31
 - 可通过 `PROJECT_PILOT_DATA_DIR` 环境变量自定义
 - JSON 文件读写有 50MB 大小限制
 - `writeJsonFile()` 自动创建父目录
@@ -52,17 +48,16 @@
 
 - flows 子页面用 `max-w-[1100px] px-6 py-10` 居中布局
 - 卡片网格用 3 列 `grid-cols-3 gap-4`
-- 编辑区出现在卡片下方，不用侧边栏（上下文页面）
-- 侧边栏图标顺序：项目管理 → Agents → 信息角度 → **上下文** → 回收站
+- Flows **侧栏无「上下文」入口**：`BookOpen` 按钮 tooltip 为 **「文档」**，跳转 `/flows/docs/...`（`src/app/[locale]/flows/layout.tsx` 与 `src/client/routes/flows-layout.tsx` 内容一致）。`/flows/context` 仅为保留路由（重定向到文档库），`isContextPage` 用于与文档页共用同一高亮
 
 ## Agent 架构
 
-- Agent 对话管理在 `src/lib/chat-managers/agent-chat-manager.ts`（继承 `BaseChatManager`）
-- Prompt 构建通过 **Resource 系统**：`agent.resources: ResourceRef[]` → `ResourceRegistry.loadAll()` → 按 priority 排序加载
-- Resource 类型：`system-prompt`、`context-index`、`context`、`todo-list`、`inline-text`、`knowledge-instructions`、`doc-save-instructions`、`session-title-instructions`、`flow-context`、`reference-turns`
-- Butler 是默认 agent，system prompt 在 `src/lib/default-agents.ts`
+- Agent 对话管理在 `src/lib/chat-managers/agent-chat-manager.ts`（SDK `query()` 路径，非继承 Task Worker 的 `BaseChatManager` 执行链）
+- Prompt 构建通过 **Resource 系统**：`defaultResources` / `resourceRefs` → `ResourceRegistry.loadAll()` → 按 priority 排序加载
+- Resource 类型（节选）：`design-docs-index`、`global-prompt`、`project-prompt`、`inline-text`、`todo-list`、`flow-context`、`reference-turns`、`skill` 等；**无** `context-index` / `context` 运行时加载
+- Butler 是默认 agent；内置提示字符串见 `src/data/defaults/builtin-prompts.ts`
 - **未读消息**：`AgentChatSession.unreadCount` 字段，`persistSession()` 递增，`markAsRead()` 清零
-- **知识草稿 & 设计文档**：对话中自动提取，通过 `ChatNotificationBanners` 展示，保存到 context/design-docs
+- **设计文档 / 知识文档**：统一写入 `documents/`，通过 `<save-doc>` / `PATCH /api/docs/:id` 等；旧「知识草稿弹窗」已移除
 - **Guest Agent**：`parentSessionId` + `importedTurnIndices` 实现对话旁听
 
 ### 内置 Agent 字段迁移（不可省略）

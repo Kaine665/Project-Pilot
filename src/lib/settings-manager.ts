@@ -5,9 +5,10 @@
  * 优先级：系统环境变量 > App 设置 > 默认值。
  */
 
-import { getSettingsPath, readJsonFile, writeJsonFile } from '@/lib/file-store';
+import { access } from 'fs/promises';
+import { getDataDir, getSettingsPath, readJsonFile, writeJsonFile } from '@/lib/file-store';
 import { getKimiCandidateBaseUrls, getProviderPreset } from '@/lib/provider-registry';
-import type { AgentCapabilities, AppSettings, ClaudeAuthMode, ClaudeSettings, CustomProviderConfig, ProviderCredential, ProviderId } from '@/types';
+import type { AgentCapabilities, AppSettings, ClaudeAuthMode, ClaudeSettings, CustomProviderConfig, ProviderCredential, ProviderId, ResolvedAiCredential } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_APP_SETTINGS } from '@/types';
 import fs from 'fs';
 import path from 'path';
@@ -18,12 +19,30 @@ const CACHE_TTL_MS = 30_000;
 let cachedSettings: AppSettings | null = null;
 let cacheTimestamp = 0;
 
+async function resolveReadableSettingsPath(): Promise<string> {
+  const primary = getSettingsPath();
+  const fallbacks = [
+    // 旧版曾把 settings.json 放在 DATA_DIR 根下（现为 config/settings.json）
+    path.join(getDataDir(), 'settings.json'),
+  ];
+  for (const p of [primary, ...fallbacks]) {
+    try {
+      await access(p);
+      return p;
+    } catch {
+      /* try next */
+    }
+  }
+  return primary;
+}
+
 export async function getSettings(): Promise<AppSettings> {
   const now = Date.now();
   if (cachedSettings && now - cacheTimestamp < CACHE_TTL_MS) {
     return cachedSettings;
   }
-  const raw = await readJsonFile<AppSettings>(getSettingsPath(), DEFAULT_APP_SETTINGS);
+  const p = await resolveReadableSettingsPath();
+  const raw = await readJsonFile<AppSettings>(p, DEFAULT_APP_SETTINGS);
   cachedSettings = migrateCredentials(raw);
   cacheTimestamp = now;
   return cachedSettings;
@@ -42,11 +61,6 @@ export function invalidateCache(): void {
 // ── Credential migration & unified access ──
 
 const ANTHROPIC_CREDENTIALS_PATH = path.join(os.homedir(), '.claude', '.credentials.json');
-
-/** Check if Anthropic OAuth credentials file exists (without importing oauth-flow to avoid circular deps) */
-function anthropicCredentialsFileExists(): boolean {
-  try { return fs.existsSync(ANTHROPIC_CREDENTIALS_PATH); } catch { return false; }
-}
 
 /**
  * 运行时凭据迁移（幂等）。
@@ -85,13 +99,10 @@ function migrateCredentials(settings: AppSettings): AppSettings {
     creds['anthropic'] = { authMode: 'api_key', apiKey: claude.apiKey };
   }
 
-  // 4. Anthropic OAuth：如果全局 authMode=oauth 或 credentials 文件存在
-  if (claude.authMode === 'oauth' || anthropicCredentialsFileExists()) {
+  // 4. Anthropic OAuth：仅当显式全局 authMode=oauth 时迁移（不再根据本机凭据文件自动推断）
+  if (claude.authMode === 'oauth') {
     const existing = creds['anthropic'] ?? { authMode: 'oauth' as ClaudeAuthMode };
-    // 如果全局 authMode 是 oauth，设置这个供应商为 oauth 模式
-    if (claude.authMode === 'oauth') {
-      existing.authMode = 'oauth';
-    }
+    existing.authMode = 'oauth';
     existing.oauth = { tokenFile: ANTHROPIC_CREDENTIALS_PATH };
     creds['anthropic'] = existing;
   }
@@ -124,12 +135,46 @@ export interface ResolvedCredential {
 export function getCredential(claude: ClaudeSettings, provider?: ProviderId): ResolvedCredential {
   const p = provider ?? claude.provider ?? 'anthropic';
 
-  // 1. 新统一存储
+  const fallbackApiKey = (): string | undefined => {
+    const scoped = claude.providerApiKeys?.[p]?.trim();
+    if (scoped) return scoped;
+    if (p.startsWith('custom-') && claude.customProviders) {
+      const cp = claude.customProviders.find((c) => c.id === p);
+      const k = cp?.apiKey?.trim();
+      if (k) return k;
+    }
+    if (p === 'anthropic' && claude.apiKey?.trim()) return claude.apiKey.trim();
+    return undefined;
+  };
+
+  // 1. 新统一存储（若仅有占位、无 apiKey，须回退到旧字段，否则聚合拉模型会误判「未配置」）
   const cred = claude.providerCredentials?.[p];
   if (cred) {
+    if (cred.authMode === 'oauth') {
+      return {
+        authMode: 'oauth',
+        apiKey: cred.apiKey,
+        source: 'providerCredentials',
+      };
+    }
+    const fromCred = cred.apiKey?.trim();
+    if (fromCred) {
+      return {
+        authMode: cred.authMode ?? 'api_key',
+        apiKey: fromCred,
+        source: 'providerCredentials',
+      };
+    }
+    const fb = fallbackApiKey();
+    if (fb) {
+      return {
+        authMode: cred.authMode ?? 'api_key',
+        apiKey: fb,
+        source: 'providerApiKeys',
+      };
+    }
     return {
-      authMode: cred.authMode,
-      apiKey: cred.apiKey,
+      authMode: cred.authMode ?? 'api_key',
       source: 'providerCredentials',
     };
   }
@@ -158,24 +203,29 @@ export function getCredential(claude: ClaudeSettings, provider?: ProviderId): Re
 }
 
 /**
- * 获取指定供应商的有效认证方式。
- *
- * 逻辑：
- * 1. providerCredentials[p].authMode 存在 → 使用它
- * 2. 否则：anthropic/openai 根据 OAuth 文件存在推断，其他始终 api_key
+ * 解析当前供应商的凭据通道（API Key 与 OAuth 在抽象层分离）。
+ * 新代码应优先用本函数分支，而不是混用 authMode + apiKey 推断。
  */
-export function getEffectiveAuthMode(claude: ClaudeSettings, provider?: ProviderId): ClaudeAuthMode {
+export function resolveAiCredential(claude: ClaudeSettings, provider?: ProviderId): ResolvedAiCredential {
   const p = provider ?? claude.provider ?? 'anthropic';
 
-  // 从新统一存储读
-  const cred = claude.providerCredentials?.[p];
-  if (cred?.authMode) return cred.authMode;
+  if (p === 'openai' && claude.openaiOAuthEnabled === true) {
+    const pc = claude.providerCredentials?.[p];
+    if (pc?.authMode === 'oauth') {
+      return { channel: 'oauth', oauth: 'openai_codex' };
+    }
+  }
 
-  // 向后兼容：anthropic 使用全局 authMode
-  if (p === 'anthropic') return claude.authMode ?? 'api_key';
+  const cred = getCredential(claude, p);
+  return { channel: 'api_key', apiKey: cred.apiKey };
+}
 
-  // 其他供应商默认 api_key
-  return 'api_key';
+/**
+ * 兼容旧调用点：映射为 ClaudeAuthMode（Codex / 环境变量注入等）。
+ */
+export function getEffectiveAuthMode(claude: ClaudeSettings, provider?: ProviderId): ClaudeAuthMode {
+  const r = resolveAiCredential(claude, provider);
+  return r.channel === 'oauth' ? 'oauth' : 'api_key';
 }
 
 /**
@@ -234,6 +284,10 @@ export function getProviderScopedBaseUrl(
 ): string | undefined {
   const p = provider ?? claude.provider ?? 'anthropic';
   const scoped = claude.providerBaseUrls?.[p];
+  if (p === 'ollama') {
+    const o = typeof scoped === 'string' ? scoped.trim() : '';
+    return o || undefined;
+  }
   if (p === 'kimi') {
     const modelId = (modelOverride ?? getProviderScopedModel(claude, p)).trim();
     const preferred = scoped || claude.baseUrl || preset.baseUrl;
@@ -301,7 +355,8 @@ export async function buildClaudeEnv(
     // 必须强制覆盖（不检查 process.env），并删除对立变量，
     // 因为 Claude Code SDK 用 ?? 选择 token——空字符串不会穿透。
     if (cred.apiKey) {
-      const useApiKey = provider === 'kimi' || preset.authMethod === 'API_KEY';
+      const useApiKey = provider === 'kimi' || preset.authMethod === 'API_KEY' || !!preset.useApiKeyForAuth;
+      console.log(`[buildClaudeEnv] provider=${provider} useApiKey=${useApiKey} authMethod=${preset.authMethod} useApiKeyForAuth=${preset.useApiKeyForAuth} baseUrl=${env.ANTHROPIC_BASE_URL}`);
       if (useApiKey) {
         env.ANTHROPIC_API_KEY = cred.apiKey;
         delete env.ANTHROPIC_AUTH_TOKEN;

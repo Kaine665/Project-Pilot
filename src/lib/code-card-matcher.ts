@@ -1,13 +1,11 @@
 /**
  * Code Card Matcher
  *
- * 根据 ActiveTask 的 scope（文件路径列表）匹配 Code Card 类型的 ContextEntry。
- * 匹配算法：前缀匹配（双向）。
- *
- * Code Card = tags 包含 'code-card' 的 ContextEntry，带 coveredPaths 字段。
+ * 根据 ActiveTask 的 scope 匹配 Code Card 类型的知识文档（DocEntry）。
+ * Code Card = documentKind knowledge + tags 含 code-card + coveredPaths。
  */
 
-import type { ContextEntry } from '@/types';
+import type { DocEntry } from '@/types';
 
 /**
  * 路径规范化：统一使用正斜杠，去除尾部斜杠
@@ -28,10 +26,12 @@ function normalizePath(p: string): string {
  */
 export function matchCodeCards(
   scopePaths: string[],
-  entries: ContextEntry[],
-): ContextEntry[] {
+  entries: DocEntry[],
+): DocEntry[] {
   const codeCards = entries.filter(
-    e => e.coveredPaths?.length &&
+    e =>
+      e.documentKind === 'knowledge' &&
+      e.coveredPaths?.length &&
       e.tags?.includes('code-card') &&
       (!e.status || e.status === 'active'),
   );
@@ -53,13 +53,13 @@ export function matchCodeCards(
  * 为未匹配到 scope 的场景生成 code card 索引表（markdown）。
  * Agent 可通过 cat 命令按需读取具体卡片。
  */
-export function buildCodeCardIndex(cards: ContextEntry[], contextDir: string): string {
+export function buildCodeCardIndex(cards: DocEntry[], contentDir: string): string {
   if (cards.length === 0) return '';
   const header = '| Module | Description | Covered Paths | File |\n|--------|-------------|---------------|------|';
   const rows = cards.map(c => {
     const paths = c.coveredPaths?.join(', ') || '-';
-    const filePath = c.sourcePath || `${contextDir}/${c.fileName}`;
-    return `| ${c.label} | ${c.description} | \`${paths}\` | \`${filePath}\` |`;
+    const filePath = c.sourcePath || `${contentDir}/${c.fileName}`;
+    return `| ${c.title} | ${c.description ?? '-'} | \`${paths}\` | \`${filePath}\` |`;
   });
   return `## Code Cards 索引\n\n以下是本项目的 Code Cards。如需了解某个模块的详细信息，使用 cat 命令读取对应文件。\n\n${header}\n${rows.join('\n')}`;
 }

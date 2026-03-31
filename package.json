@@ -16,6 +16,7 @@
     "demo:load": "node scripts/load-demo-data.js",
     "demo:load-en": "node scripts/load-demo-data.js en",
     "migrate:data": "node scripts/migrate-data.js",
+    "migrate:layout": "tsx scripts/run-layout-migrations.ts",
     "electron:dev": "node scripts/electron-dev.mjs",
     "electron:compile": "tsc -p electron/tsconfig.json",
     "electron:build": "cross-env NODE_ENV=production npm run build && npm run electron:compile && electron-builder --win",
@@ -33,7 +34,9 @@
     "files": [
       "electron/dist/**/*",
       "electron/splash.html",
-      "dist/**/*"
+      "dist/**/*",
+      "config/dev-server.json",
+      "config/load-dev-server.cjs"
     ],
     "win": {
       "target": "nsis",

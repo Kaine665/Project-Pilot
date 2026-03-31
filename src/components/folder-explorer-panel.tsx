@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useTranslations } from '@/client/i18n/use-translations';
 import {
   FolderOpen, Folder, X, Loader2, Copy, ArrowUp,
   ChevronRight, ChevronDown, ExternalLink, Maximize2,
@@ -42,6 +43,8 @@ interface FolderExplorerPanelProps {
   initialPath?: string;
   initialResolveMode?: 'data';
   embedded?: boolean;
+  /** When set with embedded + data resolve: no arbitrary path / folder picker; only retry this root */
+  lockToInitialDataPath?: boolean;
 }
 
 // ── Context Menu State ──
@@ -186,7 +189,13 @@ export function FolderExplorerPanel({
   initialPath,
   initialResolveMode,
   embedded = false,
+  lockToInitialDataPath = false,
 }: FolderExplorerPanelProps) {
+  const tAgentsWs = useTranslations('agentsWorkspace');
+  const tChat = useTranslations('chat');
+  const isDataRootLocked = Boolean(
+    embedded && lockToInitialDataPath && initialPath && initialResolveMode === 'data',
+  );
   const [rootPath, setRootPath] = useState<string | null>(null);
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [loading, setLoading] = useState(false);
@@ -266,15 +275,18 @@ export function FolderExplorerPanel({
         name: e.name, path: e.path, isDirectory: e.isDirectory,
         expanded: false, loaded: false,
       })));
-      // Load git info in parallel
-      fetchGitInfo(resolvedPath).then(setGitInfo).catch(() => setGitInfo(null));
+      if (embedded) {
+        setGitInfo(null);
+      } else {
+        fetchGitInfo(resolvedPath).then(setGitInfo).catch(() => setGitInfo(null));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load directory');
       setTree([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [embedded]);
 
   // Auto-open initialPath
   useEffect(() => {
@@ -582,6 +594,7 @@ export function FolderExplorerPanel({
     return (
       <div className="select-none">
         <div
+          data-fs-tree-row
           className={`group flex items-center gap-0.5 rounded px-1 py-[3px] text-xs cursor-pointer transition-colors
             ${isSelected
               ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200'
@@ -640,8 +653,8 @@ export function FolderExplorerPanel({
             </span>
           )}
 
-          {/* Hover action buttons */}
-          {!isRenaming && (
+          {/* Hover action buttons（嵌入式侧栏以右键菜单为主，不显示行内按钮） */}
+          {!isRenaming && !embedded && (
             <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
               {onInsertPath && (
                 <button
@@ -689,7 +702,15 @@ export function FolderExplorerPanel({
               <TreeItem key={child.path} node={child} depth={depth + 1} />
             ))}
             {node.children.length === 0 && !inlineInput && (
-              <div className="py-0.5 text-[11px] italic text-zinc-400" style={{ paddingLeft: (depth + 1) * 16 + 24 }}>
+              <div
+                className="py-0.5 text-[11px] italic text-zinc-400"
+                style={{ paddingLeft: (depth + 1) * 16 + 24 }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setContextMenu({ x: e.clientX, y: e.clientY, node });
+                }}
+              >
                 Empty
               </div>
             )}
@@ -702,6 +723,8 @@ export function FolderExplorerPanel({
   // ══════════════════════════════════════════
   // ─── CONTEXT MENU ───
   // ══════════════════════════════════════════
+
+  const isContextTargetRoot = Boolean(rootPath && contextMenu?.node.path === rootPath);
 
   const contextMenuEl = contextMenu && (
     <div
@@ -738,15 +761,19 @@ export function FolderExplorerPanel({
         icon={FolderPlus} label="New Folder" shortcut=""
         onClick={() => handleContextMenuAction('new-folder', contextMenu.node)}
       />
-      <div className="my-1 border-t border-zinc-100 dark:border-zinc-700" />
-      <ContextMenuItem
-        icon={Pencil} label="Rename" shortcut="F2"
-        onClick={() => handleContextMenuAction('rename', contextMenu.node)}
-      />
-      <ContextMenuItem
-        icon={Trash2} label="Delete" shortcut="Del" danger
-        onClick={() => handleContextMenuAction('delete', contextMenu.node)}
-      />
+      {!isContextTargetRoot ? (
+        <>
+          <div className="my-1 border-t border-zinc-100 dark:border-zinc-700" />
+          <ContextMenuItem
+            icon={Pencil} label="Rename" shortcut="F2"
+            onClick={() => handleContextMenuAction('rename', contextMenu.node)}
+          />
+          <ContextMenuItem
+            icon={Trash2} label="Delete" shortcut="Del" danger
+            onClick={() => handleContextMenuAction('delete', contextMenu.node)}
+          />
+        </>
+      ) : null}
     </div>
   );
 
@@ -1000,8 +1027,8 @@ export function FolderExplorerPanel({
         </div>
       )}
 
-      {/* Path input area (only when no root loaded) */}
-      {!rootPath && (
+      {/* Path input area (only when no root loaded and not locked to agent data root) */}
+      {!rootPath && !isDataRootLocked && (
         <div className="space-y-2 border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
           <div className="flex gap-1.5">
             <input
@@ -1033,62 +1060,84 @@ export function FolderExplorerPanel({
         </div>
       )}
 
-      {/* Project info */}
-      {rootPath && gitInfo && (
+      {/* Project info（非嵌入式：当前路径摘要 + Git；嵌入式侧栏直接展示下方树，不重复占一行） */}
+      {rootPath && gitInfo && !embedded && (
         <div className="border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
-          {embedded ? (
-            <div className="flex items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-              <FolderOpen className="h-4 w-4 text-zinc-400 dark:text-zinc-500" />
-              <span className="truncate font-medium text-zinc-800 dark:text-zinc-200">
-                {gitInfo.folderName}
-              </span>
-              {gitInfo.hasGit && gitInfo.branch && (
-                <span className="flex shrink-0 items-center gap-1">
-                  <GitBranch className="h-3 w-3" />
-                  {gitInfo.branch}
+          <div className="flex items-center gap-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-zinc-100 dark:bg-zinc-800">
+              <FolderOpen className="h-4 w-4 text-zinc-500" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <span className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                  {gitInfo.folderName}
                 </span>
-              )}
-              <span className="shrink-0">{gitInfo.dirCount} dirs, {gitInfo.fileCount} files</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-zinc-100 dark:bg-zinc-800">
-                <FolderOpen className="h-4 w-4 text-zinc-500" />
+                <button type="button" onClick={handleGoUp} className="rounded p-0.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300" title="Go up">
+                  <ArrowUp className="h-3 w-3" />
+                </button>
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                    {gitInfo.folderName}
+              <div className="flex items-center gap-3 text-[11px] text-zinc-500 dark:text-zinc-400">
+                {gitInfo.hasGit && gitInfo.branch && (
+                  <span className="flex items-center gap-1">
+                    <GitBranch className="h-3 w-3" />
+                    {gitInfo.branch}
                   </span>
-                  <button type="button" onClick={handleGoUp} className="rounded p-0.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300" title="Go up">
-                    <ArrowUp className="h-3 w-3" />
-                  </button>
-                </div>
-                <div className="flex items-center gap-3 text-[11px] text-zinc-500 dark:text-zinc-400">
-                  {gitInfo.hasGit && gitInfo.branch && (
-                    <span className="flex items-center gap-1">
-                      <GitBranch className="h-3 w-3" />
-                      {gitInfo.branch}
-                    </span>
-                  )}
-                  <span>{gitInfo.dirCount} dirs, {gitInfo.fileCount} files</span>
-                </div>
+                )}
+                <span>{gitInfo.dirCount} dirs, {gitInfo.fileCount} files</span>
               </div>
             </div>
-          )}
+          </div>
         </div>
       )}
 
       {/* Error banner */}
       {error && (
         <div className="mx-3 mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
-          {error}
+          {isDataRootLocked ? (
+            <span className="mb-1 block font-medium text-amber-800 dark:text-amber-300">
+              {tAgentsWs('projectWorkspace.loadFailed')}
+            </span>
+          ) : null}
+          <span>{error}</span>
+          {isDataRootLocked && initialPath ? (
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                loadRoot(initialPath, initialResolveMode);
+              }}
+              className="ml-2 font-medium text-amber-800 underline hover:text-amber-950 dark:text-amber-300 dark:hover:text-amber-100"
+            >
+              {tChat('retry')}
+            </button>
+          ) : null}
           <button type="button" onClick={() => setError(null)} className="ml-2 text-amber-500 hover:text-amber-700">&times;</button>
         </div>
       )}
 
-      {/* Tree area */}
-      <div className="flex-1 overflow-y-auto p-1">
+      {/* Tree area — 空白处右键 = 针对根目录（新建文件/夹等），不选「重命名/删除根」 */}
+      <div
+        className="flex-1 overflow-y-auto p-1"
+        onContextMenu={(e) => {
+          if (!rootPath || loading || fileLoading) return;
+          const t = e.target as HTMLElement;
+          if (t.closest('[data-fs-tree-row]')) return;
+          e.preventDefault();
+          e.stopPropagation();
+          setContextMenu({
+            x: e.clientX,
+            y: e.clientY,
+            node: {
+              name: '',
+              path: rootPath,
+              isDirectory: true,
+              expanded: true,
+              loaded: true,
+              children: tree,
+            },
+          });
+        }}
+      >
         {loading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
@@ -1097,7 +1146,7 @@ export function FolderExplorerPanel({
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
           </div>
-        ) : tree.length === 0 && !rootPath ? (
+        ) : tree.length === 0 && !rootPath && !isDataRootLocked ? (
           <div className="py-8 text-center text-xs text-zinc-400 dark:text-zinc-500">
             <FolderOpen className="mx-auto mb-2 h-8 w-8 text-zinc-300 dark:text-zinc-600" />
             <p>Open a folder to browse files</p>

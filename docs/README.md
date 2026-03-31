@@ -4,6 +4,8 @@
 
 `docs/` 是 ProjectPilot 仓库内的文档总入口。
 
+**给 AI 的总索引（含多厂商入口如何同步）**：[`AI_AGENT_KNOWLEDGE_MAP.md`](./AI_AGENT_KNOWLEDGE_MAP.md)。
+
 这里承载的是：
 - 设计说明
 - 架构说明
@@ -20,14 +22,14 @@ ProjectPilot 里有两类“真相”：
 - 真实真相：代码本身、运行时行为、用户目录里的真实文件夹和文件
 - 文档真相：对这些真实对象的说明文档
 
-**分层权威**（详见仓库根 [`README.md`](../../README.md#pp-data-directory)）：
+**分层权威**：
 
 1. **目录树目标 + 迁移现实**：本机 `~/.project-pilot/README.md`、`~/.project-pilot/数据文件夹现状.md`（不在仓库内）。
-2. **环境变量与当前代码默认 `DATA_DIR`**：仓库根 `README.md` 本节 + `develop-static/src/lib/file-store.ts`。
+2. **环境变量与当前代码默认 `DATA_DIR` + 路径树索引**：[`docs/data-storage.md`](./data-storage.md) + [`src/lib/file-store.ts`](../src/lib/file-store.ts)；产品说明见 [`../README.md`](../README.md)「数据目录」。
 
-**引用记录**：`../../README.md`；**对齐日期**：2026-03-26。
+**对齐日期**：2026-03-31。
 
-`docs/` 下各文可做架构说明、路径函数索引、历史摘录；涉及「磁盘上到底有什么、能否删备份」须指向本机 **`数据文件夹现状.md`**；涉及「未设置变量时应用读哪」须指向根 `README` + `file-store.ts`。
+`docs/` 下各文可做架构说明、历史摘录；涉及「磁盘上到底有什么」须指向本机 **`数据文件夹现状.md`**；涉及「代码里路径怎么定」须以 **`data-storage.md`** 与 **`file-store.ts`** 为准。
 
 ## 当前分层
 
@@ -60,5 +62,5 @@ docs/
 ## 规则
 
 - **布局与迁移进度**：以本机 `~/.project-pilot/数据文件夹现状.md`（及同目录 `README.md`）为准。  
-- **代码默认路径与环境变量**：以仓库根 [`README.md`](../../README.md#pp-data-directory) + `file-store.ts` 为准。  
+- **代码默认路径与环境变量**：以 [`data-storage.md`](./data-storage.md) + `file-store.ts` 为准。  
 - 仓库内摘录须标明层次并写对齐日期。

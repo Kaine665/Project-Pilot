@@ -95,7 +95,7 @@ resolve 方法逻辑：
 
 ### Step 5: 更新 self-dev 提示词
 
-修改 `~/.project-pilot/data/prompts/agent-builtin-self-dev.md`：
+修改 `~/.project-pilot/prompts/agents/agent-builtin-self-dev.md`：
 - Phase 4 清理：替换手动 5 步为 `worktree-ports.ts cleanup` 命令
 - 自引用部分：更新说明提示词有版本管理机制
 

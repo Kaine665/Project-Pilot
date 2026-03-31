@@ -2,7 +2,7 @@
  * agent-runner.ts — 统一的 SDK 执行抽象层。
  *
  * 设计目标：AgentChatManager 只与 IAgentRunner 接口交互，
- * 不感知底层是哪套 SDK。新增 provider 时只需实现 IAgentRunner 接口。
+ * 不感知底层是哪套 SDK。新增 provider 时在 AGENT_RUNNER_FACTORIES 注册即可。
  *
  *   IAgentRunner
  *   ├── ClaudeAgentRunner   (@anthropic-ai/claude-agent-sdk)
@@ -18,14 +18,16 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
 import { SdkEventAdapter } from '@/lib/sdk-event-adapter';
-import { adaptCodexEvent } from '@/lib/codex-sdk-adapter';
+import { CodexSdkEventAdapter } from '@/lib/codex-sdk-adapter';
 import { resolveCodexBinaryPath } from '@/lib/codex-cli';
 import { shouldApplyOpenAIFastMode } from '@/lib/openai-fast-mode';
 import { DEFAULT_OPENAI_REASONING_EFFORT, normalizeOpenAIReasoningEffort } from '@/lib/openai-reasoning-effort';
 import { getAppWorkingDir } from '@/lib/app-paths';
 import { buildSdkQueryOptions, buildCodexExecEnv, getEffectiveAuthMode, getProviderScopedModel, getSettings } from '@/lib/settings-manager';
-import type { ChatSSEEvent, AgentCapabilities, ProviderId } from '@/types';
-export type AgentRunnerInput = string | AsyncIterable<SDKUserMessage> | CodexInput;
+import type { AgentEvent, AgentCapabilities, ProviderId } from '@/types';
+
+/** 运行时统一输入：正文为 UTF-8 字符串；多模态由 StreamOptions.images 传入 */
+export type AgentRunnerInput = string;
 
 /** Options passed alongside the main input to stream() */
 export interface StreamOptions {
@@ -43,8 +45,8 @@ export interface StreamOptions {
  * 每个实例对应一次对话轮次（一个 prompt → 一段 stream）。
  */
 export interface IAgentRunner {
-  /** 流式执行 prompt，yield ChatSSEEvent */
-  stream(input: AgentRunnerInput, options?: StreamOptions): AsyncIterable<ChatSSEEvent>;
+  /** 流式执行 prompt，yield 领域事件（与传输层解耦，类型名为历史遗留 AgentEvent） */
+  stream(input: AgentRunnerInput, options?: StreamOptions): AsyncIterable<AgentEvent>;
 
   /** 中止当前流 */
   abort(): void;
@@ -66,6 +68,17 @@ export interface AgentRunnerCreateOptions {
   cwd?: string;
 }
 
+// ── Registry ─────────────────────────────────────────────────────────────────
+
+type RunnerFactory = (opts: AgentRunnerCreateOptions, cwd: string) => Promise<IAgentRunner>;
+
+/**
+ * 按 provider 注册的 Runner 工厂。未注册的 provider 走默认 Claude Agent SDK 路径。
+ */
+const AGENT_RUNNER_FACTORIES: Partial<Record<ProviderId, RunnerFactory>> = {
+  openai: createOpenAiCodexRunner,
+};
+
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 /**
@@ -74,56 +87,58 @@ export interface AgentRunnerCreateOptions {
  */
 export async function createAgentRunner(opts: AgentRunnerCreateOptions): Promise<IAgentRunner> {
   const cwd = opts.cwd ?? getAppWorkingDir();
+  const factory = AGENT_RUNNER_FACTORIES[opts.provider] ?? createClaudeAgentRunner;
+  return factory(opts, cwd);
+}
 
-  if (opts.provider === 'openai') {
-    const settings = await getSettings();
-    const model =
-      opts.model
-      ?? getProviderScopedModel(settings.claude, 'openai');
-    const modelReasoningEffort = normalizeOpenAIReasoningEffort(
-      opts.effortOverride ?? settings.claude.openaiReasoningEffort ?? DEFAULT_OPENAI_REASONING_EFFORT,
-    );
-    const authMode = getEffectiveAuthMode(settings.claude, 'openai');
-    const fastModeEnabled = shouldApplyOpenAIFastMode({
-      enabled: opts.fastModeOverride ?? settings.claude.openaiFastMode ?? false,
-      model,
-      authMode,
-    });
+async function createOpenAiCodexRunner(opts: AgentRunnerCreateOptions, cwd: string): Promise<IAgentRunner> {
+  const settings = await getSettings();
+  const model =
+    opts.model
+    ?? getProviderScopedModel(settings.claude, 'openai');
+  const modelReasoningEffort = normalizeOpenAIReasoningEffort(
+    opts.effortOverride ?? settings.claude.openaiReasoningEffort ?? DEFAULT_OPENAI_REASONING_EFFORT,
+  );
+  const authMode = getEffectiveAuthMode(settings.claude, 'openai');
+  const fastModeEnabled = shouldApplyOpenAIFastMode({
+    enabled: opts.fastModeOverride ?? settings.claude.openaiFastMode ?? false,
+    model,
+    authMode,
+  });
 
-    const env = await buildCodexExecEnv();
-    const envRecord: Record<string, string> = {};
-    for (const [k, v] of Object.entries(env)) {
-      if (v != null) envRecord[k] = String(v);
-    }
-
-    const codexPathOverride = resolveCodexBinaryPath();
-    console.log(`[AgentRunner] Codex binary override: ${codexPathOverride ?? '(none, SDK will resolve)'}`);
-
-    // 动态 import 确保在 CJS 环境（tsx/sidecar）也能加载 ESM-only 的 codex-sdk
-    const { Codex } = await import('@openai/codex-sdk');
-    const codex = new Codex({
-      env: envRecord,
-      ...(fastModeEnabled ? { config: { service_tier: 'fast', features: { fast_mode: true } } } : {}),
-      ...(codexPathOverride ? { codexPathOverride } : {}),
-    });
-
-    const threadOptions = {
-      model,
-      ...(modelReasoningEffort ? { modelReasoningEffort } : {}),
-      workingDirectory: cwd,
-      skipGitRepoCheck: true,
-      approvalPolicy: 'never' as const,
-      sandboxMode: 'danger-full-access' as const,
-    };
-
-    const thread = opts.resumeSessionId
-      ? codex.resumeThread(opts.resumeSessionId, threadOptions)
-      : codex.startThread(threadOptions);
-
-    return new CodexAgentRunner(thread);
+  const env = await buildCodexExecEnv();
+  const envRecord: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env)) {
+    if (v != null) envRecord[k] = String(v);
   }
 
-  // Claude Agent SDK（Anthropic、custom-anthropic 等）
+  const codexPathOverride = resolveCodexBinaryPath();
+  console.log(`[AgentRunner] Codex binary override: ${codexPathOverride ?? '(none, SDK will resolve)'}`);
+
+  const { Codex } = await import('@openai/codex-sdk');
+  const codex = new Codex({
+    env: envRecord,
+    ...(fastModeEnabled ? { config: { service_tier: 'fast', features: { fast_mode: true } } } : {}),
+    ...(codexPathOverride ? { codexPathOverride } : {}),
+  });
+
+  const threadOptions = {
+    model,
+    ...(modelReasoningEffort ? { modelReasoningEffort } : {}),
+    workingDirectory: cwd,
+    skipGitRepoCheck: true,
+    approvalPolicy: 'never' as const,
+    sandboxMode: 'danger-full-access' as const,
+  };
+
+  const thread = opts.resumeSessionId
+    ? codex.resumeThread(opts.resumeSessionId, threadOptions)
+    : codex.startThread(threadOptions);
+
+  return new CodexAgentRunner(thread);
+}
+
+async function createClaudeAgentRunner(opts: AgentRunnerCreateOptions, cwd: string): Promise<IAgentRunner> {
   const sdkOpts = await buildSdkQueryOptions({
     capabilities: opts.capabilities,
     providerOverride: opts.provider,
@@ -132,6 +147,11 @@ export async function createAgentRunner(opts: AgentRunnerCreateOptions): Promise
     resumeSessionId: opts.resumeSessionId,
     cwd,
   });
+
+  // Diagnostic: log key SDK options
+  const diagEnv = sdkOpts.env as Record<string, string | undefined>;
+  console.log(`[ClaudeRunner:create] model=${sdkOpts.model} cwd=${cwd} resume=${opts.resumeSessionId ?? 'none'} effort=${sdkOpts.effort} permissionMode=${sdkOpts.permissionMode}`);
+  console.log(`[ClaudeRunner:create] env: BASE_URL=${diagEnv.ANTHROPIC_BASE_URL ?? '(unset)'} API_KEY_len=${diagEnv.ANTHROPIC_API_KEY?.length ?? 0} AUTH_TOKEN_len=${diagEnv.ANTHROPIC_AUTH_TOKEN?.length ?? 0} DISABLE_TRAFFIC=${diagEnv.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC ?? '(unset)'} TIMEOUT=${diagEnv.API_TIMEOUT_MS ?? '(unset)'}`);
 
   return new ClaudeAgentRunner(sdkOpts);
 }
@@ -145,15 +165,13 @@ class ClaudeAgentRunner implements IAgentRunner {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(private readonly sdkOpts: any) {}
 
-  async *stream(input: AgentRunnerInput, options?: StreamOptions): AsyncIterable<ChatSSEEvent> {
-    if (Array.isArray(input)) {
-      throw new Error('Claude runner does not accept Codex structured input');
-    }
-
+  async *stream(input: AgentRunnerInput, options?: StreamOptions): AsyncIterable<AgentEvent> {
     const adapter = new SdkEventAdapter();
     const images = options?.images;
 
-    if (images && images.length > 0 && typeof input === 'string') {
+    console.log(`[ClaudeRunner] Creating SDK query, model=${this.sdkOpts?.model}, baseUrl=${this.sdkOpts?.env?.ANTHROPIC_BASE_URL ?? '(default)'}`);
+
+    if (images && images.length > 0) {
       // Build multimodal prompt: images + text as content blocks inside SDKUserMessage
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const contentBlocks: any[] = images.map(img => ({
@@ -182,10 +200,18 @@ class ClaudeAgentRunner implements IAgentRunner {
       this._sdkQuery = query({ prompt: input, options: this.sdkOpts });
     }
 
+    console.log('[ClaudeRunner] SDK query created, starting iteration...');
+
     try {
+      let msgCount = 0;
       for await (const msg of this._sdkQuery) {
+        msgCount++;
+        if (msgCount <= 3) {
+          console.log(`[ClaudeRunner] SDK msg #${msgCount}: type=${(msg as { type?: string }).type ?? 'unknown'}`);
+        }
         yield* adapter.adapt(msg);
       }
+      console.log(`[ClaudeRunner] SDK iteration complete, total msgs: ${msgCount}`);
     } finally {
       if (adapter.sessionId) {
         this._capturedSessionId = adapter.sessionId;
@@ -212,16 +238,14 @@ class CodexAgentRunner implements IAgentRunner {
 
   constructor(private readonly thread: Thread) {}
 
-  async *stream(input: AgentRunnerInput, options?: StreamOptions): AsyncIterable<ChatSSEEvent> {
-    if (isAsyncIterable(input)) {
-      throw new Error('Codex runner does not accept Claude message streams');
-    }
+  async *stream(input: AgentRunnerInput, options?: StreamOptions): AsyncIterable<AgentEvent> {
+    const adapter = new CodexSdkEventAdapter();
 
     // Codex SDK uses local_image with file paths — write base64 images to temp files
     const tempPaths: string[] = [];
     let codexInput: CodexInput = input;
     const images = options?.images;
-    if (images && images.length > 0 && typeof input === 'string') {
+    if (images && images.length > 0) {
       const extMap: Record<string, string> = {
         'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp',
       };
@@ -245,7 +269,7 @@ class CodexAgentRunner implements IAgentRunner {
       });
 
       for await (const ev of events) {
-        const { events: chatEvents, sessionId } = adaptCodexEvent(ev);
+        const { events: chatEvents, sessionId } = adapter.adapt(ev);
         if (sessionId) this._capturedSessionId = sessionId;
         yield* chatEvents;
       }
@@ -270,8 +294,4 @@ class CodexAgentRunner implements IAgentRunner {
   get capturedSessionId(): string | null {
     return this._capturedSessionId;
   }
-}
-
-function isAsyncIterable(value: AgentRunnerInput): value is AsyncIterable<SDKUserMessage> {
-  return typeof value === 'object' && value !== null && Symbol.asyncIterator in value;
 }

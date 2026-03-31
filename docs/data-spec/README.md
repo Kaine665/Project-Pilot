@@ -20,9 +20,9 @@
 |------|------|------|
 | 目录目标规范 | 本机 `~/.project-pilot/README.md` | 一级域、目标结构（不在 Git） |
 | 迁移与现实 | 本机 `~/.project-pilot/数据文件夹现状.md` | 各域是否已迁、备份、代码是否适配（不在 Git） |
-| 代码默认根与环境变量 | 仓库根 **[`README.md`](../../../README.md#pp-data-directory)** + `file-store.ts` | `PROJECT_PILOT_DATA_DIR`；未设置时默认 **`~/.project-pilot`**（不再使用 `~/.project-pilot/data` 作为默认根） |
+| 代码默认根与环境变量 | **[`docs/data-storage.md`](../data-storage.md)** + `src/lib/file-store.ts` | `PROJECT_PILOT_DATA_DIR`；未设置时默认 **`~/.project-pilot`**（不再使用 `~/.project-pilot/data` 作为默认根） |
 
-**引用记录**：`../../../README.md`；**对齐日期**：2026-03-26。
+**对齐日期**：2026-03-31。
 
 各域子目录内的 `README.md`（如 `agents/README.md`）以本机 `.project-pilot/` 下实际文件为准；路径随机器变化，仓库不镜像全文。
 
@@ -41,7 +41,7 @@
 ## 规则
 
 - **磁盘布局与迁移进度**：以本机 **`数据文件夹现状.md`**（及 `~/.project-pilot/README.md`）为准。  
-- **环境变量与未设置时的默认 `DATA_DIR`**：以仓库根 [`README.md`](../../../README.md#pp-data-directory) 与 `file-store.ts` 为准。  
+- **环境变量与未设置时的默认 `DATA_DIR`**：以 [`docs/data-storage.md`](../data-storage.md) 与 `file-store.ts` 为准。  
 - 本目录追踪「代码实现 vs 本机目标」的差距，须标注日期。
 
 ## 后续用途

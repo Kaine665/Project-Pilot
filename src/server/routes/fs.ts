@@ -22,6 +22,42 @@ export interface DirEntry {
 
 const MAX_SIZE = 512 * 1024; // 512KB
 
+/** True if `resolved` is `root` or a subdirectory of `root` (after normalization). */
+function isPathInsideRoot(root: string, resolved: string): boolean {
+  const r = path.normalize(root);
+  const p = path.normalize(resolved);
+  if (process.platform === 'win32') {
+    const rl = r.replace(/[/\\]+$/, '').toLowerCase();
+    const pl = p.toLowerCase();
+    return pl === rl || pl.startsWith(`${rl}\\`);
+  }
+  const rel = path.relative(r, p);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+/**
+ * Agent 私有工作区：<dataRoot>/agents/workspaces 及其子路径（见 ~/.project-pilot/agents/README.md；缺失时可自动创建）。
+ * 用 POSIX 风格匹配相对路径，避免 Windows 下 path.sep 与 path.relative 混用导致误判、跳过 mkdir。
+ */
+function isAgentsWorkspaceSubtree(dataRoot: string, resolved: string): boolean {
+  if (!isPathInsideRoot(dataRoot, resolved)) return false;
+  const rel = path.normalize(path.relative(dataRoot, resolved)).replace(/\\/g, '/');
+  return rel === 'agents/workspaces' || /^agents\/workspaces(\/|$)/.test(rel);
+}
+
+/** 是否为某一 Agent 的工作区根：agents/workspaces/<agentId>（不含更深子路径） */
+function isAgentWorkspaceAgentRoot(dataRoot: string, resolved: string): boolean {
+  if (!isPathInsideRoot(dataRoot, resolved)) return false;
+  const rel = path.normalize(path.relative(dataRoot, resolved)).replace(/\\/g, '/');
+  const parts = rel.split('/').filter(Boolean);
+  return (
+    parts.length === 3
+    && parts[0] === 'agents'
+    && parts[1] === 'workspaces'
+    && parts[2].length > 0
+  );
+}
+
 const TEXT_EXT = new Set([
   'txt', 'md', 'json', 'js', 'ts', 'tsx', 'jsx', 'mjs', 'cjs',
   'css', 'scss', 'less', 'html', 'htm', 'xml', 'yaml', 'yml',
@@ -47,17 +83,40 @@ app.get('/list-dir', async (c) => {
       return c.json({ error: 'path is required' }, 400);
     }
 
+    const dataRoot = path.normalize(getDataDir());
     const resolved = resolveMode === 'data'
-      ? path.normalize(path.resolve(getDataDir(), decoded))
+      ? path.normalize(path.resolve(dataRoot, decoded))
       : path.normalize(path.resolve(decoded));
 
     if (!isValidWorkingDir(resolved)) {
       return c.json({ error: 'Invalid path' }, 400);
     }
 
-    const stat = await fs.stat(resolved);
+    if (resolveMode === 'data' && !isPathInsideRoot(dataRoot, resolved)) {
+      return c.json({ error: 'Invalid path' }, 400);
+    }
+
+    let stat: Awaited<ReturnType<typeof fs.stat>>;
+    try {
+      stat = await fs.stat(resolved);
+    } catch (statErr) {
+      const code = (statErr as NodeJS.ErrnoException)?.code;
+      const enoent = code === 'ENOENT';
+      if (enoent && resolveMode === 'data' && isAgentsWorkspaceSubtree(dataRoot, resolved)) {
+        await fs.mkdir(resolved, { recursive: true });
+        stat = await fs.stat(resolved);
+      } else {
+        throw statErr;
+      }
+    }
+
     if (!stat.isDirectory()) {
       return c.json({ error: 'Path is not a directory' }, 400);
+    }
+
+    // 与其它 Agent 工作区一致：根目录下默认有 data/（历史 UI 与 bash 白名单习惯）
+    if (resolveMode === 'data' && isAgentWorkspaceAgentRoot(dataRoot, resolved)) {
+      await fs.mkdir(path.join(resolved, 'data'), { recursive: true });
     }
 
     const entries = await fs.readdir(resolved, { withFileTypes: true });
@@ -81,12 +140,13 @@ app.get('/list-dir', async (c) => {
     return c.json({ path: resolved, entries: result });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    const errCode = (err as NodeJS.ErrnoException)?.code;
     const attempted = pathParam
       ? (resolveMode === 'data'
           ? path.normalize(path.resolve(getDataDir(), decodeURIComponent(pathParam).trim()))
           : path.normalize(path.resolve(decodeURIComponent(pathParam).trim())))
       : '';
-    if (msg.includes('ENOENT')) {
+    if (errCode === 'ENOENT' || msg.includes('ENOENT')) {
       return c.json(
         { error: 'Directory not found', attempted: process.env.NODE_ENV === 'development' ? attempted : undefined },
         404,

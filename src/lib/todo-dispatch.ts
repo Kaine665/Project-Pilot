@@ -1,16 +1,8 @@
 import { agentChatManager, generateSessionId, type FlowContext } from '@/lib/agent-chat-manager';
-import {
-  ensureDataDirV2Migrated,
-  getFlowDataPath,
-  getFlowIndexPath,
-  getTodosPath,
-  modifyJsonFile,
-  readJsonFile,
-} from '@/lib/file-store';
-import type { TodoItem, TodosData } from '@/types';
+import { ensureDataDirV2Migrated, readProjectIndex } from '@/lib/file-store';
+import { modifyTodosMerged, readTodosMerged } from '@/lib/todo-file-store';
+import type { TodoItem } from '@/types';
 import type { SessionSourceType } from '@/types/agent-chat';
-
-const TODO_DEFAULT: TodosData = { todos: [] };
 
 interface ProjectIndex {
   projects: Array<{ key: string; name: string }>;
@@ -36,7 +28,7 @@ export async function buildFlowContext(projectKey?: string): Promise<FlowContext
 
   let projectName = projectKey;
   try {
-    const projectIndex = await readJsonFile<ProjectIndex>(getFlowIndexPath(), { projects: [] });
+    const projectIndex = await readProjectIndex();
     const found = projectIndex.projects.find((project) => project.key === projectKey);
     if (found) projectName = found.name;
   } catch {
@@ -46,12 +38,11 @@ export async function buildFlowContext(projectKey?: string): Promise<FlowContext
   return {
     projectKey,
     projectName,
-    flowDataPath: getFlowDataPath(projectKey),
   };
 }
 
 export async function readTodoById(todoId: string): Promise<TodoItem | null> {
-  const data = await readJsonFile<TodosData>(getTodosPath(), TODO_DEFAULT);
+  const data = await readTodosMerged();
   return data.todos.find((todo) => todo.id === todoId) ?? null;
 }
 
@@ -106,7 +97,7 @@ export async function dispatchTodoToAgent(
   const now = new Date().toISOString();
   let updatedTodo: TodoItem | null = null;
 
-  await modifyJsonFile<TodosData>(getTodosPath(), TODO_DEFAULT, (data) => ({
+  await modifyTodosMerged((data) => ({
     ...data,
     todos: data.todos.map((item) => {
       if (item.id !== todoId) return item;

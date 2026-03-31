@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
+import path from 'path';
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import {
   agentChatManager,
@@ -32,21 +33,33 @@ import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import { getModelContextWindow } from '@/lib/provider-registry';
 import { normalizeImageAttachments } from '@/lib/image-assets';
 import type { ImageAttachment } from '@/lib/image-assets';
-import { getFlowDataPath, getFlowIndexPath, readJsonFile, ensureDataDirV2Migrated } from '@/lib/file-store';
-import { getPromptRuntimeDir, getPromptRuntimePath } from '@/lib/file-store';
+import { readJsonFile, readProjectIndex, ensureDataDirV2Migrated } from '@/lib/file-store';
+import {
+  getLegacySessionPromptOverridePath,
+  getPromptRuntimePath,
+} from '@/lib/file-store';
 import { HttpError } from '@/lib/http-error';
 import { spawnClaude } from '@/lib/claude-cli';
 import { readTaskCard } from '@/lib/task-card-store';
 import { getAgentById } from '@/lib/agents-store';
 import { getProviderScopedModel, getSettings } from '@/lib/settings-manager';
 import type { SessionConfig, ChatMessage } from '@/types/agent-chat';
-import type { ChatSSEEvent, OpenAIReasoningEffort, ProviderId } from '@/types';
+import type { AgentEvent, OpenAIReasoningEffort, ProviderId } from '@/types';
+import { SSETransportSink, agentEventToSSEData } from '@/lib/transport';
 
 interface ProjectIndex {
   projects: Array<{ key: string; name: string }>;
 }
 
 const ALLOWED_PROVIDERS: ProviderId[] = PROVIDER_REGISTRY.map((p) => p.id);
+
+/** 注册表内置 id + 用户在设置中添加的 custom-* 供应商 */
+function isAllowedChatProvider(id: string): id is ProviderId {
+  if (ALLOWED_PROVIDERS.includes(id as ProviderId)) return true;
+  if (id.startsWith('custom-') && id.length > 'custom-'.length) return true;
+  return false;
+}
+
 const ALLOWED_OPENAI_EFFORTS: OpenAIReasoningEffort[] = [...OPENAI_REASONING_EFFORTS];
 
 const KEEP_RECENT_COUNT = 4;
@@ -130,7 +143,7 @@ app.post('/', async (c) => {
   }
 
   const normalizedProvider = (typeof providerOverride === 'string' ? providerOverride.trim() : '') as ProviderId;
-  if (providerOverride !== undefined && !ALLOWED_PROVIDERS.includes(normalizedProvider)) {
+  if (providerOverride !== undefined && !isAllowedChatProvider(normalizedProvider)) {
     return c.json({ error: 'Invalid providerOverride' }, 400);
   }
   const normalizedModel = typeof modelOverride === 'string' ? modelOverride.trim() : '';
@@ -155,15 +168,23 @@ app.post('/', async (c) => {
     if (projectKey) {
       await ensureDataDirV2Migrated();
 
-      const flowDataPath = getFlowDataPath(projectKey);
       let projectName = projectKey;
+      let projectRoot: string | undefined;
       try {
-        const projectIndex = await readJsonFile<ProjectIndex>(getFlowIndexPath(), { projects: [] });
+        const projectIndex = await readProjectIndex();
         const found = projectIndex.projects.find(p => p.key === projectKey);
-        if (found) projectName = found.name;
+        if (found) {
+          projectName = found.name;
+          const raw = found.path?.trim();
+          if (raw) projectRoot = path.normalize(path.resolve(raw));
+        }
       } catch { /* ignore */ }
 
-      flowContext = { projectKey, projectName, flowDataPath };
+      flowContext = {
+        projectKey,
+        projectName,
+        ...(projectRoot ? { projectRoot } : {}),
+      };
     }
 
     // Compute effective depth for recursive sub-agent protection
@@ -241,7 +262,6 @@ app.get('/status', (c) => {
 });
 
 // ─── GET /stream — SSE stream for agent chat events ─────────────
-// DIRECT: replaces proxySidecarSSE('/agent-chat/stream')
 
 app.get('/stream', (c) => {
   const sessionId = c.req.query('sessionId') ?? '';
@@ -250,7 +270,7 @@ app.get('/stream', (c) => {
   if (!sessionId) {
     return streamSSE(c, async (stream) => {
       await stream.writeSSE({
-        data: JSON.stringify({ type: 'error', message: 'sessionId is required' }),
+        data: agentEventToSSEData({ type: 'error', message: 'sessionId is required' }),
       });
     });
   }
@@ -258,45 +278,36 @@ app.get('/stream', (c) => {
   return streamSSE(c, async (stream) => {
     await stream.writeSSE({ data: '' }); // initial heartbeat
 
-    const heartbeatInterval = setInterval(async () => {
-      try {
-        await stream.writeSSE({ data: ':heartbeat' });
-      } catch {
-        clearInterval(heartbeatInterval);
-      }
-    }, 30_000);
+    const sink = new SSETransportSink(stream);
 
-    let ended = false;
-    const endStream = (): void => {
-      if (ended) return;
-      ended = true;
-      clearInterval(heartbeatInterval);
-      stream.close();
-    };
+    let resolveKeepAlive: (() => void) | undefined;
+    const keepAlive = new Promise<void>((r) => { resolveKeepAlive = r; });
 
-    const push = (event: ChatSSEEvent, index: number): void => {
-      const payload = JSON.stringify({ ...event, _idx: index });
-      stream.writeSSE({ data: payload }).catch(() => { /* closed */ });
-
-      if (event.type === 'stream_end' || event.type === 'awaiting_sub_agents') {
-        endStream();
+    const push = (event: AgentEvent, index: number): void => {
+      console.log(`[SSE-DEBUG] push event type=${event.type} idx=${index} session=${sessionId}`);
+      sink.send({ event, index });
+      if (event.type === 'done' || event.type === 'stream_end') {
+        resolveKeepAlive?.();
       }
     };
 
     const unsubscribe = agentChatManager.subscribe(sessionId, since, push);
+    console.log(`[SSE-DEBUG] subscribe result: ${unsubscribe ? 'listener added' : 'null (no run)'} session=${sessionId} since=${since}`);
 
     if (!unsubscribe) {
-      await stream.writeSSE({ data: JSON.stringify({ type: 'done', _idx: -1 }) });
-      endStream();
+      await stream.writeSSE({ data: agentEventToSSEData({ type: 'done' }) });
+      sink.close();
       return;
     }
 
     stream.onAbort(() => {
-      clearInterval(heartbeatInterval);
+      console.log(`[SSE-DEBUG] onAbort fired session=${sessionId}`);
       unsubscribe();
+      resolveKeepAlive?.();
     });
 
-    await stream.sleep(Infinity);
+    await keepAlive;
+    console.log(`[SSE-DEBUG] keepAlive resolved, closing SSE session=${sessionId}`);
   });
 });
 
@@ -401,15 +412,22 @@ app.get('/runtime-prompt', async (c) => {
     return c.json({ error: 'agentId and sessionId are required' }, 400);
   }
 
+  const primary = getPromptRuntimePath(agentId, sessionId);
+  const legacy = getLegacySessionPromptOverridePath(agentId, sessionId);
   try {
-    const content = await readFile(
-      getPromptRuntimePath(agentId, sessionId),
-      'utf-8',
-    );
+    const content = await readFile(primary, 'utf-8');
     return c.json({ content });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return c.json({ content: '' });
+      try {
+        const content = await readFile(legacy, 'utf-8');
+        return c.json({ content });
+      } catch (e2) {
+        if ((e2 as NodeJS.ErrnoException).code === 'ENOENT') {
+          return c.json({ content: '' });
+        }
+        throw e2;
+      }
     }
     console.error('[runtime-prompt] GET error:', error);
     return c.json({ error: 'Failed to read runtime prompt' }, 500);
@@ -432,12 +450,9 @@ app.put('/runtime-prompt', async (c) => {
       return c.json({ error: 'content must be a string' }, 400);
     }
 
-    await mkdir(getPromptRuntimeDir(agentId), { recursive: true });
-    await writeFile(
-      getPromptRuntimePath(agentId, sessionId),
-      content,
-      'utf-8',
-    );
+    const overridePath = getPromptRuntimePath(agentId, sessionId);
+    await mkdir(path.dirname(overridePath), { recursive: true });
+    await writeFile(overridePath, content, 'utf-8');
 
     return c.json({ ok: true });
   } catch (error) {

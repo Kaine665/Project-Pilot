@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from '@/client/i18n/routing';
 import { useRouter } from '@/client/i18n/routing';
 import { useProject } from '@/components/project-context';
-import type { CategoryDef, ContextEntry, DocEntry } from '@/types';
+import type { CategoryDef, DocEntry } from '@/types';
 import {
   BookOpen,
   Bot,
@@ -27,8 +27,8 @@ type ProjectOption = {
   name: string;
 };
 
-type AssetKind = 'context' | 'design_doc';
-type SystemFilter = 'all' | 'context' | 'design_doc' | 'draft';
+type AssetKind = 'knowledge' | 'design_doc';
+type SystemFilter = 'all' | 'knowledge' | 'design_doc' | 'draft';
 type ScopeFilter = 'all' | 'project' | 'global';
 type StatusFilter = 'all' | 'active' | 'draft' | 'deprecated';
 type EditorMode = 'create' | 'edit' | null;
@@ -77,14 +77,6 @@ function formatDateTime(value: string) {
   return dateFormatter.format(new Date(value));
 }
 
-function slugify(value: string) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
 function parseTags(value: string) {
   return Array.from(
     new Set(
@@ -100,10 +92,11 @@ function joinTags(tags?: string[]) {
   return (tags ?? []).join(', ');
 }
 
-function getContextFileExtension(format: EditorState['format']) {
-  if (format === 'markdown') return 'md';
-  if (format === 'json') return 'json';
-  return 'txt';
+function inferDocFormat(fileName: string): EditorState['format'] {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith('.json')) return 'json';
+  if (lower.endsWith('.md') || lower.endsWith('.markdown')) return 'markdown';
+  return 'text';
 }
 
 function createDefaultEditor(kind: AssetKind): EditorState {
@@ -116,20 +109,22 @@ function createDefaultEditor(kind: AssetKind): EditorState {
     status: 'active',
     content: '',
     format: 'markdown',
-    fileName: kind === 'context' ? 'knowledge-asset.md' : '',
+    fileName: '',
     scope: 'project',
     sourcePath: '',
   };
 }
 
-function mapDocToAsset(entry: DocEntry, categoriesById: Map<string, CategoryDef>): KnowledgeAsset {
+function mapDocEntryToAsset(entry: DocEntry, categoriesById: Map<string, CategoryDef>): KnowledgeAsset {
+  const kind = (entry.documentKind ?? 'design_doc') === 'knowledge' ? 'knowledge' : 'design_doc';
+  const scope = entry.projectKey === '_global' ? 'global' : 'project';
   return {
     id: entry.id,
-    kind: 'design_doc',
+    kind,
     title: entry.title,
     description: entry.description ?? '',
     projectKey: entry.projectKey,
-    scope: 'project',
+    scope,
     collection: entry.category ? (categoriesById.get(entry.category)?.name ?? entry.category) : '',
     collectionId: entry.category,
     tags: entry.tags ?? [],
@@ -137,64 +132,31 @@ function mapDocToAsset(entry: DocEntry, categoriesById: Map<string, CategoryDef>
     createdAt: entry.createdAt,
     updatedAt: entry.updatedAt,
     fileName: entry.fileName,
-    format: 'markdown',
-  };
-}
-
-function mapContextToAsset(entry: ContextEntry): KnowledgeAsset {
-  return {
-    id: entry.id,
-    kind: 'context',
-    title: entry.label,
-    description: entry.description,
-    projectKey: entry.projectKey,
-    scope: entry.projectKey ? 'project' : 'global',
-    collection: entry.group ?? '',
-    tags: entry.tags ?? [],
-    status: entry.status ?? 'active',
-    createdAt: entry.createdAt,
-    updatedAt: entry.updatedAt,
-    fileName: entry.fileName,
-    format: entry.format,
+    format: inferDocFormat(entry.fileName),
     sourcePath: entry.sourcePath,
   };
 }
 
-function mapDocToEditor(entry: DocEntry, content: string, categoriesById: Map<string, CategoryDef>): EditorState {
+function mapDocEntryToEditor(entry: DocEntry, content: string, categoriesById: Map<string, CategoryDef>): EditorState {
+  const kind = (entry.documentKind ?? 'design_doc') === 'knowledge' ? 'knowledge' : 'design_doc';
   return {
-    kind: 'design_doc',
+    kind,
     title: entry.title,
     description: entry.description ?? '',
     collection: entry.category ? (categoriesById.get(entry.category)?.name ?? entry.category) : '',
     tagsInput: joinTags(entry.tags),
     status: entry.status ?? 'active',
     content,
-    format: 'markdown',
-    fileName: '',
-    scope: 'project',
-    sourcePath: '',
-  };
-}
-
-function mapContextToEditor(entry: ContextEntry, content: string): EditorState {
-  return {
-    kind: 'context',
-    title: entry.label,
-    description: entry.description,
-    collection: entry.group ?? '',
-    tagsInput: joinTags(entry.tags),
-    status: entry.status ?? 'active',
-    content,
-    format: entry.format,
+    format: inferDocFormat(entry.fileName),
     fileName: entry.fileName,
-    scope: entry.projectKey ? 'project' : 'global',
+    scope: entry.projectKey === '_global' ? 'global' : 'project',
     sourcePath: entry.sourcePath ?? '',
   };
 }
 
 function getAssetTypeLabel(asset: KnowledgeAsset) {
   if (asset.status === 'draft') return 'AI Draft';
-  return asset.kind === 'design_doc' ? 'Design Doc' : 'Context';
+  return asset.kind === 'design_doc' ? 'Design Doc' : 'Knowledge';
 }
 
 function getAssetTypeClasses(asset: KnowledgeAsset) {
@@ -231,11 +193,6 @@ function toSearchableText(asset: KnowledgeAsset) {
     .toLowerCase();
 }
 
-function getSuggestedContextFileName(title: string, format: EditorState['format']) {
-  const base = slugify(title) || 'knowledge-asset';
-  return `${base}.${getContextFileExtension(format)}`;
-}
-
 export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
   const router = useRouter();
   const [searchParams] = useSearchParams();
@@ -251,11 +208,11 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
   const [deleting, setDeleting] = useState(false);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [editorMode, setEditorMode] = useState<EditorMode>(null);
-  const [form, setForm] = useState<EditorState>(() => createDefaultEditor('context'));
-  const [originalForm, setOriginalForm] = useState<EditorState>(() => createDefaultEditor('context'));
+  const [form, setForm] = useState<EditorState>(() => createDefaultEditor('knowledge'));
+  const [originalForm, setOriginalForm] = useState<EditorState>(() => createDefaultEditor('knowledge'));
   const [search, setSearch] = useState('');
   const [systemFilter, setSystemFilter] = useState<SystemFilter>(
-    initialFocus === 'context' ? 'context' : initialFocus === 'design-doc' ? 'design_doc' : 'all',
+    initialFocus === 'knowledge' ? 'knowledge' : initialFocus === 'design-doc' ? 'design_doc' : 'all',
   );
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -296,24 +253,46 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
 
     setLoading(true);
     try {
-      const [docsResponse, contextResponse, categoriesResponse] = await Promise.all([
+      const [docsResponse, categoriesResponse] = await Promise.all([
         fetch(`/api/docs?project=${encodeURIComponent(projectKey)}`),
-        fetch(`/api/context?projectKey=${encodeURIComponent(projectKey)}`),
         fetch(`/api/docs/categories?project=${encodeURIComponent(projectKey)}`),
       ]);
 
       const docsData = await docsResponse.json();
-      const contextData = await contextResponse.json();
       const categoriesData = await categoriesResponse.json();
 
-      const nextCategories: CategoryDef[] = categoriesData.categories ?? [];
+      let mergedEntries: DocEntry[] = [...((docsData.docs ?? []) as DocEntry[])];
+      let nextCategories: CategoryDef[] = categoriesData.categories ?? [];
+
+      if (projectKey !== '_global') {
+        const [gkRes, gCatRes] = await Promise.all([
+          fetch('/api/docs?project=_global&documentKind=knowledge'),
+          fetch('/api/docs/categories?project=_global'),
+        ]);
+        const gkData = await gkRes.json();
+        const gCatData = await gCatRes.json();
+        const seen = new Set(mergedEntries.map(e => e.id));
+        for (const e of (gkData.docs ?? []) as DocEntry[]) {
+          if (!seen.has(e.id)) {
+            seen.add(e.id);
+            mergedEntries.push(e);
+          }
+        }
+        const catIds = new Set(nextCategories.map(c => c.id));
+        for (const c of (gCatData.categories ?? []) as CategoryDef[]) {
+          if (!catIds.has(c.id)) {
+            catIds.add(c.id);
+            nextCategories.push(c);
+          }
+        }
+      }
+
       const nextCategoriesById = new Map(nextCategories.map(category => [category.id, category]));
-      const docAssets = ((docsData.docs ?? []) as DocEntry[]).map(entry => mapDocToAsset(entry, nextCategoriesById));
-      const contextAssets = ((contextData.entries ?? []) as ContextEntry[]).map(mapContextToAsset);
+      const docAssets = mergedEntries.map(entry => mapDocEntryToAsset(entry, nextCategoriesById));
 
       setCategories(nextCategories);
       setAssets(
-        [...docAssets, ...contextAssets].sort(
+        docAssets.sort(
           (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
         ),
       );
@@ -351,8 +330,8 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
 
   useEffect(() => {
     const focus = searchParams.get('focus');
-    if (focus === 'context') {
-      setSystemFilter('context');
+    if (focus === 'knowledge') {
+      setSystemFilter('knowledge');
       return;
     }
     if (focus === 'design-doc') {
@@ -386,7 +365,7 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
   const filteredAssets = useMemo(() => {
     const query = search.trim().toLowerCase();
     return assets.filter(asset => {
-      if (systemFilter === 'context' && asset.kind !== 'context') return false;
+      if (systemFilter === 'knowledge' && asset.kind !== 'knowledge') return false;
       if (systemFilter === 'design_doc' && asset.kind !== 'design_doc') return false;
       if (systemFilter === 'draft' && asset.status !== 'draft') return false;
       if (scopeFilter === 'project' && asset.scope !== 'project') return false;
@@ -436,7 +415,7 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
   const handleCloseEditor = () => {
     setSelectedAssetId(null);
     setEditorMode(null);
-    const nextForm = createDefaultEditor('context');
+    const nextForm = createDefaultEditor('knowledge');
     setForm(nextForm);
     setOriginalForm(nextForm);
   };
@@ -447,20 +426,10 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
     setEditorLoading(true);
 
     try {
-      if (asset.kind === 'design_doc') {
-        const response = await fetch(`/api/docs/${asset.id}`);
-        if (!response.ok) return;
-        const data = await response.json();
-        const nextForm = mapDocToEditor(data.entry as DocEntry, data.content ?? '', categoriesById);
-        setForm(nextForm);
-        setOriginalForm(nextForm);
-        return;
-      }
-
-      const response = await fetch(`/api/context/${asset.id}`);
+      const response = await fetch(`/api/docs/${asset.id}`);
       if (!response.ok) return;
       const data = await response.json();
-      const nextForm = mapContextToEditor(data.entry as ContextEntry, data.content ?? '');
+      const nextForm = mapDocEntryToEditor(data.entry as DocEntry, data.content ?? '', categoriesById);
       setForm(nextForm);
       setOriginalForm(nextForm);
     } finally {
@@ -468,12 +437,13 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
     }
   }, [categoriesById]);
 
-  const ensureCategoryId = useCallback(async (name: string) => {
+  const ensureCategoryId = useCallback(async (name: string, forProjectKey: string) => {
     const trimmed = name.trim();
     if (!trimmed) return undefined;
 
     const existing = categories.find(category =>
-      category.name.toLowerCase() === trimmed.toLowerCase() && (!category.projectKey || category.projectKey === projectKey),
+      category.name.toLowerCase() === trimmed.toLowerCase() &&
+      (!category.projectKey || category.projectKey === forProjectKey),
     );
     if (existing) return existing.id;
 
@@ -482,7 +452,7 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: trimmed,
-        projectKey,
+        projectKey: forProjectKey,
       }),
     });
 
@@ -499,7 +469,7 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
       ),
     );
     return created.id;
-  }, [categories, projectKey]);
+  }, [categories]);
 
   const handleSave = async () => {
     if (!form.title.trim()) return;
@@ -507,13 +477,14 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
     setSaving(true);
     try {
       if (editorMode === 'create') {
+        const docProjectKey = form.kind === 'knowledge' && form.scope === 'global' ? '_global' : projectKey;
+        const categoryId = await ensureCategoryId(form.collection, docProjectKey);
         if (form.kind === 'design_doc') {
-          const categoryId = await ensureCategoryId(form.collection);
           const response = await fetch('/api/docs', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              projectKey,
+              projectKey: docProjectKey,
               title: form.title.trim(),
               description: form.description.trim() || undefined,
               content: form.content,
@@ -533,32 +504,26 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
           return;
         }
 
-        const fileName = form.fileName.trim() || getSuggestedContextFileName(form.title, form.format);
-        const response = await fetch('/api/context', {
+        const response = await fetch('/api/docs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            label: form.title.trim(),
-            description: form.description.trim(),
-            fileName,
-            format: form.format,
-            group: form.collection.trim() || undefined,
-            sourcePath: form.sourcePath.trim() || undefined,
-            projectKey: form.scope === 'project' ? projectKey : undefined,
+            projectKey: docProjectKey,
+            title: form.title.trim(),
+            description: form.description.trim() || undefined,
             content: form.content,
+            category: categoryId,
             tags: parseTags(form.tagsInput),
-            status: form.status === 'draft' ? 'draft' : 'active',
+            status: form.status,
+            documentKind: 'knowledge',
           }),
         });
         if (!response.ok) return;
         const data = await response.json();
-        const nextForm = {
-          ...form,
-          fileName,
-        };
         await fetchAssets();
         setSelectedAssetId(data.entry.id);
         setEditorMode('edit');
+        const nextForm = mapDocEntryToEditor(data.entry as DocEntry, form.content, categoriesById);
         setForm(nextForm);
         setOriginalForm(nextForm);
         return;
@@ -566,42 +531,21 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
 
       if (!selectedAsset) return;
 
-      if (selectedAsset.kind === 'design_doc') {
-        const categoryId = await ensureCategoryId(form.collection);
-        const response = await fetch(`/api/docs/${selectedAsset.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: form.title.trim(),
-            description: form.description.trim(),
-            content: form.content,
-            category: categoryId,
-            tags: parseTags(form.tagsInput),
-            status: form.status,
-          }),
-        });
-        if (!response.ok) return;
-      } else {
-        const fileName = form.fileName.trim() || getSuggestedContextFileName(form.title, form.format);
-        const response = await fetch(`/api/context/${selectedAsset.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            label: form.title.trim(),
-            description: form.description.trim(),
-            content: form.content,
-            fileName,
-            format: form.format,
-            group: form.collection.trim(),
-            sourcePath: form.sourcePath.trim(),
-            projectKey: form.scope === 'project' ? projectKey : '',
-            tags: parseTags(form.tagsInput),
-            status: form.status === 'draft' ? 'draft' : 'active',
-          }),
-        });
-        if (!response.ok) return;
-        setForm(previous => ({ ...previous, fileName }));
-      }
+      const patchProjectKey = form.kind === 'knowledge' && form.scope === 'global' ? '_global' : projectKey;
+      const categoryId = await ensureCategoryId(form.collection, patchProjectKey);
+      const response = await fetch(`/api/docs/${selectedAsset.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: form.title.trim(),
+          description: form.description.trim(),
+          content: form.content,
+          category: categoryId,
+          tags: parseTags(form.tagsInput),
+          status: form.status,
+        }),
+      });
+      if (!response.ok) return;
 
       await fetchAssets();
       setOriginalForm({ ...form });
@@ -617,8 +561,7 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
 
     setDeleting(true);
     try {
-      const endpoint = selectedAsset.kind === 'design_doc' ? `/api/docs/${selectedAsset.id}` : `/api/context/${selectedAsset.id}`;
-      const response = await fetch(endpoint, { method: 'DELETE' });
+      const response = await fetch(`/api/docs/${selectedAsset.id}`, { method: 'DELETE' });
       if (!response.ok) return;
       await fetchAssets();
       handleCloseEditor();
@@ -631,16 +574,6 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
     () => JSON.stringify(form) !== JSON.stringify(originalForm),
     [form, originalForm],
   );
-
-  useEffect(() => {
-    if (form.kind !== 'context') return;
-    if (editorMode !== 'create') return;
-    if (form.fileName.trim() && form.fileName !== 'knowledge-asset.md') return;
-    setForm(previous => ({
-      ...previous,
-      fileName: getSuggestedContextFileName(previous.title, previous.format),
-    }));
-  }, [editorMode, form.fileName, form.format, form.kind, form.title]);
 
   return (
     <div className="h-full overflow-y-auto bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.08),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(59,130,246,0.08),_transparent_24%)]">
@@ -657,7 +590,7 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
                 Storage types stay system-defined, but organization becomes user-defined through collections, tags,
-                scope, and lifecycle filters. Design docs and context entries now live in the same operating surface.
+                scope, and lifecycle filters. Design docs and knowledge documents share documents/entries and documents/content.
               </p>
             </div>
 
@@ -676,11 +609,11 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
 
               <div className="flex gap-2">
                 <button
-                  onClick={() => handleStartCreate('context')}
+                  onClick={() => handleStartCreate('knowledge')}
                   className="inline-flex items-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-medium text-cyan-700 transition hover:border-cyan-300 hover:bg-cyan-100 dark:border-cyan-900/50 dark:bg-cyan-950/40 dark:text-cyan-300 dark:hover:bg-cyan-950/70"
                 >
                   <Plus className="h-4 w-4" />
-                  New Context
+                  New Knowledge
                 </button>
                 <button
                   onClick={() => handleStartCreate('design_doc')}
@@ -707,7 +640,7 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/30">
               <div className="text-xs font-medium uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">Collections</div>
               <div className="mt-2 text-3xl font-semibold text-zinc-950 dark:text-zinc-50">{collectionCounts.length}</div>
-              <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">User-defined groupings span across both storage systems.</div>
+              <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Collections are document categories (per project or _global).</div>
             </div>
             <div className="rounded-2xl border border-blue-200 bg-blue-50/80 p-4 dark:border-blue-900/40 dark:bg-blue-950/30">
               <div className="text-xs font-medium uppercase tracking-[0.2em] text-blue-700 dark:text-blue-300">Global Reach</div>
@@ -731,7 +664,7 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
               <div className="flex flex-wrap gap-2">
                 {([
                   ['all', 'All'],
-                  ['context', 'Context'],
+                  ['knowledge', 'Knowledge'],
                   ['design_doc', 'Design Docs'],
                   ['draft', 'AI Drafts'],
                 ] as const).map(([value, label]) => (
@@ -836,7 +769,7 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
                 </button>
                 {collectionCounts.length === 0 ? (
                   <p className="rounded-2xl border border-dashed border-zinc-200 px-3 py-4 text-xs leading-5 text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-                    Collections come from design doc categories and context groups. Create or rename them in the editor.
+                    Collections come from document categories. Create or pick them in the editor.
                   </p>
                 ) : (
                   collectionCounts.map(collection => (
@@ -921,7 +854,7 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
                   <Sparkles className="mb-4 h-8 w-8 text-zinc-300 dark:text-zinc-700" />
                   <div className="text-lg font-medium text-zinc-900 dark:text-zinc-100">No assets match this view.</div>
                   <p className="mt-2 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">
-                    Try relaxing filters, or create the first context entry or design doc in the structure you want to establish.
+                    Try relaxing filters, or create the first knowledge or design doc in the structure you want to establish.
                   </p>
                 </div>
               ) : (
@@ -1042,7 +975,7 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
                 <div className="space-y-5 px-5 py-5">
                   <div className="flex flex-wrap gap-2">
                     {([
-                      ['context', 'Context Asset'],
+                      ['knowledge', 'Knowledge doc'],
                       ['design_doc', 'Design Doc'],
                     ] as const).map(([value, label]) => (
                       <button
@@ -1077,7 +1010,7 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
                             autoFocus
                             value={form.title}
                             onChange={event => setForm(previous => ({ ...previous, title: event.target.value }))}
-                            placeholder={form.kind === 'design_doc' ? 'Agent architecture review' : 'Shared auth context'}
+                            placeholder={form.kind === 'design_doc' ? 'Agent architecture review' : 'Shared auth notes'}
                             className="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-700 outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
                           />
                         </div>
@@ -1143,7 +1076,7 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
                           </div>
                         </div>
 
-                        {form.kind === 'context' ? (
+                        {form.kind === 'knowledge' ? (
                           <div>
                             <label className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-zinc-400">Scope</label>
                             <div className="flex flex-wrap gap-2">
@@ -1153,12 +1086,14 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
                               ] as const).map(([value, label]) => (
                                 <button
                                   key={value}
+                                  type="button"
+                                  disabled={editorMode === 'edit'}
                                   onClick={() => setForm(previous => ({ ...previous, scope: value }))}
                                   className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
                                     form.scope === value
                                       ? 'bg-zinc-950 text-white dark:bg-zinc-100 dark:text-zinc-900'
                                       : 'border border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
-                                  }`}
+                                  } ${editorMode === 'edit' ? 'cursor-not-allowed opacity-60' : ''}`}
                                 >
                                   {label}
                                 </button>
@@ -1172,56 +1107,23 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
                         )}
                       </div>
 
-                      {form.kind === 'context' ? (
-                        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
-                          <div>
-                            <label className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-zinc-400">File Name</label>
-                            <input
-                              value={form.fileName}
-                              onChange={event => setForm(previous => ({ ...previous, fileName: event.target.value }))}
-                              placeholder="knowledge-asset.md"
-                              className="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-700 outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:focus:border-zinc-500 dark:focus:ring-zinc-800"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-zinc-400">Format</label>
-                            <div className="flex gap-2">
-                              {(['markdown', 'json', 'text'] as const).map(value => (
-                                <button
-                                  key={value}
-                                  onClick={() => setForm(previous => ({ ...previous, format: value }))}
-                                  className={`rounded-full px-3 py-1.5 text-xs font-medium uppercase transition ${
-                                    form.format === value
-                                      ? 'bg-zinc-950 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                                      : 'border border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
-                                  }`}
-                                >
-                                  {value}
-                                </button>
-                              ))}
+                      {form.kind === 'knowledge' ? (
+                        <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-3 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+                          {form.fileName ? (
+                            <div>
+                              <span className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-400">Storage file</span>
+                              <p className="mt-1 font-mono text-xs text-zinc-700 dark:text-zinc-200">{form.fileName}</p>
+                              <p className="mt-1 text-xs">Content lives under documents/content; rename or move via filesystem if needed.</p>
                             </div>
-                          </div>
-                        </div>
-                      ) : null}
-
-                      {form.kind === 'context' ? (
-                        <div>
-                          <label className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-zinc-400">External Source Path</label>
-                          <div className="flex items-start gap-3 rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-                            <Globe className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" />
-                            <div className="min-w-0 flex-1">
-                              <input
-                                value={form.sourcePath}
-                                onChange={event => setForm(previous => ({ ...previous, sourcePath: event.target.value }))}
-                                placeholder="Optional absolute source path if the asset should reference an external file."
-                                className="w-full bg-transparent text-sm text-zinc-700 outline-none placeholder:text-zinc-400 dark:text-zinc-200"
-                              />
-                              <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-                                Leave blank to keep this asset fully managed by the knowledge center.
-                              </p>
-                            </div>
-                          </div>
+                          ) : (
+                            <p className="text-xs">New knowledge docs are created as Markdown with a server-assigned file name.</p>
+                          )}
+                          {form.sourcePath ? (
+                            <p className="mt-2 text-xs">
+                              <Globe className="mr-1 inline h-3.5 w-3.5 align-text-bottom text-zinc-400" />
+                              External source: <span className="font-mono">{form.sourcePath}</span>
+                            </p>
+                          ) : null}
                         </div>
                       ) : null}
 

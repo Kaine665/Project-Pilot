@@ -1,21 +1,11 @@
 'use client';
 
 import { memo } from 'react';
-import { ArrowDown, BookMarked, CheckCircle2, FileText, RotateCcw, X } from 'lucide-react';
-
-export interface TopicCompletionInfo {
-  completed: boolean;
-  confidence: number;
-  summary: string;
-}
+import { ArrowDown, FileText, RotateCcw, X } from 'lucide-react';
 
 interface ChatNotificationBannersProps {
-  knowledgeDrafts: Array<{ entryId: string; label: string }>;
   docsSaved: Array<{ docId: string; title: string; projectKey: string }>;
-  topicCompletion: TopicCompletionInfo | null;
-  onDismissKnowledge: () => void;
   onDismissDocs: () => void;
-  onDismissTopicCompletion: () => void;
   /** 点击横幅时滚动到对应 ActionCard 的位置 */
   onScrollToAction?: (actionType: string) => void;
   /** 会话检查点已生成，显示续接按钮 */
@@ -27,36 +17,18 @@ interface ChatNotificationBannersProps {
 }
 
 export const ChatNotificationBanners = memo(function ChatNotificationBanners({
-  knowledgeDrafts,
   docsSaved,
-  topicCompletion,
-  onDismissKnowledge,
   onDismissDocs,
-  onDismissTopicCompletion,
   onScrollToAction,
   checkpointSaved,
   onResumeCheckpoint,
   onDismissCheckpoint,
   className = 'mx-3 mb-2',
 }: ChatNotificationBannersProps) {
-  if (knowledgeDrafts.length === 0 && docsSaved.length === 0 && !topicCompletion && !checkpointSaved) return null;
+  if (docsSaved.length === 0 && !checkpointSaved) return null;
 
   return (
     <>
-      {topicCompletion && (
-        <div className={`${className} flex items-center justify-between gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs dark:border-green-800/50 dark:bg-green-900/15`}>
-          <div className="flex items-center gap-1.5 text-green-700 dark:text-green-400">
-            <CheckCircle2 className="h-3 w-3 shrink-0" />
-            <span>主题已完成 — {topicCompletion.summary}</span>
-          </div>
-          <button
-            onClick={onDismissTopicCompletion}
-            className="shrink-0 text-green-400 hover:text-green-600 dark:text-green-600 dark:hover:text-green-400"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </div>
-      )}
       {checkpointSaved && (
         <div className={`${className} flex items-center justify-between gap-2 rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs dark:border-violet-800/50 dark:bg-violet-900/15`}>
           <div className="flex items-center gap-1.5 text-violet-700 dark:text-violet-400">
@@ -77,25 +49,6 @@ export const ChatNotificationBanners = memo(function ChatNotificationBanners({
               <X className="h-3 w-3" />
             </button>
           </div>
-        </div>
-      )}
-      {knowledgeDrafts.length > 0 && (
-        <div className={`${className} flex items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs dark:border-amber-800/50 dark:bg-amber-900/15`}>
-          <button
-            onClick={() => onScrollToAction?.('save-knowledge')}
-            disabled={!onScrollToAction}
-            className={`flex min-w-0 items-center gap-1.5 text-amber-700 dark:text-amber-400 ${onScrollToAction ? 'cursor-pointer hover:underline' : ''}`}
-          >
-            <BookMarked className="h-3 w-3 shrink-0" />
-            <span className="truncate">Agent 已保存 {knowledgeDrafts.length} 条知识草稿，待确认</span>
-            {onScrollToAction && <ArrowDown className="h-3 w-3 shrink-0 opacity-50" />}
-          </button>
-          <button
-            onClick={onDismissKnowledge}
-            className="shrink-0 text-amber-400 hover:text-amber-600 dark:text-amber-600 dark:hover:text-amber-400"
-          >
-            <X className="h-3 w-3" />
-          </button>
         </div>
       )}
       {docsSaved.length > 0 && (

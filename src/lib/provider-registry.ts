@@ -35,6 +35,10 @@ const ProviderEntrySchema = z.object({
   apiProtocol: z.enum(['anthropic', 'openai']).optional(),
   authMethod: z.enum(['AUTH_TOKEN', 'API_KEY']).optional(),
   extraEnv: z.record(z.string(), z.string()).optional(),
+  /** 与聊天 base 不同的模型列表根地址（Zod 须显式声明，否则 parse 会剥掉未知键） */
+  modelsListBaseUrl: z.string().url().optional(),
+  modelsListProtocol: z.enum(['anthropic', 'openai']).optional(),
+  modelsListRelativePath: z.string().min(1).optional(),
 });
 
 const FallbackRuleSchema = z.object({
@@ -124,6 +128,12 @@ export interface ProviderPreset {
   apiProtocol?: 'anthropic' | 'openai';
   /** 自定义供应商：认证方式 */
   authMethod?: 'AUTH_TOKEN' | 'API_KEY';
+  /** 模型列表接口根地址（不同于聊天 baseUrl 时使用，如 DeepSeek） */
+  modelsListBaseUrl?: string;
+  /** 模型列表接口协议（默认与聊天一致；有些供应商聊天走 Anthropic、列表走 OpenAI） */
+  modelsListProtocol?: 'anthropic' | 'openai';
+  /** OpenAI 式列表在 origin 下的路径段（默认 v1/models；DeepSeek 官方为 models） */
+  modelsListRelativePath?: string;
 }
 
 // ─── 从 JSON 数据构建 PROVIDER_REGISTRY ─────────────────────────

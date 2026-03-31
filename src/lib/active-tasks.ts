@@ -5,7 +5,7 @@
  * 每个 Agent 启动任务时注册，完成/失败时注销。
  * 其他 Agent 启动时读取看板，了解当前并行任务全貌，避免冲突。
  *
- * 数据存储在 ~/.project-pilot/data/active-tasks.json
+ * 路径由 getActiveTasksPath() 决定（默认在 DATA_DIR 下 agents/active-tasks.json）；布局权威见本机 ~/.project-pilot/README.md 与 数据文件夹现状.md
  *
  * 使用方式（Agent 在 bash 中调用）：
  *   注册：npx tsx src/lib/active-tasks.ts register --title "任务标题" [选项]
@@ -16,8 +16,9 @@
  *   清理：npx tsx src/lib/active-tasks.ts prune
  */
 
-import { getActiveTasksPath, getTodosPath, readJsonFile, modifyJsonFile } from './file-store';
-import type { TodosData, TodoLifecycle } from '@/types';
+import { getActiveTasksPath, readJsonFile, modifyJsonFile } from './file-store';
+import { modifyTodosMerged } from '@/lib/todo-file-store';
+import type { TodoLifecycle } from '@/types';
 
 // ── 类型定义 ──
 
@@ -78,8 +79,6 @@ function generateId(): string {
 
 // ── Todo 联动 ──
 
-const TODO_DEFAULT: TodosData = { todos: [] };
-
 /**
  * 更新关联 Todo 的 lifecycle 和绑定字段。
  * 如果 todoId 为空则静默跳过。
@@ -91,7 +90,7 @@ async function syncTodoLifecycle(
 ): Promise<void> {
   if (!todoId) return;
   try {
-    await modifyJsonFile<TodosData>(getTodosPath(), TODO_DEFAULT, (data) => ({
+    await modifyTodosMerged((data) => ({
       ...data,
       todos: data.todos.map((t) => {
         if (t.id !== todoId) return t;

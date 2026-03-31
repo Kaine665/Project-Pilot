@@ -1,5 +1,5 @@
 /**
- * CodexStreamParser — 将 Codex CLI exec --json 的 NDJSON 输出解析为 ChatSSEEvent。
+ * CodexStreamParser — 将 Codex CLI exec --json 的 NDJSON 输出解析为 AgentEvent。
  *
  * Codex 事件类型：thread.started, turn.started, item.started, item.completed,
  * turn.completed, turn.failed, error
@@ -14,7 +14,7 @@
  * - turn.failed → error
  */
 
-import type { ChatSSEEvent } from '@/types';
+import type { AgentEvent } from '@/types';
 
 /** Codex exec --json 单行事件（部分字段） */
 interface CodexJsonEvent {
@@ -42,10 +42,10 @@ export class CodexStreamParser {
   private pendingCommands = new Map<string, string>();
 
   /**
-   * 解析单行 NDJSON，返回对应的 ChatSSEEvent 数组。
+   * 解析单行 NDJSON，返回对应的 AgentEvent 数组。
    */
-  parse(line: string): ChatSSEEvent[] {
-    const events: ChatSSEEvent[] = [];
+  parse(line: string): AgentEvent[] {
+    const events: AgentEvent[] = [];
     const trimmed = line.trim();
     if (!trimmed) return events;
 

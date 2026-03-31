@@ -6,7 +6,7 @@
  */
 
 import type { ChildProcess } from 'child_process';
-import type { ChatSSEEvent, ChatToolCall, ContentBlock, DangerDetectorSettings } from '@/types';
+import type { AgentEvent, ChatToolCall, ContentBlock, DangerDetectorSettings } from '@/types';
 
 // Run lifecycle
 
@@ -14,7 +14,7 @@ import type { ChatSSEEvent, ChatToolCall, ContentBlock, DangerDetectorSettings }
  * Run lifecycle:
  *   running -> finalizing -> completed | failed | stopped
  *
- * `finalizing`: stream has ended, satellite tasks and persistence are in progress.
+ * `finalizing`: stream has ended, persistence and post-processing are in progress.
  * `completed`: result has been persisted to disk - safe to read from any source.
  */
 export type RunStatus = 'running' | 'finalizing' | 'awaiting' | 'completed' | 'failed' | 'stopped';
@@ -76,8 +76,8 @@ export interface BaseRun {
   runId: string;
   process: ChildProcess | null;
   status: RunStatus;
-  events: ChatSSEEvent[];
-  listeners: Set<(event: ChatSSEEvent, index: number) => void>;
+  events: AgentEvent[];
+  listeners: Set<(event: AgentEvent, index: number) => void>;
   startedAt: number;
   completedAt?: number;
 

@@ -13,7 +13,7 @@ export default function ContextPage() {
   useEffect(() => {
     (async () => {
       if (activeKey) {
-        router.replace(`/flows/docs/${activeKey}?view=context`);
+        router.replace(`/flows/docs/${activeKey}?view=knowledge`);
         return;
       }
 
@@ -22,7 +22,7 @@ export default function ContextPage() {
         const data = await res.json();
         const first = (data.projects ?? []).find((project: { archived?: boolean }) => !project.archived);
         if (first) {
-          router.replace(`/flows/docs/${first.key}?view=context`);
+          router.replace(`/flows/docs/${first.key}?view=knowledge`);
           return;
         }
       } catch {
@@ -42,13 +42,15 @@ export default function ContextPage() {
           <BookOpen className="h-6 w-6" />
         </div>
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
-          上下文已并入文档
+          知识文档在统一文档库
         </h1>
         <p className="mt-3 text-sm leading-6 text-zinc-500 dark:text-zinc-400">
-          旧的独立上下文页面已经收口到统一文档页。你可以在文档里继续通过“上下文”筛选保持相同的工作焦点，而不用再把系统拆成两个入口。
+          本入口会跳到文档库并筛选「知识文档」（<code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">view=knowledge</code>）。设计文档与知识文档的正文均在{' '}
+          <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">documents/content/</code>，由{' '}
+          <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">/api/docs</code> 读写。
         </p>
         <button
-          onClick={() => router.push('/flows/docs?view=context')}
+          onClick={() => router.push('/flows/docs?view=knowledge')}
           className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-zinc-950 px-5 py-3 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-950"
         >
           打开文档

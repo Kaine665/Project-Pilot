@@ -10,6 +10,7 @@
  * - 'disabled' — Detection skipped entirely for this category.
  */
 
+import path from 'path';
 import type { DangerLevel, DangerCategory, DangerDetectorSettings } from '@/types';
 import { DEFAULT_DANGER_SETTINGS } from '@/types';
 import { getDataDir, getAgentDataDir } from '@/lib/file-store';
@@ -66,7 +67,8 @@ const WRITE_INDICATORS = /\b(>|>>|tee|mv|cp|rm|del|unlink|echo\s+.*>|cat\s+.*>|p
 function detectDataDirWrite(command: string): { reason: string } | null {
   const normalized = command.replace(/\\/g, '/');
   const dataDirNormalized = getDataDir().replace(/\\/g, '/');
-  const agentDataNormalized = getAgentDataDir().replace(/\\/g, '/');
+  const agentWorkspacesNormalized = getAgentDataDir().replace(/\\/g, '/');
+  const legacyAgentDataNormalized = path.join(getDataDir(), 'agents', 'data').replace(/\\/g, '/');
 
   const referencesDataDir = normalized.includes(dataDirNormalized)
     || normalized.includes('.project-pilot/data')
@@ -74,8 +76,8 @@ function detectDataDirWrite(command: string): { reason: string } | null {
 
   if (!referencesDataDir) return null;
 
-  // Whitelist: agent data dir is the Agent's private data store — writes are expected
-  if (normalized.includes(agentDataNormalized)) {
+  // 白名单：agents/workspaces（及迁移前 agents/data）为 Agent 私有工作区，允许写入
+  if (normalized.includes(agentWorkspacesNormalized) || normalized.includes(legacyAgentDataNormalized)) {
     return null;
   }
 

@@ -1,8 +1,8 @@
-import type { ChatSSEEvent } from '@/types';
+import type { AgentEvent } from '@/types';
 
 /**
  * Parse a single NDJSON line from `claude -p --verbose --output-format stream-json`
- * and convert it into ChatSSEEvents.
+ * and convert it into AgentEvents.
  *
  * With --verbose, Claude CLI outputs granular streaming events:
  * - {"type":"system","subtype":"init",...} — session init (skip)
@@ -33,7 +33,7 @@ export class StreamParser {
   /** Claude CLI session ID, captured from system.init or result events */
   sessionId: string | null = null;
 
-  parse(line: string): ChatSSEEvent[] {
+  parse(line: string): AgentEvent[] {
     const trimmed = line.trim();
     if (!trimmed) return [];
 
@@ -44,7 +44,7 @@ export class StreamParser {
       return [];
     }
 
-    const events: ChatSSEEvent[] = [];
+    const events: AgentEvent[] = [];
 
     switch (json.type) {
       case 'system': {
@@ -179,7 +179,7 @@ export class StreamParser {
  * Stateless parse function for backward compatibility.
  * For streaming, prefer using StreamParser instance.
  */
-export function parseStreamLine(line: string): ChatSSEEvent[] {
+export function parseStreamLine(line: string): AgentEvent[] {
   const parser = new StreamParser();
   return parser.parse(line);
 }

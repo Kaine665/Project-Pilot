@@ -1,4 +1,4 @@
-import type { Agent, ProviderId, OpenAIReasoningEffort, ChatSSEEvent } from '@/types';
+import type { Agent, ProviderId, OpenAIReasoningEffort, AgentEvent } from '@/types';
 import type { DeferredInputBufferItem } from '@/types/agent-chat';
 
 // ── Exported types ──
@@ -25,19 +25,21 @@ export interface AgentChatPanelProps {
   projectKey?: string | null;
   /** Pre-loaded agents list from parent; skips redundant /api/agents fetch */
   cachedAgents?: Agent[];
-  /** Pre-loaded settings (provider, model, effort) from parent; skips /api/settings fetch */
+  /** 父组件预载的全局推理相关字段；模型列表由聚合接口统一提供 */
   cachedSettings?: {
-    provider: ProviderId;
-    model: string;
-    modelOptions: ModelSelectOption[];
     effort: OpenAIReasoningEffort;
     fastMode: boolean;
   };
   /** Workspace mode hides legacy runtime/config chrome so the parent page owns the three-column shell. */
   workspaceMode?: boolean;
+  /**
+   * When `initialSessionId` is null, scopes SPA panel cache so each draft tab is isolated.
+   * Pass a stable per-tab id from the parent (e.g. panel key).
+   */
+  draftCacheSlot?: string | number | null;
 }
 
-export type IndexedSSEEvent = ChatSSEEvent & { _idx: number };
+export type IndexedSSEEvent = AgentEvent & { _idx: number };
 export type ModelSelectOption = { value: string; label: string };
 
 export const PROVIDER_LABELS: Record<ProviderId, string> = {

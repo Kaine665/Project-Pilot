@@ -306,7 +306,7 @@ components:
         type:
           type: string
           description: Resource type determining which loader handles it
-          enum: [context, system-prompt, todo-list, inline-text, knowledge-instructions, doc-save-instructions, session-title-instructions, context-index, active-tasks, global-prompt, project-prompt, suspended-tasks, design-docs-index, agent-data-store]
+          enum: [context, system-prompt, todo-list, inline-text, knowledge-instructions, doc-save-instructions, session-title-instructions, context-index, active-tasks, global-prompt, project-prompt, design-docs-index, agent-data-store]
         id:
           type: string
           description: Resource identifier (semantics depend on type)

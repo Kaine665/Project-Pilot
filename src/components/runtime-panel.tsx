@@ -6,7 +6,7 @@ import {
   Terminal, Globe, Users, ShieldOff, ListTodo, Eye, HardDrive, Loader2,
   Copy, ExternalLink,
 } from 'lucide-react';
-import type { Agent, AgentCapabilities, ContextEntry } from '@/types';
+import type { Agent, AgentCapabilities } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import type { SessionConfig } from '@/types/agent-chat';
 import { CAPABILITY_ITEMS } from '@/components/agent-form';
@@ -413,20 +413,7 @@ export function RuntimePanel({
   const [skillsOpen, setSkillsOpen] = useState(true);
   const [sessionAdditionsOpen, setSessionAdditionsOpen] = useState(true);
 
-  // Fetched data
-  const [contextEntries, setContextEntries] = useState<ContextEntry[]>([]);
   const [skills, setSkills] = useState<{ name: string; description: string }[]>([]);
-
-  // Fetch context entries
-  useEffect(() => {
-    fetch('/api/context')
-      .then((r) => r.json())
-      .then((data) => {
-        const entries: ContextEntry[] = data.entries ?? [];
-        setContextEntries(entries.filter((e) => e.status !== 'draft'));
-      })
-      .catch(() => {});
-  }, []);
 
   // Fetch skills
   useEffect(() => {
@@ -459,18 +446,6 @@ export function RuntimePanel({
   const handleAddResource = useCallback(() => {
     window.dispatchEvent(new CustomEvent('toggle-session-config'));
   }, []);
-
-  // Active context entries (those bound to this session or agent)
-  const boundContextIds = useMemo(() => {
-    const sessionCtx = sessionConfig.contextIds ?? [];
-    const agentCtx = agent.contextIds ?? [];
-    return new Set([...sessionCtx, ...agentCtx]);
-  }, [sessionConfig.contextIds, agent.contextIds]);
-
-  const activeContextEntries = useMemo(
-    () => contextEntries.filter((e) => boundContextIds.has(e.id)),
-    [contextEntries, boundContextIds],
-  );
 
   // Bound skills
   const boundSkillNames = useMemo(() => {
@@ -535,21 +510,9 @@ export function RuntimePanel({
             open={knowledgeOpen}
             onToggle={() => setKnowledgeOpen((v) => !v)}
           >
-            {activeContextEntries.length === 0 ? (
-              <span className="text-[11px] text-zinc-400 dark:text-zinc-500 italic pl-1">
-                暂无绑定的知识条目
-              </span>
-            ) : (
-              activeContextEntries.map((entry) => (
-                <ItemRow
-                  key={entry.id}
-                  icon={FileText}
-                  name={entry.label}
-                  badge="知识"
-                  badgeColor="bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400"
-                />
-              ))
-            )}
+            <span className="text-[11px] text-zinc-400 dark:text-zinc-500 italic pl-1">
+              设计文档与知识条目统一在 documents/；提示词中会注入设计文档索引，Code Card 等来自知识类文档。
+            </span>
           </SubGroup>
 
           {/* Skills & Tools */}

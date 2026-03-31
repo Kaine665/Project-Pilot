@@ -9,19 +9,24 @@
 
 import type { ResourceLoader, LoaderContext } from '../resource-loader';
 import type { ResourceRef, ResolvedResource } from '@/types/resource';
-import { getDesignDocsIndexPath, getDesignDocFilePath, readJsonFile } from '@/lib/file-store';
+import { getDocumentContentPath } from '@/lib/file-store';
+import { readDocsIndexFromDocuments } from '@/lib/documents-store';
 import type { DocsIndexData, DocEntry } from '@/types';
 
 export class DesignDocsIndexLoader implements ResourceLoader {
   readonly type = 'design-docs-index' as const;
 
   async resolve(ref: ResourceRef, _ctx: LoaderContext): Promise<ResolvedResource> {
-    const data = await readJsonFile<DocsIndexData>(getDesignDocsIndexPath(), { projects: {} });
+    const data: DocsIndexData = await readDocsIndexFromDocuments();
 
     // 过滤掉 deprecated 状态的文档——已废弃文档不注入 AI prompt
     const activeProjects: Record<string, DocEntry[]> = {};
     for (const [key, entries] of Object.entries(data.projects)) {
-      const active = entries.filter(e => (e.status ?? 'active') !== 'deprecated');
+      const active = entries.filter(
+        e =>
+          (e.documentKind ?? 'design_doc') === 'design_doc' &&
+          (e.status ?? 'active') !== 'deprecated',
+      );
       if (active.length > 0) activeProjects[key] = active;
     }
 
@@ -32,7 +37,7 @@ export class DesignDocsIndexLoader implements ResourceLoader {
 
     const tableHeader = '| 标题 | 描述 | 状态 | 文件路径 |\n|------|------|------|---------|';
     const toRow = (e: DocEntry) => {
-      const filePath = getDesignDocFilePath(e.fileName);
+      const filePath = e.sourcePath || getDocumentContentPath(e.fileName);
       const desc = e.description || '-';
       const status = e.status === 'draft' ? '📝 draft' : '';
       return `| ${e.title} | ${desc} | ${status} | \`${filePath}\` |`;

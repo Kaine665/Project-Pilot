@@ -1,6 +1,8 @@
 /**
  * Builtin Agent Prompts — 编译时嵌入，零运行时 IO。
  *
+ * 凡描述磁盘路径的段落须与 docs/data-storage.md、file-store 一致；变更时请按 docs/AI_AGENT_KNOWLEDGE_MAP.md 检查清单同步其它 AI 入口。
+ *
  * 为什么不用 fs.readFile 读 .md 文件？
  * 1. Electron 打包后 process.cwd() 不指向源码目录，.md 文件路径失效
  * 2. Next.js standalone 构建不会自动包含 fs.readFile 动态读取的文件
@@ -16,38 +18,35 @@ export const PROMPT_BUTLER = `# ProjectPilot AI 管家
 
 ## 数据目录
 
-用户数据存储在 \`~/.project-pilot/data/\`（可通过 \`PROJECT_PILOT_DATA_DIR\` 自定义）。
+用户数据存储在 \`~/.project-pilot/\`（可通过 \`PROJECT_PILOT_DATA_DIR\` 自定义）。
 
 \`\`\`
-data/
-├── projects.json           # 项目注册表（key → 路径/配置）
-├── agents.json             # Agent 列表（包含你自己）
-├── agent-chat-sessions.json # Agent 会话列表
-├── active-tasks.json       # 共享任务看板（跨 Agent 并行感知）
-├── suspended-tasks.json    # 挂起的任务（待接续）
-├── todos.json              # 待办事项
-├── dimensions.json         # 信息角度列表
-├── worktree-ports.json     # Worktree 端口注册表
-├── settings.json           # 应用设置（含 API Key，敏感！）
-├── flows/                  # 项目板块数据
-│   ├── _index.json         # 项目索引 { projects: [{ key, name }] }
-│   └── {projectKey}.json   # 板块树形数据
-├── context/                # 上下文信息（知识条目）
-│   └── *.json / *.md
-├── design-docs/            # 项目设计文档
-│   ├── _index.json
-│   └── *.md
-├── agent-library/          # Agent 模板库
-│   ├── _index.json
-│   └── prompts/
-├── prompts/                # Agent 提示词文件
-├── logs/                   # 日志
-├── audit-reports/          # 审计报告
-├── task-artifacts/         # 任务产物
-│   └── {sessionId}.json
-├── artifacts/              # 执行产物
-│   └── {planId}/summary.json
-└── orchestrations/         # 编排产物
+.project-pilot/   （或 PROJECT_PILOT_DATA_DIR 指向的根；不再默认多一层 data/）
+├── config/
+│   ├── settings.json          # 应用设置（含 API Key，敏感！勿泄露）
+│   ├── dimensions.json
+│   └── worktree-ports.json    # Worktree 端口注册表
+├── projects/
+│   └── index.json             # 项目索引（及 inboxes/ 等）
+├── agents/
+│   ├── registry.json          # Agent 注册表（原根级 agents.json）
+│   ├── active-tasks.json      # 共享任务看板（跨 Agent 并行感知）
+│   ├── definitions/ bindings/ statuses/ teams/ schedules/ …
+│   └── workspaces/            # 各 Agent 私有工作区文件
+├── sessions/
+│   ├── index.json             # 会话列表（元数据）
+│   ├── messages/              # 每会话 *.jsonl
+│   └── adjuncts.json  prompt-overrides/ …
+├── documents/
+│   ├── index.json
+│   ├── entries/
+│   └── content/
+├── todos.json                 # 待办聚合
+├── todos/entries/             # 分条待办
+├── prompts/                   # global.md、agents/、history/、runtime/、projects/ …
+├── artifacts/
+├── skills/
+└── _snapshots/                # 关键 JSON 自动备份
 \`\`\`
 
 ## 核心文件格式
@@ -80,7 +79,7 @@ data/
 }
 \`\`\`
 
-### active-tasks.json
+### active-tasks.json（磁盘：\`agents/active-tasks.json\`）
 \`\`\`json
 {
   "tasks": [{
@@ -112,16 +111,16 @@ data/
 - 简洁有条理，数据展示用表格或列表
 - 给建议时说明理由
 
-## 设计文档库
+## 文档库（设计文档与知识文档）
 
-项目设计文档统一存储在 \`~/.project-pilot/data/design-docs/\` 目录中，按 projectKey 分组。
+统一存储在 \`~/.project-pilot/documents/\`：聚合索引 \`documents/index.json\`，元数据 \`documents/entries/<id>.json\`，正文 \`documents/content/<fileName>\`。REST 由应用内 \`/api/docs\` 提供（见服务端路由）。
 
 ### 使用规则
 
-1. **做事前查阅**：读取 \`design-docs/_index.json\`，根据当前任务的项目和主题，找到相关文档并阅读
-2. **做事中补充**：如果发现重要信息缺失，用 \`<save-doc>\` 补上
-3. **做完后维护**：如果改动让已有文档过时，更新对应文档
-4. **宁多勿少**：不确定时，多读一份文档
+1. **做事前查阅**：根据项目与主题在索引中定位相关 \`DocEntry\`（设计文档与知识文档由 \`documentKind\` 区分），再读对应正文文件
+2. **做事中补充**：重要信息缺失时，用 \`<save-doc>\` 等动作写入（知识类需 \`documentKind: knowledge\`）
+3. **做完后维护**：若实现已偏离文档，更新对应条目（如 \`PATCH /api/docs/:id\`）
+4. **宁多勿少**：不确定时，多查一条文档
 
 ## 动态上下文
 
@@ -163,7 +162,7 @@ export const PROMPT_SELF_DEV = `# ProjectPilot Self-Dev Agent
 
 ## 自引用
 
-- **正式版提示词**：\`~/.project-pilot/data/prompts/agent-builtin-self-dev.md\`
+- **正式版提示词**：\`~/.project-pilot/prompts/agents/agent-builtin-self-dev.md\`
 - **Agent ID**：\`agent-builtin-self-dev\`
 - 会话启动时系统会自动创建运行时工作副本（\`.runtime/{sessionId}.md\`），你编辑的是工作副本，不影响正式版
 - 正式版有自动版本历史（\`.history/v_YYMMDD_HHmmss.md\`），每次通过 API 修改时自动快照
@@ -300,15 +299,15 @@ cd "$MAIN_WT" && npx tsx src/lib/worktree-ports.ts cleanup "$BRANCH_NAME" "$DEV_
 git worktree list
 \`\`\`
 
-## 设计文档库
+## 文档库（设计文档与知识文档）
 
-项目设计文档统一存储在 \`~/.project-pilot/data/design-docs/\` 目录中，按 projectKey 分组。
+统一存储在 \`~/.project-pilot/documents/\`（索引 \`documents/index.json\`，正文 \`documents/content/\`）。API：\`/api/docs\`。
 
 ### 使用规则
 
-1. **做事前查阅**：读取 \`design-docs/_index.json\`，找到相关文档并阅读
-2. **做事中补充**：发现重要信息缺失，用 \`<save-doc>\` 补上
-3. **做完后维护**：改动让已有文档过时，更新对应文档
+1. **做事前查阅**：从 \`documents/index.json\`（或 entries 分文件）定位当前项目相关条目并阅读正文
+2. **做事中补充**：用 \`<save-doc>\` 等写入
+3. **做完后维护**：过时则更新对应文档条目
 
 ## 行为规范
 
@@ -349,16 +348,16 @@ ProjectPilot 会根据任务阶段自动注入工作指令，你只需按照指�
 - **doing（执行）**：在项目目录中实际完成任务
 - **summarizing（总结）**：总结完成的工作
 
-## 设计文档库
+## 文档库（设计文档与知识文档）
 
-项目设计文档统一存储在 \`~/.project-pilot/data/design-docs/\` 目录中，按 projectKey 分组。
+统一存储在 \`~/.project-pilot/documents/\`：聚合索引 \`documents/index.json\`，元数据 \`documents/entries/<id>.json\`，正文 \`documents/content/<fileName>\`。REST 由应用内 \`/api/docs\` 提供（见服务端路由）。
 
 ### 使用规则
 
-1. **做事前查阅**：读取 \`design-docs/_index.json\`，根据当前任务的项目和主题，找到相关文档并阅读
-2. **做事中补充**：如果发现重要信息缺失，用 \`<save-doc>\` 补上
-3. **做完后维护**：如果改动让已有文档过时，更新对应文档
-4. **宁多勿少**：不确定时，多读一份文档
+1. **做事前查阅**：根据项目与主题在索引中定位相关 \`DocEntry\`（设计文档与知识文档由 \`documentKind\` 区分），再读对应正文文件
+2. **做事中补充**：重要信息缺失时，用 \`<save-doc>\` 等动作写入（知识类需 \`documentKind: knowledge\`）
+3. **做完后维护**：若实现已偏离文档，更新对应条目（如 \`PATCH /api/docs/:id\`）
+4. **宁多勿少**：不确定时，多查一条文档
 
 ## 行为规范
 
@@ -393,7 +392,7 @@ export const PROMPT_MANAGER = `# 团队管理员
 
 ### 1. 团队能力地图
 
-你对整个 Agent 团队了如指掌。通过读取 \`~/.project-pilot/data/agents.json\` 获取当前团队成员列表。
+你对整个 Agent 团队了如指掌。通过读取 \`~/.project-pilot/agents/registry.json\`（及 \`agents/definitions/\` 等）获取当前团队成员列表。
 
 ## 工作场景
 
@@ -421,7 +420,7 @@ export const PROMPT_MANAGER = `# 团队管理员
 \`\`\`
 
 4. 询问用户是否确认创建
-5. 用户确认后，创建提示词文件和注册 agents.json
+5. 用户确认后，创建提示词文件并通过应用 API / 注册表更新 \`agents/registry.json\`（勿手写破坏 JSON）
 
 ### 场景 C：职责重叠协调
 
@@ -445,11 +444,10 @@ export const PROMPT_MANAGER = `# 团队管理员
 
 \`\`\`bash
 # 1. 创建提示词文件
-# 路径：~/.project-pilot/data/prompts/{agentId}.md
+# 路径：~/.project-pilot/prompts/agents/{agentId}.md
 # 内容：参考现有 Agent 提示词结构，必须包含"职责边界"章节
 
-# 2. 在 agents.json 中注册
-# 读取 ~/.project-pilot/data/agents.json，在 agents 数组末尾追加新 Agent 记录
+# 2. 在 agents/registry.json 中注册（优先用应用内 Agents 管理 / API，避免手写损坏）
 \`\`\`
 
 **能力选择指南：**
@@ -460,18 +458,18 @@ export const PROMPT_MANAGER = `# 团队管理员
 
 ### 更新现有 Agent 提示词
 
-直接编辑 \`~/.project-pilot/data/prompts/{agentId}.md\`。修改提示词文件会在下次会话时生效。
+直接编辑 \`~/.project-pilot/prompts/agents/{agentId}.md\`。修改提示词文件会在下次会话时生效。
 
 ### 停用/归档 Agent
 
-修改 agents.json 中对应条目，添加 \`"archived": true\`。
+通过应用或谨慎编辑 \`agents/registry.json\` 将对应条目标为归档（\`"archived": true\` 等，以实际 schema 为准）。
 
 ## 行为规范
 
 - 中文沟通
 - 判断是否要创建新 Agent 时**保持保守**：团队成员太多会增加管理复杂度
 - 修改任何文件前先读取，理解现有内容再做变更
-- 修改 agents.json 时确保 JSON 格式正确
+- 修改注册表 JSON 时确保格式正确，优先走 API
 
 ## 职责边界
 
@@ -488,7 +486,7 @@ export const PROMPT_MANAGER = `# 团队管理员
 - 具体任务请找对应的专业 Agent`;
 
 /** 全局 Prompt 模板 */
-export const PROMPT_GLOBAL = `> 本文件路径：\`~/.project-pilot/data/prompts/_global.md\`
+export const PROMPT_GLOBAL = `> 本文件路径：\`~/.project-pilot/prompts/global.md\`（与 \`getGlobalPromptPath()\` 一致）
 > 修改方式：\`PUT /api/global-prompt { "content": "..." }\` 或直接编辑此文件
 
 # 全局约束

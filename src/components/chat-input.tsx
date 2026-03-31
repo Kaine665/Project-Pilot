@@ -70,11 +70,7 @@ interface ChatInputProps {
   onSelectGuest?: (agent: Agent) => void;
   /** Key for persisting draft text in localStorage (e.g. sessionId). If omitted, no draft persistence. */
   draftKey?: string;
-  /** Optional model selector for agent chat */
-  modelProviderLabel?: string;
-  providerOptions?: Array<{ value: string; label: string }>;
-  providerValue?: string;
-  onProviderChange?: (provider: string) => void;
+  /** Optional model selector for agent chat（value 可为 providerId\\u001emodelId 复合键） */
   modelOptions?: Array<{ value: string; label: string }>;
   modelValue?: string;
   onModelChange?: (model: string) => void;
@@ -104,10 +100,6 @@ export const ChatInput = memo(function ChatInput({
   showGuestPicker = false,
   onSelectGuest,
   draftKey,
-  modelProviderLabel,
-  providerOptions,
-  providerValue,
-  onProviderChange,
   modelOptions,
   modelValue,
   onModelChange,
@@ -508,27 +500,9 @@ export const ChatInput = memo(function ChatInput({
           <Paperclip className="h-2.5 w-2.5" />
           附加文件
         </button>
-        {onProviderChange && providerOptions && providerOptions.length > 0 && (
-          <label className="flex items-center gap-1 rounded-full border border-zinc-200 bg-white/80 px-2 py-0.5 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-300">
-            <span className="whitespace-nowrap font-medium">供应商</span>
-            <select
-              value={providerValue ?? ''}
-              onChange={(e) => onProviderChange(e.target.value)}
-              disabled={isStreaming}
-              className="min-w-[110px] rounded-sm bg-transparent text-xs font-medium text-zinc-900 outline-none dark:text-zinc-100"
-              title="选择供应商"
-            >
-              {providerOptions.map((opt) => (
-                <option key={opt.value} value={opt.value} className="bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
         {onModelChange && modelOptions && modelOptions.length > 0 && (
           <label className="flex items-center gap-1 rounded-full border border-zinc-200 bg-white/80 px-2 py-0.5 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-300">
-            <span className="whitespace-nowrap font-medium">{modelProviderLabel ? `模型·${modelProviderLabel}` : '模型'}</span>
+            <span className="whitespace-nowrap font-medium">模型</span>
             <select
               value={modelValue ?? ''}
               onChange={(e) => onModelChange(e.target.value)}

@@ -115,26 +115,15 @@ npm run dev
 
 #### 数据目录
 
-ProjectPilot 默认把数据存到用户目录：
+- **与 `file-store` 对齐的仓库内索引**：[`docs/data-storage.md`](docs/data-storage.md)  
+- **本机规范与现状**：`~/.project-pilot/README.md`、`数据文件夹现状.md`（不在 Git 内）
 
-- Windows: `C:\Users\<username>\.project-pilot\data\`
-- macOS: `/Users/<username>/.project-pilot/data/`
-- Linux: `/home/<username>/.project-pilot/data/`
-
-如需自定义：
-
-```bash
-PROJECT_PILOT_DATA_DIR=/path/to/custom/data
-```
-
-如果要从旧版本迁移项目内 `data/`：
-
-```bash
-npm run migrate:data
-```
+**对齐日期**：2026-03-31。
 
 ### 文档
 
+- [AI 知识地图与多入口同步](docs/AI_AGENT_KNOWLEDGE_MAP.md)
+- [数据目录（与 file-store 对齐）](docs/data-storage.md)
 - [Agent Chat Architecture](docs/agent-chat-architecture.md)
 - [Context System](docs/context-system.md)
 - [Data Storage](docs/data-storage.md)
@@ -265,26 +254,15 @@ Open `http://localhost:4000`
 
 #### Data Directory
 
-ProjectPilot stores data in the user directory by default:
+- **In-repo index aligned with `file-store`**: [`docs/data-storage.md`](docs/data-storage.md)  
+- **On your machine**: `~/.project-pilot/README.md` and `数据文件夹现状.md` (not in git)
 
-- Windows: `C:\Users\<username>\.project-pilot\data\`
-- macOS: `/Users/<username>/.project-pilot/data/`
-- Linux: `/home/<username>/.project-pilot/data/`
-
-Custom location:
-
-```bash
-PROJECT_PILOT_DATA_DIR=/path/to/custom/data
-```
-
-Migrate legacy project-local data:
-
-```bash
-npm run migrate:data
-```
+**Last aligned**: 2026-03-31.
 
 ### Documentation
 
+- [AI knowledge map and multi-tool sync](docs/AI_AGENT_KNOWLEDGE_MAP.md)
+- [Data directory (aligned with file-store)](docs/data-storage.md)
 - [Agent Chat Architecture](docs/agent-chat-architecture.md)
 - [Context System](docs/context-system.md)
 - [Data Storage](docs/data-storage.md)

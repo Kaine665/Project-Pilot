@@ -83,7 +83,7 @@
 
 ## 4.2 存储与目录（建议）
 
-在 `~/.project-pilot/data/experience-packs/` 下统一管理：
+在 `{DATA_DIR}/experience-packs/`（默认 `~/.project-pilot/experience-packs/`）下统一管理：
 
 ```text
 experience-packs/

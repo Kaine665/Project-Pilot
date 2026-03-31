@@ -1,5 +1,7 @@
 # 统一资源引用层（Resource Binding）重构计划
 
+> **2026-03 备忘**：本文为**历史计划**快照。当前代码已演进：`context` / `context-index` 资源与 `/api/context` 已删除；设计文档与知识文档统一在 `data/documents/` 与 **`/api/docs`**。请以 `src/types/resource.ts`、`resource-loaders/`、`docs/context-system.md` 为准。
+
 ## 范围：Phase 1-2（核心层 + Chat 模式接入）
 
 ## 一、目标

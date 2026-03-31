@@ -56,7 +56,7 @@ app.post('/', async (c) => {
       return c.json({ error: 'No files provided' }, 400);
     }
 
-    const uploadsDir = path.join(getDataDir(), 'uploads', sessionId);
+    const uploadsDir = path.join(getDataDir(), 'sessions', 'uploads', sessionId);
     await fs.mkdir(uploadsDir, { recursive: true });
 
     const results: Array<{

@@ -4,8 +4,6 @@ import { memo } from 'react';
 import {
   X,
   FileText,
-  BookMarked,
-  PauseCircle,
   Save,
 } from 'lucide-react';
 import { FormattedText } from '@/components/formatted-text';
@@ -14,8 +12,6 @@ import { ACTION_COLORS } from '@/lib/action-tag-parser';
 
 const PANEL_ICONS: Partial<Record<ActionTagType, React.ComponentType<{ className?: string }>>> = {
   'save-doc': FileText,
-  'save-knowledge': BookMarked,
-  'suspend-task': PauseCircle,
   'save-checkpoint': Save,
 };
 
@@ -89,10 +85,6 @@ function renderAttrs(tag: ParsedActionTag): React.ReactNode | null {
   const pills: Array<{ label: string; value: string }> = [];
 
   if (tag.type === 'save-doc') {
-    if (tag.attrs.project) pills.push({ label: '项目', value: tag.attrs.project });
-  } else if (tag.type === 'save-knowledge') {
-    if (tag.attrs.format) pills.push({ label: '格式', value: tag.attrs.format });
-  } else if (tag.type === 'suspend-task') {
     if (tag.attrs.project) pills.push({ label: '项目', value: tag.attrs.project });
   }
 
