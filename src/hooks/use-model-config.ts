@@ -18,9 +18,8 @@ import { useAvailableModels } from '@/hooks/use-available-models';
 
 type ModelSelectOption = { value: string; label: string };
 
-const INITIAL_PROVIDER: ProviderId = 'anthropic';
-const INITIAL_MODEL =
-  getProviderPreset(INITIAL_PROVIDER).models[0]?.id || '';
+/** 聊天栏未选模型时为空字符串；仅聚合列表中已配置凭据的供应商可选中 */
+type SelectedProvider = ProviderId | '';
 
 function providerLabel(id: ProviderId): string {
   return PROVIDER_LABELS[id] || id;
@@ -33,7 +32,7 @@ export interface CachedModelSettings {
 }
 
 export interface UseModelConfigReturn {
-  provider: ProviderId;
+  provider: SelectedProvider;
   model: string;
   /** 与 options[].value 对齐，供 ChatInput modelValue */
   compositeValue: string;
@@ -79,9 +78,7 @@ function pickPairFromItems(
   if (globalModel && inList(globalProvider, globalModel)) {
     return { providerId: globalProvider, modelId: globalModel };
   }
-  if (agent.defaultProvider && agent.defaultModel) {
-    return { providerId: agent.defaultProvider, modelId: agent.defaultModel };
-  }
+  // 不再选用「不在聚合列表中」的 Agent 默认（例如未配置 API Key 的 Anthropic）
   const first = items[0];
   return { providerId: first.providerId, modelId: first.value };
 }
@@ -91,23 +88,28 @@ export function useModelConfig(
   projectKey: string | null | undefined,
   cachedSettings?: CachedModelSettings,
 ): UseModelConfigReturn {
-  const { items: aggregateItems } = useAvailableModels();
+  const { items: aggregateItems, loading: aggregateLoading } = useAvailableModels();
 
-  const [provider, setProvider] = useState<ProviderId>(INITIAL_PROVIDER);
-  const [model, setModelState] = useState(INITIAL_MODEL);
+  const [provider, setProvider] = useState<SelectedProvider>('');
+  const [model, setModelState] = useState('');
   const [effort, setEffort] = useState<OpenAIReasoningEffort>(DEFAULT_OPENAI_REASONING_EFFORT);
   const [fastMode, setFastMode] = useState<boolean>(cachedSettings?.fastMode ?? false);
   const [globalEffort, setGlobalEffort] = useState<OpenAIReasoningEffort>(
     cachedSettings?.effort ?? DEFAULT_OPENAI_REASONING_EFFORT,
   );
   const [globalFastMode, setGlobalFastMode] = useState<boolean>(cachedSettings?.fastMode ?? false);
-  const [contextWindow, setContextWindow] = useState(getModelContextWindow(INITIAL_MODEL));
+  const [contextWindow, setContextWindow] = useState(() =>
+    getModelContextWindow(getProviderPreset('anthropic').models[0]?.id || ''),
+  );
   const [promptEstimate, setPromptEstimate] = useState(0);
 
   const globalDefaultsRef = useRef<{
     provider: ProviderId;
     model: string;
-  }>({ provider: INITIAL_PROVIDER, model: INITIAL_MODEL });
+  }>({
+    provider: 'anthropic',
+    model: getProviderPreset('anthropic').models[0]?.id || '',
+  });
   const [globalSettingsLoaded, setGlobalSettingsLoaded] = useState(false);
 
   const agentDefaultProvider = agent.defaultProvider;
@@ -192,9 +194,10 @@ export function useModelConfig(
     seededAgentIdRef.current = null;
   }, [agent.id]);
 
-  // 全局设置就绪后初始化 provider/model（每个 agent.id 一次；聚合列表可为空时用设置里的全局默认）
+  // 全局设置就绪且聚合列表拉取完成后初始化（避免先以空列表误判而落到 Anthropic 默认）
   useEffect(() => {
     if (!globalSettingsLoaded) return;
+    if (aggregateLoading) return;
     if (seededAgentIdRef.current === agent.id) return;
 
     const { provider: gp, model: gm } = globalDefaultsRef.current;
@@ -210,24 +213,15 @@ export function useModelConfig(
       ));
       setFastMode(providerId === 'openai' ? globalFastMode : false);
     } else {
-      if (agent.defaultProvider && agent.defaultModel) {
-        setProvider(agent.defaultProvider);
-        setModelState(agent.defaultModel);
-      } else {
-        setProvider(gp);
-        setModelState(gm || getProviderPreset(gp).models[0]?.id || INITIAL_MODEL);
-      }
-      const effP = (agent.defaultProvider ?? gp) as ProviderId;
-      setEffort(resolveOpenAIDefaultEffort(
-        agentDefaultOpenAIReasoningEffort,
-        effP,
-        globalEffort,
-      ));
-      setFastMode(effP === 'openai' ? globalFastMode : false);
+      setProvider('');
+      setModelState('');
+      setEffort(globalEffort);
+      setFastMode(false);
     }
     seededAgentIdRef.current = agent.id;
   }, [
     aggregateItems,
+    aggregateLoading,
     agent.id,
     agent.defaultProvider,
     agent.defaultModel,
@@ -237,11 +231,42 @@ export function useModelConfig(
     globalFastMode,
   ]);
 
+  // 首次进入时聚合尚为空、之后才拉到可用模型：补选列表内第一项（不展示未配置凭据的供应商）
+  useEffect(() => {
+    if (!globalSettingsLoaded || aggregateLoading) return;
+    if (aggregateItems.length === 0) return;
+    if (provider || model) return;
+    if (seededAgentIdRef.current !== agent.id) return;
+
+    const { provider: gp, model: gm } = globalDefaultsRef.current;
+    const { providerId, modelId } = pickPairFromItems(aggregateItems, agent, gp, gm);
+    setProvider(providerId);
+    setModelState(modelId);
+    setEffort(resolveOpenAIDefaultEffort(
+      agentDefaultOpenAIReasoningEffort,
+      providerId,
+      globalEffort,
+    ));
+    setFastMode(providerId === 'openai' ? globalFastMode : false);
+  }, [
+    aggregateItems,
+    aggregateLoading,
+    globalSettingsLoaded,
+    provider,
+    model,
+    agent.id,
+    agent.defaultProvider,
+    agent.defaultModel,
+    agentDefaultOpenAIReasoningEffort,
+    globalEffort,
+    globalFastMode,
+  ]);
+
   const options = useMemo((): ModelSelectOption[] => {
     const base = modelSelectOptionsFromAggregate(aggregateItems, providerLabel);
     if (provider && model) {
       const cur = compositeKeyForAggregateItem({
-        providerId: provider,
+        providerId: provider as ProviderId,
         value: model,
         label: model,
       });
@@ -249,7 +274,7 @@ export function useModelConfig(
         return [
           {
             value: cur,
-            label: `${model} · ${providerLabel(provider)}（当前）`,
+            label: `${model} · ${providerLabel(provider as ProviderId)}（当前）`,
           },
           ...base,
         ];
@@ -258,17 +283,22 @@ export function useModelConfig(
     return base;
   }, [aggregateItems, provider, model]);
 
-  const compositeValue = useMemo(
-    () =>
-      compositeKeyForAggregateItem({
-        providerId: provider,
-        value: model,
-        label: model,
-      }),
-    [provider, model],
-  );
+  const compositeValue = useMemo(() => {
+    if (!provider || !model) return '';
+    return compositeKeyForAggregateItem({
+      providerId: provider as ProviderId,
+      value: model,
+      label: model,
+    });
+  }, [provider, model]);
 
   const setModel = useCallback((compositeOrLegacy: string) => {
+    if (!compositeOrLegacy) {
+      setProvider('');
+      setModelState('');
+      setFastMode(false);
+      return;
+    }
     const parsed = parseAggregateCompositeKey(compositeOrLegacy);
     if (parsed) {
       setProvider(parsed.providerId);
@@ -322,7 +352,7 @@ export function useModelConfig(
   }, [agent.id, projectKey]);
 
   const applySessionConfig = useCallback((config: SessionConfig) => {
-    const nextProvider = (config.provider ?? agentDefaultProvider ?? provider) as ProviderId;
+    const nextProvider = (config.provider ?? agentDefaultProvider ?? (provider || undefined)) as ProviderId;
     if (config.provider) {
       setProvider(config.provider);
     }
@@ -352,27 +382,16 @@ export function useModelConfig(
     seededAgentIdRef.current = null;
     const { provider: gp, model: gm } = globalDefaultsRef.current;
 
-    let intendedProvider: ProviderId = gp;
+    let intendedProvider: SelectedProvider = '';
 
-    if (nextAgent.defaultProvider) {
-      intendedProvider = nextAgent.defaultProvider;
-      setProvider(nextAgent.defaultProvider);
-      if (nextAgent.defaultModel) {
-        setModelState(nextAgent.defaultModel);
-      } else {
-        const match = aggregateItems.find((it) => it.providerId === nextAgent.defaultProvider);
-        setModelState(
-          match?.value ?? getProviderPreset(nextAgent.defaultProvider).models[0]?.id ?? '',
-        );
-      }
-    } else if (aggregateItems.length > 0) {
+    if (aggregateItems.length > 0) {
       const picked = pickPairFromItems(aggregateItems, nextAgent, gp, gm);
       intendedProvider = picked.providerId;
       setProvider(picked.providerId);
       setModelState(picked.modelId);
     } else {
-      setProvider(gp);
-      setModelState(gm);
+      setProvider('');
+      setModelState('');
     }
 
     seededAgentIdRef.current = nextAgent.id;

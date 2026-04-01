@@ -1008,6 +1008,7 @@ export function AgentChatPanel({
     if (!text.trim() && (!images || images.length === 0)) return;
     if (isStreaming) return;
     if (hasProject && !projectKey) return;
+    if (chatModelOptions.length > 0 && (!chatProvider || !chatModel)) return;
 
     initTokenRef.current += 1;
 
@@ -1129,7 +1130,7 @@ export function AgentChatPanel({
       chatDispatch({ type: 'STREAM_END' });
       clearSessionRunning(targetSessionId);
     }
-  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, chatProvider, chatModel, chatEffort, chatFastMode, connectToStream, onSessionChange, t, sessionConfig, setSessionIdSync, persistPendingUserQueue, sessionTitle, markSessionRunning, clearSessionRunning]);
+  }, [agent.id, sessionId, isStreaming, hasProject, projectKey, chatProvider, chatModel, chatModelOptions.length, chatEffort, chatFastMode, connectToStream, onSessionChange, t, sessionConfig, setSessionIdSync, persistPendingUserQueue, sessionTitle, markSessionRunning, clearSessionRunning]);
 
   useEffect(() => {
     doSendRef.current = doSend;
