@@ -138,6 +138,88 @@ function getLegacyFlowIndexPath(): string {
   return path.join(getLegacyWorkflowsFlowsDir(), '_index.json');
 }
 
+/** 递归复制目录（供一次性迁移使用；目标侧已存在文件时不覆盖）。 */
+async function _migrateCopyDir(src: string, dest: string): Promise<void> {
+  await fs.mkdir(dest, { recursive: true });
+  const entries = await fs.readdir(src, { withFileTypes: true });
+  for (const ent of entries) {
+    const from = path.join(src, ent.name);
+    const to = path.join(dest, ent.name);
+    if (ent.isDirectory()) {
+      await _migrateCopyDir(from, to);
+    } else {
+      try {
+        await fs.access(to);
+      } catch {
+        await fs.copyFile(from, to);
+      }
+    }
+  }
+}
+
+const AGENTS_DATA_TO_WORKSPACES_MARKER = path.join(DATA_DIR, '.pp-migrated-agents-data-to-workspaces');
+
+/**
+ * 将旧版 `agents/data/<id>/` 迁入规范路径 `agents/workspaces/<id>/`（幂等）。
+ */
+async function migrateLegacyAgentsDataToWorkspacesOnce(): Promise<void> {
+  try {
+    await fs.access(AGENTS_DATA_TO_WORKSPACES_MARKER);
+    return;
+  } catch {
+    /* proceed */
+  }
+
+  const legacyRoot = path.join(DATA_DIR, 'agents', 'data');
+  try {
+    await fs.access(legacyRoot);
+  } catch {
+    await fs.writeFile(AGENTS_DATA_TO_WORKSPACES_MARKER, new Date().toISOString(), 'utf-8').catch(() => {});
+    return;
+  }
+
+  const entries = await fs.readdir(legacyRoot, { withFileTypes: true });
+  for (const ent of entries) {
+    if (!ent.isDirectory()) continue;
+    let safe: string;
+    try {
+      safe = safeAgentIdSegment(ent.name);
+    } catch {
+      continue;
+    }
+    const src = path.join(legacyRoot, ent.name);
+    const dest = getAgentDataPath(safe);
+    try {
+      const existing = await fs.readdir(dest);
+      if (existing.length > 0) {
+        console.warn(`[migration] skip agents/data/${ent.name}: workspace already has files`);
+        continue;
+      }
+    } catch {
+      /* dest 不存在 */
+    }
+    await fs.mkdir(path.dirname(dest), { recursive: true });
+    await _migrateCopyDir(src, dest);
+    await fs.rm(src, { recursive: true, force: true }).catch(() => {});
+    console.log(`[migration] agents/data/${ent.name} → agents/workspaces/${safe}`);
+  }
+
+  try {
+    const left = await fs.readdir(legacyRoot);
+    if (left.length === 0) {
+      await fs.rm(legacyRoot, { recursive: false });
+    } else if (left.length > 0) {
+      console.warn(
+        `[migration] ${legacyRoot} 仍有子项 (${left.join(', ')}); 请检查后手动整理`,
+      );
+    }
+  } catch {
+    /* 目录已删 */
+  }
+
+  await fs.writeFile(AGENTS_DATA_TO_WORKSPACES_MARKER, new Date().toISOString(), 'utf-8').catch(() => {});
+}
+
 /**
  * 首次启动时创建所有数据子目录。
  */
