@@ -6,7 +6,7 @@
  */
 
 import { access } from 'fs/promises';
-import { getDataDir, getSettingsPath, readJsonFile, writeJsonFile } from '@/lib/file-store';
+import { getDataDir, getEffectiveDataDir, getSettingsPath, readJsonFile, writeJsonFile } from '@/lib/file-store';
 import { getKimiCandidateBaseUrls, getProviderPreset } from '@/lib/provider-registry';
 import type { AgentCapabilities, AppSettings, ClaudeAuthMode, ClaudeSettings, CustomProviderConfig, ProviderCredential, ProviderId, ResolvedAiCredential } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_APP_SETTINGS } from '@/types';
@@ -18,6 +18,16 @@ const CACHE_TTL_MS = 30_000;
 
 let cachedSettings: AppSettings | null = null;
 let cacheTimestamp = 0;
+let settingsCacheDataRoot: string | null = null;
+
+function ensureSettingsCacheForCurrentDataRoot(): void {
+  const root = getEffectiveDataDir();
+  if (settingsCacheDataRoot !== root) {
+    settingsCacheDataRoot = root;
+    cachedSettings = null;
+    cacheTimestamp = 0;
+  }
+}
 
 async function resolveReadableSettingsPath(): Promise<string> {
   const primary = getSettingsPath();
@@ -37,6 +47,7 @@ async function resolveReadableSettingsPath(): Promise<string> {
 }
 
 export async function getSettings(): Promise<AppSettings> {
+  ensureSettingsCacheForCurrentDataRoot();
   const now = Date.now();
   if (cachedSettings && now - cacheTimestamp < CACHE_TTL_MS) {
     return cachedSettings;
@@ -49,6 +60,7 @@ export async function getSettings(): Promise<AppSettings> {
 }
 
 export async function saveSettings(settings: AppSettings): Promise<void> {
+  ensureSettingsCacheForCurrentDataRoot();
   await writeJsonFile(getSettingsPath(), settings);
   invalidateCache();
 }
@@ -56,6 +68,7 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
 export function invalidateCache(): void {
   cachedSettings = null;
   cacheTimestamp = 0;
+  settingsCacheDataRoot = getEffectiveDataDir();
 }
 
 // ── Credential migration & unified access ──

@@ -18,3 +18,11 @@ export function apiUrl(path: string): string {
   if (!origin) return p;
   return `${origin}${p}`;
 }
+
+/** 跨域直连 API（VITE_API_ORIGIN）时携带 Cookie（如 Google 账号会话）。 */
+export function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  return fetch(input, {
+    ...init,
+    credentials: init?.credentials ?? 'include',
+  });
+}

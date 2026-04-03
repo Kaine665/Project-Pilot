@@ -1,8 +1,22 @@
 import { Hono } from 'hono';
 import { eventTriggerManager } from '@/lib/event-trigger-manager';
 import type { EventTrigger } from '@/types/event-trigger';
+import { getDataRootManagerGeneration } from '@/lib/data-root-managers';
 
 const app = new Hono();
+
+let cachedTrigGen = -1;
+let triggersReady: Promise<void> = Promise.resolve();
+
+app.use('*', async (c, next) => {
+  const gen = getDataRootManagerGeneration();
+  if (gen !== cachedTrigGen) {
+    cachedTrigGen = gen;
+    triggersReady = eventTriggerManager.init();
+  }
+  await triggersReady;
+  await next();
+});
 
 // ─── GET / — list all event triggers ────────────────────────────
 // DIRECT: replaces sidecarFetch('/event-triggers')

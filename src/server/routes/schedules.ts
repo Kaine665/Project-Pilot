@@ -1,7 +1,21 @@
 import { Hono } from 'hono';
 import { schedulerManager } from '@/lib/scheduler-manager';
+import { getDataRootManagerGeneration } from '@/lib/data-root-managers';
 
 const app = new Hono();
+
+let cachedSchedGen = -1;
+let schedulerReady: Promise<void> = Promise.resolve();
+
+app.use('*', async (c, next) => {
+  const gen = getDataRootManagerGeneration();
+  if (gen !== cachedSchedGen) {
+    cachedSchedGen = gen;
+    schedulerReady = schedulerManager.init();
+  }
+  await schedulerReady;
+  await next();
+});
 
 // ─── GET / — list all schedules ─────────────────────────────────
 // DIRECT: replaces sidecarFetch('/schedules')

@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslations, useLocale } from '@/client/i18n/use-translations';
-import { useRouter, usePathname } from '@/client/i18n/routing';
+import { useRouter, usePathname, useSearchParams } from '@/client/i18n/routing';
 import { TopNav } from '@/components/top-nav';
-import { Loader2, Brain, Wrench, Palette, Database, Eye, Settings, ShieldAlert, Sparkles, Satellite } from 'lucide-react';
+import { Loader2, Brain, Wrench, Palette, Database, Eye, Settings, ShieldAlert, Sparkles, Satellite, LogIn } from 'lucide-react';
 import { getProviderPreset, PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import { providerSupportsOAuthUi } from '@/lib/ai-auth-ui';
 import { useTheme } from '@/components/theme-provider';
@@ -36,7 +36,7 @@ import type {
   ProviderCredential,
 } from '@/types';
 import type { AggregateLiveModelItem, SupplierAvailabilityRow } from '@/lib/aggregate-models-live';
-import { apiUrl } from '@/lib/api-base';
+import { apiFetch, apiUrl } from '@/lib/api-base';
 import { DEFAULT_DANGER_SETTINGS, DEFAULT_TITLE_GENERATION } from '@/types';
 const INITIAL_PROVIDER: ProviderId = 'anthropic';
 const INITIAL_MODEL = getProviderPreset(INITIAL_PROVIDER).models[0]?.id ?? '';
@@ -78,6 +78,7 @@ export default function SettingsPage() {
   const locale = useLocale();
   const router = useRouter();
   const pathname = usePathname();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { theme, setTheme } = useTheme();
 
   // Form state — per-provider maps
@@ -116,6 +117,10 @@ export default function SettingsPage() {
   const [telemetry, setTelemetry] = useState(false);
   const [schedulesPageEnabled, setSchedulesPageEnabled] = useState(true);
   const [taskTriggersPageEnabled, setTaskTriggersPageEnabled] = useState(true);
+
+  type GoogleAuthStatus = { configured: boolean; user: { sub: string; email?: string; name?: string; picture?: string } | null };
+  const [googleAuth, setGoogleAuth] = useState<GoogleAuthStatus | null>(null);
+  const [googleAuthNotice, setGoogleAuthNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Safety detection state
   const [dangerSettings, setDangerSettings] = useState<DangerDetectorSettings>({ ...DEFAULT_DANGER_SETTINGS });
@@ -552,7 +557,45 @@ export default function SettingsPage() {
     return () => { cancelled = true; };
   }, [provider]);
 
+  const refreshGoogleAuth = useCallback(async () => {
+    try {
+      const res = await apiFetch(apiUrl('/api/auth/google/status'), { cache: 'no-store' });
+      const data = (await res.json()) as GoogleAuthStatus;
+      if (res.ok && typeof data.configured === 'boolean') {
+        setGoogleAuth(data);
+      } else {
+        setGoogleAuth({ configured: false, user: null });
+      }
+    } catch {
+      setGoogleAuth({ configured: false, user: null });
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshGoogleAuth();
+  }, [refreshGoogleAuth]);
+
+  useEffect(() => {
+    const g = searchParams.get('google');
+    if (g === 'ok') {
+      setGoogleAuthNotice({ type: 'success', message: t('googleLoginOk') });
+      void refreshGoogleAuth();
+      const next = new URLSearchParams(searchParams);
+      next.delete('google');
+      next.delete('message');
+      setSearchParams(next, { replace: true });
+    } else if (g === 'error') {
+      const msg = searchParams.get('message')?.trim() || t('googleLoginError');
+      setGoogleAuthNotice({ type: 'error', message: msg });
+      const next = new URLSearchParams(searchParams);
+      next.delete('google');
+      next.delete('message');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams, t, refreshGoogleAuth]);
+
   const navItems = useMemo(() => [
+    { id: 'account', icon: LogIn, label: t('accountSection') },
     { id: 'ai', icon: Brain, label: t('aiConfig') },
     { id: 'claude', icon: Wrench, label: t('claudeCodeConfig') },
     { id: 'safety', icon: ShieldAlert, label: t('safetyDetection') },
@@ -917,6 +960,74 @@ export default function SettingsPage() {
 
           {/* ── Content ── */}
           <div className="flex-1 min-w-0 pl-8 border-l border-zinc-200 dark:border-zinc-800 space-y-6 overflow-y-auto">
+            {activeSection === 'account' && (
+              <section className="space-y-4">
+                <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{t('googleAccountTitle')}</h2>
+                <p className="text-sm text-zinc-600 dark:text-zinc-400">{t('googleAccountIntro')}</p>
+                {googleAuthNotice && (
+                  <div
+                    className={`rounded-lg border px-3 py-2 text-sm ${
+                      googleAuthNotice.type === 'success'
+                        ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-900 dark:bg-green-950/40 dark:text-green-200'
+                        : 'border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200'
+                    }`}
+                  >
+                    {googleAuthNotice.message}
+                  </div>
+                )}
+                {!googleAuth ? (
+                  <div className="flex items-center gap-2 text-sm text-zinc-500">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {t('googleAuthLoading')}
+                  </div>
+                ) : !googleAuth.configured ? (
+                  <p className="text-sm text-amber-700 dark:text-amber-300">{t('googleAccountNotConfigured')}</p>
+                ) : (
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <div className="text-sm text-zinc-700 dark:text-zinc-300">
+                      {googleAuth.user ? (
+                        <span>
+                          {t('googleAccountSignedInAs')}
+                          {googleAuth.user.email ? ` ${googleAuth.user.email}` : ` (${googleAuth.user.sub})`}
+                        </span>
+                      ) : (
+                        <span>{t('googleAccountGuest')}</span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {googleAuth.user ? (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await apiFetch(apiUrl('/api/auth/google/logout'), { method: 'POST' });
+                              await refreshGoogleAuth();
+                              window.location.reload();
+                            } catch {
+                              setGoogleAuthNotice({ type: 'error', message: t('googleLoginError') });
+                            }
+                          }}
+                          className={`rounded-lg px-4 py-2 text-sm font-medium ${btnInactive}`}
+                        >
+                          {t('googleLogout')}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            window.location.href = apiUrl('/api/auth/google/login');
+                          }}
+                          className={`rounded-lg px-4 py-2 text-sm font-medium ${btnActive}`}
+                        >
+                          {t('googleLogin')}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
+
             {activeSection === 'ai' && (
               <SettingsAISection
                 t={t} tActions={tActions} btnActive={btnActive} btnInactive={btnInactive}

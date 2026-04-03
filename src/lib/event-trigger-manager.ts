@@ -207,6 +207,16 @@ class EventTriggerManager {
     }
   }
 
+  /** 切换数据根时停止全部轮询定时器。 */
+  destroy(): void {
+    for (const triggerId of [...this.timers.keys()]) {
+      this.disarm(triggerId);
+    }
+    this.timers.clear();
+    this.inFlight.clear();
+    this.initialized = false;
+  }
+
   private arm(trigger: EventTrigger): void {
     this.disarm(trigger.id);
     if (!trigger.enabled) return;
@@ -507,8 +517,30 @@ class EventTriggerManager {
 }
 
 const globalKey = '__projectPilotEventTriggerManager__';
-export const eventTriggerManager: EventTriggerManager =
-  (globalThis as Record<string, unknown>)[globalKey] as EventTriggerManager
-  ?? new EventTriggerManager();
 
-(globalThis as Record<string, unknown>)[globalKey] = eventTriggerManager;
+function getEventTriggerManagerSingleton(): EventTriggerManager {
+  const g = globalThis as Record<string, unknown>;
+  if (!g[globalKey]) {
+    g[globalKey] = new EventTriggerManager();
+  }
+  return g[globalKey] as EventTriggerManager;
+}
+
+export async function replaceEventTriggerManagerForDataRootSwitch(): Promise<void> {
+  const g = globalThis as Record<string, unknown>;
+  (g[globalKey] as EventTriggerManager | undefined)?.destroy();
+  g[globalKey] = new EventTriggerManager();
+  await (g[globalKey] as EventTriggerManager).init();
+}
+
+if (process.env.NODE_ENV !== 'production') {
+  getEventTriggerManagerSingleton();
+}
+
+export const eventTriggerManager: EventTriggerManager = new Proxy({} as EventTriggerManager, {
+  get(_target, prop, receiver) {
+    const m = getEventTriggerManagerSingleton();
+    const value = Reflect.get(m, prop, receiver);
+    return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(m) : value;
+  },
+});

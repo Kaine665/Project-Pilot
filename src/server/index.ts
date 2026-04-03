@@ -11,6 +11,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { errorHandler } from './middleware/error-handler';
+import { accountDataRootMiddleware, type AccountVariables } from './middleware/account-data-root';
 
 import agentsRoutes from './routes/agents';
 import settingsRoutes from './routes/settings';
@@ -29,14 +30,17 @@ import aiDiscussRoutes from './routes/ai-discuss';
 import agentChatRoutes from './routes/agent-chat';
 import schedulesRoutes from './routes/schedules';
 import eventTriggersRoutes from './routes/event-triggers';
+import googleAuthRoutes from './routes/google-auth';
 
-import { ensureDataDirV2Migrated } from '@/lib/file-store';
+import { ensureDataDirV2Migrated, getBaseDataDir, runWithDataDir } from '@/lib/file-store';
+import { ensureManagersAlignedWithDataRoot } from '@/lib/data-root-managers';
 
-const app = new Hono();
+const app = new Hono<{ Variables: AccountVariables }>();
 
 // --- Middleware ---
 app.use('*', logger());
-app.use('/api/*', cors({ origin: '*' }));
+app.use('/api/*', cors({ origin: '*', credentials: true }));
+app.use('/api/*', accountDataRootMiddleware);
 app.use('/api/*', errorHandler);
 
 // --- Health check ---
@@ -60,6 +64,7 @@ app.route('/api/ai-discuss', aiDiscussRoutes);
 app.route('/api/agent-chat', agentChatRoutes);
 app.route('/api/schedules', schedulesRoutes);
 app.route('/api/event-triggers', eventTriggersRoutes);
+app.route('/api/auth/google', googleAuthRoutes);
 
 // --- Static file serving (production) ---
 const clientDistPath = path.resolve(__dirname, '../../dist/client');
@@ -82,7 +87,9 @@ if (fs.existsSync(clientDistPath)) {
 const port = parseInt(process.env.PORT ?? '4500', 10);
 
 async function startServer(): Promise<void> {
-  await ensureDataDirV2Migrated();
+  const base = getBaseDataDir();
+  await ensureManagersAlignedWithDataRoot(base);
+  await runWithDataDir(base, () => ensureDataDirV2Migrated());
   console.log(`[server] Starting Hono backend on http://127.0.0.1:${port}`);
 
   serve(
