@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import path from 'path';
 import { mkdir, readFile, writeFile } from 'fs/promises';
+import { assertDocumentTextWritable, documentTextWriteErrorResponse } from '@/lib/document-text-write-guard';
 import {
   agentChatManager,
   generateSessionId,
@@ -14,6 +15,12 @@ import {
   readMessages,
   replaceSessionMessages,
 } from '@/lib/chat-managers/agent-chat-session-store';
+import {
+  readEvents,
+  readRuns,
+  openRun,
+  closeRun,
+} from '@/lib/execution-event-store';
 import {
   listSessions,
   listSessionsByProject,
@@ -450,12 +457,16 @@ app.put('/runtime-prompt', async (c) => {
       return c.json({ error: 'content must be a string' }, 400);
     }
 
+    assertDocumentTextWritable(content);
+
     const overridePath = getPromptRuntimePath(agentId, sessionId);
     await mkdir(path.dirname(overridePath), { recursive: true });
     await writeFile(overridePath, content, 'utf-8');
 
     return c.json({ ok: true });
   } catch (error) {
+    const enc = documentTextWriteErrorResponse(error);
+    if (enc) return c.json(enc.body, enc.status);
     console.error('[runtime-prompt] PUT error:', error);
     return c.json({ error: 'Failed to write runtime prompt' }, 500);
   }
@@ -843,6 +854,88 @@ app.get('/sessions/:id/children', async (c) => {
   const id = c.req.param('id');
   const children = await listGuestSessions(id);
   return c.json({ children }, 200, { 'Cache-Control': 'no-store' });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// Execution Events & Runs
+// ═══════════════════════════════════════════════════════════════════════
+
+// ─── GET /sessions/:id/events — list execution events ──────────────
+
+app.get('/sessions/:id/events', async (c) => {
+  const id = c.req.param('id');
+  const session = await loadSession(id);
+  if (!session) {
+    return c.json({ events: [] }, 200, { 'Cache-Control': 'no-store' });
+  }
+  const events = await readEvents(id);
+  return c.json({ events }, 200, { 'Cache-Control': 'no-store' });
+});
+
+// ─── GET /sessions/:id/runs — list execution runs ──────────────────
+
+app.get('/sessions/:id/runs', async (c) => {
+  const id = c.req.param('id');
+  const session = await loadSession(id);
+  if (!session) {
+    return c.json({ runs: [] }, 200, { 'Cache-Control': 'no-store' });
+  }
+  const runs = await readRuns(id);
+  return c.json({ runs }, 200, { 'Cache-Control': 'no-store' });
+});
+
+// ─── POST /sessions/:id/runs — open a new Run ─────────────────────
+
+app.post('/sessions/:id/runs', async (c) => {
+  const sessionId = c.req.param('id');
+  const session = await loadSession(sessionId);
+  if (!session) {
+    return c.json({ error: 'Session not found' }, 404);
+  }
+  const body = await c.req.json<{ goal?: string; taskId?: string }>();
+
+  const events = await readEvents(sessionId);
+  const startEventId = events.length > 0 ? events[events.length - 1].id : 'none';
+
+  const run = await openRun(sessionId, {
+    goal: body.goal,
+    taskId: body.taskId,
+    startEventId,
+  });
+  return c.json(run, 201);
+});
+
+// ─── PATCH /sessions/:id/runs/:runId — close/evaluate a Run ───────
+
+app.patch('/sessions/:id/runs/:runId', async (c) => {
+  const sessionId = c.req.param('id');
+  const session = await loadSession(sessionId);
+  if (!session) {
+    return c.json({ error: 'Session not found' }, 404);
+  }
+  const runId = c.req.param('runId');
+  const body = await c.req.json<{
+    outcome: 'success' | 'failure' | 'partial' | 'shelved';
+    evaluationText?: string;
+  }>();
+
+  if (!body.outcome) {
+    return c.json({ error: 'outcome is required' }, 400);
+  }
+
+  const events = await readEvents(sessionId);
+  const endEventId = events.length > 0 ? events[events.length - 1].id : undefined;
+
+  const run = await closeRun(sessionId, runId, {
+    outcome: body.outcome,
+    evaluationText: body.evaluationText,
+    endEventId,
+  });
+
+  if (!run) {
+    return c.json({ error: 'Run not found' }, 404);
+  }
+  return c.json(run);
 });
 
 export default app;

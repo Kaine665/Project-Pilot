@@ -341,13 +341,17 @@ export const ChatBubble = memo(function ChatBubble({
   );
 
   return (
-    <div className={`group/bubble flex gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+    <div
+      className={`group/bubble flex w-full items-start ${
+        isUser ? 'flex-row justify-end gap-1.5' : 'flex-row gap-2'
+      }`}
+    >
       <div
         className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full ${
           isUser
             ? 'bg-user-subtle text-user'
             : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
-        }`}
+        } ${isUser ? 'order-2' : 'order-1'}`}
       >
         {isUser ? (
           <User className="h-3.5 w-3.5" />
@@ -358,7 +362,7 @@ export const ChatBubble = memo(function ChatBubble({
         )}
       </div>
 
-      <div className="max-w-[85%]">
+      <div className={`max-w-[85%] ${isUser ? 'order-1 ml-auto' : 'order-2'}`}>
         <div
           className={`rounded-lg px-3 py-2 text-sm ${
             isUser

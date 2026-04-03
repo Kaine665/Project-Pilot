@@ -115,9 +115,8 @@ const tActions = useTranslations('actions');
 
 ## 路由结构
 
-- **中文**: `/zh/flows`, `/zh/tasks/{id}`
-- **英文**: `/en/flows`, `/en/tasks/{id}`
-- **默认**: 访问 `/` 自动重定向到 `/zh`
+- **默认语言**: `/workspace/*`、`/settings`；`/` 重定向到 `/workspace/projects`
+- **英文**: `/en/workspace/*`、`/en/settings`
 
 ## 语言切换
 

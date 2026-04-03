@@ -141,6 +141,19 @@ export default function SettingsPage() {
   const providerBaseUrlsRef = useRef(providerBaseUrls);
   providerBaseUrlsRef.current = providerBaseUrls;
   const probeTimersRef = useRef<Partial<Record<ProviderId, ReturnType<typeof setTimeout>>>>({});
+  const aggregateRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const probeCacheRef = useRef<Partial<Record<ProviderId, {
+    fingerprint: string;
+    at: number;
+    row: SupplierAvailabilityRow;
+  }>>>({});
+  // 前端限频参数（省钱/降噪）：
+  // - 输入框变更先防抖，避免每次按键都触发探测
+  // - 相同配置 2 分钟内走本地缓存，不重复命中后端
+  const SUPPLIER_PROBE_DEBOUNCE_MS = 2200;
+  const SUPPLIER_PROBE_COOLDOWN_MS = 120000;
+  // 聚合模型刷新再做一层防抖，避免 autosave 连续触发时重复拉全量供应商
+  const AGGREGATE_REFRESH_DEBOUNCE_MS = 8000;
   // Data management state
   const [dataDir, setDataDir] = useState('');
   const [diskUsage, setDiskUsage] = useState('');
@@ -414,14 +427,49 @@ export default function SettingsPage() {
     }
   }, [t]);
 
-  const executeSupplierProbe = useCallback(async (pid: ProviderId) => {
+  const scheduleAggregateRefresh = useCallback(() => {
+    if (aggregateRefreshTimerRef.current) {
+      clearTimeout(aggregateRefreshTimerRef.current);
+    }
+    aggregateRefreshTimerRef.current = setTimeout(() => {
+      aggregateRefreshTimerRef.current = null;
+      void refreshAggregateModels();
+    }, AGGREGATE_REFRESH_DEBOUNCE_MS);
+  }, [refreshAggregateModels, AGGREGATE_REFRESH_DEBOUNCE_MS]);
+
+  const getProbeFingerprint = useCallback((pid: ProviderId): string => {
+    if (pid === 'ollama') {
+      return `ollama|${(providerBaseUrlsRef.current.ollama ?? '').trim()}`;
+    }
+    const key = (providerApiKeysRef.current[pid] ?? '').trim();
+    return `${pid}|${key}`;
+  }, []);
+
+  const executeSupplierProbe = useCallback(async (pid: ProviderId, opts?: { force?: boolean }) => {
+    const force = opts?.force === true;
+    const fingerprint = getProbeFingerprint(pid);
+    const cached = probeCacheRef.current[pid];
+    if (
+      !force &&
+      cached &&
+      cached.fingerprint === fingerprint &&
+      Date.now() - cached.at < SUPPLIER_PROBE_COOLDOWN_MS
+    ) {
+      // 命中冷却缓存：直接复用上次结果，避免重复外呼供应商接口。
+      setSupplierProbeRow((prev) => ({ ...prev, [pid]: cached.row }));
+      setSupplierProbeLoading((prev) => ({ ...prev, [pid]: false }));
+      return;
+    }
+
     if (pid === 'ollama') {
       const ob = providerBaseUrlsRef.current.ollama ?? '';
       if (!ob.trim()) {
+        const row: SupplierAvailabilityRow = { providerId: pid, status: 'skipped', reasonKey: 'ollama_not_enabled' };
         setSupplierProbeRow((prev) => ({
           ...prev,
-          [pid]: { providerId: pid, status: 'skipped', reasonKey: 'ollama_not_enabled' },
+          [pid]: row,
         }));
+        probeCacheRef.current[pid] = { fingerprint, at: Date.now(), row };
         setSupplierProbeLoading((prev) => ({ ...prev, [pid]: false }));
         return;
       }
@@ -429,10 +477,12 @@ export default function SettingsPage() {
       const raw = providerApiKeysRef.current[pid] ?? '';
       const trimmed = raw.trim();
       if (!trimmed) {
+        const row: SupplierAvailabilityRow = { providerId: pid, status: 'skipped', reasonKey: 'no_credential' };
         setSupplierProbeRow((prev) => ({
           ...prev,
-          [pid]: { providerId: pid, status: 'skipped', reasonKey: 'no_credential' },
+          [pid]: row,
         }));
+        probeCacheRef.current[pid] = { fingerprint, at: Date.now(), row };
         setSupplierProbeLoading((prev) => ({ ...prev, [pid]: false }));
         return;
       }
@@ -459,22 +509,28 @@ export default function SettingsPage() {
       });
       const data = (await res.json()) as { ok?: boolean; row?: SupplierAvailabilityRow; error?: string };
       if (data.ok && data.row) {
-        setSupplierProbeRow((prev) => ({ ...prev, [pid]: data.row as SupplierAvailabilityRow }));
+        const row = data.row as SupplierAvailabilityRow;
+        setSupplierProbeRow((prev) => ({ ...prev, [pid]: row }));
+        probeCacheRef.current[pid] = { fingerprint, at: Date.now(), row };
       } else {
+        const row: SupplierAvailabilityRow = { providerId: pid, status: 'error', reasonKey: 'generic' };
         setSupplierProbeRow((prev) => ({
           ...prev,
-          [pid]: { providerId: pid, status: 'error', reasonKey: 'generic' },
+          [pid]: row,
         }));
+        probeCacheRef.current[pid] = { fingerprint, at: Date.now(), row };
       }
     } catch {
+      const row: SupplierAvailabilityRow = { providerId: pid, status: 'error', reasonKey: 'generic' };
       setSupplierProbeRow((prev) => ({
         ...prev,
-        [pid]: { providerId: pid, status: 'error', reasonKey: 'generic' },
+        [pid]: row,
       }));
+      probeCacheRef.current[pid] = { fingerprint, at: Date.now(), row };
     } finally {
       setSupplierProbeLoading((prev) => ({ ...prev, [pid]: false }));
     }
-  }, []);
+  }, [getProbeFingerprint, SUPPLIER_PROBE_COOLDOWN_MS]);
 
   const scheduleSupplierProbe = useCallback(
     (pid: ProviderId) => {
@@ -483,10 +539,21 @@ export default function SettingsPage() {
       probeTimersRef.current[pid] = setTimeout(() => {
         delete probeTimersRef.current[pid];
         void executeSupplierProbe(pid);
-      }, 600);
+      }, SUPPLIER_PROBE_DEBOUNCE_MS);
     },
-    [executeSupplierProbe],
+    [executeSupplierProbe, SUPPLIER_PROBE_DEBOUNCE_MS],
   );
+
+  useEffect(() => {
+    return () => {
+      for (const timer of Object.values(probeTimersRef.current)) {
+        if (timer) clearTimeout(timer);
+      }
+      if (aggregateRefreshTimerRef.current) {
+        clearTimeout(aggregateRefreshTimerRef.current);
+      }
+    };
+  }, []);
 
   /** 进入供应商子页时：仅在尚无聚合数据时跑一轮 */
   const flushAllSupplierProbes = useCallback(() => {
@@ -503,12 +570,13 @@ export default function SettingsPage() {
   const recheckAllSuppliers = useCallback(() => {
     setSupplierProbeRow({});
     setSupplierProbeLoading({});
+    probeCacheRef.current = {};
     void refreshAggregateModels();
     for (const p of PROVIDER_REGISTRY) {
-      void executeSupplierProbe(p.id as ProviderId);
+      void executeSupplierProbe(p.id as ProviderId, { force: true });
     }
     for (const c of customProvidersRef.current) {
-      void executeSupplierProbe(c.id);
+      void executeSupplierProbe(c.id, { force: true });
     }
   }, [refreshAggregateModels, executeSupplierProbe]);
 
@@ -708,7 +776,7 @@ export default function SettingsPage() {
         });
         if (credFp !== lastSavedAggregateCredFingerprint.current) {
           lastSavedAggregateCredFingerprint.current = credFp;
-          void refreshAggregateModels();
+          scheduleAggregateRefresh();
         }
       } else {
         console.error('[settings] autosave failed', res.status);
@@ -743,7 +811,7 @@ export default function SettingsPage() {
     titleGenChain,
     titleGenEnabled,
     defaultExposePromptPath,
-    refreshAggregateModels,
+    scheduleAggregateRefresh,
     providerBaseUrls,
   ]);
 
@@ -843,7 +911,10 @@ export default function SettingsPage() {
       const result = await res.json();
       setDataStatus({
         type: 'success',
-        message: t('importSuccess', { tasks: result.stats.tasks, flows: result.stats.flows }),
+        message: t('importSuccess', {
+          agents: result.stats.agents ?? 0,
+          legacyBoard: result.stats.legacyBoard ?? 0,
+        }),
       });
       fetchDataInfo();
     } catch {
@@ -854,7 +925,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handleClear = async (target: 'sessions' | 'flows' | 'all') => {
+  const handleClear = async (target: 'sessions' | 'legacyBoard' | 'all') => {
     setConfirmAction(null);
     setDataStatus(null);
     try {

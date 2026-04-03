@@ -34,6 +34,7 @@ let lastKnownAgentCount = 0;
 export interface AgentMutationInput {
   name?: string;
   description?: string;
+  /** 传入后写入外置文件 prompts/agents/<id>.md，不存入 registry */
   systemPrompt?: string;
   icon?: string;
   capabilities?: AgentCapabilities;
@@ -51,6 +52,7 @@ export interface AgentMutationInput {
 
 export interface CreateAgentInput extends Required<Pick<AgentMutationInput, 'name'>> {
   description?: string;
+  /** 传入后写入外置文件 prompts/agents/<id>.md，不存入 registry */
   systemPrompt?: string;
   icon?: string;
   capabilities?: AgentCapabilities;

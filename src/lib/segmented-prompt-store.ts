@@ -23,6 +23,7 @@ import type {
   PromptSegment,
   SegmentedPromptIndex,
 } from '@/types';
+import { assertDocumentTextWritable } from './document-text-write-guard';
 
 // ── Query helpers ──
 
@@ -125,6 +126,7 @@ export async function initSegmented(
       description: '从单文件模式迁移的原始 prompt 内容',
       enabled: true,
     });
+    assertDocumentTextWritable(existingContent);
     await fs.writeFile(getSegmentFilePath(scope, initialId), existingContent, 'utf-8');
   }
 
@@ -148,9 +150,13 @@ export async function createSegment(
     throw new Error(`Segment already exists: ${segment.id}`);
   }
 
+  if (segment.title.trim()) assertDocumentTextWritable(segment.title);
+  if (segment.description?.trim()) assertDocumentTextWritable(segment.description);
+
   index.segments.push(segment);
   await writeSegmentIndex(scope, index);
   await fs.mkdir(getSegmentedPromptDir(scope), { recursive: true });
+  assertDocumentTextWritable(content);
   await fs.writeFile(getSegmentFilePath(scope, segment.id), content, 'utf-8');
   return index;
 }
@@ -168,8 +174,14 @@ export async function updateSegmentMeta(
   const seg = index.segments.find(s => s.id === segmentId);
   if (!seg) throw new Error(`Segment not found: ${segmentId}`);
 
-  if (patch.title !== undefined) seg.title = patch.title;
-  if (patch.description !== undefined) seg.description = patch.description;
+  if (patch.title !== undefined) {
+    if (patch.title.trim()) assertDocumentTextWritable(patch.title);
+    seg.title = patch.title;
+  }
+  if (patch.description !== undefined) {
+    if (patch.description.trim()) assertDocumentTextWritable(patch.description);
+    seg.description = patch.description;
+  }
   if (patch.enabled !== undefined) seg.enabled = patch.enabled;
 
   await writeSegmentIndex(scope, index);
@@ -189,6 +201,7 @@ export async function updateSegmentContent(
   if (!index.segments.some(s => s.id === segmentId)) {
     throw new Error(`Segment not found: ${segmentId}`);
   }
+  assertDocumentTextWritable(content);
   await fs.writeFile(getSegmentFilePath(scope, segmentId), content, 'utf-8');
 }
 

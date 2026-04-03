@@ -1,23 +1,29 @@
 /**
- * 板块→Pilot 协作协议：上下文数据结构
+ * 历史「链路 / 板块」上下文：FlowTaskContext
  *
- * 当用户从项目板块发起 AI 协作时，
- * UI 从树形结构中采集上下文，组装成此结构，
- * 附带在创建 Session 的请求体中。
+ * 树形看板 UI 已移除；旧数据或文档仍可能将 FlowTaskContext 挂在历史 **LegacyTaskWorkerSession.flowContext**（见 `types/index.ts`）上描述；Agent Chat 权威类型见 `AgentChatSession`。
  */
 
-import type { Status, ContextItem } from './flow';
+/** 与历史链路 JSON、FlowTaskContext 字段一致 */
+export type Status = 'done' | 'doing' | 'todo';
+
+export interface ContextItem {
+  id: string;
+  type: 'text' | 'file';
+  label: string;
+  content: string;
+}
 
 // ==================== 上下文主体 ====================
 
 /**
- * 板块发起 AI 协作时附带的完整上下文。
- * 存储在 Session.flowContext 字段上，供 prompt-builder 在 Phase 1 使用。
+ * 历史链路发起 AI 协作时附带的完整上下文（可选）。
+ * 历史上可存于 LegacyTaskWorkerSession.flowContext；新 UI 不再采集，保留类型以兼容旧数据/工具。
  */
 export interface FlowTaskContext {
   // ── 项目标识 ──
 
-  /** 项目 key，对应 projects.json 和 flows 文件名 */
+  /** 项目 key，对应 projects/index.json */
   projectKey: string;
   /** 项目显示名 */
   projectName: string;
@@ -61,7 +67,7 @@ export interface FlowTaskContext {
 
   // ── 全局上下文 ──
 
-  /** 用户选中的全局上下文条目 ID（来自 /flows/context 页面） */
+  /** 用户选中的全局上下文条目 ID（历史会话字段） */
   globalContextIds?: string[];
 }
 
@@ -84,7 +90,7 @@ export interface SectionBrief {
   description?: string;
 }
 
-// ==================== 旧格式兼容（已有 Session 可能存旧字段） ====================
+// ==================== 旧格式兼容（历史会话记录可能存旧字段） ====================
 
 /** 旧格式 FlowTaskContext 中特有的字段，用于类型守卫 */
 export interface LegacyFlowTaskContext {

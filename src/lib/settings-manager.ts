@@ -398,8 +398,9 @@ export async function buildCodexExecEnv(): Promise<NodeJS.ProcessEnv> {
   const env: NodeJS.ProcessEnv = { ...process.env };
   const cred = getCredential(claude, 'openai');
   const authMode = getEffectiveAuthMode(claude, 'openai');
-  if (authMode === 'api_key' && cred.apiKey && !process.env.CODEX_API_KEY) {
-    env.CODEX_API_KEY = cred.apiKey;
+  if (authMode === 'api_key' && cred.apiKey) {
+    if (!process.env.CODEX_API_KEY) env.CODEX_API_KEY = cred.apiKey;
+    if (!process.env.OPENAI_API_KEY) env.OPENAI_API_KEY = cred.apiKey;
   }
   env.FORCE_COLOR = '0';
   return env;
@@ -585,12 +586,16 @@ export async function buildSdkQueryOptions(opts: {
   const effortValue = opts.effortOverride ?? claude.effortLevel ?? 'high';
   const effort = effortValue as SdkQueryOptions['effort'];
 
+  // `thinking` 仅官方 Anthropic 支持；第三方兼容端（DeepSeek/Qwen 等）不识别此参数，
+  // 会导致 SDK 请求被拒或静默挂住。
+  const supportsThinking = provider === 'anthropic';
+
   const sdkOpts: SdkQueryOptions = {
     env,
     model,
     cwd: opts.cwd,
     includePartialMessages: true,
-    thinking: { type: 'adaptive' },
+    ...(supportsThinking ? { thinking: { type: 'adaptive' } } : {}),
     effort,
     permissionMode,
     ...(allowDangerouslySkipPermissions ? { allowDangerouslySkipPermissions: true } : {}),

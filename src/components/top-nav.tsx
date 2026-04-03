@@ -9,7 +9,7 @@ import { LanguageSwitcher } from './language-switcher';
 import { useProject } from './project-context';
 
 const getNavItems = (t: ReturnType<typeof useTranslations>) => [
-  { href: '/flows' as const, label: t('nav.projects'), icon: GitBranch },
+  { href: '/workspace' as const, label: t('nav.projects'), icon: GitBranch },
   { href: '/settings' as const, label: t('nav.settings'), icon: Settings },
 ];
 
@@ -25,10 +25,10 @@ export function TopNav({ children, plannerOpen }: { children?: React.ReactNode; 
   const navItems = getNavItems(t);
 
   const handleOpenPlanner = () => {
-    if (pathname.startsWith('/flows')) {
+    if (pathname.startsWith('/workspace')) {
       window.dispatchEvent(new CustomEvent('pp:toggle-planner'));
     } else {
-      router.push('/flows');
+      router.push('/workspace');
       // Dispatch after navigation settles
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent('pp:open-planner'));

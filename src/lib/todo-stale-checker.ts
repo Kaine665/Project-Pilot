@@ -33,7 +33,7 @@ export async function checkAndMarkStaleTodos(dryRun = false): Promise<StaleCheck
   const now = Date.now();
   const staleMsThreshold = STALE_DAYS * 24 * 60 * 60 * 1000;
 
-  // 获取当前所有活跃任务的 ID 集合
+  // 并行执行看板（active-tasks）中 status=running 的 ID 集合
   const activeTasks = await listActiveTasks();
   const activeTaskIds = new Set(
     activeTasks.filter(t => t.status === 'running').map(t => t.id),

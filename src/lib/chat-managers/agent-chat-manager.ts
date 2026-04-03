@@ -35,6 +35,10 @@ import '@/lib/resource-loaders'; // side-effect: registers non-action loaders
 import '@/lib/agent-actions';    // side-effect: registers actions + their loaders
 import { actionRegistry } from '@/lib/agent-actions';
 import { estimateTokens } from '@/lib/token-estimate';
+import {
+  appendTextOnlyAgentChannelNotice,
+  resolveEffectiveAgentChatProvider,
+} from '@/lib/agent-provider-capabilities';
 import { migrateAgentToResources } from '@/lib/resource-migration';
 import { updateAgentStatus } from '@/lib/agents-store';
 import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
@@ -43,6 +47,14 @@ import type { RunStatus, RunStatusInfo, SessionExecution } from './types';
 import { appendUsageRecord } from '@/lib/usage-store';
 import { normalizeOpenAIFastMode } from '@/lib/openai-fast-mode';
 import { normalizeOpenAIReasoningEffort } from '@/lib/openai-reasoning-effort';
+
+import {
+  reduceAndPersistTurnEvents,
+  getActiveRun,
+  openRun,
+  closeRun,
+  type TurnData,
+} from '@/lib/execution-event-store';
 
 // Re-export store functions so existing callers don't break during migration
 export { generateSessionId } from './agent-chat-session-store';
@@ -475,13 +487,13 @@ class AgentChatManager {
     const messages = [...existingMessages];
     messages.push({ role: 'user', content: message });
 
-    const promptContent = await buildGuestAgentPrompt(agent, message, selectedTurns);
-
     // ── Resolve provider — host session config → agent default → anthropic ──
     const resolvedProvider: ProviderId =
       hostSession.config?.provider
       ?? agent.defaultProvider
       ?? 'anthropic';
+
+    const promptContent = await buildGuestAgentPrompt(agent, message, selectedTurns, resolvedProvider);
 
     // Create run
     const runId = `run-${guestSessionId}-${Date.now()}`;
@@ -701,7 +713,10 @@ class AgentChatManager {
     console.log(`${LOG_PREFIX} [${run.sessionId}] consumeRunnerStream started, promptLen=${prompt.length}`);
 
     const firstEventTimer = setTimeout(() => {
-      console.warn(`${LOG_PREFIX} [${run.sessionId}] ⚠ No runner events after 30s — SDK may be hanging`);
+      console.warn(
+        `${LOG_PREFIX} [${run.sessionId}] ⚠ No runner events after 30s — Claude SDK 首轮无输出：`
+        + ' 可能是上游 API（含 DeepSeek 等 Anthropic 兼容端）过慢/卡住、网络问题，或与 Agent SDK 不完全兼容。',
+      );
     }, 30000);
 
     try {
@@ -995,6 +1010,84 @@ class AgentChatManager {
       checkpoint: run.checkpoint,
     };
     await persistSessionToDisk(session, this.buildExecutionSummary(run));
+
+    // ExecutionEvent 归约落盘（纯增量，不影响 messages JSONL，fire-and-forget）
+    this.persistExecutionEvents(run).catch(err => {
+      console.error(`${LOG_PREFIX} persistExecutionEvents error:`, err);
+    });
+  }
+
+  /**
+   * 从 Turn 的内存累积归约出 ExecutionEvent 列表并追加到 events JSONL。
+   * Fire-and-forget：不阻塞 persistAfterClose、不影响用户体验。
+   */
+  private async persistExecutionEvents(run: AgentChatRun): Promise<void> {
+    try {
+      const lastUserMsg = [...run.messages].reverse().find(m => m.role === 'user');
+
+      const turnStatus: TurnData['turnStatus'] =
+        run.status === 'awaiting' ? 'awaiting'
+        : run.status === 'failed' ? 'failed'
+        : run.status === 'stopped' ? 'stopped'
+        : 'completed';
+
+      const errors = run.events
+        .filter((e): e is Extract<AgentEvent, { type: 'error' }> => e.type === 'error')
+        .map(e => e.message);
+
+      const turnData: TurnData = {
+        sessionId: run.sessionId,
+        userContent: lastUserMsg?.content ?? '',
+        userImages: lastUserMsg?.images,
+        assistantContent: run.assistantText,
+        contentBlocks: run.contentBlocks
+          .filter((b): b is { type: 'text'; text: string } | { type: 'thinking'; text: string } => 'text' in b)
+          .map(b => ({ type: b.type, text: b.text })),
+        toolCalls: run.toolCalls,
+        errors,
+        turnStatus,
+        tokenUsage: (run._tokenInputs > 0 || run._tokenOutputs > 0)
+          ? { inputTokens: run._tokenInputs, outputTokens: run._tokenOutputs, contextWindow: run._contextWindow }
+          : undefined,
+        startedAt: run.startedAt,
+        completedAt: run.completedAt ?? Date.now(),
+      };
+
+      // Auto-run policy:
+      // - manual chat: no implicit run (unless user/API already opened one)
+      // - trigger/todo/event/schedule: auto-open an implicit run if missing
+      let activeRun = await getActiveRun(run.sessionId).catch(() => undefined);
+      let autoOpened = false;
+      if (!activeRun && run.sourceType !== 'manual') {
+        const guessedGoal = (lastUserMsg?.content ?? run.sessionTitle ?? '').trim();
+        activeRun = await openRun(run.sessionId, {
+          goal: guessedGoal ? guessedGoal.slice(0, 120) : undefined,
+          taskId: run.todoId,
+          startEventId: 'none',
+        }).catch(() => undefined);
+        autoOpened = !!activeRun;
+      }
+
+      const persistedEvents = reduceAndPersistTurnEvents(turnData, activeRun?.runId);
+
+      // For implicit runs, auto-close when this turn reaches terminal state.
+      if (autoOpened && activeRun && turnStatus !== 'awaiting') {
+        const outcome: 'success' | 'failure' | 'partial' | 'shelved' =
+          turnStatus === 'completed' ? 'success'
+          : turnStatus === 'failed' ? 'failure'
+          : turnStatus === 'stopped' ? 'shelved'
+          : 'partial';
+        await closeRun(run.sessionId, activeRun.runId, {
+          outcome,
+          evaluationText: turnStatus === 'completed'
+            ? 'Auto-closed by system after triggered turn completion'
+            : `Auto-closed by system with status: ${turnStatus}`,
+          endEventId: persistedEvents[persistedEvents.length - 1]?.id,
+        }).catch(() => {});
+      }
+    } catch (err) {
+      console.error(`${LOG_PREFIX} persistExecutionEvents error:`, err);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -1246,11 +1339,13 @@ async function buildAgentChatPrompt(agent: Agent, message: string, sessionConfig
 
   const historyBlock = conversationHistory ? `\n${conversationHistory}\n` : '';
 
-  return `${resourcePrompt}
+  const body = `${resourcePrompt}
 ${historyBlock}
 ---
 
 用户消息：${message}`;
+  const provider = resolveEffectiveAgentChatProvider(sessionConfig, agent);
+  return appendTextOnlyAgentChannelNotice(body, provider);
 }
 
 async function buildAgentChatPromptWithFlowContext(
@@ -1277,17 +1372,20 @@ async function buildAgentChatPromptWithFlowContext(
 
   const historyBlock = conversationHistory ? `\n${conversationHistory}\n` : '';
 
-  return `${resourcePrompt}
+  const body = `${resourcePrompt}
 ${historyBlock}
 ---
 
 用户消息：${message}`;
+  const provider = resolveEffectiveAgentChatProvider(sessionConfig, agent);
+  return appendTextOnlyAgentChannelNotice(body, provider);
 }
 
 async function buildGuestAgentPrompt(
   agent: Agent,
   message: string,
   importedTurns: Array<{ role: 'user' | 'assistant'; content: string }>,
+  resolvedProvider: ProviderId,
 ): Promise<string> {
   const extraRefs: ResourceRef[] = [];
 
@@ -1304,11 +1402,12 @@ async function buildGuestAgentPrompt(
 
   const resourcePrompt = await buildResourcePrompt(agent, extraRefs);
 
-  return `${resourcePrompt}
+  const body = `${resourcePrompt}
 
 ---
 
 用户消息：${message}`;
+  return appendTextOnlyAgentChannelNotice(body, resolvedProvider);
 }
 
 // ── Prompt Preview ──
@@ -1329,7 +1428,9 @@ export async function buildPromptPreview(
   config?: import('@/types/agent-chat').SessionConfig,
 ): Promise<{ charCount: number; estimatedTokens: number }> {
   const agent = await loadAgent(agentId);
-  const promptText = await buildResourcePrompt(agent, undefined, config, sessionId, projectKey);
+  let promptText = await buildResourcePrompt(agent, undefined, config, sessionId, projectKey);
+  const provider = resolveEffectiveAgentChatProvider(config, agent);
+  promptText = appendTextOnlyAgentChannelNotice(promptText, provider);
   return {
     charCount: promptText.length,
     estimatedTokens: estimateTokens(promptText),

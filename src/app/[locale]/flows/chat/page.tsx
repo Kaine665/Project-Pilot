@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * /flows/chat — P2P 聊天页面
+ * /workspace/chat — P2P 聊天页面
  *
  * 后端：http://81.68.249.18:9090（chat-group 项目）
  * 实时：Socket.IO（直连后端，CORS origin: '*'）

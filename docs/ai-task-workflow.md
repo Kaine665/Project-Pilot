@@ -286,13 +286,13 @@ AI 确认理解：
 
 ### Session 数据模型 ✅
 
-`src/types/index.ts`：
-- **Session** — 会话容器，含 `flowContext?: FlowTaskContext`、`phase?: SessionPhase`
+`src/types/index.ts`（节选；**Agent Chat 会话以 `src/types/agent-chat.ts` 为准**）：
+- **LegacyTaskWorkerSession**（曾用名 **Session**，现为 @deprecated 类型别名）— 历史 Task Worker 会话容器，可含 `flowContext?: FlowTaskContext` 等
 - **SessionPhase** — `'understanding' | 'planning' | 'executing' | 'summarizing'`，工作流阶段
 - **TaskUnderstanding** — Phase 1 产物（四要素 + `deliverableInference`）
 - **SessionArtifacts** — 各 Phase 产物的聚合视图
 - **ChatSSEEvent** — 新增 `phase_changed` 事件类型
-- 向后兼容别名：`Task = Session`、`TasksData = SessionsData`、`TaskArtifacts = SessionArtifacts`
+- 历史叙述中或曾有别名 `Task` / `TasksData` 与 `LegacyTaskWorkerSession` / `LegacyTaskWorkerSessionsData` 对应；**当前代码不再导出 `Session` / `SessionsData` 别名**
 
 ### FlowTaskContext 类型定义 ✅
 

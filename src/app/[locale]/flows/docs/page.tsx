@@ -17,7 +17,7 @@ export default function DocsIndexPage() {
         const projects = (data.projects ?? []).filter((p: { archived?: boolean }) => !p.archived);
         if (projects.length > 0) {
           const qs = searchParams.toString();
-          router.replace(qs ? `/flows/docs/${projects[0].key}?${qs}` : `/flows/docs/${projects[0].key}`);
+          router.replace(qs ? `/workspace/docs/${projects[0].key}?${qs}` : `/workspace/docs/${projects[0].key}`);
           return;
         }
       } catch { /* ignore */ }

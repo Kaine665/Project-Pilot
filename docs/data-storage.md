@@ -5,7 +5,7 @@
 > - **本机迁移与现实**：`~/.project-pilot/数据文件夹现状.md`  
 > - **代码中的路径**：[`src/lib/file-store.ts`](../src/lib/file-store.ts)（`PROJECT_PILOT_DATA_DIR` 未设置时默认 `path.join(os.homedir(), '.project-pilot')`）  
 > - **本文**：与当前 `develop-static` 实现一致的目录树与主要 getter 索引，便于人类与 Agent 对齐认知。  
-> **对齐日期**：2026-03-31。  
+> **对齐日期**：2026-04-03。  
 > **给 AI**：多厂商入口（Cursor / Claude / 内置提示词）如何一起更新，见 [`AI_AGENT_KNOWLEDGE_MAP.md`](./AI_AGENT_KNOWLEDGE_MAP.md)。
 
 ## 默认数据根
@@ -31,13 +31,13 @@ export PROJECT_PILOT_DATA_DIR=/path/to/custom-root
 {DATA_DIR}/
   config/
     settings.json
+    agents-workspace-ui.json       # Agents 工作区已打开会话标签（按 projectKey）
     dimensions.json
     worktree-ports.json
     models-health.json          # 若已生成
     usage/                      # token 用量等
   projects/
     index.json
-    inboxes/
   agents/
     registry.json
     definitions/  bindings/  statuses/  teams/
@@ -48,7 +48,7 @@ export PROJECT_PILOT_DATA_DIR=/path/to/custom-root
     event-trigger-runs.json
     event-trigger-states.json
     workspaces/                 # 每 Agent 工作区文件
-    active-tasks.json           # 共享「正在执行」任务看板（非用户 todo）
+    active-tasks.json           # 并行执行看板（多 Agent 运行时登记；非用户 Todo）
   documents/
     index.json
     entries/   content/
@@ -56,11 +56,13 @@ export PROJECT_PILOT_DATA_DIR=/path/to/custom-root
     index.json
     adjuncts.json
     messages/                   # *.jsonl
+    events/                     # *.jsonl — ExecutionEvent 落盘（每 Turn 归约后追加）
+    runs/                       # *.json — ExecutionRun 元数据
     prompt-overrides/
   todos.json                    # 聚合待办（与 todos/entries 并存）
   todos/
     entries/
-  prompts/
+  prompts/                      # 按 scope 分桶的存储约定，非独立领域实体；归属见「领域与数据.md §2 Scope」
     global.md
     agents/  history/  runtime/  blocks/  projects/
   artifacts/
@@ -74,22 +76,26 @@ export PROJECT_PILOT_DATA_DIR=/path/to/custom-root
 **可选 / 遗留只读路径**（代码仍可能读取，一般不新建）：
 
 - 根级 `projects.json`（扁平项目表，`getProjectsPath()`）
-- `workflows/flows/`（`getLegacyWorkflowsFlowsDir()`，合并进 `projects/index.json` 用）
+- `workflows/legacy-board/`（`getLegacyBoardDataDir()`；未迁移时可能仍为 `workflows/flows/`，启动时会重命名；合并进 `projects/index.json` 用）
 - `DATA_DIR/data/projects/...`（`ensureLegacyDataSubdirProjectsMerged`）
+- `projects/inboxes/` 以及 `workflows/legacy-board/`（或旧 `flows/`）下的 `*_inbox.json`：历史「项目收件箱」功能已移除，应用不再读写；若仍存在可手动删除。
 
 ## 主要路径 ↔ `file-store` 函数
 
 | 相对路径 | 说明 | 导出函数（节选） |
 |----------|------|------------------|
 | `config/settings.json` | 用户设置 | `getSettingsPath` |
+| `config/agents-workspace-ui.json` | Agents 工作区已打开标签 / 当前面板（按项目 `_global` 或 `projectKey`） | `getAgentsWorkspaceUiPath` |
 | `config/dimensions.json` | 维度 | `getDimensionsPath` |
 | `config/worktree-ports.json` | Worktree 端口 | `getWorktreePortsPath` |
 | `projects/index.json` | 项目索引 | `getProjectsIndexPath` |
 | `agents/registry.json` | Agent 注册表 | `getAgentsPath` |
-| `agents/active-tasks.json` | 并行任务看板 | `getActiveTasksPath` |
+| `agents/active-tasks.json` | 并行执行看板 | `getActiveTasksPath` |
 | `agents/workspaces/<id>/` | Agent 工作区 | `getAgentDataPath` |
 | `sessions/index.json` | 会话索引 | `getAgentChatSessionsPath` |
 | `sessions/messages/<id>.jsonl` | 会话消息 | `getAgentChatMessagePath` |
+| `sessions/events/<id>.jsonl` | 执行事件 | `getSessionEventsPath` |
+| `sessions/runs/<id>.json` | 执行尝试 | `getSessionRunsPath` |
 | `sessions/adjuncts.json` | 会话附属状态 | `getAgentChatSessionAdjunctsPath` |
 | `documents/index.json` | 文档索引 | `getDocumentsIndexPath` |
 | `todos.json` + `todos/entries/` | 待办 | `getTodosPath`, `getTodosEntriesDir` |

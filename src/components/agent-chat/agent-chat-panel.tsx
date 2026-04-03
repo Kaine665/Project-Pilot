@@ -1,29 +1,22 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo, useReducer, startTransition } from 'react';
-import { Sparkles, PanelRight, Settings } from 'lucide-react';
 import { useTranslations } from '@/client/i18n/use-translations';
 import { useRouter } from '@/client/i18n/routing';
-import { ChatInput } from '@/components/chat-input';
 import { ChatNotificationBanners } from '@/components/chat-notification-banners';
 import { useNotificationManager } from '@/hooks/use-notification-manager';
 import { useModelConfig } from '@/hooks/use-model-config';
-import { AgentAvatar } from '@/components/agent-form';
 import { resolveAgentAvatarSrc } from '@/lib/agent-avatar';
 import { GuestAgentOverlay } from '@/components/guest-agent-overlay';
-import { SessionConfigPanel } from '@/components/session-config-panel';
-import { PlanViewerPanel } from '@/components/plan-viewer-panel';
-import { ActionContentPanel } from '@/components/action-content-panel';
 import type { ParsedActionTag } from '@/lib/action-tag-parser';
 import { SessionCompressDialog } from '@/components/session-compress-dialog';
 import { FilePreviewDialog } from '@/components/file-preview-dialog';
-import { FolderExplorerPanel } from '@/components/folder-explorer-panel';
-import { RuntimePanel } from '@/components/runtime-panel';
 import { useProject } from '@/components/project-context';
 import type { SessionNavLink } from '@/components/agent-session-utils';
 import { buildSessionUrl } from '@/components/agent-session-utils';
 import { imageAttachmentFromDataUrl } from '@/lib/image-assets';
 import { repairTextIfNeeded } from '@/lib/text-repair';
+import { providerSupportsLocalAgentTools } from '@/lib/agent-provider-capabilities';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
 import type { DeferredInputBufferItem, DeferredInputBufferState, SessionConfig } from '@/types/agent-chat';
 import type { ChatMessage, ChatToolCall, ContentBlock } from '@/types';
@@ -36,12 +29,24 @@ import type { SessionState } from './session-reducer';
 import { ChatMessageList } from './chat-message-list';
 import { ChatQueueOverlay } from './chat-queue-overlay';
 import { ChatScrollTimeline } from './chat-scroll-timeline';
-import { ChatSessionHeader } from './chat-session-header';
 import { ChatSessionSidebar } from './chat-session-sidebar';
+import { PlainToolbarControls, ProjectSessionHeaderControls } from './chat-panel-controls';
+import {
+  ActionPanelSection,
+  ConfigDrawerSection,
+  FolderExplorerSection,
+  PlanPanelSection,
+  PlainEmptyStateSection,
+  PlainInputSection,
+  ProjectEmptyStateSection,
+  ProjectInputSection,
+  RuntimeDrawerSection,
+} from './chat-panel-sections';
 import { TaskCardBanner } from './task-card-banner';
 import { AgentChatPanelView } from './agent-chat-panel-view';
 import { buildCacheKey } from './agent-session-cache';
 import { usePanelCacheSnapshot } from './use-panel-cache-snapshot';
+import { useSessionRuns } from './use-session-runs';
 import { useSessionBootstrap } from './use-session-bootstrap';
 
 export function AgentChatPanel({
@@ -95,6 +100,8 @@ export function AgentChatPanel({
 
   const [chat, chatDispatch] = useReducer(chatReducer, chatInitialState);
   const { messages, isStreaming, streamingBlocks, errorMsg, inPlanMode, tokenInputs, tokenOutputs } = chat;
+  /** 空流式气泡文案：`connecting` = POST 未完成或 SSE 尚未建立；`streaming` = 已连上，等待首包 token */
+  const [streamWaitPhase, setStreamWaitPhase] = useState<'idle' | 'connecting' | 'streaming'>('idle');
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Session management
@@ -135,6 +142,7 @@ export function AgentChatPanel({
 
   // Task card
   const [taskCard, setTaskCard] = useState<import('@/lib/task-card-store').TaskCard | null>(null);
+  const { sessionRuns, refreshSessionRuns } = useSessionRuns();
 
   // Session checkpoint notification
   const [checkpointSaved, setCheckpointSaved] = useState(false);
@@ -197,6 +205,10 @@ export function AgentChatPanel({
   }, [chat.isStreaming]);
 
   useEffect(() => {
+    if (!isStreaming) setStreamWaitPhase('idle');
+  }, [isStreaming]);
+
+  useEffect(() => {
     messagesRef.current = chat.messages;
   }, [chat.messages]);
 
@@ -210,17 +222,29 @@ export function AgentChatPanel({
     items: DeferredInputBufferItem[],
     expanded: boolean = queueExpanded,
   ) => {
-    fetch(`/api/agent-chat/sessions/${targetSessionId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'updateDeferredInputBuffer',
-        queue: {
-          items: cloneDeferredInputBufferItems(items),
-          expanded: expanded ? undefined : false,
-        } satisfies DeferredInputBufferState,
-      }),
-    }).catch(() => {});
+    const body = JSON.stringify({
+      action: 'updateDeferredInputBuffer',
+      queue: {
+        items: cloneDeferredInputBufferItems(items),
+        expanded: expanded ? undefined : false,
+      } satisfies DeferredInputBufferState,
+    });
+
+    const attempt = (n: number) => {
+      fetch(`/api/agent-chat/sessions/${targetSessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      })
+        .then((res) => {
+          // 与首条 POST 并发时，索引可能尚未写入，重试几次即可
+          if (res.status === 404 && n < 6) {
+            window.setTimeout(() => attempt(n + 1), 120 * (n + 1));
+          }
+        })
+        .catch(() => {});
+    };
+    attempt(0);
   }, [queueExpanded]);
 
   const replacePendingUserQueue = useCallback((
@@ -504,6 +528,7 @@ export function AgentChatPanel({
       setQueueExpanded(loadedQueueState?.expanded !== false);
       modelConfig.applySessionConfig(loadedConfig);
       loadSessionNavLinks(sid, data.parentSessionId);
+      await refreshSessionRuns(sid);
 
       // Load task card
       try {
@@ -516,7 +541,7 @@ export function AgentChatPanel({
     } catch {
       // ignore
     }
-  }, [loadSessionNavLinks, replacePendingUserQueue, modelConfig]);
+  }, [loadSessionNavLinks, replacePendingUserQueue, modelConfig, refreshSessionRuns]);
 
   // Finalize streaming -> commit assistant message
   const finalizeStream = useCallback(() => {
@@ -562,8 +587,10 @@ export function AgentChatPanel({
 
     if (isStaleStream && streamTarget) {
       clearSessionRunning(streamTarget, { unreadCount: 1 });
+      refreshSessionRuns(streamTarget);
     } else if (currentSid) {
       clearSessionRunning(currentSid);
+      refreshSessionRuns(currentSid);
       fetch(`/api/agent-chat/sessions/${currentSid}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -616,7 +643,7 @@ export function AgentChatPanel({
       }).catch(err => console.error('通知发送失败:', err));
     }
     streamStartedAtRef.current = null;
-  }, [agent.id, agent.name, projectKey, fetchSessionList, onSessionChange, flushQueuedUserMessage, router, notifyCompletion, clearSessionRunning]);
+  }, [agent.id, agent.name, projectKey, fetchSessionList, onSessionChange, flushQueuedUserMessage, router, notifyCompletion, clearSessionRunning, refreshSessionRuns]);
 
   // Connect to SSE stream
   const connectToStream = useCallback((targetSessionId: string, since: number) => {
@@ -625,6 +652,7 @@ export function AgentChatPanel({
     }
 
     streamTargetSessionRef.current = targetSessionId;
+    setStreamWaitPhase('connecting');
 
     const abort = new AbortController();
     streamAbortRef.current = abort;
@@ -645,6 +673,10 @@ export function AgentChatPanel({
       cache: 'no-store',
     }).then(async (res) => {
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
+      if (sessionIdRef.current === targetSessionId) {
+        setStreamWaitPhase('streaming');
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -1009,6 +1041,54 @@ export function AgentChatPanel({
     if (isStreaming) return;
     if (hasProject && !projectKey) return;
     if (chatModelOptions.length > 0 && (!chatProvider || !chatModel)) return;
+    const trimmedText = text.trim();
+    let effectiveInput = trimmedText;
+
+    // Slash command: /run [goal]
+    // 手动开启 Run，不进入模型上下文（不发送给 AI）。
+    if (trimmedText.startsWith('/run')) {
+      const currentSessionId = sessionIdRef.current ?? sessionId ?? initialSessionId ?? null;
+      if (!currentSessionId) {
+        chatDispatch({
+          type: 'STREAM_ERROR',
+          message: '请先发送一条普通消息创建会话，再使用 /run 开启执行。',
+        });
+        return;
+      }
+      const goal = trimmedText.replace(/^\/run\s*/i, '').trim();
+      try {
+        const res = await fetch(`/api/agent-chat/sessions/${currentSessionId}/runs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ goal: goal || undefined }),
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `HTTP ${res.status}`);
+        }
+        await refreshSessionRuns(currentSessionId);
+        const note: ChatMessage = {
+          id: `run-note-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          role: 'assistant',
+          content: goal
+            ? `已手动开启 Run：${goal}`
+            : '已手动开启 Run。',
+          timestamp: new Date().toISOString(),
+        };
+        chatDispatch({ type: 'APPEND_MESSAGE', message: note });
+        if (!goal) {
+          return;
+        }
+        // /run <goal>：开 Run 后立即把 goal 当本轮用户任务发送给模型
+        effectiveInput = goal;
+      } catch (err) {
+        chatDispatch({
+          type: 'STREAM_ERROR',
+          message: `开启 Run 失败：${(err as Error).message || '未知错误'}`,
+        });
+        return;
+      }
+    }
 
     initTokenRef.current += 1;
 
@@ -1018,7 +1098,7 @@ export function AgentChatPanel({
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       role: 'user',
-      content: text.trim(),
+      content: effectiveInput,
       timestamp: new Date().toISOString(),
       images: imagesToSend.length > 0 ? imagesToSend : undefined,
     };
@@ -1034,6 +1114,7 @@ export function AgentChatPanel({
     } });
     setAutoScroll(true);
     chatDispatch({ type: 'SEND_START' });
+    setStreamWaitPhase('connecting');
     blocksRef.current = [];
     fullTextRef.current = '';
     toolCallsRef.current = [];
@@ -1042,7 +1123,7 @@ export function AgentChatPanel({
     let targetSessionId = sessionIdRef.current ?? sessionId ?? initialSessionId ?? null;
     if (!targetSessionId) {
       targetSessionId = `agent-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      const quickTitle = text.trim().slice(0, 10) || (hasProject ? t('chat.newSession') : 'New Session');
+      const quickTitle = effectiveInput.slice(0, 10) || (hasProject ? t('chat.newSession') : 'New Session');
       setSessionIdSync(targetSessionId);
       sessionDispatch({ type: 'SET_TITLE', title: quickTitle });
       const newItem: import('./types').SessionListItem = {
@@ -1059,11 +1140,11 @@ export function AgentChatPanel({
     markSessionRunning(
       targetSessionId,
       runStartedAt,
-      text.trim().slice(0, 10) || sessionTitle,
+      effectiveInput.slice(0, 10) || sessionTitle,
     );
 
     try {
-      let messageToSend = text.trim();
+      let messageToSend = effectiveInput;
       const slashMatch = messageToSend.match(/^\/(\S+)([\s\S]*)$/);
       if (slashMatch) {
         const skillName = slashMatch[1];
@@ -1080,38 +1161,46 @@ export function AgentChatPanel({
         } catch { /* keep original text if skill fetch fails */ }
       }
 
-      const res = await fetch('/api/agent-chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          agentId: agent.id,
-          message: messageToSend,
-          sessionId: targetSessionId,
-          projectKey: projectKey ?? undefined,
-          providerOverride: chatProvider,
-          modelOverride: chatModel || undefined,
-          effortOverride: chatProvider === 'openai' ? chatEffort : undefined,
-          fastModeOverride: chatProvider === 'openai' ? chatFastMode : undefined,
-          images: imageAttachments.length > 0 ? imageAttachments : undefined,
-          initialTitle: text.trim().slice(0, 10) || undefined,
-          config: (() => {
-            const configWithModel = {
-              ...sessionConfig,
-              provider: chatProvider,
-              model: chatModel || undefined,
-              openaiReasoningEffort: chatProvider === 'openai' ? chatEffort : undefined,
-              openaiFastMode: chatProvider === 'openai' ? chatFastMode : undefined,
-            };
-            const hasAny = configWithModel.contextIds?.length
-              || configWithModel.supplementaryPrompt?.trim()
-              || configWithModel.provider
-              || configWithModel.model
-              || configWithModel.openaiReasoningEffort
-              || configWithModel.openaiFastMode;
-            return hasAny ? configWithModel : undefined;
-          })(),
-        }),
-      });
+      const postAbort = new AbortController();
+      const postTimeoutId = window.setTimeout(() => postAbort.abort(), 120_000);
+      let res: Response;
+      try {
+        res = await fetch('/api/agent-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: postAbort.signal,
+          body: JSON.stringify({
+            agentId: agent.id,
+            message: messageToSend,
+            sessionId: targetSessionId,
+            projectKey: projectKey ?? undefined,
+            providerOverride: chatProvider,
+            modelOverride: chatModel || undefined,
+            effortOverride: chatProvider === 'openai' ? chatEffort : undefined,
+            fastModeOverride: chatProvider === 'openai' ? chatFastMode : undefined,
+            images: imageAttachments.length > 0 ? imageAttachments : undefined,
+            initialTitle: text.trim().slice(0, 10) || undefined,
+            config: (() => {
+              const configWithModel = {
+                ...sessionConfig,
+                provider: chatProvider,
+                model: chatModel || undefined,
+                openaiReasoningEffort: chatProvider === 'openai' ? chatEffort : undefined,
+                openaiFastMode: chatProvider === 'openai' ? chatFastMode : undefined,
+              };
+              const hasAny = configWithModel.contextIds?.length
+                || configWithModel.supplementaryPrompt?.trim()
+                || configWithModel.provider
+                || configWithModel.model
+                || configWithModel.openaiReasoningEffort
+                || configWithModel.openaiFastMode;
+              return hasAny ? configWithModel : undefined;
+            })(),
+          }),
+        });
+      } finally {
+        window.clearTimeout(postTimeoutId);
+      }
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -1124,7 +1213,10 @@ export function AgentChatPanel({
       }
       connectToStream(targetSessionId, 0);
     } catch (err) {
-      const msg = (err as Error).message || 'Unknown error';
+      const isAbort = (err as Error).name === 'AbortError';
+      const msg = isAbort
+        ? t('chat.startRequestTimeout')
+        : ((err as Error).message || 'Unknown error');
       console.error('Agent chat send failed:', msg);
       chatDispatch({ type: 'STREAM_ERROR', message: msg });
       chatDispatch({ type: 'STREAM_END' });
@@ -1305,6 +1397,7 @@ export function AgentChatPanel({
     }
     sessionDispatch({ type: 'NEW', defaultTitle: hasProject ? t('chat.newSession') : 'New Session' });
     sessionIdRef.current = null;
+    refreshSessionRuns(null);
     chatDispatch({ type: 'SET_MESSAGES', messages: [] });
     setShowConfig(false);
     setCompressDismissed(false);
@@ -1315,7 +1408,7 @@ export function AgentChatPanel({
     fullTextRef.current = '';
     toolCallsRef.current = [];
     modelConfig.resetToAgentDefaults(agent);
-  }, [isStreaming, hasProject, t, agent, replacePendingUserQueue, modelConfig]);
+  }, [isStreaming, hasProject, t, agent, replacePendingUserQueue, modelConfig, refreshSessionRuns]);
 
   const handleResumeCheckpoint = useCallback(() => {
     const checkpoint = checkpointRef.current;
@@ -1472,10 +1565,11 @@ export function AgentChatPanel({
       await loadSessionData(newItem.id, token);
 
       onSessionChange?.(newItem);
+      refreshSessionRuns(newItem.id);
     } catch {
       // ignore
     }
-  }, [loadSessionData, onSessionChange]);
+  }, [loadSessionData, onSessionChange, refreshSessionRuns]);
 
   const handleRegenerate = useCallback(() => {
     if (isStreamingRef.current) return;
@@ -1542,30 +1636,23 @@ export function AgentChatPanel({
   // ── Shared UI pieces ──
 
   const thinkingText = hasProject ? t('chat.thinking') : '思考中...';
+  const emptyStreamStatusText = streamWaitPhase === 'connecting' ? t('chat.preparingSession') : thinkingText;
 
-  const planPanel = planContent ? (
-    <div
-      className={`shrink-0 overflow-hidden border-l border-zinc-200 transition-[width] duration-200 ease-in-out dark:border-zinc-800 ${
-        isPlanOpen ? 'w-[400px]' : 'w-0 border-l-0'
-      }`}
-    >
-      <div className="h-full w-[400px]">
-        <PlanViewerPanel content={planContent} onClose={() => setIsPlanOpen(false)} />
-      </div>
-    </div>
-  ) : null;
+  const planPanel = (
+    <PlanPanelSection
+      planContent={planContent}
+      isOpen={isPlanOpen}
+      onClose={() => setIsPlanOpen(false)}
+    />
+  );
 
-  const actionPanel = actionPreviewTag ? (
-    <div
-      className={`shrink-0 overflow-hidden border-l border-zinc-200 transition-[width] duration-200 ease-in-out dark:border-zinc-800 ${
-        isActionPanelOpen ? 'w-[400px]' : 'w-0 border-l-0'
-      }`}
-    >
-      <div className="h-full w-[400px]">
-        <ActionContentPanel tag={actionPreviewTag} onClose={() => setIsActionPanelOpen(false)} />
-      </div>
-    </div>
-  ) : null;
+  const actionPanel = (
+    <ActionPanelSection
+      actionPreviewTag={actionPreviewTag}
+      isOpen={isActionPanelOpen}
+      onClose={() => setIsActionPanelOpen(false)}
+    />
+  );
 
   const chatInputProps = {
     onSubmit: handleChatInputSubmit,
@@ -1586,7 +1673,10 @@ export function AgentChatPanel({
     tokenInfo: { promptEstimate, inputTokens: tokenInputs, outputTokens: tokenOutputs, contextWindow: effectiveContextWindow },
   };
 
-  const notificationBanners = !isStreaming ? (
+  const textOnlyAgentChannel =
+    chatProvider !== '' && !providerSupportsLocalAgentTools(chatProvider as ProviderId);
+
+  const notificationBanners = (
     <ChatNotificationBanners
       docsSaved={docsSaved}
       onDismissDocs={handleDismissDocs}
@@ -1594,8 +1684,10 @@ export function AgentChatPanel({
       checkpointSaved={checkpointSaved}
       onResumeCheckpoint={handleResumeCheckpoint}
       onDismissCheckpoint={handleDismissCheckpoint}
+      textOnlyAgentChannel={textOnlyAgentChannel}
+      streaming={isStreaming}
     />
-  ) : null;
+  );
 
   const dialogs = (
     <>
@@ -1623,39 +1715,25 @@ export function AgentChatPanel({
   );
 
   const configDrawer = (
-    <div
-      className={`shrink-0 overflow-hidden border-l border-zinc-200 transition-[width] duration-200 ease-in-out dark:border-zinc-800 ${
-        showConfig ? 'w-[320px]' : 'w-0 border-l-0'
-      }`}
-    >
-      <div className="h-full w-[320px]">
-        <SessionConfigPanel
-          sessionId={sessionId ?? '_new'}
-          config={sessionConfig}
-          onSave={handleSaveConfig}
-          onClose={() => setShowConfig(false)}
-          agent={agent}
-          {...(!hasProject ? { agentSystemPrompt: agent.systemPrompt, agentCapabilities: agent.capabilities } : {})}
-        />
-      </div>
-    </div>
+    <ConfigDrawerSection
+      showConfig={showConfig}
+      sessionId={sessionId}
+      sessionConfig={sessionConfig}
+      onSave={handleSaveConfig}
+      onClose={() => setShowConfig(false)}
+      agent={agent}
+      hasProject={hasProject}
+    />
   );
 
   const runtimeDrawer = (
-    <div
-      className={`shrink-0 overflow-hidden border-l border-zinc-200 transition-[width] duration-200 ease-in-out dark:border-zinc-800 ${
-        showRuntimePanel ? 'w-[300px]' : 'w-0 border-l-0'
-      }`}
-    >
-      <div className="h-full w-[300px]">
-        <RuntimePanel
-          agent={agent}
-          sessionConfig={sessionConfig}
-          onSaveConfig={handleSaveConfig}
-          onClose={() => setShowRuntimePanel(false)}
-        />
-      </div>
-    </div>
+    <RuntimeDrawerSection
+      showRuntimePanel={showRuntimePanel}
+      agent={agent}
+      sessionConfig={sessionConfig}
+      onSaveConfig={handleSaveConfig}
+      onClose={() => setShowRuntimePanel(false)}
+    />
   );
 
   const messageListProps = {
@@ -1665,7 +1743,7 @@ export function AgentChatPanel({
     streamingMessage,
     errorMsg,
     inPlanMode,
-    thinkingText,
+    thinkingText: emptyStreamStatusText,
     assistantAvatarSrc,
     onDelete: handleDeleteMessage,
     onRegenerate: handleRegenerate,
@@ -1684,50 +1762,24 @@ export function AgentChatPanel({
   };
 
   const plainToolbar = (
-    workspaceMode
-      ? null
-      : (
-        <div className="flex items-center justify-end gap-0.5 border-b border-zinc-100 px-3 py-1.5 dark:border-zinc-800">
-          <button
-            type="button"
-            onClick={() => setShowConfig(v => !v)}
-            className={`p-1 rounded transition-colors ${
-              showConfig
-                ? 'text-blue-500 dark:text-blue-400'
-                : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
-            }`}
-          >
-            <Settings className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowRuntimePanel(v => !v)}
-            className={`p-1 rounded transition-colors ${
-              showRuntimePanel
-                ? 'text-blue-500 dark:text-blue-400'
-                : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
-            }`}
-          >
-            <PanelRight className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )
+    <PlainToolbarControls
+      workspaceMode={workspaceMode}
+      hasActiveRun={!!sessionRuns.find((r) => r.status === 'active')}
+      showConfig={showConfig}
+      showRuntimePanel={showRuntimePanel}
+      onToggleConfig={() => setShowConfig(v => !v)}
+      onToggleRuntimePanel={() => setShowRuntimePanel(v => !v)}
+    />
   );
 
   const agentDisplayName = repairTextIfNeeded(agent.name) ?? agent.name;
 
   const plainEmptyState = (
-    <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-zinc-400 dark:text-zinc-500">
-      <div className="h-14 w-14 overflow-hidden rounded-2xl bg-zinc-100 dark:bg-zinc-800">
-        <AgentAvatar slug={agent.slug} iconKey={agent.icon} className="h-full w-full object-cover" />
-      </div>
-      <div className="space-y-1">
-        <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">{agentDisplayName}</p>
-        <p className="max-w-sm text-sm">
-          {workspaceMode ? `向 ${agentDisplayName} 发一条消息，开始当前工作区会话。` : `向 ${agentDisplayName} 发一条消息，开始对话。`}
-        </p>
-      </div>
-    </div>
+    <PlainEmptyStateSection
+      agent={agent}
+      agentDisplayName={agentDisplayName}
+      workspaceMode={workspaceMode}
+    />
   );
 
   const plainMessageList = (
@@ -1738,16 +1790,15 @@ export function AgentChatPanel({
   );
 
   const plainInput = (
-    <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
-      <ChatInput
-        {...chatInputProps}
-        placeholder={`发送消息给 ${agentDisplayName}...`}
-      />
-    </div>
+    <PlainInputSection
+      chatInputProps={chatInputProps}
+      agentDisplayName={agentDisplayName}
+    />
   );
 
-  const projectHeader = workspaceMode ? null : (
-    <ChatSessionHeader
+  const projectHeader = (
+    <ProjectSessionHeaderControls
+      workspaceMode={workspaceMode}
       isFull={isFull}
       sessionId={sessionId}
       sessionTitle={sessionTitle}
@@ -1768,28 +1819,19 @@ export function AgentChatPanel({
       onCompressOpen={() => setCompressDialogOpen(true)}
       showRuntimePanel={showRuntimePanel}
       onToggleRuntimePanel={() => setShowRuntimePanel(v => !v)}
+      activeRun={sessionRuns.find((r) => r.status === 'active') ?? null}
     />
   );
 
   const projectTaskBanner = taskCard ? <TaskCardBanner card={taskCard} /> : null;
 
-  const projectEmptyState = workspaceMode ? (
-    <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center text-zinc-400 dark:text-zinc-500">
-      <div className="h-16 w-16 overflow-hidden rounded-[24px] bg-zinc-100 dark:bg-zinc-800">
-        <AgentAvatar slug={agent.slug} iconKey={agent.icon} className="h-full w-full object-cover" />
-      </div>
-      <div className="space-y-1.5">
-        <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">{agentDisplayName}</p>
-        <p className="max-w-sm text-sm leading-6">
-          向 {agentDisplayName} 发一条消息，开始当前工作区会话。
-        </p>
-      </div>
-    </div>
-  ) : (
-    <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-400">
-      <Sparkles className="h-8 w-8 stroke-1" />
-      <p className="text-xs">{t('chat.plannerHint')}</p>
-    </div>
+  const projectEmptyState = (
+    <ProjectEmptyStateSection
+      workspaceMode={workspaceMode}
+      agent={agent}
+      agentDisplayName={agentDisplayName}
+      plannerHint={t('chat.plannerHint')}
+    />
   );
 
   const projectMessageList = (
@@ -1800,14 +1842,13 @@ export function AgentChatPanel({
   );
 
   const projectInput = (
-    <div className="border-t border-zinc-100 p-2 dark:border-zinc-800">
-      <ChatInput
-        {...chatInputProps}
-        placeholder={workspaceMode ? `继续向 ${agentDisplayName} 发送消息...` : t('chat.plannerPlaceholder')}
-        minHeight={isFull ? '120px' : '200px'}
-        fullWidth
-      />
-    </div>
+    <ProjectInputSection
+      chatInputProps={chatInputProps}
+      workspaceMode={workspaceMode}
+      agentDisplayName={agentDisplayName}
+      plannerPlaceholder={t('chat.plannerPlaceholder')}
+      isFull={isFull}
+    />
   );
 
   const queueOverlay = (
@@ -1831,19 +1872,12 @@ export function AgentChatPanel({
   );
 
   const folderExplorer = (
-    <div
-      className={`shrink-0 overflow-hidden border-l border-zinc-200 transition-[width] duration-200 ease-in-out dark:border-zinc-800 ${
-        showFolderExplorer ? 'w-[280px]' : 'w-0 border-l-0'
-      }`}
-    >
-      <div className="h-full w-[280px]">
-        <FolderExplorerPanel
-          onClose={() => setShowFolderExplorer(false)}
-          onInsertPath={handleInsertFilePath}
-          initialPath={projectPath}
-        />
-      </div>
-    </div>
+    <FolderExplorerSection
+      showFolderExplorer={showFolderExplorer}
+      onClose={() => setShowFolderExplorer(false)}
+      onInsertPath={handleInsertFilePath}
+      projectPath={projectPath}
+    />
   );
 
   const sidebar = (
@@ -1866,8 +1900,8 @@ export function AgentChatPanel({
       scrollRef={scrollRef}
       onChatScroll={handleChatScroll}
       hasPendingQueue={isStreaming && pendingUserMessages.length > 0}
-      plainScrollClassName={workspaceMode ? 'px-5 py-5' : 'px-4 py-4 pr-24'}
-      projectScrollClassName="px-3 py-3 pr-22"
+      plainScrollClassName={workspaceMode ? 'px-5 py-5' : 'px-4 py-4'}
+      projectScrollClassName="px-3 py-3"
       plainToolbar={plainToolbar}
       showPlainEmptyState={messages.length === 0 && !isStreaming}
       plainEmptyState={plainEmptyState}

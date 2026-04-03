@@ -181,9 +181,8 @@ t('flows.overdueByDays', { days: 5 })  // "已超期 5 天"
 
 ## 路由说明
 
-- 中文路由：`/zh/flows`, `/zh/tasks/{id}`
-- 英文路由：`/en/flows`, `/en/tasks/{id}`
-- 默认语言：中文（访问 `/` 自动重定向到 `/zh`）
+- **默认语言（无前缀）**：`/workspace/*`、`/settings` 等（访问 `/` 重定向到 `/workspace/projects`）
+- **英文**：在路径前加 `/en`，例如 `/en/workspace/projects`、`/en/settings`
 
 ## 测试
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { Dispatch } from 'react';
-import { Sparkles, ArrowLeft, Trash2, FileDown, Settings, Maximize2, Minimize2, GitFork, PanelRight } from 'lucide-react';
+import { Sparkles, ArrowLeft, Trash2, FileDown, Settings, Maximize2, Minimize2, GitFork, PanelRight, Play, Square } from 'lucide-react';
 import { useRouter } from '@/client/i18n/routing';
 import { Button } from '@/components/ui/button';
 import { SessionDropdown } from '@/components/session-dropdown';
@@ -32,6 +32,10 @@ export interface ChatSessionHeaderProps {
   onCompressOpen: () => void;
   showRuntimePanel?: boolean;
   onToggleRuntimePanel?: () => void;
+  activeRun?: { runId: string; goal?: string; startedAt: string } | null;
+  runActionBusy?: boolean;
+  onStartRun?: () => void;
+  onCloseRun?: () => void;
 }
 
 export function ChatSessionHeader({
@@ -55,6 +59,10 @@ export function ChatSessionHeader({
   onCompressOpen,
   showRuntimePanel,
   onToggleRuntimePanel,
+  activeRun,
+  runActionBusy,
+  onStartRun,
+  onCloseRun,
 }: ChatSessionHeaderProps) {
   const router = useRouter();
 
@@ -115,8 +123,41 @@ export function ChatSessionHeader({
             )}
           </div>
         )}
+        {activeRun && (
+          <span
+            className="ml-1 shrink-0 rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"
+            title={activeRun.goal || 'Active Run'}
+          >
+            RUN: {activeRun.goal?.slice(0, 18) || activeRun.runId.slice(0, 8)}
+          </span>
+        )}
       </div>
       <div className="flex items-center gap-0.5 shrink-0">
+        {(onStartRun || onCloseRun) && (
+          activeRun ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-1.5 text-xs text-amber-500 hover:text-amber-700 dark:hover:text-amber-300 disabled:opacity-40"
+              onClick={onCloseRun}
+              disabled={isStreaming || !!runActionBusy}
+              title="结束 Run"
+            >
+              <Square className="h-3 w-3" />
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-1.5 text-xs text-emerald-500 hover:text-emerald-700 dark:hover:text-emerald-300 disabled:opacity-40"
+              onClick={onStartRun}
+              disabled={isStreaming || !sessionId || !!runActionBusy}
+              title="开始 Run"
+            >
+              <Play className="h-3 w-3" />
+            </Button>
+          )
+        )}
         {/* Compress history */}
         <Button
           size="sm"
@@ -176,7 +217,7 @@ export function ChatSessionHeader({
             size="sm"
             variant="ghost"
             className="h-6 px-1.5 text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
-            onClick={() => router.push('/flows')}
+            onClick={() => router.push('/workspace')}
           >
             <Minimize2 className="h-3 w-3" />
           </Button>
@@ -185,7 +226,7 @@ export function ChatSessionHeader({
             size="sm"
             variant="ghost"
             className="h-6 px-1.5 text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
-            onClick={() => router.push('/flows/butler')}
+            onClick={() => router.push('/workspace/butler')}
           >
             <Maximize2 className="h-3 w-3" />
           </Button>

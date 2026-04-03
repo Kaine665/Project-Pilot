@@ -384,7 +384,7 @@ export default function DocsProjectPage() {
         assetId: nextAssetId,
         mode: nextAssetId ? nextMode : undefined,
       });
-      router.replace(`/flows/docs/${projectKey}${nextQueryString ? `?${nextQueryString}` : ''}`);
+      router.replace(`/workspace/docs/${projectKey}${nextQueryString ? `?${nextQueryString}` : ''}`);
     },
     [assetType, projectKey, query, router, scope, selected?.id, selectedTag],
   );
@@ -477,7 +477,7 @@ export default function DocsProjectPage() {
       });
       const currentQueryString = searchParams.toString();
       if (nextQuery !== currentQueryString) {
-        router.replace(`/flows/docs/${projectKey}${nextQuery ? `?${nextQuery}` : ''}`);
+        router.replace(`/workspace/docs/${projectKey}${nextQuery ? `?${nextQuery}` : ''}`);
       }
       if (selected?.id === asset.id && !mode.startsWith('create')) {
         clearSelectedAsset();
@@ -512,7 +512,7 @@ export default function DocsProjectPage() {
     });
     const currentQueryString = searchParams.toString();
     if (nextQueryString !== currentQueryString) {
-      router.replace(`/flows/docs/${projectKey}${nextQueryString ? `?${nextQueryString}` : ''}`);
+      router.replace(`/workspace/docs/${projectKey}${nextQueryString ? `?${nextQueryString}` : ''}`);
     }
   }, [assetType, projectKey, query, router, scope, searchParams, selected, selectedTag]);
 
@@ -660,7 +660,7 @@ export default function DocsProjectPage() {
                     tag: selectedTag,
                     assetId: null,
                   });
-                  router.push(`/flows/docs/${nextKey}${nextQuery ? `?${nextQuery}` : ''}`);
+                  router.push(`/workspace/docs/${nextKey}${nextQuery ? `?${nextQuery}` : ''}`);
                 }}
                 className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
               >

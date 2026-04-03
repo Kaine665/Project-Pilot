@@ -10,7 +10,7 @@
 
 export type ResourceType =
   | 'design-docs-index'           // Design docs index table (AI cats on demand)
-  | 'active-tasks'                // Shared active tasks board (parallel awareness)
+  | 'active-tasks'                // 并行执行看板 agents/active-tasks.json（非用户 Todo）
   | 'available-agents'            // Callable agents list (sub-agent invocation)
   | 'system-prompt'               // Agent system prompt text
   | 'todo-list'                   // Pending todo items
@@ -18,6 +18,7 @@ export type ResourceType =
   | 'doc-save-instructions'       // Static: design doc save instructions
   | 'session-title-instructions'  // Static: session title generation instructions
   | 'flow-context'                // Project flow context (for flow-bound chats)
+  | 'context'                     // 遗留：旧版 Todo/会话 resourceRefs；无 loader 时会刷屏告警
   | 'reference-turns'             // Imported conversation turns (guest agent)
   | 'shared-memory'                // Agent shared memory (blackboard)
   | 'global-prompt'                // Global prompt injected into every agent
@@ -38,10 +39,11 @@ export interface ResourceRef {
    * - inline-text: arbitrary key
    * - doc-save-instructions / session-title-instructions: '_static'
    * - design-docs-index: '_all'
-   * - active-tasks: '_running'
+   * - active-tasks: '_running'（并行执行看板）
    * - available-agents: '_callable'
    * - shared-memory: '_shared'
    * - flow-context: '_snapshot'
+   * - context: 遗留类型；若有 inlineContent/content 字段则注入正文
    * - reference-turns: '_imported'
    * - global-prompt: '_global'
    * - project-prompt: '_project'

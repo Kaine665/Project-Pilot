@@ -5,7 +5,7 @@ import i18next from './i18n/config';
 import { ThemeProvider } from '@/components/theme-provider';
 import { ProjectProvider } from '@/components/project-context';
 
-const FlowsLayout = lazy(() => import('./routes/flows-layout'));
+const WorkspaceShell = lazy(() => import('./routes/workspace-shell'));
 const SettingsPage = lazy(() => import('@/app/[locale]/settings/page'));
 const ProjectsPage = lazy(() => import('@/app/[locale]/flows/projects/page'));
 const AgentsPage = lazy(() => import('@/app/[locale]/flows/agents/page'));
@@ -31,14 +31,14 @@ function Loading() {
   );
 }
 
-function FlowsWrapper() {
+function WorkspaceWrapper() {
   return (
     <Suspense fallback={<Loading />}>
-      <FlowsLayout>
+      <WorkspaceShell>
         <Suspense fallback={<Loading />}>
           <Outlet />
         </Suspense>
-      </FlowsLayout>
+      </WorkspaceShell>
     </Suspense>
   );
 }
@@ -48,7 +48,7 @@ function AppRoutes() {
     <Suspense fallback={<Loading />}>
       <Routes>
         <Route path="settings" element={<SettingsPage />} />
-        <Route path="flows" element={<FlowsWrapper />}>
+        <Route path="workspace" element={<WorkspaceWrapper />}>
           <Route index element={<Navigate to="projects" replace />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="agents" element={<AgentsPage />} />
@@ -66,7 +66,7 @@ function AppRoutes() {
           <Route path="dimensions" element={<DimensionsPage />} />
           <Route path="recycle-bin" element={<RecycleBinPage />} />
         </Route>
-        <Route path="*" element={<Navigate to="/flows/projects" replace />} />
+        <Route path="*" element={<Navigate to="/workspace/projects" replace />} />
       </Routes>
     </Suspense>
   );
@@ -79,7 +79,7 @@ export function App() {
         <ThemeProvider>
           <ProjectProvider>
             <Routes>
-              <Route path="/" element={<Navigate to="/flows/projects" replace />} />
+              <Route path="/" element={<Navigate to="/workspace/projects" replace />} />
               <Route path="/en/*" element={<AppRoutes />} />
               <Route path="/*" element={<AppRoutes />} />
             </Routes>

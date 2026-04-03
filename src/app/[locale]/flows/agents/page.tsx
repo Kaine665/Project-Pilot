@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, memo, type MouseEvent } from 'react';
 import { useTranslations } from '@/client/i18n/use-translations';
 import {
   Plus, Trash2, X, Minimize2,
@@ -38,7 +38,17 @@ import { AgentPickerModal } from '@/components/agent-picker-modal';
 import { type AllSessionItem, type OpenedSession, syncUrlParams } from '@/components/agent-session-utils';
 import { useProject } from '@/components/project-context';
 import { repairTextIfNeeded } from '@/lib/text-repair';
+import type {
+  AgentsWorkspacePerAgentFocusPersist,
+  AgentsWorkspaceProjectPersist,
+} from '@/lib/agents-workspace-ui-shared';
+import { agentsWorkspaceStorageKey } from '@/lib/agents-workspace-ui-shared';
 import { cn } from '@/lib/utils';
+
+const WORKSPACE_UI_LS_PREFIX = 'pp.agentsWorkspaceUi.v1.';
+function workspaceUiLocalStorageKey(projectKey: string | null): string {
+  return WORKSPACE_UI_LS_PREFIX + agentsWorkspaceStorageKey(projectKey);
+}
 
 
 // ── Helpers ──
@@ -77,15 +87,12 @@ function displayText(value: string | undefined, fallback = '--'): string {
   return repairTextIfNeeded(value) ?? value ?? fallback;
 }
 
-/** Provider / model line for workspace header (avoid raw "— · —"). */
-function formatAgentRuntimeCaption(
-  agent: Agent,
-  t: (key: string, values?: Record<string, unknown>) => string,
-): string {
+/** Provider / model line for workspace header；无配置时不占行。 */
+function formatAgentRuntimeCaption(agent: Agent): string {
   const provider = agent.defaultProvider?.trim() ?? '';
   const model = agent.defaultModel?.trim() ?? '';
-  if (!provider && !model) return t('workspace.modelFollowsGlobal');
-  if (provider && !model) return t('workspace.runtimeProviderInheritModel', { provider });
+  if (!provider && !model) return '';
+  if (provider && !model) return provider;
   if (!provider && model) return model;
   return `${provider} · ${model}`;
 }
@@ -206,10 +213,50 @@ export default function AgentsPage() {
   const openedSessionsRef = useRef<OpenedSession[]>(openedSessions);
   openedSessionsRef.current = openedSessions;
   const nextKeyRef = useRef(1);
+  const workspaceUiHydratedRef = useRef(false);
+  const hydrateSeqRef = useRef(0);
 
   // ── Agent create/edit ──
   const [creating, setCreating] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const selectedAgentIdRef = useRef(selectedAgentId);
+  selectedAgentIdRef.current = selectedAgentId;
+  const activePanelRef = useRef(activePanel);
+  activePanelRef.current = activePanel;
+  const lastWorkspaceFocusByAgentRef = useRef<Record<string, AgentsWorkspacePerAgentFocusPersist>>({});
+
+  const persistWorkspaceFocusFromRefs = useCallback(() => {
+    const panel = activePanelRef.current;
+    const opened = openedSessionsRef.current;
+    let aid: string | null = null;
+    let focus: AgentsWorkspacePerAgentFocusPersist | null = null;
+    if (panel?.type === 'session') {
+      const o = opened.find((x) => x.key === panel.key);
+      if (o) {
+        aid = o.agentId;
+        focus = { kind: 'session', sessionId: o.sessionId };
+      }
+    } else if (panel?.type === 'agent') {
+      aid = panel.agentId;
+      focus = { kind: 'agent', mode: panel.mode };
+    }
+    if (aid && focus) {
+      lastWorkspaceFocusByAgentRef.current[aid] = focus;
+    }
+  }, []);
+
+  const getWorkspaceContextAgentIdFromRefs = (): string | null => {
+    const panel = activePanelRef.current;
+    const opened = openedSessionsRef.current;
+    if (panel?.type === 'session') {
+      return opened.find((o) => o.key === panel.key)?.agentId ?? null;
+    }
+    if (panel?.type === 'agent') {
+      return panel.agentId;
+    }
+    return selectedAgentIdRef.current;
+  };
+
   const [form, setForm] = useState<FormData>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [expandedPrompt, setExpandedPrompt] = useState(false);
@@ -229,6 +276,15 @@ export default function AgentsPage() {
     };
     document.addEventListener('pointerdown', onPointerDown, true);
     return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [historyExpanded]);
+
+  useEffect(() => {
+    if (!historyExpanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setHistoryExpanded(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, [historyExpanded]);
 
   // ── New session agent picker (dropdown + modal) ──
@@ -277,6 +333,14 @@ export default function AgentsPage() {
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
 
+  const [urlProjectKey, setUrlProjectKey] = useState<string | null>(null);
+  useEffect(() => {
+    setUrlProjectKey(new URLSearchParams(window.location.search).get('project'));
+  }, []);
+
+  // 实际使用的 projectKey：优先用 ProjectProvider 的值，挂载后再同步 URL 参数
+  const effectiveProjectKey = activeKey ?? urlProjectKey;
+
   useEffect(() => {
     let cancelled = false;
 
@@ -318,32 +382,166 @@ export default function AgentsPage() {
     return () => { cancelled = true; };
   }, [activeKey]);
 
-  // Restore selection from URL params after agents load
+  // ── Clear opened session panels when project changes ──
+  const prevProjectKeyRef = useRef(effectiveProjectKey);
+  useEffect(() => {
+    if (prevProjectKeyRef.current !== effectiveProjectKey) {
+      prevProjectKeyRef.current = effectiveProjectKey;
+      workspaceUiHydratedRef.current = false;
+      lastWorkspaceFocusByAgentRef.current = {};
+      setOpenedSessions([]);
+      setActivePanel(null);
+      setSelectedAgentId(null);
+      setCreating(false);
+      setForm(emptyForm);
+      setExpandedPrompt(false);
+    }
+  }, [effectiveProjectKey]);
+
+  // URL 优先；否则从服务端恢复已打开标签（再 fallback localStorage）
   useEffect(() => {
     if (agents.length === 0) return;
+
+    const seq = ++hydrateSeqRef.current;
+    const pk = effectiveProjectKey ?? null;
     const url = new URL(window.location.href);
     const agentParam = url.searchParams.get('agent');
     const sessionParam = url.searchParams.get('session');
+
     if (agentParam) {
-      const agent = agents.find(a => a.id === agentParam);
+      const agent = agentsRef.current.find(a => a.id === agentParam);
       if (agent) {
         setSelectedAgentId(agent.id);
         setForm(agentToForm(agent));
         if (sessionParam) {
-          // Open the session panel for this session
           const key = nextKeyRef.current++;
           setOpenedSessions(prev => [...prev, { sessionId: sessionParam, agentId: agent.id, key }]);
           setActivePanel({ type: 'session', key });
+          lastWorkspaceFocusByAgentRef.current[agent.id] = { kind: 'session', sessionId: sessionParam };
         } else {
           setActivePanel({ type: 'agent', agentId: agent.id, mode: 'chat' });
+          lastWorkspaceFocusByAgentRef.current[agent.id] = { kind: 'agent', mode: 'chat' };
         }
-      } else {
-        // Agent from URL no longer exists — clear
-        syncUrlParams({ agent: null, session: null });
+        workspaceUiHydratedRef.current = true;
+        return;
       }
+      syncUrlParams({ agent: null, session: null });
     }
+
+    const applyBlob = (blob: AgentsWorkspaceProjectPersist): boolean => {
+      const agentList = agentsRef.current;
+      const agentIdSet = new Set(agentList.map(a => a.id));
+      const filteredTabs = blob.tabs.filter(t => agentIdSet.has(t.agentId));
+      if (filteredTabs.length === 0) return false;
+
+      let k = nextKeyRef.current;
+      const restored = filteredTabs.map(t => ({ ...t, key: k++ }));
+      nextKeyRef.current = k;
+      setOpenedSessions(restored);
+
+      if (blob.lastFocusByAgent && Object.keys(blob.lastFocusByAgent).length > 0) {
+        lastWorkspaceFocusByAgentRef.current = { ...blob.lastFocusByAgent };
+      }
+
+      if (blob.active?.kind === 'session') {
+        const act = blob.active;
+        const match = restored.find(
+          o => o.agentId === act.agentId && o.sessionId === act.sessionId,
+        );
+        if (match) {
+          setActivePanel({ type: 'session', key: match.key });
+          const ag = agentList.find(a => a.id === match.agentId);
+          if (ag) {
+            setSelectedAgentId(ag.id);
+            setForm(agentToForm(ag));
+          }
+          syncUrlParams({ agent: match.agentId, session: match.sessionId });
+          return true;
+        }
+      } else if (blob.active?.kind === 'agent' && agentIdSet.has(blob.active.agentId)) {
+        const act = blob.active;
+        const ag = agentList.find(a => a.id === act.agentId)!;
+        setSelectedAgentId(ag.id);
+        setForm(agentToForm(ag));
+        setActivePanel({
+          type: 'agent',
+          agentId: ag.id,
+          mode: act.mode === 'settings' ? 'settings' : 'chat',
+        });
+        syncUrlParams({ agent: ag.id, session: null });
+        return true;
+      }
+
+      const first = restored[0];
+      setActivePanel({ type: 'session', key: first.key });
+      const ag = agentList.find(a => a.id === first.agentId);
+      if (ag) {
+        setSelectedAgentId(ag.id);
+        setForm(agentToForm(ag));
+      }
+      syncUrlParams({ agent: first.agentId, session: first.sessionId });
+      return true;
+    };
+
+    let cancelled = false;
+    void (async () => {
+      const qs = `projectKey=${encodeURIComponent(pk ?? '')}`;
+      try {
+        const res = await fetch(`/api/data/agents-workspace-ui?${qs}`, { cache: 'no-store' });
+        let blob: AgentsWorkspaceProjectPersist | null = null;
+        if (res.ok) {
+          blob = await res.json() as AgentsWorkspaceProjectPersist;
+        }
+        if (cancelled || seq !== hydrateSeqRef.current) return;
+
+        if (blob?.tabs?.length) {
+          if (applyBlob(blob)) {
+            workspaceUiHydratedRef.current = true;
+            try {
+              localStorage.setItem(workspaceUiLocalStorageKey(pk), JSON.stringify(blob));
+            } catch { /* ignore */ }
+            return;
+          }
+        }
+
+        try {
+          const raw = localStorage.getItem(workspaceUiLocalStorageKey(pk));
+          if (raw) {
+            const local = JSON.parse(raw) as AgentsWorkspaceProjectPersist;
+            if (local?.tabs?.length && applyBlob(local)) {
+              workspaceUiHydratedRef.current = true;
+              void fetch('/api/data/agents-workspace-ui', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  projectKey: pk,
+                  tabs: local.tabs,
+                  active: local.active,
+                  lastFocusByAgent: local.lastFocusByAgent,
+                }),
+              }).catch(() => {});
+              return;
+            }
+          }
+        } catch { /* ignore */ }
+
+        workspaceUiHydratedRef.current = true;
+      } catch {
+        if (cancelled || seq !== hydrateSeqRef.current) return;
+        try {
+          const raw = localStorage.getItem(workspaceUiLocalStorageKey(pk));
+          if (raw) {
+            const local = JSON.parse(raw) as AgentsWorkspaceProjectPersist;
+            if (local?.tabs?.length) applyBlob(local);
+          }
+        } catch { /* ignore */ }
+        workspaceUiHydratedRef.current = true;
+      }
+    })();
+
+    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agents.length]); // Only run when agents list first loads
+  }, [agents.length, effectiveProjectKey]);
 
   // Refresh agent list when window regains focus
   useEffect(() => {
@@ -355,15 +553,6 @@ export default function AgentsPage() {
   // ── Session cache per project (stale-while-revalidate) ──
   const sessionCacheRef = useRef<Map<string, AllSessionItem[]>>(new Map());
   const CACHE_KEY_ALL = '__all__';
-
-  const [urlProjectKey, setUrlProjectKey] = useState<string | null>(null);
-
-  useEffect(() => {
-    setUrlProjectKey(new URLSearchParams(window.location.search).get('project'));
-  }, []);
-
-  // 实际使用的 projectKey：优先用 ProjectProvider 的值，挂载后再同步 URL 参数
-  const effectiveProjectKey = activeKey ?? urlProjectKey;
 
   // ── Fetch all sessions (cross-agent, filtered by active project) ──
   const fetchAllSessions = useCallback(async () => {
@@ -443,19 +632,45 @@ export default function AgentsPage() {
 
   useEffect(() => { fetchAllSessions(); }, [fetchAllSessions]);
 
-  // ── Clear opened session panels when project changes ──
-  const prevProjectKeyRef = useRef(effectiveProjectKey);
+  // 持久化已打开标签（服务端 + localStorage），切换路由/刷新后可恢复
   useEffect(() => {
-    if (prevProjectKeyRef.current !== effectiveProjectKey) {
-      prevProjectKeyRef.current = effectiveProjectKey;
-      setOpenedSessions([]);
-      setActivePanel(null);
-      setSelectedAgentId(null);
-      setCreating(false);
-      setForm(emptyForm);
-      setExpandedPrompt(false);
-    }
-  }, [effectiveProjectKey]);
+    const t = window.setTimeout(() => {
+      if (!workspaceUiHydratedRef.current) return;
+      const pk = effectiveProjectKey ?? null;
+      const tabs = openedSessions.map(({ agentId, sessionId }) => ({ agentId, sessionId }));
+      let active: AgentsWorkspaceProjectPersist['active'] = null;
+      if (activePanel?.type === 'session') {
+        const o = openedSessions.find(x => x.key === activePanel.key);
+        if (o) active = { kind: 'session', agentId: o.agentId, sessionId: o.sessionId };
+      } else if (activePanel?.type === 'agent') {
+        active = { kind: 'agent', agentId: activePanel.agentId, mode: activePanel.mode };
+      }
+      const lf = lastWorkspaceFocusByAgentRef.current;
+      const lastFocusByAgent = Object.keys(lf).length > 0 ? { ...lf } : undefined;
+      const body: AgentsWorkspaceProjectPersist = { tabs, active, lastFocusByAgent };
+
+      try {
+        if (tabs.length > 0) {
+          localStorage.setItem(workspaceUiLocalStorageKey(pk), JSON.stringify(body));
+        } else {
+          lastWorkspaceFocusByAgentRef.current = {};
+          localStorage.removeItem(workspaceUiLocalStorageKey(pk));
+        }
+      } catch { /* ignore */ }
+
+      void fetch('/api/data/agents-workspace-ui', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectKey: pk,
+          tabs: body.tabs,
+          active: body.active,
+          lastFocusByAgent: body.lastFocusByAgent,
+        }),
+      }).catch(() => {});
+    }, 400);
+    return () => clearTimeout(t);
+  }, [openedSessions, activePanel, effectiveProjectKey]);
 
   // ── Clock for running-session elapsed display ──
   const hasRunningSession = useMemo(() => allSessions.some(s => s.isRunning), [allSessions]);
@@ -498,6 +713,7 @@ export default function AgentsPage() {
 
   const handleSessionClick = useCallback((session: AllSessionItem) => {
     setHistoryExpanded(false);
+    persistWorkspaceFocusFromRefs();
     // Mark as read (fire-and-forget + clear local state immediately)
     if (session.unreadCount) {
       setAllSessions(prev => prev.map(s => s.id === session.id ? { ...s, unreadCount: 0 } : s));
@@ -521,7 +737,7 @@ export default function AgentsPage() {
       setActivePanel({ type: 'session', key });
     }
     syncUrlParams({ agent: session.agentId, session: session.id });
-  }, []);
+  }, [persistWorkspaceFocusFromRefs]);
 
   const handleNewSession = (agent: Agent) => {
     setHistoryExpanded(false);
@@ -556,14 +772,81 @@ export default function AgentsPage() {
   // ── Handlers: Agents tab ──
 
   const handleAgentClick = (agent: Agent) => {
+    const opened = openedSessionsRef.current;
+    const fromAid = getWorkspaceContextAgentIdFromRefs();
+
+    // 同一 Agent：从会话缩回概览（与旧版侧栏一致）；已在概览/设置则不再重复切换
+    if (!creating && fromAid === agent.id) {
+      if (activePanelRef.current?.type === 'session') {
+        setActivePanel({ type: 'agent', agentId: agent.id, mode: 'chat' });
+        syncUrlParams({ agent: agent.id, session: null });
+        lastWorkspaceFocusByAgentRef.current[agent.id] = { kind: 'agent', mode: 'chat' };
+      }
+      return;
+    }
+
+    persistWorkspaceFocusFromRefs();
+
     setCreating(false);
     setSelectedAgentId(agent.id);
     setForm(agentToForm(agent));
     setExpandedPrompt(false);
     setHistoryExpanded(false);
+
+    const saved = lastWorkspaceFocusByAgentRef.current[agent.id];
+    if (saved?.kind === 'session') {
+      const tab = opened.find((o) => o.agentId === agent.id && o.sessionId === saved.sessionId);
+      if (tab) {
+        setActivePanel({ type: 'session', key: tab.key });
+        syncUrlParams({ agent: agent.id, session: tab.sessionId });
+        return;
+      }
+    }
+    if (saved?.kind === 'agent') {
+      setActivePanel({ type: 'agent', agentId: agent.id, mode: saved.mode });
+      syncUrlParams({ agent: agent.id, session: null });
+      return;
+    }
+
     setActivePanel({ type: 'agent', agentId: agent.id, mode: 'chat' });
     syncUrlParams({ agent: agent.id, session: null });
   };
+
+  /** 从顶部标签栏移除已打开实例（不删服务端会话，仍可从侧栏/历史进入） */
+  const handleCloseWorkspaceSessionTab = useCallback((opened: OpenedSession, e: MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setHistoryExpanded(false);
+    const agentId = opened.agentId;
+    const tabsBefore = openedSessionsRef.current.filter((o) => o.agentId === agentId);
+    const idx = tabsBefore.findIndex((o) => o.key === opened.key);
+    const remainingAfter = tabsBefore.filter((o) => o.key !== opened.key);
+    const wasActive = activePanel?.type === 'session' && activePanel.key === opened.key;
+
+    setOpenedSessions((prev) => prev.filter((o) => o.key !== opened.key));
+
+    if (!wasActive) return;
+
+    const nextTab = remainingAfter[idx] ?? remainingAfter[idx - 1] ?? remainingAfter[0];
+    if (nextTab) {
+      setActivePanel({ type: 'session', key: nextTab.key });
+      syncUrlParams({ agent: nextTab.agentId, session: nextTab.sessionId });
+      return;
+    }
+    const ag = agents.find((a) => a.id === agentId);
+    if (ag) {
+      setCreating(false);
+      setSelectedAgentId(ag.id);
+      setForm(agentToForm(ag));
+      setExpandedPrompt(false);
+      setActivePanel({ type: 'agent', agentId: ag.id, mode: 'chat' });
+      syncUrlParams({ agent: ag.id, session: null });
+    } else {
+      setActivePanel({ type: 'agent', agentId, mode: 'chat' });
+      setSelectedAgentId(agentId);
+      syncUrlParams({ agent: agentId, session: null });
+    }
+  }, [activePanel, agents]);
 
   const handleAgentSettingsClick = (agent: Agent) => {
     setCreating(false);
@@ -1085,26 +1368,31 @@ export default function AgentsPage() {
     { label: t('capabilities.skipReview.label'), hint: t('capabilities.skipReview.hint'), icon: Database, capabilityKey: 'skipReview' as const },
   ] as const;
 
-  const inboxSummary = t('workspace.inboxSummary', { count: visibleSessions.length });
   const activeWorkspaceSession = activePanel?.type === 'session' ? activeOpened : null;
   const activeWorkspaceAgent = activeWorkspaceSession
     ? agents.find((agent) => agent.id === activeWorkspaceSession.agentId) ?? workspaceAgent
     : (selectedAgent ?? workspaceAgent);
   const activeWorkspacePanelKey = activeWorkspaceSession?.key ?? null;
   const activeWorkspaceSessionId = activeWorkspaceSession?.sessionId ?? null;
+  const activeWorkspaceRuntimeCaption = activeWorkspaceAgent
+    ? formatAgentRuntimeCaption(activeWorkspaceAgent)
+    : '';
 
   const currentAgentSessions = useMemo(() => {
     if (!activeWorkspaceAgent) return [];
     return allSessions.filter(s => s.agentId === activeWorkspaceAgent.id && !s.archived);
   }, [allSessions, activeWorkspaceAgent]);
-  const currentAgentRunningSession = useMemo(() => currentAgentSessions.find(s => s.isRunning) ?? null, [currentAgentSessions]);
   const currentAgentHistorySessions = useMemo(() => currentAgentSessions.filter(s => !s.isRunning), [currentAgentSessions]);
-  const isDraftSession = activePanel?.type === 'session' && activeWorkspaceSessionId === null;
-  const activeExistingSession = useMemo(
-    () => activeWorkspaceSessionId ? currentAgentSessions.find(s => s.id === activeWorkspaceSessionId) ?? null : null,
-    [activeWorkspaceSessionId, currentAgentSessions],
-  );
-  const currentAgentRunningSessionId = currentAgentRunningSession?.id ?? null;
+  const openedSessionTabsForAgent = useMemo(() => {
+    if (!activeWorkspaceAgent) return [];
+    return openedSessions.filter((o) => o.agentId === activeWorkspaceAgent.id);
+  }, [openedSessions, activeWorkspaceAgent]);
+
+  const handleWorkspaceSessionTabClick = useCallback((opened: OpenedSession) => {
+    setHistoryExpanded(false);
+    setActivePanel({ type: 'session', key: opened.key });
+    syncUrlParams({ agent: opened.agentId, session: opened.sessionId });
+  }, []);
 
   const handleWorkspacePanelSessionChange = useCallback((
     agent: Agent,
@@ -1490,11 +1778,12 @@ export default function AgentsPage() {
             {activeWorkspaceAgent ? (
               <>
                 {/* ── Top: row 1 = Agent & config, row 2 = conversation ── */}
-                <div className="shrink-0 border-b border-border bg-card/30 px-4 py-3 backdrop-blur-sm sm:px-5">
+                {/* relative z-30：下拉（历史）绝对定位溢出到下方时，必须整块叠在聊天区之上，否则兄弟节点会抢走点击 */}
+                <div className="relative z-30 shrink-0 border-b border-border bg-card/30 px-4 py-3 backdrop-blur-sm sm:px-5">
                   <div className="mx-auto flex max-w-6xl flex-col gap-3">
                     {/* Row 1 — identity & configuration (not conversation) */}
                     <section
-                      aria-label={t('workspace.rowAgentEyebrow')}
+                      aria-label={activeWorkspaceAgent.name}
                       className="flex flex-col gap-3 rounded-xl border border-border/60 bg-background/80 p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:gap-4"
                     >
                       <div className="flex min-w-0 flex-1 items-start gap-3">
@@ -1502,10 +1791,7 @@ export default function AgentsPage() {
                           <AgentAvatar slug={activeWorkspaceAgent.slug} iconKey={activeWorkspaceAgent.icon} className="h-full w-full object-cover" />
                         </div>
                         <div className="min-w-0">
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                            {t('workspace.rowAgentEyebrow')}
-                          </p>
-                          <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                             <span className="truncate text-base font-semibold tracking-tight text-foreground">
                               {activeWorkspaceAgent.name}
                             </span>
@@ -1515,9 +1801,11 @@ export default function AgentsPage() {
                               </span>
                             ) : null}
                           </div>
-                          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                            {formatAgentRuntimeCaption(activeWorkspaceAgent, t)}
-                          </p>
+                          {activeWorkspaceRuntimeCaption ? (
+                            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                              {activeWorkspaceRuntimeCaption}
+                            </p>
+                          ) : null}
                         </div>
                       </div>
                       <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border/60 pt-3 sm:border-t-0 sm:pt-0">
@@ -1540,90 +1828,87 @@ export default function AgentsPage() {
                       </div>
                     </section>
 
-                    {/* Row 2 — 对话上下文 + 新开 / 历史；加高、可点区域更大 */}
+                    {/* Row 2 — 多会话标签行 + 新开 / 历史（其余布局不变） */}
                     <section
                       ref={conversationStripRef}
                       aria-label={t('workspace.rowConversationEyebrow')}
                       className="relative rounded-lg border border-border/60 bg-background/80 shadow-sm"
                     >
-                      <div className="flex flex-col gap-2.5 p-3 sm:flex-row sm:items-center sm:gap-3">
-                        <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
-                          <span className="shrink-0 text-xs font-semibold tracking-tight text-foreground">
-                            {t('workspace.rowConversationEyebrow')}
-                          </span>
-                          <div className="min-h-[44px] min-w-0 flex-1 rounded-lg border border-border/50 bg-muted/30 px-3 py-2 sm:min-h-0 sm:py-2.5">
-                            {currentAgentRunningSession ? (
-                              <button
-                                type="button"
-                                onClick={() => handleSessionClick(currentAgentRunningSession)}
-                                title={displayText(currentAgentRunningSession.title, t('workspace.runningLabel'))}
-                                className={cn(
-                                  'flex w-full min-w-0 items-center gap-2.5 rounded-md text-left text-sm transition-colors',
-                                  activeWorkspaceSessionId === currentAgentRunningSession.id
-                                    ? 'text-foreground'
-                                    : 'hover:bg-muted/60',
-                                )}
-                              >
-                                <span className="relative flex h-2 w-2 shrink-0">
-                                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-                                </span>
-                                <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-                                  {displayText(currentAgentRunningSession.title, t('workspace.runningLabel'))}
-                                </span>
-                                <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
-                                  {formatSessionElapsed(currentAgentRunningSession.runningStartedAt, listClockNow ?? Date.now())}
-                                </span>
-                              </button>
-                            ) : isDraftSession ? (
-                              <div
-                                className="flex items-center gap-2 text-sm font-medium text-foreground"
-                                title={t('workspace.draftSessionLabel')}
-                              >
-                                <MessageSquare className="h-4 w-4 shrink-0 text-primary" aria-hidden />
-                                <span className="min-w-0 truncate">{t('workspace.draftShort')}</span>
-                                <span className="ml-auto hidden text-xs font-normal text-muted-foreground sm:inline">
-                                  {t('workspace.sessionStateEmptyDetail')}
-                                </span>
-                              </div>
-                            ) : !isDraftSession && activeExistingSession && activeExistingSession.id !== currentAgentRunningSessionId ? (
-                              <button
-                                type="button"
-                                onClick={() => handleSessionClick(activeExistingSession)}
-                                title={displayText(activeExistingSession.title, t('workspace.unnamedSession'))}
-                                className="flex w-full min-w-0 items-center gap-2 text-left text-sm transition-colors hover:bg-muted/50"
-                              >
-                                <MessageSquare className="h-4 w-4 shrink-0 text-primary" aria-hidden />
-                                <span className="min-w-0 flex-1 truncate">
-                                  <span className="text-muted-foreground">{t('workspace.currentSessionLabel')}</span>
-                                  <span className="mx-1.5 text-muted-foreground/50">·</span>
-                                  <span className="font-medium text-foreground">
-                                    {displayText(activeExistingSession.title, t('workspace.unnamedSession'))}
-                                  </span>
-                                </span>
-                                <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
-                                  {formatSessionTimestamp(activeExistingSession.updatedAt, listClockNow ?? Date.now())}
-                                </span>
-                              </button>
-                            ) : (
-                              <p
-                                className="text-sm leading-snug text-muted-foreground"
-                                title={t('workspace.sessionStateEmptyDetail')}
-                              >
-                                <span className="font-medium text-foreground/80">{t('workspace.sessionStripIdleShort')}</span>
-                                <span className="mt-0.5 block text-xs sm:mt-0 sm:ml-2 sm:inline">
-                                  {t('workspace.sessionStateEmptyDetail')}
-                                </span>
-                              </p>
-                            )}
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-0">
+                        <div className="flex min-h-10 min-w-0 flex-1 flex-col justify-end sm:min-h-9">
+                          <div
+                            role="tablist"
+                            className="flex min-w-0 items-end gap-0.5 overflow-x-auto border-b border-border/70 px-2 pt-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                          >
+                            {openedSessionTabsForAgent.map((opened) => {
+                              const sess = opened.sessionId
+                                ? currentAgentSessions.find((s) => s.id === opened.sessionId)
+                                : null;
+                              const label = opened.sessionId === null
+                                ? t('workspace.draftShort')
+                                : displayText(sess?.title, t('workspace.unnamedSession'));
+                              const isActive =
+                                activePanel?.type === 'session' && activePanel.key === opened.key;
+                              const running = !!sess?.isRunning;
+                              return (
+                                <div
+                                  key={opened.key}
+                                  className={cn(
+                                    'group/tab relative flex max-w-[min(220px,48vw)] shrink-0 rounded-t-md border',
+                                    isActive
+                                      ? 'z-10 -mb-px border-border border-b-background bg-background text-foreground'
+                                      : 'border-transparent border-b-0 bg-muted/45 text-muted-foreground hover:bg-muted/80 hover:text-foreground',
+                                  )}
+                                >
+                                  <button
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={isActive}
+                                    title={t('workspace.sessionTabSwitch', { title: label })}
+                                    onClick={() => handleWorkspaceSessionTabClick(opened)}
+                                    className="flex min-w-0 flex-1 items-center gap-2 py-2 pl-3 pr-8 text-left text-sm transition-colors"
+                                  >
+                                    {running ? (
+                                      <span className="relative flex h-2 w-2 shrink-0">
+                                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                                        <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                                      </span>
+                                    ) : (
+                                      <MessageSquare
+                                        className={cn(
+                                          'h-3.5 w-3.5 shrink-0',
+                                          isActive ? 'text-primary' : 'text-muted-foreground',
+                                        )}
+                                        aria-hidden
+                                      />
+                                    )}
+                                    <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    aria-label={t('workspace.sessionTabCloseLabel')}
+                                    title={t('workspace.sessionTabCloseTitle')}
+                                    onClick={(e) => handleCloseWorkspaceSessionTab(opened, e)}
+                                    className="absolute right-1 top-1 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive focus-visible:opacity-100 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100"
+                                  >
+                                    <X className="h-3.5 w-3.5" aria-hidden />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                            {openedSessionTabsForAgent.length === 0 ? (
+                              <span className="px-2 py-2 text-xs text-muted-foreground">
+                                {t('workspace.sessionTabsEmptyHint')}
+                              </span>
+                            ) : null}
                           </div>
                         </div>
 
-                        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:flex-nowrap sm:border-l sm:border-border/60 sm:pl-3">
+                        <div className="flex shrink-0 flex-wrap items-center gap-2 border-border/70 px-2 py-2 sm:flex-nowrap sm:border-b sm:border-l sm:px-3 sm:py-0">
                           <button
                             type="button"
                             onClick={() => handleNewSession(activeWorkspaceAgent)}
-                            className="inline-flex min-h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-opacity hover:opacity-90 sm:min-h-9 sm:flex-initial sm:px-3"
+                            className="inline-flex min-h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted sm:min-h-9 sm:flex-initial sm:rounded-md sm:px-3"
                             title={t('workspace.newConversation')}
                           >
                             <Plus className="h-4 w-4 shrink-0" aria-hidden />
@@ -1631,69 +1916,81 @@ export default function AgentsPage() {
                             <span className="hidden truncate sm:inline">{t('workspace.newConversation')}</span>
                           </button>
                           {currentAgentHistorySessions.length > 0 ? (
-                            <button
-                              type="button"
-                              onClick={() => setHistoryExpanded((prev) => !prev)}
-                              aria-expanded={historyExpanded}
-                              title={
-                                historyExpanded
-                                  ? t('workspace.collapseHistory')
-                                  : t('workspace.historyChatsWithCount', { count: currentAgentHistorySessions.length })
-                              }
-                              className={cn(
-                                'inline-flex min-h-10 min-w-[44px] flex-1 items-center justify-center gap-2 rounded-lg border border-border px-3 text-sm font-medium transition-colors sm:min-h-9 sm:flex-initial',
-                                historyExpanded ? 'border-primary/30 bg-primary/10 text-foreground' : 'bg-background text-muted-foreground hover:bg-muted hover:text-foreground',
-                              )}
-                            >
-                              <History className="h-4 w-4 shrink-0" aria-hidden />
-                              <span className="sm:hidden">
-                                {t('workspace.historyShort')}
-                                <span className="tabular-nums"> ({currentAgentHistorySessions.length})</span>
-                              </span>
-                              <span className="hidden items-center gap-1.5 sm:inline-flex">
-                                <span className="tabular-nums">{currentAgentHistorySessions.length}</span>
-                                <span className="text-muted-foreground">·</span>
-                                <span className="max-w-24 truncate">{t('workspace.historySessionsLabel')}</span>
-                              </span>
-                            </button>
+                            <div className="relative shrink-0 sm:flex-initial">
+                              <button
+                                type="button"
+                                onClick={() => setHistoryExpanded((prev) => !prev)}
+                                aria-expanded={historyExpanded}
+                                aria-haspopup="menu"
+                                aria-label={t('workspace.historyWithCountAria', { count: currentAgentHistorySessions.length })}
+                                title={
+                                  historyExpanded
+                                    ? t('workspace.collapseHistory')
+                                    : t('workspace.historyChatsWithCount', { count: currentAgentHistorySessions.length })
+                                }
+                                className={cn(
+                                  'inline-flex min-h-10 min-w-[44px] w-full items-center justify-center gap-2 rounded-lg border border-border px-3 text-sm font-medium transition-colors sm:min-h-9 sm:w-auto sm:rounded-md',
+                                  historyExpanded ? 'border-primary/30 bg-primary/10 text-foreground' : 'bg-background text-muted-foreground hover:bg-muted hover:text-foreground',
+                                )}
+                              >
+                                <History className="h-4 w-4 shrink-0" aria-hidden />
+                                <span className="sm:hidden">
+                                  {t('workspace.historyShort')}
+                                  <span className="tabular-nums"> ({currentAgentHistorySessions.length})</span>
+                                </span>
+                                <span className="hidden items-center gap-2 sm:inline-flex">
+                                  <span>{t('workspace.historySessionsLabel')}</span>
+                                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
+                                    {currentAgentHistorySessions.length > 99 ? '99+' : currentAgentHistorySessions.length}
+                                  </span>
+                                </span>
+                              </button>
+                              {historyExpanded ? (
+                                <div
+                                  role="menu"
+                                  className="absolute right-0 top-full z-100 mt-1.5 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-md"
+                                >
+                                  <ul className="max-h-[min(320px,50vh)] space-y-0 overflow-y-auto p-1" role="none">
+                                    {currentAgentHistorySessions.map((session) => (
+                                      <li key={session.id} role="none">
+                                        <button
+                                          type="button"
+                                          role="menuitem"
+                                          onClick={() => handleSessionClick(session)}
+                                          className={cn(
+                                            'flex min-h-10 w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors',
+                                            activeWorkspaceSessionId === session.id
+                                              ? 'bg-primary/10'
+                                              : 'hover:bg-muted/70',
+                                          )}
+                                        >
+                                          <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                                          <span className="min-w-0 flex-1 truncate">
+                                            {displayText(session.title, t('workspace.unnamedSession'))}
+                                          </span>
+                                          <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
+                                            {formatSessionTimestamp(
+                                              session.updatedAt,
+                                              listClockNow ?? Date.now(),
+                                              t('session.yesterday'),
+                                            )}
+                                          </span>
+                                        </button>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              ) : null}
+                            </div>
                           ) : null}
                         </div>
                       </div>
-
-                      {historyExpanded && currentAgentHistorySessions.length > 0 ? (
-                        <div className="absolute left-3 right-3 top-[calc(100%-0.25rem)] z-30 mt-0 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
-                          <ul className="max-h-[min(280px,45vh)] space-y-0 overflow-y-auto p-1.5" role="list">
-                            {currentAgentHistorySessions.map((session) => (
-                              <li key={session.id}>
-                                <button
-                                  type="button"
-                                  onClick={() => handleSessionClick(session)}
-                                  className={cn(
-                                    'flex min-h-10 w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors',
-                                    activeWorkspaceSessionId === session.id
-                                      ? 'bg-primary/10'
-                                      : 'hover:bg-muted/70',
-                                  )}
-                                >
-                                  <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                                  <span className="min-w-0 flex-1 truncate text-foreground">
-                                    {displayText(session.title, t('workspace.unnamedSession'))}
-                                  </span>
-                                  <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
-                                    {formatSessionTimestamp(session.updatedAt, listClockNow ?? Date.now())}
-                                  </span>
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
                     </section>
                   </div>
                 </div>
 
                 {/* ── Bottom: Chat area (fixed height) ── */}
-                <div className="min-h-0 flex-1" style={{ minHeight: 420 }}>
+                <div className="relative z-0 min-h-0 flex-1" style={{ minHeight: 420 }}>
                   <AgentChatPanel
                     key={`workspace-${activeWorkspaceAgent.id}-${activeWorkspacePanelKey ?? 'root'}`}
                     agent={activeWorkspaceAgent}

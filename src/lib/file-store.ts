@@ -115,7 +115,7 @@ export function getProjectsPath(): string {
   return path.join(DATA_DIR, 'projects.json');
 }
 
-/** projects 域目录：projects/index.json、inboxes/ 等 */
+/** projects 域目录：projects/index.json 等 */
 export function getProjectsDomainDir(): string {
   return path.join(DATA_DIR, 'projects');
 }
@@ -126,16 +126,77 @@ export function getProjectsIndexPath(): string {
 
 const PROJECTS_INDEX_VERSION = 1;
 
-/**
- * 旧版 `workflows/flows/`（Flow 看板与收件箱迁移来源）。
- * 不再创建 `workflows/`；仅用于一次性合并、导入备份与「清除 flows」目标路径。
- */
-export function getLegacyWorkflowsFlowsDir(): string {
-  return path.join(DATA_DIR, 'workflows', 'flows');
+/** `workflows/` 下曾用名 `flows`，现统一为 `legacy-board`（启动时幂等重命名）。 */
+const LEGACY_BOARD_SUBDIR = 'legacy-board';
+const LEGACY_BOARD_OLD_SUBDIR = 'flows';
+
+export function getWorkflowsDomainDir(): string {
+  return path.join(DATA_DIR, 'workflows');
 }
 
-function getLegacyFlowIndexPath(): string {
-  return path.join(getLegacyWorkflowsFlowsDir(), '_index.json');
+function getLegacyBoardMigrateMarkerPath(): string {
+  return path.join(getWorkflowsDomainDir(), '.pp-legacy-board-migrated');
+}
+
+/**
+ * 旧版树形看板 JSON、`_index.json` 的遗留目录（现为 `workflows/legacy-board/`）。
+ * 历史上同目录下曾有 per-project `*_inbox.json`（已移除功能，应用不再读写；文件可手动删）。
+ * 若磁盘上仍为 `workflows/flows/`，首次初始化时会重命名至此目录。
+ */
+export function getLegacyBoardDataDir(): string {
+  return path.join(getWorkflowsDomainDir(), LEGACY_BOARD_SUBDIR);
+}
+
+/** 重命名前的目录名（`workflows/flows`），清除数据时可能与 `legacy-board` 并存。 */
+export function getLegacyBoardPreviousDir(): string {
+  return path.join(getWorkflowsDomainDir(), LEGACY_BOARD_OLD_SUBDIR);
+}
+
+/**
+ * 删除遗留看板目录（`legacy-board` 与仍可能存在的 `flows`）及迁移标记。不做备份，调用方应先备份。
+ */
+export async function removeLegacyBoardDataDirs(): Promise<void> {
+  await fs.rm(getLegacyBoardDataDir(), { recursive: true, force: true }).catch(() => {});
+  await fs.rm(getLegacyBoardPreviousDir(), { recursive: true, force: true }).catch(() => {});
+  await fs.unlink(getLegacyBoardMigrateMarkerPath()).catch(() => {});
+}
+
+/**
+ * 将 `workflows/flows` 重命名为 `workflows/legacy-board`（仅当旧目录存在且新目录尚不存在时）。幂等。
+ */
+export async function ensureLegacyBoardDirMigrated(): Promise<void> {
+  await fs.mkdir(getWorkflowsDomainDir(), { recursive: true });
+  const marker = getLegacyBoardMigrateMarkerPath();
+  try {
+    await fs.access(marker);
+    return;
+  } catch {
+    /* proceed */
+  }
+
+  const newDir = getLegacyBoardDataDir();
+  const oldDir = getLegacyBoardPreviousDir();
+
+  try {
+    await fs.access(oldDir);
+    try {
+      await fs.access(newDir);
+      console.warn(
+        `[migration] workflows/${LEGACY_BOARD_OLD_SUBDIR} 与 workflows/${LEGACY_BOARD_SUBDIR} 同时存在，跳过重命名；请自行合并后删除旧目录`,
+      );
+    } catch {
+      await fs.rename(oldDir, newDir);
+      console.log(`[migration] workflows/${LEGACY_BOARD_OLD_SUBDIR} → workflows/${LEGACY_BOARD_SUBDIR}`);
+    }
+  } catch {
+    /* 旧目录不存在 */
+  }
+
+  await fs.writeFile(marker, new Date().toISOString(), 'utf8').catch(() => {});
+}
+
+function getLegacyBoardIndexPath(): string {
+  return path.join(getLegacyBoardDataDir(), '_index.json');
 }
 
 /** 递归复制目录（供一次性迁移使用；目标侧已存在文件时不覆盖）。 */
@@ -227,7 +288,6 @@ async function ensureDataDirInitialized(): Promise<void> {
   const dirs = [
     path.join(DATA_DIR, 'config'),
     getProjectsDomainDir(),
-    path.join(getProjectsDomainDir(), 'inboxes'),
     path.join(DATA_DIR, 'agents'),
     path.join(DATA_DIR, 'agents', 'definitions'),
     path.join(DATA_DIR, 'agents', 'bindings'),
@@ -255,6 +315,7 @@ async function ensureDataDirInitialized(): Promise<void> {
   ];
   await Promise.all(dirs.map(d => fs.mkdir(d, { recursive: true })));
   await migrateLegacyAgentsDataToWorkspacesOnce();
+  await ensureLegacyBoardDirMigrated();
 }
 
 type DiskProjectRow = Record<string, unknown>;
@@ -296,7 +357,7 @@ interface ProjectsIndexOnDisk {
 let _projectsMigrated = false;
 
 /**
- * 合并 legacy：projects/index.json ← 旧 workflows/flows/_index.json + 扁平 projects.json。
+ * 合并 legacy：projects/index.json ← 旧 workflows/legacy-board/_index.json（或仍存在的 flows/_index.json）+ 扁平 projects.json。
  */
 export async function ensureProjectsMigrated(): Promise<void> {
   if (_projectsMigrated) return;
@@ -305,7 +366,8 @@ export async function ensureProjectsMigrated(): Promise<void> {
   await ensureDataDirInitialized();
 
   const destPath = getProjectsIndexPath();
-  const legacyFlowIndex = getLegacyFlowIndexPath();
+  const legacyBoardIndex = getLegacyBoardIndexPath();
+  const legacyOldIndex = path.join(getLegacyBoardPreviousDir(), '_index.json');
   const projectsPath = getProjectsPath();
 
   // 文件不存在则写入占位（version 0、无 _migrated_to_projects_domain），避免「靠是否存在猜目录」且保证后续必落盘
@@ -338,8 +400,11 @@ export async function ensureProjectsMigrated(): Promise<void> {
     pushUnique(normalizeDiskProjectRow(row));
   }
 
-  const fromFlow = await readJsonFile<import('@/types').ProjectIndex>(legacyFlowIndex, { projects: [] });
-  for (const p of fromFlow.projects) {
+  let fromBoard = await readJsonFile<import('@/types').ProjectIndex>(legacyBoardIndex, { projects: [] });
+  if (fromBoard.projects.length === 0) {
+    fromBoard = await readJsonFile<import('@/types').ProjectIndex>(legacyOldIndex, { projects: [] });
+  }
+  for (const p of fromBoard.projects) {
     pushUnique(normalizeDiskProjectRow(p as unknown as DiskProjectRow));
   }
 
@@ -605,6 +670,11 @@ export function getSettingsPath(): string {
   return path.join(DATA_DIR, 'config', 'settings.json');
 }
 
+/** Agents 工作区：已打开会话标签与当前面板（按项目持久化，见 agents-workspace-ui-store） */
+export function getAgentsWorkspaceUiPath(): string {
+  return path.join(DATA_DIR, 'config', 'agents-workspace-ui.json');
+}
+
 export function getAgentsPath(): string {
   return path.join(DATA_DIR, 'agents', 'registry.json');
 }
@@ -687,6 +757,34 @@ export function getAgentChatMessagePath(sessionId: string): string {
   return path.join(getAgentChatMessagesDir(), `${safe}.jsonl`);
 }
 
+/** ExecutionEvent JSONL 文件目录 */
+export function getSessionEventsDir(): string {
+  return path.join(DATA_DIR, 'sessions', 'events');
+}
+
+/** 单个会话的 ExecutionEvent JSONL 文件路径 */
+export function getSessionEventsPath(sessionId: string): string {
+  const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 200) {
+    throw new Error(`Invalid session id: ${sessionId}`);
+  }
+  return path.join(getSessionEventsDir(), `${safe}.jsonl`);
+}
+
+/** ExecutionRun JSON 文件目录 */
+export function getSessionRunsDir(): string {
+  return path.join(DATA_DIR, 'sessions', 'runs');
+}
+
+/** 单个会话的 ExecutionRun JSON 文件路径 */
+export function getSessionRunsPath(sessionId: string): string {
+  const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 200) {
+    throw new Error(`Invalid session id: ${sessionId}`);
+  }
+  return path.join(getSessionRunsDir(), `${safe}.json`);
+}
+
 export function getWorktreePortsPath(): string {
   return path.join(DATA_DIR, 'config', 'worktree-ports.json');
 }
@@ -705,6 +803,7 @@ export function getTodosEntriesDir(): string {
   return path.join(DATA_DIR, 'todos', 'entries');
 }
 
+/** 并行执行看板：`agents/active-tasks.json`（多 Agent 运行时登记；非用户 Todo） */
 export function getActiveTasksPath(): string {
   return path.join(DATA_DIR, 'agents', 'active-tasks.json');
 }
@@ -1180,46 +1279,6 @@ export function getAgentDataFilePath(agentId: string, fileName: string): string 
     throw new Error(`Invalid file name: ${fileName}`);
   }
   return path.join(getAgentDataPath(agentId), safeFile);
-}
-
-// ── Inbox 路径函数 ──
-
-export function getInboxPath(projectKey: string): string {
-  const safe = projectKey.replace(/[^a-zA-Z0-9_-]/g, '');
-
-  // 🔒 Security: prevent empty filename or invalid project keys
-  if (!safe || safe.length < 1 || safe.length > 100) {
-    throw new Error(`Invalid project key: ${projectKey}`);
-  }
-
-  return path.join(getProjectsDomainDir(), 'inboxes', `${safe}.json`);
-}
-
-function getLegacyInboxPath(projectKey: string): string {
-  const safe = projectKey.replace(/[^a-zA-Z0-9_-]/g, '');
-  if (!safe || safe.length < 1 || safe.length > 100) {
-    throw new Error(`Invalid project key: ${projectKey}`);
-  }
-  return path.join(getLegacyWorkflowsFlowsDir(), `${safe}_inbox.json`);
-}
-
-/** 读取项目收件箱数据，不存在时返回空列表（自动从旧 workflows/flows/*_inbox.json 迁一次） */
-export async function readInbox(projectKey: string): Promise<import('@/types').ProjectInbox> {
-  const nextPath = getInboxPath(projectKey);
-  const data = await readJsonFile<import('@/types').ProjectInbox>(nextPath, { items: [] });
-  if (data.items.length > 0) return data;
-  const legacyPath = getLegacyInboxPath(projectKey);
-  const legacy = await readJsonFile<import('@/types').ProjectInbox>(legacyPath, { items: [] });
-  if (legacy.items.length > 0) {
-    await writeJsonFile(nextPath, legacy);
-    await fs.unlink(legacyPath).catch(() => {});
-  }
-  return legacy;
-}
-
-/** 写入项目收件箱数据（原子写入） */
-export async function writeInbox(projectKey: string, data: import('@/types').ProjectInbox): Promise<void> {
-  await writeJsonFile(getInboxPath(projectKey), data);
 }
 
 // ── Agent Schedules 路径函数 ──

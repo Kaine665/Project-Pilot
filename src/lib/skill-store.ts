@@ -13,6 +13,7 @@
  */
 
 import { promises as fs } from 'fs';
+import { assertDocumentTextWritable } from './document-text-write-guard';
 import path from 'path';
 import {
   getSkillsDir,
@@ -125,6 +126,7 @@ export async function writeSkillFile(
   content: string,
   scope: SkillScope = DEFAULT_SKILL_SCOPE,
 ): Promise<void> {
+  assertDocumentTextWritable(content);
   await snapshotSkillVersion(skillName, scope);
   let filePath: string;
   if (scope.level === 'global') {
@@ -579,6 +581,7 @@ export async function writeSkillSubFile(
   content: string,
   scope: SkillScope = DEFAULT_SKILL_SCOPE,
 ): Promise<void> {
+  assertDocumentTextWritable(content);
   const { safeSubdir, safeName } = validateSubPath(subdir, fileName);
   const root = await skillRootDir(skillName, scope);
   const dirPath = path.join(root, safeSubdir);

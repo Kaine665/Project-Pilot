@@ -1,9 +1,9 @@
 /**
- * 共享任务看板（Active Tasks Registry）
+ * 并行执行看板（Active Tasks Registry）
  *
- * 所有正在执行的 Agent 任务的共享注册表。
- * 每个 Agent 启动任务时注册，完成/失败时注销。
- * 其他 Agent 启动时读取看板，了解当前并行任务全貌，避免冲突。
+ * 多 Agent 并行执行时的运行时登记：每个 Agent 启动任务时注册，完成/失败时注销。
+ * 其他 Agent 可读此看板，了解当前并行任务全貌，避免冲突。
+ * 与用户待办（Todo，`todos/`）不是同一概念。
  *
  * 路径由 getActiveTasksPath() 决定（默认在 DATA_DIR 下 agents/active-tasks.json）；布局权威见本机 ~/.project-pilot/README.md 与 数据文件夹现状.md
  *

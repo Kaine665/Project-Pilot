@@ -12,6 +12,7 @@ import { getDocumentContentPath } from '@/lib/file-store';
 import { readDocsIndexFromDocuments, saveDocsIndexToDocuments } from '@/lib/documents-store';
 import { getAppWorkingDir } from '@/lib/app-paths';
 import { callLightweightAI } from '@/lib/lightweight-ai';
+import { assertDocumentTextWritable } from '@/lib/document-text-write-guard';
 import type { DocEntry } from '@/types';
 
 const LOG = '[CodeCardUpdater]';
@@ -236,6 +237,7 @@ export async function refreshStaleCodeCards(options: {
       }
 
       const writePath = card.sourcePath || getDocumentContentPath(card.fileName);
+      assertDocumentTextWritable(newContent);
       await writeFile(writePath, newContent, 'utf-8');
       await patchCardCommit(card.id, currentCommit);
 

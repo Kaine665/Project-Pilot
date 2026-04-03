@@ -74,7 +74,7 @@ src/
 │   ├── main.tsx         # Vite 入口
 │   ├── App.tsx          # React Router 配置
 │   ├── i18n/            # i18n 配置 + 兼容层
-│   └── routes/          # FlowsLayout 等
+│   └── routes/          # WorkspaceShell（主壳）等
 ├── server/              # Hono 后端
 │   ├── index.ts         # 服务器入口（注册所有路由）
 │   ├── routes/          # 20 个路由模块
@@ -84,7 +84,7 @@ src/
 ├── stores/              # Zustand 状态管理
 ├── lib/                 # 业务逻辑（约 130 个文件，共享给 server）
 ├── types/               # TypeScript 类型定义
-├── app/[locale]/flows/  # 页面组件（由 React Router lazy 加载）
+├── app/[locale]/flows/  # 页面组件（目录名历史遗留；对外路由前缀 `/workspace/*`）
 index.html               # SPA 入口 HTML
 vite.config.ts           # Vite 配置
 ```

@@ -27,10 +27,13 @@ import {
   getAgentChatSessionAdjunctsPath,
   getAgentChatMessagesDir,
   getAgentChatMessagePath,
+  getSessionEventsDir,
+  getSessionRunsDir,
   readJsonFile,
   modifyJsonFile,
   parseJsonSafe,
 } from '@/lib/file-store';
+import { deleteEventsFile, deleteRunsFile } from '@/lib/execution-event-store';
 import { deleteRuntimePromptCopy } from '@/lib/agent-prompt-store';
 import { looksLikeCorruptedStoredText, repairStoredTextIfNeeded } from '@/lib/text-repair-server';
 import type { Agent, ContentBlock } from '@/types';
@@ -717,6 +720,10 @@ export async function deleteSessionFromDisk(sessionId: string): Promise<boolean>
   await deleteMessageFile(sessionId);
   await deleteSessionAdjuncts(sessionId);
 
+  // Delete execution event / run files
+  await deleteEventsFile(sessionId);
+  await deleteRunsFile(sessionId);
+
   if (found && deletedAgentId) {
     await deleteRuntimePromptCopy(deletedAgentId, sessionId).catch(() => {});
   }
@@ -952,17 +959,24 @@ export async function replaceSessionMessages(sessionId: string, messages: ChatMe
  * Delete all JSONL message files (used by clear).
  */
 export async function deleteAllMessageFiles(): Promise<void> {
-  const dir = getAgentChatMessagesDir();
-  try {
-    const files = await fs.readdir(dir);
-    await Promise.all(
-      files
-        .filter(f => f.endsWith('.jsonl'))
-        .map(f => fs.unlink(path.join(dir, f)).catch(() => {})),
-    );
-  } catch {
-    // Directory doesn't exist — nothing to clean
-  }
+  const cleanDir = async (dir: string, ext: string) => {
+    try {
+      const files = await fs.readdir(dir);
+      await Promise.all(
+        files
+          .filter(f => f.endsWith(ext))
+          .map(f => fs.unlink(path.join(dir, f)).catch(() => {})),
+      );
+    } catch {
+      // Directory doesn't exist
+    }
+  };
+
+  await Promise.all([
+    cleanDir(getAgentChatMessagesDir(), '.jsonl'),
+    cleanDir(getSessionEventsDir(), '.jsonl'),
+    cleanDir(getSessionRunsDir(), '.json'),
+  ]);
 }
 
 /**

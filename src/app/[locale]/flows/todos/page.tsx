@@ -1130,9 +1130,9 @@ export default function TodosPage() {
   function handleNavigateSession() {
     if (!activeTask) return;
     if (activeTask.sessionId) {
-      router.push(`/${locale}/flows/agents?session=${activeTask.sessionId}`);
+      router.push(`/${locale}/workspace/agents?session=${activeTask.sessionId}`);
     } else if (activeTask.agentId) {
-      router.push(`/${locale}/flows/agents?agent=${activeTask.agentId}`);
+      router.push(`/${locale}/workspace/agents?agent=${activeTask.agentId}`);
     }
     closeDrawer();
   }

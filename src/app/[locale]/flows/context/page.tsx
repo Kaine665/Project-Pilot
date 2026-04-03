@@ -13,7 +13,7 @@ export default function ContextPage() {
   useEffect(() => {
     (async () => {
       if (activeKey) {
-        router.replace(`/flows/docs/${activeKey}?view=knowledge`);
+        router.replace(`/workspace/docs/${activeKey}?view=knowledge`);
         return;
       }
 
@@ -22,7 +22,7 @@ export default function ContextPage() {
         const data = await res.json();
         const first = (data.projects ?? []).find((project: { archived?: boolean }) => !project.archived);
         if (first) {
-          router.replace(`/flows/docs/${first.key}?view=knowledge`);
+          router.replace(`/workspace/docs/${first.key}?view=knowledge`);
           return;
         }
       } catch {
@@ -50,7 +50,7 @@ export default function ContextPage() {
           <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">/api/docs</code> 读写。
         </p>
         <button
-          onClick={() => router.push('/flows/docs?view=knowledge')}
+          onClick={() => router.push('/workspace/docs?view=knowledge')}
           className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-zinc-950 px-5 py-3 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-950"
         >
           打开文档

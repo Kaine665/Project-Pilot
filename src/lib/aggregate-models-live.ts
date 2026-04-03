@@ -178,11 +178,12 @@ function resolveBaseUrl(
   preset: ProviderPreset,
   provider: ProviderId,
   providerBaseUrls: Partial<Record<ProviderId, string>> | undefined,
+  providerModels: Partial<Record<ProviderId, string>> | undefined,
 ): string | undefined {
   if (provider === 'kimi') {
     const preferred = providerBaseUrls?.[provider] || preset.baseUrl;
-    const firstModel = preset.models[0]?.id || 'kimi-for-coding';
-    const candidates = getKimiCandidateBaseUrls(firstModel, preferred);
+    const selectedModel = providerModels?.[provider] || preset.models[0]?.id || 'kimi-for-coding';
+    const candidates = getKimiCandidateBaseUrls(selectedModel, preferred);
     return candidates[0];
   }
   return providerBaseUrls?.[provider] || preset.baseUrl;
@@ -303,6 +304,46 @@ async function fetchAnthropicCompatibleAllPages(
   return { items: all };
 }
 
+/**
+ * 当 /models 接口不兼容或不稳定时，回退用最小 Messages 请求探测可用性。
+ * 成功即说明该供应商聊天通道可用（即便模型列表接口失败）。
+ */
+async function probeAnthropicMessages(
+  baseRoot: string,
+  apiKey: string,
+  model: string,
+  authMethod: 'API_KEY' | 'AUTH_TOKEN',
+): Promise<{ ok: boolean; error?: string }> {
+  const root = baseRoot.replace(/\/+$/, '');
+  const url = /\/v1$/i.test(root) ? `${root}/messages` : `${root}/v1/messages`;
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    'anthropic-version': '2023-06-01',
+  };
+  if (authMethod === 'API_KEY') headers['x-api-key'] = apiKey;
+  else headers['authorization'] = `Bearer ${apiKey}`;
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model,
+        max_tokens: 8,
+        messages: [{ role: 'user', content: 'ok' }],
+      }),
+      signal: AbortSignal.timeout(LIST_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 160)}` };
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /** 设置页「部分供应商失败」时的可读说明（非程序 bug，多为环境或账号侧） */
 function friendlyOllamaModelsError(baseUrl: string, raw: string): string {
   const l = raw.toLowerCase();
@@ -363,6 +404,14 @@ async function collectBuiltInProvider(
   preset: ProviderPreset,
   claude: import('@/types').ClaudeSettings,
 ): Promise<{ items: AggregateLiveModelItem[]; error?: string }> {
+  /**
+   * 可用性判定策略（统一口径）：
+   * 1) 先测“聊天链路”是否可用（/v1/messages，和实际对话一致）
+   * 2) 聊天可用后，再尝试拉模型列表（/models 或 OpenAI models）
+   * 3) 若模型列表失败但聊天可用，回退预置模型，不标记为不可用
+   *
+   * 这样可以避免“能聊但设置页显示不可用”的误判。
+   */
   if (provider === 'custom') return { items: [] };
 
   const cred = getCredential(claude, provider);
@@ -409,7 +458,7 @@ async function collectBuiltInProvider(
 
   if (provider === 'openrouter') {
     if (!apiKey) return { items: [] };
-    const base = resolveBaseUrl(preset, provider, baseUrls) || preset.baseUrl;
+    const base = resolveBaseUrl(preset, provider, baseUrls, claude.providerModels) || preset.baseUrl;
     if (!base) return { items: [], error: 'No base URL' };
     const { items, error } = await fetchOpenAiCompatibleAtBase(base, apiKey, preset.modelsListRelativePath);
     if (error && items.length === 0) return { items: [], error };
@@ -419,8 +468,26 @@ async function collectBuiltInProvider(
   // Anthropic 兼容网关（官方 Anthropic 在 registry 中可无 baseUrl）
   if (!apiKey) return { items: [] };
 
+  const presetItems = preset.models.map((m) => ({
+    providerId: provider,
+    value: m.id,
+    label: m.label || m.id,
+  }));
+
+  const selectedModel = claude.providerModels?.[provider] || preset.models[0]?.id || '';
+  const authMethod = resolveAuthMethod(preset, provider);
+
   // 部分供应商聊天走 Anthropic 协议，但模型列表走 OpenAI 协议（如 DeepSeek、智谱、MiniMax）
   if (preset.modelsListProtocol === 'openai') {
+    // 先按“聊天同链路”探测：与 Runner 一致，避免“能聊但显示不可用”。
+    const chatBase = resolveBaseUrl(preset, provider, baseUrls, claude.providerModels) || preset.baseUrl;
+    if (!chatBase) return { items: [], error: 'No base URL' };
+    if (!selectedModel) return { items: [], error: 'No model configured' };
+    const chatProbe = await probeAnthropicMessages(chatBase, apiKey, selectedModel, authMethod);
+    if (!chatProbe.ok) {
+      return { items: [], error: chatProbe.error || 'Chat probe failed' };
+    }
+
     const modelsBase = preset.modelsListBaseUrl || preset.baseUrl;
     if (!modelsBase) return { items: [], error: 'No base URL for models listing' };
     const { items, error } = await fetchOpenAiCompatibleAtBase(
@@ -428,22 +495,72 @@ async function collectBuiltInProvider(
       apiKey,
       preset.modelsListRelativePath,
     );
-    if (error && items.length === 0) return { items: [], error };
+    if (error && items.length === 0) {
+      return { items: presetItems };
+    }
     return { items: items.map((m) => ({ providerId: provider, value: m.id, label: m.label })) };
   }
 
+  // Kimi: 兼容 code/moonshot 双通道。若当前模型通道不匹配 key，回退尝试其它候选地址。
+  if (provider === 'kimi') {
+    // Kimi 可能出现“key 绑定 moonshot 通道，但当前模型/地址走 code 通道”的错配。
+    // 因此这里会按候选地址 + 候选模型做组合探测，命中任一可聊组合即判可用。
+    const preferred = baseUrls?.kimi || preset.baseUrl;
+    const selectedModel = claude.providerModels?.kimi || preset.models[0]?.id || 'kimi-for-coding';
+    const primaryCandidates = getKimiCandidateBaseUrls(selectedModel, preferred);
+    const fallbackCandidates = getKimiCandidateBaseUrls('', preferred);
+    const candidates = [...new Set([...primaryCandidates, ...fallbackCandidates])];
+    const probeModels = [
+      selectedModel,
+      'kimi-k2.5',
+      'kimi-k2',
+      'kimi-for-coding',
+    ].filter((m, i, arr) => !!m && arr.indexOf(m) === i);
+    let lastError: string | undefined;
+    for (const base of candidates) {
+      // Step 1: 先按聊天链路探测可用性
+      let chatOk = false;
+      for (const probeModel of probeModels) {
+        const probe = await probeAnthropicMessages(base, apiKey, probeModel, authMethod);
+        if (probe.ok) {
+          chatOk = true;
+          break;
+        }
+        if (probe.error) lastError = probe.error;
+      }
+      if (!chatOk) continue;
+
+      // Step 2: 聊天可用后再拉模型列表，失败则回退内置模型，保持“可聊即可用”。
+      const { items, error } = await fetchAnthropicCompatibleAllPages(base, apiKey, authMethod);
+      if (items.length > 0) {
+        return { items: items.map((m) => ({ providerId: provider, value: m.id, label: m.label })) };
+      }
+      if (error) lastError = error;
+      return { items: presetItems };
+    }
+    return {
+      items: [],
+      error: friendlyKimiModelsError(lastError || 'All Kimi candidate base URLs failed'),
+    };
+  }
+
   const base =
-    resolveBaseUrl(preset, provider, baseUrls) ||
+    resolveBaseUrl(preset, provider, baseUrls, claude.providerModels) ||
     preset.baseUrl ||
     (provider === 'anthropic' ? ANTHROPIC_DEFAULT_API_BASE : undefined);
   if (!base) return { items: [], error: 'No base URL' };
-  const authMethod = resolveAuthMethod(preset, provider);
+  if (!selectedModel) return { items: [], error: 'No model configured' };
+
+  // 先按聊天链路探测，保证可用性判断与 Runner 一致。
+  const chatProbe = await probeAnthropicMessages(base, apiKey, selectedModel, authMethod);
+  if (!chatProbe.ok) {
+    return { items: [], error: chatProbe.error || 'Chat probe failed' };
+  }
+
+  // 聊天可用后再尝试拉模型列表；失败回退预置模型。
   const { items, error } = await fetchAnthropicCompatibleAllPages(base, apiKey, authMethod);
   if (error && items.length === 0) {
-    return {
-      items: [],
-      error: provider === 'kimi' ? friendlyKimiModelsError(error) : error,
-    };
+    return { items: presetItems };
   }
   return { items: items.map((m) => ({ providerId: provider, value: m.id, label: m.label })) };
 }

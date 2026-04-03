@@ -11,3 +11,4 @@
 | 文档 | 主题 |
 |------|------|
 | [agents-workspace.md](./agents-workspace.md) | Agents 工作区信息架构与体验原则 |
+| [superdesign-agents-workspace-chat.md](./superdesign-agents-workspace-chat.md) | Superdesign 整页聊天布局稿（含会话条焦点） |

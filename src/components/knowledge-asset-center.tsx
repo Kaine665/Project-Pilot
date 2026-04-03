@@ -316,7 +316,7 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
     if (activeKey && activeKey !== projectKey) {
       const focus = searchParams.get('focus');
       const suffix = focus ? `?focus=${encodeURIComponent(focus)}` : '';
-      router.replace(`/flows/docs/${activeKey}${suffix}`);
+      router.replace(`/workspace/docs/${activeKey}${suffix}`);
     }
   }, [activeKey, projectKey, router, searchParams]);
 
@@ -401,7 +401,7 @@ export function KnowledgeAssetCenter({ projectKey }: { projectKey: string }) {
     const focus = searchParams.get('focus');
     const suffix = focus ? `?focus=${encodeURIComponent(focus)}` : '';
     setActiveKey(nextProjectKey);
-    router.push(`/flows/docs/${nextProjectKey}${suffix}`);
+    router.push(`/workspace/docs/${nextProjectKey}${suffix}`);
   };
 
   const handleStartCreate = (kind: AssetKind) => {

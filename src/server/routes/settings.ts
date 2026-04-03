@@ -33,7 +33,9 @@ import {
   getAgentsPath,
   getAgentChatSessionsPath,
   getAgentChatMessagesDir,
-  getLegacyWorkflowsFlowsDir,
+  getLegacyBoardDataDir,
+  getLegacyBoardPreviousDir,
+  removeLegacyBoardDataDirs,
   getPromptsDir,
   writeJsonFile,
   readJsonFile,
@@ -44,11 +46,10 @@ import { importSessionsWithMessages, readMessages, listAllSessions, deleteAllMes
 import { getDefaultAgents } from '@/lib/default-agents';
 import { writePromptFile, resolveSystemPrompt } from '@/lib/agent-prompt-store';
 import { invalidateAgentsCache } from '@/lib/agents-store';
+import { documentTextWriteErrorResponse } from '@/lib/document-text-write-guard';
 import { listOpenAIModels } from '@/lib/codex-model-catalog';
 import { getAggregateLiveModels, probeSupplierLive, type AggregateLiveModelsResult } from '@/lib/aggregate-models-live';
 import { getKimiCandidateBaseUrls, getProviderPreset } from '@/lib/provider-registry';
-import { agentChatManager, deleteSessionFromDisk } from '@/lib/agent-chat-manager';
-import { BUTLER_AGENT_ID } from '@/lib/default-agents';
 import { testTitleChainEntry } from '@/lib/session-title-generator';
 import { runHealthCheck, readHealthResults } from '@/lib/model-health-check';
 import type {
@@ -922,19 +923,24 @@ app.post('/import', async (c) => {
       }
     } catch { /* messages dir doesn't exist */ }
 
-    const legacyFlows = getLegacyWorkflowsFlowsDir();
-    try {
-      const flowsBackup = path.join(backupDir, 'flows-legacy');
-      await fs.mkdir(flowsBackup, { recursive: true });
-      const flowFiles = await fs.readdir(legacyFlows);
-      for (const file of flowFiles) {
-        if (file.endsWith('.json')) {
-          await fs.copyFile(path.join(legacyFlows, file), path.join(flowsBackup, file));
+    const legacyBoardRoots = [
+      { root: getLegacyBoardDataDir(), backupSubdir: 'legacy-board' },
+      { root: getLegacyBoardPreviousDir(), backupSubdir: 'legacy-board-previous' },
+    ];
+    for (const { root, backupSubdir } of legacyBoardRoots) {
+      try {
+        const boardBackup = path.join(backupDir, backupSubdir);
+        await fs.mkdir(boardBackup, { recursive: true });
+        const files = await fs.readdir(root);
+        for (const file of files) {
+          if (file.endsWith('.json')) {
+            await fs.copyFile(path.join(root, file), path.join(boardBackup, file));
+          }
         }
-      }
-    } catch { /* legacy flows dir doesn't exist */ }
+      } catch { /* dir doesn't exist */ }
+    }
 
-    const stats = { flows: 0, agents: 0 };
+    const stats = { legacyBoard: 0, agents: 0 };
 
     if (data.projects) {
       const raw = data.projects as { projects?: unknown };
@@ -1007,7 +1013,7 @@ app.post('/import', async (c) => {
       }
     }
 
-    // 旧导出中的 flows 域已废弃，不再写入磁盘
+    // 旧导出中的 legacyBoard 域仅占位，不再写入磁盘树形看板文件
 
     return c.json({
       success: true,
@@ -1015,6 +1021,8 @@ app.post('/import', async (c) => {
       stats,
     });
   } catch (error) {
+    const enc = documentTextWriteErrorResponse(error);
+    if (enc) return c.json({ error: enc.body.error, code: enc.body.code, issues: enc.body.issues }, enc.status);
     console.error('Import failed:', error);
     return c.json({ error: 'Import failed' }, 500);
   }
@@ -1054,7 +1062,7 @@ app.get('/export', async (c) => {
         projects: projectIndex,
         agents,
         agentChatSessions,
-        flows: {} as Record<string, unknown>,
+        legacyBoard: {} as Record<string, unknown>,
       },
     };
 
@@ -1075,8 +1083,8 @@ app.get('/export', async (c) => {
 
 // ─── POST /clear — clear data ───────────────────────────────────
 
-type ClearTarget = 'sessions' | 'flows' | 'all';
-const VALID_TARGETS: ClearTarget[] = ['sessions', 'flows', 'all'];
+type ClearTarget = 'sessions' | 'legacyBoard' | 'all';
+const VALID_TARGETS: ClearTarget[] = ['sessions', 'legacyBoard', 'all'];
 
 app.post('/clear', async (c) => {
   try {
@@ -1084,7 +1092,7 @@ app.post('/clear', async (c) => {
     const target = body.target as ClearTarget;
 
     if (!VALID_TARGETS.includes(target)) {
-      return c.json({ error: 'Invalid target. Must be: sessions, flows, or all' }, 400);
+      return c.json({ error: 'Invalid target. Must be: sessions, legacyBoard, or all' }, 400);
     }
 
     const dataDir = getDataDir();
@@ -1116,7 +1124,7 @@ app.post('/clear', async (c) => {
       } catch { /* dir doesn't exist */ }
     }
 
-    const cleared = { sessions: 0, flows: 0 };
+    const cleared = { sessions: 0, legacyBoard: 0 };
 
     if (target === 'sessions' || target === 'all') {
       const sessionsData = await readJsonFile<AgentChatSessionsData>(
@@ -1141,12 +1149,10 @@ app.post('/clear', async (c) => {
       } catch { /* prompts dir may not exist */ }
     }
 
-    if (target === 'flows' || target === 'all') {
-      const legacyFlows = getLegacyWorkflowsFlowsDir();
-      await backupDirRecursive(legacyFlows);
-      try {
-        await fs.rm(legacyFlows, { recursive: true, force: true });
-      } catch { /* ignore */ }
+    if (target === 'legacyBoard' || target === 'all') {
+      await backupDirRecursive(getLegacyBoardDataDir());
+      await backupDirRecursive(getLegacyBoardPreviousDir());
+      await removeLegacyBoardDataDirs();
     }
 
     if (target === 'all') {
@@ -1247,6 +1253,8 @@ app.get('/openai-models', async (c) => {
 
 let aggregateModelsHttpCache: { at: number; data: AggregateLiveModelsResult } | null = null;
 const AGGREGATE_MODELS_HTTP_CACHE_MS = 60_000;
+const PROBE_SUPPLIER_HTTP_CACHE_MS = 120_000;
+const probeSupplierHttpCache = new Map<string, { at: number; row: Awaited<ReturnType<typeof probeSupplierLive>> }>();
 
 app.get('/aggregate-models', async (c) => {
   const now = Date.now();
@@ -1274,10 +1282,23 @@ app.post('/probe-supplier', async (c) => {
   if (!pid || typeof pid !== 'string') {
     return c.json({ ok: false, error: 'providerId required' }, 400);
   }
+  // 供应商可用性探测缓存（2 分钟），避免前端频繁输入时重复命中上游 API。
+  // key 不记录明文用途，仅在本进程内做短期去重。
+  const keyApi = typeof body.apiKey === 'string'
+    ? (body.apiKey.startsWith('••') ? '(masked)' : body.apiKey)
+    : '(saved)';
+  const keyBase = typeof body.ollamaBaseUrl === 'string' ? body.ollamaBaseUrl.trim() : '';
+  const cacheKey = `${pid}|${keyApi}|${keyBase}`;
+  const cached = probeSupplierHttpCache.get(cacheKey);
+  const now = Date.now();
+  if (cached && now - cached.at < PROBE_SUPPLIER_HTTP_CACHE_MS) {
+    return c.json({ ok: true, row: cached.row });
+  }
   try {
     const row = await probeSupplierLive(pid, body.apiKey, {
       ollamaBaseUrl: typeof body.ollamaBaseUrl === 'string' ? body.ollamaBaseUrl : undefined,
     });
+    probeSupplierHttpCache.set(cacheKey, { at: now, row });
     return c.json({ ok: true, row });
   } catch (err) {
     return c.json(
@@ -1292,7 +1313,6 @@ app.post('/probe-supplier', async (c) => {
 
 // ─── POST /test-connection — test AI connection ─────────────────
 
-const TEST_POLL_MS = 500;
 const TEST_TIMEOUT_MS = 60_000;
 const OAUTH_CHECK_TIMEOUT_MS = 25_000;
 
@@ -1348,78 +1368,43 @@ async function runSingleTest(
   apiKey: string,
   model: string,
   baseUrl: string,
-  current: Awaited<ReturnType<typeof getSettings>>,
+  _current: Awaited<ReturnType<typeof getSettings>>,
 ): Promise<{ ok: boolean; error?: string }> {
-  const preset = getProviderPreset(provider, current.claude.customProviders);
+  // 重要：这里故意不走 agentChatManager.start（不创建测试会话，不污染聊天历史）。
+  // 仅发送最小 messages 请求做连通性判断，属于系统探测，不是用户功能对话。
+  const root = baseUrl.replace(/\/+$/, '');
+  const url = /\/v1$/i.test(root) ? `${root}/messages` : `${root}/v1/messages`;
 
-  const mergedForTest = {
-    ...current,
-    claude: {
-      ...current.claude,
-      provider,
-      authMode: 'api_key' as const,
-      providerApiKeys: { ...current.claude.providerApiKeys, [provider]: apiKey },
-      providerModels: { ...current.claude.providerModels, [provider]: model || preset.models[0]?.id },
-      providerBaseUrls: { ...current.claude.providerBaseUrls, [provider]: baseUrl },
-    },
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    'anthropic-version': '2023-06-01',
   };
-  await saveSettings(mergedForTest);
+  // 内置第三方里除了 openrouter 之外基本都走 x-api-key；openrouter/custom-AUTH_TOKEN 走 Bearer。
+  const isBearerProvider = provider === 'openrouter' || provider.startsWith('custom-');
+  if (isBearerProvider) headers.authorization = `Bearer ${apiKey}`;
+  else headers['x-api-key'] = apiKey;
 
-  const sessionId = `__test-${Date.now()}`;
-  let testOk = false;
+  const body = {
+    model,
+    max_tokens: 8,
+    messages: [{ role: 'user', content: 'ok' }],
+  };
+
   try {
-    await agentChatManager.start(
-      sessionId,
-      BUTLER_AGENT_ID,
-      '回复 ok',
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      provider,
-      model || preset.models[0]?.id,
-      undefined,
-      undefined,
-      true,
-    );
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(TEST_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 200)}` };
+    }
+    return { ok: true };
   } catch (err) {
-    await saveSettings(current);
-    const msg = err instanceof Error ? err.message : String(err);
-    return { ok: false, error: msg };
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
-
-  const deadline = Date.now() + TEST_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    const status = agentChatManager.getStatus(sessionId);
-    if (status.status === 'completed') {
-      testOk = true;
-      agentChatManager.clear(sessionId);
-      await deleteSessionFromDisk(sessionId).catch(() => {});
-      break;
-    }
-    if (status.status === 'failed' || status.status === 'stopped') {
-      agentChatManager.clear(sessionId);
-      await deleteSessionFromDisk(sessionId).catch(() => {});
-      await saveSettings(current);
-      const errMsg = status.errorMessage;
-      return {
-        ok: false,
-        error: errMsg?.trim() || '会话测试失败，请检查模型、API 地址或网络',
-      };
-    }
-    await new Promise((r) => setTimeout(r, TEST_POLL_MS));
-  }
-
-  if (!testOk) {
-    agentChatManager.stop(sessionId);
-    agentChatManager.clear(sessionId);
-    await deleteSessionFromDisk(sessionId).catch(() => {});
-    await saveSettings(current);
-    return { ok: false, error: '会话测试超时' };
-  }
-
-  return { ok: true };
 }
 
 async function testConversationConnection(
