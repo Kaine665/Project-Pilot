@@ -20,6 +20,9 @@
     "electron:dev": "node scripts/electron-dev.mjs",
     "electron:compile": "tsc -p electron/tsconfig.json",
     "electron:build": "cross-env NODE_ENV=production npm run build && npm run electron:compile && electron-builder --win",
+    "check:env": "node scripts/check-env.js",
+    "clean:desktop": "node scripts/clean-desktop-artifacts.js",
+    "prepare:desktop-bundle": "node scripts/prepare-desktop-bundle.js",
     "electron:start": "electron ."
   },
   "build": {
@@ -35,8 +38,15 @@
       "config/dev-server.json",
       "config/load-dev-server.cjs"
     ],
+    "asarUnpack": [
+      "dist/server/**/*"
+    ],
     "win": {
       "target": "nsis",
+      "icon": "public/icon.png"
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
       "icon": "public/icon.png"
     },
     "nsis": {
@@ -89,7 +99,7 @@
     "@vitejs/plugin-react": "^6.0.1",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
-    "electron": "^40.8.0",
+    "electron": "^41.1.0",
     "electron-builder": "^26.8.1",
     "esbuild": "^0.27.4",
     "eslint": "^9",
