@@ -23,6 +23,16 @@ export PROJECT_PILOT_DATA_DIR=/path/to/custom-root
 
 应用与脚本需在同一进程中、在首次 `import` `file-store` 之前设置该变量（见 `scripts/run-layout-migrations.ts`）。
 
+## Google 账号隔离目录（可选）
+
+当 Hono 启用 Google 登录且浏览器携带会话 Cookie 时，**单次 API 请求**内的有效数据根为：
+
+`{BASE_DATA_DIR}/accounts/<sanitized_google_sub>/`
+
+其中 `BASE_DATA_DIR` 为未设置 `PROJECT_PILOT_DATA_DIR` 时的 `~/.project-pilot`，或该环境变量指向的根。该目录下结构与上文「相对 DATA_DIR」一致（含 `config/settings.json`、`sessions/` 等）。未登录时仍使用 `BASE_DATA_DIR` 本身。
+
+**对齐日期**：2026-04-03。
+
 ## 当前目录树（相对 `DATA_DIR`）
 
 与 `ensureDataDirInitialized` 及路径函数一致的一级结构：

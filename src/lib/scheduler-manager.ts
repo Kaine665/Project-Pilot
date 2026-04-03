@@ -187,6 +187,7 @@ export class SchedulerManager {
   private jobs = new Map<string, cron.ScheduledTask>();
 
   async init(): Promise<void> {
+    this.destroy();
     const data = await readSchedulesData();
     for (const schedule of data.schedules) {
       const normalized = { ...schedule, targetType: normalizeTargetType(schedule.targetType) };
@@ -474,8 +475,28 @@ const globalForSched = globalThis as unknown as {
   __schedulerManager?: SchedulerManager;
 };
 
-export const schedulerManager = globalForSched.__schedulerManager ?? new SchedulerManager();
+function getSchedulerManagerSingleton(): SchedulerManager {
+  if (!globalForSched.__schedulerManager) {
+    globalForSched.__schedulerManager = new SchedulerManager();
+  }
+  return globalForSched.__schedulerManager;
+}
+
+/** 切换数据根后重建调度器并从新目录加载 cron（异步）。 */
+export async function replaceSchedulerManagerForDataRootSwitch(): Promise<void> {
+  globalForSched.__schedulerManager?.destroy();
+  globalForSched.__schedulerManager = new SchedulerManager();
+  await globalForSched.__schedulerManager.init();
+}
 
 if (process.env.NODE_ENV !== 'production') {
-  globalForSched.__schedulerManager = schedulerManager;
+  getSchedulerManagerSingleton();
 }
+
+export const schedulerManager: SchedulerManager = new Proxy({} as SchedulerManager, {
+  get(_target, prop, receiver) {
+    const m = getSchedulerManagerSingleton();
+    const value = Reflect.get(m, prop, receiver);
+    return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(m) : value;
+  },
+});

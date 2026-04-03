@@ -19,6 +19,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
+import { AsyncLocalStorage } from 'async_hooks';
 
 /**
  * Strip UTF-8 BOM (byte order mark) and parse JSON.
@@ -103,21 +104,42 @@ function resolveDefaultDataDir(): string {
 // 未设置 PROJECT_PILOT_DATA_DIR 时即上值。projects/index.json 等在 ensureProjectsMigrated 下创建。
 const DEFAULT_DATA_DIR = resolveDefaultDataDir();
 
-// 支持环境变量自定义（用于测试或特殊部署场景）
-const DATA_DIR = process.env.PROJECT_PILOT_DATA_DIR || DEFAULT_DATA_DIR;
+/** 环境变量或默认本机根；Google 登录等场景下实际读写目录由 runWithDataDir 覆盖。 */
+const BASE_DATA_DIR = process.env.PROJECT_PILOT_DATA_DIR || DEFAULT_DATA_DIR;
+
+/** 未按账号覆盖时的物理根（~/.project-pilot 或 PROJECT_PILOT_DATA_DIR）。 */
+export function getBaseDataDir(): string {
+  return BASE_DATA_DIR;
+}
+
+const dataDirAsyncLocal = new AsyncLocalStorage<{ root: string }>();
+
+export function getEffectiveDataDir(): string {
+  return dataDirAsyncLocal.getStore()?.root ?? BASE_DATA_DIR;
+}
+
+/**
+ * 在单次 HTTP 请求（或任务）内将数据根设为 `root`（通常为 ~/.project-pilot/accounts/<id>）。
+ * 未调用时等价于 BASE_DATA_DIR。
+ */
+export function runWithDataDir<T>(root: string, fn: () => T): T;
+export function runWithDataDir<T>(root: string, fn: () => Promise<T>): Promise<T>;
+export function runWithDataDir<T>(root: string, fn: () => T | Promise<T>): T | Promise<T> {
+  return dataDirAsyncLocal.run({ root }, fn);
+}
 
 export function getDataDir(): string {
-  return DATA_DIR;
+  return getEffectiveDataDir();
 }
 
 /** 旧版扁平 projects.json（仅迁移读取） */
 export function getProjectsPath(): string {
-  return path.join(DATA_DIR, 'projects.json');
+  return path.join(getEffectiveDataDir(), 'projects.json');
 }
 
 /** projects 域目录：projects/index.json 等 */
 export function getProjectsDomainDir(): string {
-  return path.join(DATA_DIR, 'projects');
+  return path.join(getEffectiveDataDir(), 'projects');
 }
 
 export function getProjectsIndexPath(): string {
@@ -131,7 +153,7 @@ const LEGACY_BOARD_SUBDIR = 'legacy-board';
 const LEGACY_BOARD_OLD_SUBDIR = 'flows';
 
 export function getWorkflowsDomainDir(): string {
-  return path.join(DATA_DIR, 'workflows');
+  return path.join(getEffectiveDataDir(), 'workflows');
 }
 
 function getLegacyBoardMigrateMarkerPath(): string {
@@ -218,24 +240,23 @@ async function _migrateCopyDir(src: string, dest: string): Promise<void> {
   }
 }
 
-const AGENTS_DATA_TO_WORKSPACES_MARKER = path.join(DATA_DIR, '.pp-migrated-agents-data-to-workspaces');
-
 /**
  * 将旧版 `agents/data/<id>/` 迁入规范路径 `agents/workspaces/<id>/`（幂等）。
  */
 async function migrateLegacyAgentsDataToWorkspacesOnce(): Promise<void> {
+  const markerPath = path.join(getEffectiveDataDir(), '.pp-migrated-agents-data-to-workspaces');
   try {
-    await fs.access(AGENTS_DATA_TO_WORKSPACES_MARKER);
+    await fs.access(markerPath);
     return;
   } catch {
     /* proceed */
   }
 
-  const legacyRoot = path.join(DATA_DIR, 'agents', 'data');
+  const legacyRoot = path.join(getEffectiveDataDir(), 'agents', 'data');
   try {
     await fs.access(legacyRoot);
   } catch {
-    await fs.writeFile(AGENTS_DATA_TO_WORKSPACES_MARKER, new Date().toISOString(), 'utf-8').catch(() => {});
+    await fs.writeFile(markerPath, new Date().toISOString(), 'utf-8').catch(() => {});
     return;
   }
 
@@ -278,7 +299,7 @@ async function migrateLegacyAgentsDataToWorkspacesOnce(): Promise<void> {
     /* 目录已删 */
   }
 
-  await fs.writeFile(AGENTS_DATA_TO_WORKSPACES_MARKER, new Date().toISOString(), 'utf-8').catch(() => {});
+  await fs.writeFile(markerPath, new Date().toISOString(), 'utf-8').catch(() => {});
 }
 
 /**
@@ -286,32 +307,35 @@ async function migrateLegacyAgentsDataToWorkspacesOnce(): Promise<void> {
  */
 async function ensureDataDirInitialized(): Promise<void> {
   const dirs = [
-    path.join(DATA_DIR, 'config'),
+    path.join(getEffectiveDataDir(), 'config'),
     getProjectsDomainDir(),
-    path.join(DATA_DIR, 'agents'),
-    path.join(DATA_DIR, 'agents', 'definitions'),
-    path.join(DATA_DIR, 'agents', 'bindings'),
-    path.join(DATA_DIR, 'agents', 'statuses'),
-    path.join(DATA_DIR, 'agents', 'schedules'),
-    path.join(DATA_DIR, 'agents', 'schedule-runs'),
-    path.join(DATA_DIR, 'agents', 'teams'),
-    path.join(DATA_DIR, 'agents', 'catalog'),
+    path.join(getProjectsDomainDir(), 'inboxes'),
+    path.join(getEffectiveDataDir(), 'agents'),
+    path.join(getEffectiveDataDir(), 'agents', 'definitions'),
+    path.join(getEffectiveDataDir(), 'agents', 'bindings'),
+    path.join(getEffectiveDataDir(), 'agents', 'statuses'),
+    path.join(getEffectiveDataDir(), 'agents', 'schedules'),
+    path.join(getEffectiveDataDir(), 'agents', 'schedule-runs'),
+    path.join(getEffectiveDataDir(), 'agents', 'teams'),
+    path.join(getEffectiveDataDir(), 'agents', 'catalog'),
     getAgentDataDir(),
-    path.join(DATA_DIR, 'documents', 'entries'),
-    path.join(DATA_DIR, 'documents', 'content'),
-    path.join(DATA_DIR, 'sessions', 'prompt-overrides'),
-    path.join(DATA_DIR, 'sessions', 'messages'),
-    path.join(DATA_DIR, 'todos', 'entries'),
-    path.join(DATA_DIR, 'prompts', 'agents'),
-    path.join(DATA_DIR, 'prompts', 'history'),
-    path.join(DATA_DIR, 'prompts', 'runtime'),
-    path.join(DATA_DIR, 'prompts', 'blocks'),
+    path.join(getEffectiveDataDir(), 'documents', 'entries'),
+    path.join(getEffectiveDataDir(), 'documents', 'content'),
+    path.join(getEffectiveDataDir(), 'sessions', 'prompt-overrides'),
+    path.join(getEffectiveDataDir(), 'sessions', 'messages'),
+    path.join(getEffectiveDataDir(), 'sessions', 'events'),
+    path.join(getEffectiveDataDir(), 'sessions', 'runs'),
+    path.join(getEffectiveDataDir(), 'todos', 'entries'),
+    path.join(getEffectiveDataDir(), 'prompts', 'agents'),
+    path.join(getEffectiveDataDir(), 'prompts', 'history'),
+    path.join(getEffectiveDataDir(), 'prompts', 'runtime'),
+    path.join(getEffectiveDataDir(), 'prompts', 'blocks'),
     getProjectPromptsDir(),
     getArtifactsDir(),
     getSkillsDir(),
     getSkillsVendorDir(),
-    path.join(DATA_DIR, 'config', 'usage'),
-    path.join(DATA_DIR, '_snapshots'),
+    path.join(getEffectiveDataDir(), 'config', 'usage'),
+    path.join(getEffectiveDataDir(), '_snapshots'),
   ];
   await Promise.all(dirs.map(d => fs.mkdir(d, { recursive: true })));
   await migrateLegacyAgentsDataToWorkspacesOnce();
@@ -354,14 +378,37 @@ interface ProjectsIndexOnDisk {
   _migrated_to_projects_domain?: boolean;
 }
 
-let _projectsMigrated = false;
+interface PerRootMigrationState {
+  projectsMigrated: boolean;
+  legacyDataSubdirProjectsMerged: boolean;
+  v2Migrated: boolean;
+  legacyNestedDataHoistChecked: boolean;
+}
+
+const _migrationByRoot = new Map<string, PerRootMigrationState>();
+
+function migrationStateForCurrentRoot(): PerRootMigrationState {
+  const root = getEffectiveDataDir();
+  let s = _migrationByRoot.get(root);
+  if (!s) {
+    s = {
+      projectsMigrated: false,
+      legacyDataSubdirProjectsMerged: false,
+      v2Migrated: false,
+      legacyNestedDataHoistChecked: false,
+    };
+    _migrationByRoot.set(root, s);
+  }
+  return s;
+}
 
 /**
  * 合并 legacy：projects/index.json ← 旧 workflows/legacy-board/_index.json（或仍存在的 flows/_index.json）+ 扁平 projects.json。
  */
 export async function ensureProjectsMigrated(): Promise<void> {
-  if (_projectsMigrated) return;
-  _projectsMigrated = true;
+  const m = migrationStateForCurrentRoot();
+  if (m.projectsMigrated) return;
+  m.projectsMigrated = true;
 
   await ensureDataDirInitialized();
 
@@ -463,27 +510,26 @@ export async function ensureProjectsMigrated(): Promise<void> {
   });
 }
 
-let _legacyDataSubdirProjectsMerged = false;
-
 /**
  * 默认数据根从 `~/.project-pilot/data` 迁到 `~/.project-pilot` 后，若主 `projects/index.json`
  * 仍为空，尝试从遗留子目录合并一次（幂等），避免项目管理中心读不到旧注册表。
  */
 async function ensureLegacyDataSubdirProjectsMerged(): Promise<void> {
-  if (_legacyDataSubdirProjectsMerged) return;
+  const m = migrationStateForCurrentRoot();
+  if (m.legacyDataSubdirProjectsMerged) return;
 
   const currentPath = getProjectsIndexPath();
   let current: ProjectsIndexOnDisk;
   try {
     current = await readJsonFile<ProjectsIndexOnDisk>(currentPath, { projects: [] });
   } catch {
-    _legacyDataSubdirProjectsMerged = true;
+    m.legacyDataSubdirProjectsMerged = true;
     return;
   }
 
   const existingCount = (current.projects ?? []).filter((row) => normalizeDiskProjectRow(row) !== null).length;
   if (existingCount > 0) {
-    _legacyDataSubdirProjectsMerged = true;
+    m.legacyDataSubdirProjectsMerged = true;
     return;
   }
 
@@ -496,7 +542,7 @@ async function ensureLegacyDataSubdirProjectsMerged(): Promise<void> {
     merged.push(e);
   };
 
-  const nestedIndex = path.join(DATA_DIR, 'data', 'projects', 'index.json');
+  const nestedIndex = path.join(getEffectiveDataDir(), 'data', 'projects', 'index.json');
   try {
     const alt = await readJsonFile<ProjectsIndexOnDisk>(nestedIndex, { projects: [] });
     for (const row of alt.projects ?? []) {
@@ -506,7 +552,7 @@ async function ensureLegacyDataSubdirProjectsMerged(): Promise<void> {
     /* ok */
   }
 
-  const nestedFlat = path.join(DATA_DIR, 'data', 'projects.json');
+  const nestedFlat = path.join(getEffectiveDataDir(), 'data', 'projects.json');
   try {
     const pdata = await readJsonFile<import('@/types').ProjectsData>(nestedFlat, { projects: {} });
     for (const [key, config] of Object.entries(pdata.projects)) {
@@ -553,7 +599,7 @@ async function ensureLegacyDataSubdirProjectsMerged(): Promise<void> {
   }
 
   if (merged.length === 0) {
-    _legacyDataSubdirProjectsMerged = true;
+    m.legacyDataSubdirProjectsMerged = true;
     return;
   }
 
@@ -562,7 +608,7 @@ async function ensureLegacyDataSubdirProjectsMerged(): Promise<void> {
     projects: merged.map(projectEntryToDisk),
     _migrated_to_projects_domain: true,
   });
-  _legacyDataSubdirProjectsMerged = true;
+  m.legacyDataSubdirProjectsMerged = true;
 }
 
 export async function readProjectIndex(): Promise<import('@/types').ProjectIndex> {
@@ -584,21 +630,16 @@ export async function writeProjectIndex(index: import('@/types').ProjectIndex): 
   });
 }
 
-let _v2Migrated = false;
-
 /** 确保目录存在并完成 projects/index.json 的 legacy 合并。历史一次性目录迁移已移除。 */
 export async function ensureDataDirV2Migrated(): Promise<void> {
-  if (_v2Migrated) {
+  const m = migrationStateForCurrentRoot();
+  if (m.v2Migrated) {
     await ensureLegacyNestedDataHoisted();
     return;
   }
-  _v2Migrated = true;
+  m.v2Migrated = true;
   await ensureProjectsMigrated();
 }
-
-/** 文件名保留历史，避免已迁移用户重复执行合并逻辑 */
-const LEGACY_NESTED_DATA_HOIST_MARKER = path.join(DATA_DIR, '.pp-hoisted-legacy-storage');
-let _legacyNestedDataHoistChecked = false;
 
 /** 旧版曾把部分数据放在 `{DATA_DIR}/storage/` 下；当前规范为根下 `artifacts/`、`skills/`。 */
 const LEGACY_DATA_NEST_DIR = 'storage' as const;
@@ -609,22 +650,25 @@ const LEGACY_DATA_NEST_DIR = 'storage' as const;
  * 幂等；写标记文件避免每次启动重复扫描。
  */
 export async function ensureLegacyNestedDataHoisted(): Promise<void> {
-  if (_legacyNestedDataHoistChecked) return;
-  _legacyNestedDataHoistChecked = true;
+  const m = migrationStateForCurrentRoot();
+  if (m.legacyNestedDataHoistChecked) return;
+  m.legacyNestedDataHoistChecked = true;
+
+  const legacyNestedDataHoistMarker = path.join(getEffectiveDataDir(), '.pp-hoisted-legacy-storage');
 
   try {
-    await fs.access(LEGACY_NESTED_DATA_HOIST_MARKER);
+    await fs.access(legacyNestedDataHoistMarker);
     return;
   } catch {
     /* proceed */
   }
 
-  const nestedRoot = path.join(DATA_DIR, LEGACY_DATA_NEST_DIR);
+  const nestedRoot = path.join(getEffectiveDataDir(), LEGACY_DATA_NEST_DIR);
 
   try {
     await fs.access(nestedRoot);
   } catch {
-    await fs.writeFile(LEGACY_NESTED_DATA_HOIST_MARKER, new Date().toISOString(), 'utf-8').catch(() => {});
+    await fs.writeFile(legacyNestedDataHoistMarker, new Date().toISOString(), 'utf-8').catch(() => {});
     return;
   }
 
@@ -660,59 +704,59 @@ export async function ensureLegacyNestedDataHoisted(): Promise<void> {
     /* 嵌套目录已不存在 */
   }
 
-  await fs.writeFile(LEGACY_NESTED_DATA_HOIST_MARKER, new Date().toISOString(), 'utf-8').catch(() => {});
+  await fs.writeFile(legacyNestedDataHoistMarker, new Date().toISOString(), 'utf-8').catch(() => {});
 }
 
 /** @deprecated 请使用 ensureLegacyNestedDataHoisted */
 export const ensureLegacyStorageHoisted = ensureLegacyNestedDataHoisted;
 
 export function getSettingsPath(): string {
-  return path.join(DATA_DIR, 'config', 'settings.json');
+  return path.join(getEffectiveDataDir(), 'config', 'settings.json');
 }
 
 /** Agents 工作区：已打开会话标签与当前面板（按项目持久化，见 agents-workspace-ui-store） */
 export function getAgentsWorkspaceUiPath(): string {
-  return path.join(DATA_DIR, 'config', 'agents-workspace-ui.json');
+  return path.join(getEffectiveDataDir(), 'config', 'agents-workspace-ui.json');
 }
 
 export function getAgentsPath(): string {
-  return path.join(DATA_DIR, 'agents', 'registry.json');
+  return path.join(getEffectiveDataDir(), 'agents', 'registry.json');
 }
 
 export function getDimensionsPath(): string {
-  return path.join(DATA_DIR, 'config', 'dimensions.json');
+  return path.join(getEffectiveDataDir(), 'config', 'dimensions.json');
 }
 
 export function getAgentsDefinitionsDir(): string {
-  return path.join(DATA_DIR, 'agents', 'definitions');
+  return path.join(getEffectiveDataDir(), 'agents', 'definitions');
 }
 
 export function getAgentsBindingsDir(): string {
-  return path.join(DATA_DIR, 'agents', 'bindings');
+  return path.join(getEffectiveDataDir(), 'agents', 'bindings');
 }
 
 export function getAgentsStatusesDir(): string {
-  return path.join(DATA_DIR, 'agents', 'statuses');
+  return path.join(getEffectiveDataDir(), 'agents', 'statuses');
 }
 
 export function getDocumentsEntriesDir(): string {
-  return path.join(DATA_DIR, 'documents', 'entries');
+  return path.join(getEffectiveDataDir(), 'documents', 'entries');
 }
 
 export function getDocumentsContentDir(): string {
-  return path.join(DATA_DIR, 'documents', 'content');
+  return path.join(getEffectiveDataDir(), 'documents', 'content');
 }
 
 export function getDocumentsIndexPath(): string {
-  return path.join(DATA_DIR, 'documents', 'index.json');
+  return path.join(getEffectiveDataDir(), 'documents', 'index.json');
 }
 
 export function getSchedulesDir(): string {
-  return path.join(DATA_DIR, 'agents', 'schedules');
+  return path.join(getEffectiveDataDir(), 'agents', 'schedules');
 }
 
 export function getScheduleRunsDir(): string {
-  return path.join(DATA_DIR, 'agents', 'schedule-runs');
+  return path.join(getEffectiveDataDir(), 'agents', 'schedule-runs');
 }
 
 /**
@@ -728,24 +772,24 @@ export function getLegacySessionPromptOverridePath(agentId: string, sessionId: s
   if (!safeSession || safeSession.length < 1 || safeSession.length > 200) {
     throw new Error(`Invalid session id: ${sessionId}`);
   }
-  return path.join(DATA_DIR, 'sessions', 'prompt-overrides', safeAgent, `${safeSession}.md`);
+  return path.join(getEffectiveDataDir(), 'sessions', 'prompt-overrides', safeAgent, `${safeSession}.md`);
 }
 
 /** Agent 聊天会话列表（元数据，不含消息正文） */
 export function getAgentChatSessionsPath(): string {
-  return path.join(DATA_DIR, 'sessions', 'index.json');
+  return path.join(getEffectiveDataDir(), 'sessions', 'index.json');
 }
 
 /**
  * 会话附属状态（如待发输入队列 deferredInputBuffer），与索引/JSONL 分离存储。
  */
 export function getAgentChatSessionAdjunctsPath(): string {
-  return path.join(DATA_DIR, 'sessions', 'adjuncts.json');
+  return path.join(getEffectiveDataDir(), 'sessions', 'adjuncts.json');
 }
 
 /** 每个会话的消息 JSONL 文件目录 */
 export function getAgentChatMessagesDir(): string {
-  return path.join(DATA_DIR, 'sessions', 'messages');
+  return path.join(getEffectiveDataDir(), 'sessions', 'messages');
 }
 
 /** 单个会话的消息 JSONL 文件路径 */
@@ -759,7 +803,7 @@ export function getAgentChatMessagePath(sessionId: string): string {
 
 /** ExecutionEvent JSONL 文件目录 */
 export function getSessionEventsDir(): string {
-  return path.join(DATA_DIR, 'sessions', 'events');
+  return path.join(getEffectiveDataDir(), 'sessions', 'events');
 }
 
 /** 单个会话的 ExecutionEvent JSONL 文件路径 */
@@ -773,7 +817,7 @@ export function getSessionEventsPath(sessionId: string): string {
 
 /** ExecutionRun JSON 文件目录 */
 export function getSessionRunsDir(): string {
-  return path.join(DATA_DIR, 'sessions', 'runs');
+  return path.join(getEffectiveDataDir(), 'sessions', 'runs');
 }
 
 /** 单个会话的 ExecutionRun JSON 文件路径 */
@@ -786,37 +830,32 @@ export function getSessionRunsPath(sessionId: string): string {
 }
 
 export function getWorktreePortsPath(): string {
-  return path.join(DATA_DIR, 'config', 'worktree-ports.json');
+  return path.join(getEffectiveDataDir(), 'config', 'worktree-ports.json');
 }
 
 export function getTodosPath(): string {
-  return path.join(DATA_DIR, 'todos.json');
+  return path.join(getEffectiveDataDir(), 'todos.json');
 }
 
 /** 单条待办 JSON：`todos/entries/<todoId>.json`（与数据根 `todos.json` 聚合并存，读取时合并，分文件优先） */
 export function getTodosEntriesDir(): string {
-  return path.join(DATA_DIR, 'todos', 'entries');
-}
-
-/** 单条待办 JSON：`todos/entries/<todoId>.json`（与聚合文件 `tasks/todos.json` 并存，读取时合并，分文件优先） */
-export function getTodosEntriesDir(): string {
-  return path.join(DATA_DIR, 'todos', 'entries');
+  return path.join(getEffectiveDataDir(), 'todos', 'entries');
 }
 
 /** 并行执行看板：`agents/active-tasks.json`（多 Agent 运行时登记；非用户 Todo） */
 export function getActiveTasksPath(): string {
-  return path.join(DATA_DIR, 'agents', 'active-tasks.json');
+  return path.join(getEffectiveDataDir(), 'agents', 'active-tasks.json');
 }
 
 /** 通用执行产物目录：`{DATA_DIR}/artifacts/` */
 export function getArtifactsDir(): string {
-  return path.join(DATA_DIR, 'artifacts');
+  return path.join(getEffectiveDataDir(), 'artifacts');
 }
 
 // ── Prompt 文件路径函数 ──
 
 export function getPromptsDir(): string {
-  return path.join(DATA_DIR, 'prompts');
+  return path.join(getEffectiveDataDir(), 'prompts');
 }
 
 export function getPromptFilePath(agentId: string): string {
@@ -824,7 +863,7 @@ export function getPromptFilePath(agentId: string): string {
   if (!safe || safe.length < 1 || safe.length > 100) {
     throw new Error(`Invalid agent id: ${agentId}`);
   }
-  return path.join(DATA_DIR, 'prompts', 'agents', `${safe}.md`);
+  return path.join(getEffectiveDataDir(), 'prompts', 'agents', `${safe}.md`);
 }
 
 export function getPromptHistoryDir(agentId: string): string {
@@ -832,7 +871,7 @@ export function getPromptHistoryDir(agentId: string): string {
   if (!safe || safe.length < 1 || safe.length > 100) {
     throw new Error(`Invalid agent id: ${agentId}`);
   }
-  return path.join(DATA_DIR, 'prompts', 'history', safe);
+  return path.join(getEffectiveDataDir(), 'prompts', 'history', safe);
 }
 
 /**
@@ -845,7 +884,7 @@ export function getSessionPromptOverrideDir(agentId: string): string {
   if (!safe || safe.length < 1 || safe.length > 100) {
     throw new Error(`Invalid agent id: ${agentId}`);
   }
-  return path.join(DATA_DIR, 'prompts', 'runtime', safe);
+  return path.join(getEffectiveDataDir(), 'prompts', 'runtime', safe);
 }
 
 /**
@@ -861,7 +900,7 @@ export function getSessionPromptOverridePath(agentId: string, sessionId: string)
   if (!safeSession || safeSession.length < 1 || safeSession.length > 200) {
     throw new Error(`Invalid session id: ${sessionId}`);
   }
-  return path.join(DATA_DIR, 'prompts', 'runtime', safeAgent, `${safeSession}.md`);
+  return path.join(getEffectiveDataDir(), 'prompts', 'runtime', safeAgent, `${safeSession}.md`);
 }
 
 /**
@@ -881,11 +920,11 @@ export function getPromptRuntimePath(agentId: string, sessionId: string): string
 }
 
 export function getGlobalPromptPath(): string {
-  return path.join(DATA_DIR, 'prompts', 'global.md');
+  return path.join(getEffectiveDataDir(), 'prompts', 'global.md');
 }
 
 export function getProjectPromptsDir(): string {
-  return path.join(DATA_DIR, 'prompts', 'projects');
+  return path.join(getEffectiveDataDir(), 'prompts', 'projects');
 }
 
 export function getProjectPromptPath(projectKey: string): string {
@@ -893,7 +932,7 @@ export function getProjectPromptPath(projectKey: string): string {
   if (!safe || safe.length < 1 || safe.length > 100) {
     throw new Error(`Invalid project key: ${projectKey}`);
   }
-  return path.join(DATA_DIR, 'prompts', 'projects', `${safe}.md`);
+  return path.join(getEffectiveDataDir(), 'prompts', 'projects', `${safe}.md`);
 }
 
 // ── Segmented Prompt 路径函数 ──
@@ -908,13 +947,13 @@ import type { PromptSegmentScope } from '@/types';
 export function getSegmentedPromptDir(scope: PromptSegmentScope): string {
   switch (scope.type) {
     case 'global':
-      return path.join(DATA_DIR, 'prompts', 'global.d');
+      return path.join(getEffectiveDataDir(), 'prompts', 'global.d');
     case 'project': {
       const safe = scope.projectKey.replace(/[^a-zA-Z0-9_-]/g, '');
       if (!safe || safe.length < 1 || safe.length > 100) {
         throw new Error(`Invalid project key: ${scope.projectKey}`);
       }
-      return path.join(DATA_DIR, 'prompts', 'projects', `${safe}.d`);
+      return path.join(getEffectiveDataDir(), 'prompts', 'projects', `${safe}.d`);
     }
   }
 }
@@ -936,7 +975,7 @@ export function getSegmentFilePath(scope: PromptSegmentScope, segmentId: string)
 // ── Prompt Block 路径函数 ──
 
 export function getPromptBlocksDir(): string {
-  return path.join(DATA_DIR, 'prompts', 'blocks');
+  return path.join(getEffectiveDataDir(), 'prompts', 'blocks');
 }
 
 export function getPromptBlockPath(blockId: string): string {
@@ -944,7 +983,7 @@ export function getPromptBlockPath(blockId: string): string {
   if (!safe || safe.length < 1 || safe.length > 100) {
     throw new Error(`Invalid prompt block id: ${blockId}`);
   }
-  return path.join(DATA_DIR, 'prompts', 'blocks', `${safe}.md`);
+  return path.join(getEffectiveDataDir(), 'prompts', 'blocks', `${safe}.md`);
 }
 
 // ── 统一文档正文：documents/content/ ──
@@ -954,7 +993,7 @@ export function getDocumentContentPath(fileName: string): string {
   if (!safe || safe !== fileName || safe.includes('..')) {
     throw new Error(`Invalid document content file name: ${fileName}`);
   }
-  return path.join(DATA_DIR, 'documents', 'content', safe);
+  return path.join(getEffectiveDataDir(), 'documents', 'content', safe);
 }
 
 // 🔒 Security: Maximum JSON file size to prevent DoS attacks
@@ -990,7 +1029,10 @@ export async function readJsonFile<T>(filePath: string, defaultValue: T): Promis
 // ── 写入前自动快照 ──
 // 关键数据文件在每次写入前自动保存旧版本到 _snapshots/，保留最近 MAX_SNAPSHOTS 份
 
-const SNAPSHOT_DIR = path.join(DATA_DIR, '_snapshots');
+function getSnapshotsDir(): string {
+  return path.join(getEffectiveDataDir(), '_snapshots');
+}
+
 const MAX_SNAPSHOTS = 10;
 
 /**
@@ -1020,17 +1062,18 @@ function snapshotBeforeWrite(filePath: string): void {
     }
 
     try {
-      await fs.mkdir(SNAPSHOT_DIR, { recursive: true });
-      const dest = path.join(SNAPSHOT_DIR, `${stem}_${Date.now()}.json`);
+      const snapDir = getSnapshotsDir();
+      await fs.mkdir(snapDir, { recursive: true });
+      const dest = path.join(snapDir, `${stem}_${Date.now()}.json`);
       await fs.copyFile(filePath, dest);
 
       // 清理超出上限的旧快照
-      const files = (await fs.readdir(SNAPSHOT_DIR))
+      const files = (await fs.readdir(snapDir))
         .filter(f => f.startsWith(`${stem}_`) && f.endsWith('.json'))
         .sort(); // 时间戳排序，最旧在前
       if (files.length > MAX_SNAPSHOTS) {
         for (const old of files.slice(0, files.length - MAX_SNAPSHOTS)) {
-          await fs.unlink(path.join(SNAPSHOT_DIR, old)).catch(() => {});
+          await fs.unlink(path.join(snapDir, old)).catch(() => {});
         }
       }
     } catch {
@@ -1205,7 +1248,7 @@ function sanitizeId(id: string): string {
 
 /** Skills 根目录：`{DATA_DIR}/skills/`（其下有 `_global`、`_projects`、`_agents`、`_vendor`） */
 export function getSkillsDir(): string {
-  return path.join(DATA_DIR, 'skills');
+  return path.join(getEffectiveDataDir(), 'skills');
 }
 
 /**
@@ -1259,12 +1302,12 @@ function safeAgentIdSegment(agentId: string): string {
 
 /** 各 Agent 工作区父目录：agents/workspaces/ */
 export function getAgentDataDir(): string {
-  return path.join(DATA_DIR, 'agents', 'workspaces');
+  return path.join(getEffectiveDataDir(), 'agents', 'workspaces');
 }
 
 /** 旧版错误路径 agents/data/<id>/，仅用于解析已存在目录 */
 export function getLegacyAgentDataPath(agentId: string): string {
-  return path.join(DATA_DIR, 'agents', 'data', safeAgentIdSegment(agentId));
+  return path.join(getEffectiveDataDir(), 'agents', 'data', safeAgentIdSegment(agentId));
 }
 
 /** 某一 Agent 的私有工作区根目录 */
@@ -1284,29 +1327,29 @@ export function getAgentDataFilePath(agentId: string, fileName: string): string 
 // ── Agent Schedules 路径函数 ──
 
 export function getSchedulesPath(): string {
-  return path.join(DATA_DIR, 'agents', 'schedules.json');
+  return path.join(getEffectiveDataDir(), 'agents', 'schedules.json');
 }
 
 export function getScheduleRunsPath(): string {
-  return path.join(DATA_DIR, 'agents', 'schedule-runs.json');
+  return path.join(getEffectiveDataDir(), 'agents', 'schedule-runs.json');
 }
 
 export function getEventTriggersPath(): string {
-  return path.join(DATA_DIR, 'agents', 'event-triggers.json');
+  return path.join(getEffectiveDataDir(), 'agents', 'event-triggers.json');
 }
 
 export function getEventTriggerRunsPath(): string {
-  return path.join(DATA_DIR, 'agents', 'event-trigger-runs.json');
+  return path.join(getEffectiveDataDir(), 'agents', 'event-trigger-runs.json');
 }
 
 export function getEventTriggerStatesPath(): string {
-  return path.join(DATA_DIR, 'agents', 'event-trigger-states.json');
+  return path.join(getEffectiveDataDir(), 'agents', 'event-trigger-states.json');
 }
 
 /**
  * 通知数据已变更（供 MCP Server 写入后触发 UI 刷新）
  */
 export async function notifyDataChanged(): Promise<void> {
-  const notifyPath = path.join(DATA_DIR, '.notify');
+  const notifyPath = path.join(getEffectiveDataDir(), '.notify');
   await fs.writeFile(notifyPath, Date.now().toString(), 'utf-8');
 }

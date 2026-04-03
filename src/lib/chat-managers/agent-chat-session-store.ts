@@ -29,6 +29,7 @@ import {
   getAgentChatMessagePath,
   getSessionEventsDir,
   getSessionRunsDir,
+  getEffectiveDataDir,
   readJsonFile,
   modifyJsonFile,
   parseJsonSafe,
@@ -83,14 +84,30 @@ interface AgentChatSessionAdjunctsData {
   sessions: Record<string, AgentChatSessionAdjunctEntry>;
 }
 
-// ── Migration flag ──
-let _migrationDone = false;
-let _indexNormalized = false;
+interface SessionStorePerRoot {
+  migrationDone: boolean;
+  indexNormalized: boolean;
+  indexCache: AgentChatSessionsData | null;
+  indexCacheTs: number;
+}
 
-// ── Sessions index cache (reduce repeated full-file reads) ──
-// Now the index is much smaller (no messages), so caching is even more effective.
-let _indexCache: AgentChatSessionsData | null = null;
-let _indexCacheTs = 0;
+const _storeByDataRoot = new Map<string, SessionStorePerRoot>();
+
+function sessionStoreState(): SessionStorePerRoot {
+  const root = getEffectiveDataDir();
+  let s = _storeByDataRoot.get(root);
+  if (!s) {
+    s = {
+      migrationDone: false,
+      indexNormalized: false,
+      indexCache: null,
+      indexCacheTs: 0,
+    };
+    _storeByDataRoot.set(root, s);
+  }
+  return s;
+}
+
 const INDEX_CACHE_TTL = 500; // 500ms
 
 function cloneDeferredInputBuffer(
@@ -183,7 +200,8 @@ function needsSessionNormalization(meta: LegacySessionMeta): boolean {
 }
 
 async function normalizeIndexIfNeeded(): Promise<void> {
-  if (_indexNormalized) return;
+  const st = sessionStoreState();
+  if (st.indexNormalized) return;
 
   const raw = await readJsonFile<LegacyAgentChatSessionsData>(
     getAgentChatSessionsPath(),
@@ -230,34 +248,36 @@ async function normalizeIndexIfNeeded(): Promise<void> {
     invalidateIndexCache();
   }
 
-  _indexNormalized = true;
+  st.indexNormalized = true;
 }
 
 async function getIndexData(): Promise<AgentChatSessionsData> {
+  const st = sessionStoreState();
   // Ensure migration has run at least once
-  if (!_migrationDone) {
+  if (!st.migrationDone) {
     await migrateIfNeeded();
   }
-  if (!_indexNormalized) {
+  if (!st.indexNormalized) {
     await normalizeIndexIfNeeded();
   }
 
   const now = Date.now();
-  if (_indexCache && now - _indexCacheTs < INDEX_CACHE_TTL) {
-    return _indexCache;
+  if (st.indexCache && now - st.indexCacheTs < INDEX_CACHE_TTL) {
+    return st.indexCache;
   }
-  _indexCache = await readJsonFile<AgentChatSessionsData>(
+  st.indexCache = await readJsonFile<AgentChatSessionsData>(
     getAgentChatSessionsPath(),
     DEFAULT_SESSIONS_DATA,
   );
-  _indexCacheTs = now;
-  return _indexCache;
+  st.indexCacheTs = now;
+  return st.indexCache;
 }
 
 function invalidateIndexCache(): void {
-  _indexCache = null;
-  _indexCacheTs = 0;
-  _indexNormalized = false;
+  const st = sessionStoreState();
+  st.indexCache = null;
+  st.indexCacheTs = 0;
+  st.indexNormalized = false;
 }
 
 async function getAdjunctData(): Promise<AgentChatSessionAdjunctsData> {
@@ -397,7 +417,8 @@ function stripActionTags(text: string): string {
 // ── Auto-migration from v1 (monolithic) to v2 (index + JSONL) ──
 
 async function migrateIfNeeded(): Promise<void> {
-  _migrationDone = true; // Set early to prevent re-entry
+  const st = sessionStoreState();
+  st.migrationDone = true; // Set early to prevent re-entry
 
   const data = await readJsonFile<{ sessions: Array<SessionMeta & { messages?: ChatMessage[] }> }>(
     getAgentChatSessionsPath(),

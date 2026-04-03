@@ -1140,6 +1140,15 @@ class AgentChatManager {
       }
     }
   }
+
+  /** 切换数据根前丢弃内存中的会话运行态，避免跨账号串数据。 */
+  destroy(): void {
+    if (this.sweepTimer) {
+      clearInterval(this.sweepTimer);
+      this.sweepTimer = null;
+    }
+    this.runs.clear();
+  }
 }
 
 // ── Capability Merge Helper ──
@@ -1437,15 +1446,33 @@ export async function buildPromptPreview(
   };
 }
 
-// ── Singleton ──
+// ── Singleton（经 globalThis，便于切换数据根时替换实例） ──
 
 const globalForAC = globalThis as unknown as {
   __agentChatManager?: AgentChatManager;
 };
 
-export const agentChatManager =
-  globalForAC.__agentChatManager ?? new AgentChatManager();
+function getAgentChatManagerSingleton(): AgentChatManager {
+  if (!globalForAC.__agentChatManager) {
+    globalForAC.__agentChatManager = new AgentChatManager();
+  }
+  return globalForAC.__agentChatManager;
+}
+
+export function replaceAgentChatManagerForDataRootSwitch(): void {
+  globalForAC.__agentChatManager?.destroy();
+  globalForAC.__agentChatManager = new AgentChatManager();
+}
 
 if (process.env.NODE_ENV !== 'production') {
-  globalForAC.__agentChatManager = agentChatManager;
+  getAgentChatManagerSingleton();
 }
+
+/** 始终委托到当前单例，避免 replace 后仍持有旧实例引用。 */
+export const agentChatManager: AgentChatManager = new Proxy({} as AgentChatManager, {
+  get(_target, prop, receiver) {
+    const m = getAgentChatManagerSingleton();
+    const value = Reflect.get(m, prop, receiver);
+    return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(m) : value;
+  },
+});

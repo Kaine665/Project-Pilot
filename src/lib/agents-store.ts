@@ -1,5 +1,6 @@
 import {
   getAgentsPath,
+  getEffectiveDataDir,
   readJsonFile,
   writeJsonFile,
   ensureDataDirV2Migrated,
@@ -30,6 +31,19 @@ let cachedData: AgentsData | null = null;
 let cachedWithPrompts: Agent[] | null = null;
 let cacheTimestamp = 0;
 let lastKnownAgentCount = 0;
+/** 与缓存绑定的数据根；切换 Google 账号目录时必须失效。 */
+let agentsCacheDataRoot: string | null = null;
+
+function ensureAgentsCacheForCurrentDataRoot(): void {
+  const root = getEffectiveDataDir();
+  if (agentsCacheDataRoot !== root) {
+    agentsCacheDataRoot = root;
+    cachedData = null;
+    cachedWithPrompts = null;
+    cacheTimestamp = 0;
+    lastKnownAgentCount = 0;
+  }
+}
 
 export interface AgentMutationInput {
   name?: string;
@@ -89,9 +103,11 @@ export function invalidateAgentsCache(): void {
   cachedData = null;
   cachedWithPrompts = null;
   cacheTimestamp = 0;
+  agentsCacheDataRoot = getEffectiveDataDir();
 }
 
 export async function readAgentsData(): Promise<AgentsData> {
+  ensureAgentsCacheForCurrentDataRoot();
   const now = Date.now();
   if (cachedData && now - cacheTimestamp < AGENTS_CACHE_TTL_MS) {
     return cachedData;
@@ -136,6 +152,7 @@ export async function readAgentsData(): Promise<AgentsData> {
 }
 
 export async function writeAgentsData(data: AgentsData): Promise<void> {
+  ensureAgentsCacheForCurrentDataRoot();
   const newCount = data.agents.length;
   if (lastKnownAgentCount > DEFAULT_AGENTS.length && newCount <= DEFAULT_AGENTS.length) {
     console.error(
@@ -158,6 +175,7 @@ export async function listAgents(options?: {
   includePrompts?: boolean;
   projectKey?: string;
 }): Promise<Agent[]> {
+  ensureAgentsCacheForCurrentDataRoot();
   const includeArchived = options?.includeArchived === true;
   const includePrompts = options?.includePrompts === true;
   const projectKey = options?.projectKey;
