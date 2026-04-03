@@ -30,6 +30,7 @@ export function startBackendServer(port: number): Promise<ChildProcess> {
         ...process.env,
         PORT: String(port),
         NODE_ENV: 'production',
+        ELECTRON_RUN_AS_NODE: '1',
       },
       cwd: path.dirname(serverPath),
       stdio: ['ignore', 'pipe', 'pipe'],

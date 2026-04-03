@@ -8,22 +8,30 @@ import { checkCliHealth } from './cli-check';
 
 const isDev = !!process.env.ELECTRON_DEV;
 const APP_ENTRY_PATH = '/workspace/projects';
+const DEFAULT_PORT = 4000;
 
 /** develop-static 根目录（main 编译在 electron/dist 下） */
 const projectRoot = path.join(__dirname, '..', '..');
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { loadDevServerConfig } = require(path.join(
-  projectRoot,
-  'config',
-  'load-dev-server.cjs',
-)) as { loadDevServerConfig: (root: string) => { clientPort: number; clientLoadOrigin: string } };
+
+function loadDevConfig(): { clientPort: number; clientLoadOrigin: string } {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { loadDevServerConfig } = require(path.join(
+      projectRoot,
+      'config',
+      'load-dev-server.cjs',
+    )) as { loadDevServerConfig: (root: string) => { clientPort: number; clientLoadOrigin: string } };
+    return loadDevServerConfig(projectRoot);
+  } catch {
+    return { clientPort: DEFAULT_PORT, clientLoadOrigin: `http://127.0.0.1:${DEFAULT_PORT}` };
+  }
+}
 
 let mainWindow: BrowserWindow | null = null;
 let serverProcess: ChildProcess | null = null;
 let backendShutdownDone = false;
-let serverPort = loadDevServerConfig(projectRoot).clientPort;
-/** 主窗口 loadURL 使用的 origin（开发态来自 config/dev-server.json） */
-let windowLoadOrigin = `http://127.0.0.1:${serverPort}`;
+let serverPort = DEFAULT_PORT;
+let windowLoadOrigin = `http://127.0.0.1:${DEFAULT_PORT}`;
 
 // ── 单实例锁 ──────────────────────────────────────────
 const gotLock = app.requestSingleInstanceLock();
@@ -157,7 +165,7 @@ function createMainWindow() {
 // ── 启动流程 ──────────────────────────────────────────
 app.whenReady().then(async () => {
   if (isDev) {
-    const devCfg = loadDevServerConfig(projectRoot);
+    const devCfg = loadDevConfig();
     serverPort = devCfg.clientPort;
     windowLoadOrigin = devCfg.clientLoadOrigin;
     createMainWindow();
@@ -175,10 +183,9 @@ app.whenReady().then(async () => {
       resizable: false,
       webPreferences: { nodeIntegration: false, contextIsolation: true },
     });
-    splash.loadFile(path.join(__dirname, 'splash.html'));
+    splash.loadFile(path.join(__dirname, '..', 'splash.html'));
 
-    const devDefaults = loadDevServerConfig(projectRoot);
-    serverPort = await findAvailablePort(devDefaults.clientPort);
+    serverPort = await findAvailablePort(DEFAULT_PORT);
 
     serverProcess = await startBackendServer(serverPort);
 
