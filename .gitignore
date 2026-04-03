@@ -65,3 +65,6 @@ openclaw/
 
 # 第三方技能完整仓库应放在 ~/.project-pilot/skills/_vendor/ ，勿提交仓库内拷贝
 tmp/imported-skills/
+
+# 本地 API 密钥测试文件（含明文密钥，绝不可提交）
+.api-test-keys.mjs

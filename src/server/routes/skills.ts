@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { documentTextWriteErrorResponse } from '@/lib/document-text-write-guard';
 import archiver from 'archiver';
 import { PassThrough } from 'stream';
 import {
@@ -285,6 +286,8 @@ app.put('/:name', async (c) => {
     await writeSkillFile(name, body.content, scope);
     return c.json({ name, scope });
   } catch (error) {
+    const enc = documentTextWriteErrorResponse(error);
+    if (enc) return c.json(enc.body, enc.status);
     return c.json({ error: String(error) }, 500);
   }
 });
@@ -444,6 +447,8 @@ app.put('/:name/files/:subdir/:fileName', async (c) => {
     await writeSkillSubFile(name, subdir, fileName, body.content, scope);
     return c.json({ name: fileName, subdir });
   } catch (error) {
+    const enc = documentTextWriteErrorResponse(error);
+    if (enc) return c.json(enc.body, enc.status);
     return c.json({ error: String(error) }, 500);
   }
 });

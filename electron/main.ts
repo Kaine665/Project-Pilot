@@ -7,7 +7,7 @@ import { startBackendServer } from './server';
 import { checkCliHealth } from './cli-check';
 
 const isDev = !!process.env.ELECTRON_DEV;
-const APP_ENTRY_PATH = '/flows/projects';
+const APP_ENTRY_PATH = '/workspace/projects';
 
 /** develop-static 根目录（main 编译在 electron/dist 下） */
 const projectRoot = path.join(__dirname, '..', '..');

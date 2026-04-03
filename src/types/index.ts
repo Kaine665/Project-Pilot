@@ -1,13 +1,17 @@
-// ==================== Session（AI 会话） ====================
+// ==================== Legacy Task Worker 会话形状（非 Agent Chat） ====================
+//
+// 当前产品内「Agent 聊天会话」的权威类型为 `@/types/agent-chat` 的 **AgentChatSession** /
+// **SessionMeta**（持久化：`sessions/index.json` + `sessions/messages/*.jsonl`）。
+// 下列类型仅为历史 Task Worker / 旧文档中的数据形状保留，**勿与 AgentChatSession 混用**。
 
 import type { FlowTaskContext } from './flow-context';
 import type { SessionSourceType } from './agent-chat';
 import type { ResourceRef } from './resource';
 
 /**
- * AI 会话 — 用户发起的一次 AI 协作。
+ * 历史 Task Worker 时代的「会话」记录形状（未再作为 Agent Chat 持久化模型使用）。
  */
-export interface Session {
+export interface LegacyTaskWorkerSession {
   id: string;
   title: string;
   content?: string;
@@ -28,8 +32,8 @@ export interface Session {
   agentId?: string;
 }
 
-export interface SessionsData {
-  sessions: Session[];
+export interface LegacyTaskWorkerSessionsData {
+  sessions: LegacyTaskWorkerSession[];
 }
 
 // ==================== Project Registry ====================
@@ -422,7 +426,11 @@ export interface Agent {
   /** True for system-provided agents that cannot be deleted */
   builtIn?: boolean;
   description?: string;
-  /** System prompt / instructions for this agent */
+  /**
+   * Resolved system prompt (read-time only).
+   * 真相源是外置文件 prompts/agents/<id>.md，不持久化在 registry。
+   * 读取时由 resolveSystemPrompt() 填充；写入时 agents-store 会剥离此字段。
+   */
   systemPrompt?: string;
   /** Icon identifier (lucide icon name) */
   icon?: string;
@@ -562,7 +570,7 @@ export type TodoStatus = 'pending' | 'in_progress' | 'done';
  *
  * draft    → AI 自动生成，未经人工确认，不可被 Agent 认领
  * pending  → 已确认，等待认领
- * active   → 有 Agent 正在执行（绑定了 activeTaskId）
+ * active   → 已关联并行执行看板登记项（绑定了 activeTaskId）
  * stale    → 内容可能过期（超期未认领 / 关联文件已变更），需重新确认
  * done     → 已完成
  * archived → 不再活跃但保留记录
@@ -594,7 +602,7 @@ export interface TodoItem {
 
   /** 精细生命周期状态，默认跟随 status 映射 */
   lifecycle?: TodoLifecycle;
-  /** 被哪个 ActiveTask 认领（双向绑定） */
+  /** 并行执行看板（active-tasks）上对应条目的 id（与 Todo 双向绑定，可选） */
   activeTaskId?: string;
   /** 被哪个 git 分支认领 */
   claimedByBranch?: string;
@@ -739,25 +747,6 @@ export interface DocsIndexData {
   projects: Record<string, DocEntry[]>;
   /** 文档分类定义列表 */
   categories?: CategoryDef[];
-}
-
-// ==================== Inbox（收件箱） ====================
-
-/** 收件箱条目 —— 未结构化的快速记录 */
-export interface InboxItem {
-  id: string;           // 格式: inbox-{timestamp}-{random4}
-  content: string;      // 条目内容（一句话）
-  createdAt: string;    // ISO timestamp
-  status: 'inbox' | 'archived';  // inbox=待整理, archived=已归档到结构化任务
-  archivedTo?: {        // 归档去向（可选）
-    sectionId: string;
-    taskId: string;
-  };
-}
-
-/** 项目收件箱数据 */
-export interface ProjectInbox {
-  items: InboxItem[];
 }
 
 // ==================== Agent Schedules（定时运行） ====================

@@ -1,10 +1,8 @@
 /**
- * ActiveTasksLoader — renders the shared active tasks board.
+ * ActiveTasksLoader — 将「并行执行看板」（agents/active-tasks.json）注入为上下文。
  *
- * Shows all currently running tasks from other agents,
- * so each agent can be aware of parallel work and avoid conflicts.
- *
- * ref.id is always '_running'.
+ * 展示其他 Agent 当前登记为 running 的执行项，便于感知并行范围、避免冲突。
+ * ref.id 恒为 '_running'。
  */
 
 import type { ResourceLoader, LoaderContext } from '../resource-loader';
@@ -36,7 +34,7 @@ export class ActiveTasksLoader implements ResourceLoader {
     return {
       ref,
       content: md,
-      sectionTitle: '当前活跃任务',
+      sectionTitle: '并行执行看板',
       ok: true,
     };
   }

@@ -4,7 +4,7 @@
  * 从：./data/
  * 到：~/.project-pilot/（与 file-store 默认 DATA_DIR 一致，可用 PROJECT_PILOT_DATA_DIR 覆盖）
  *
- * Flow 片段：从 src/data/flows 复制到 {DATA_DIR}/workflows/flows/（与 getLegacyWorkflowsFlowsDir 一致）
+ * 旧版看板 JSON：从 src/data/flows 复制到 {DATA_DIR}/workflows/legacy-board/（与 getLegacyBoardDataDir 一致）
  *
  * 用法：npm run migrate:data
  */
@@ -16,7 +16,7 @@ const os = require('os');
 const OLD_DATA_DIR = path.join(process.cwd(), 'data');
 const OLD_FLOWS_DIR = path.join(process.cwd(), 'src', 'data', 'flows');
 const NEW_DATA_DIR = process.env.PROJECT_PILOT_DATA_DIR || path.join(os.homedir(), '.project-pilot');
-const NEW_FLOWS_DIR = path.join(NEW_DATA_DIR, 'workflows', 'flows');
+const NEW_LEGACY_BOARD_DIR = path.join(NEW_DATA_DIR, 'workflows', 'legacy-board');
 
 async function copyRecursive(src, dest) {
   const stats = await fs.stat(src);
@@ -91,45 +91,43 @@ async function migrate() {
   }
 }
 
-async function migrateFlows() {
-  console.log('\n📦 Flow 数据迁移\n');
+async function migrateLegacyBoard() {
+  console.log('\n📦 旧版看板 JSON 迁移\n');
   console.log(`旧位置: ${OLD_FLOWS_DIR}`);
-  console.log(`新位置: ${NEW_FLOWS_DIR}\n`);
+  console.log(`新位置: ${NEW_LEGACY_BOARD_DIR}\n`);
 
-  // 检查旧 flow 数据是否存在
   try {
     await fs.access(path.join(OLD_FLOWS_DIR, '_index.json'));
   } catch {
-    console.log('❌ 旧 flow 数据不存在，无需迁移');
+    console.log('❌ 源目录无 _index.json，无需迁移');
     return;
   }
 
-  // 检查新位置是否已有 flow 数据
   try {
-    await fs.access(path.join(NEW_FLOWS_DIR, '_index.json'));
-    console.log('⚠️  新位置已存在 flow 数据，跳过迁移');
+    await fs.access(path.join(NEW_LEGACY_BOARD_DIR, '_index.json'));
+    console.log('⚠️  新位置已存在看板索引，跳过迁移');
     return;
   } catch {
-    // 新位置不存在，继续
+    /* proceed */
   }
 
-  console.log('🚀 开始迁移 flow 数据...');
+  console.log('🚀 开始迁移旧版看板 JSON...');
   try {
-    await fs.mkdir(NEW_FLOWS_DIR, { recursive: true });
+    await fs.mkdir(NEW_LEGACY_BOARD_DIR, { recursive: true });
     const files = await fs.readdir(OLD_FLOWS_DIR);
     let count = 0;
     for (const file of files) {
       if (file.endsWith('.json')) {
         await fs.copyFile(
           path.join(OLD_FLOWS_DIR, file),
-          path.join(NEW_FLOWS_DIR, file),
+          path.join(NEW_LEGACY_BOARD_DIR, file),
         );
         count++;
       }
     }
-    console.log(`✅ 已迁移 ${count} 个 flow 文件`);
+    console.log(`✅ 已迁移 ${count} 个 JSON 文件`);
   } catch (error) {
-    console.error('❌ Flow 迁移失败：', error.message);
+    console.error('❌ 旧版看板迁移失败：', error.message);
   }
 }
 
@@ -137,7 +135,7 @@ async function migrateFlows() {
 (async () => {
   try {
     await migrate();
-    await migrateFlows();
+    await migrateLegacyBoard();
   } catch (error) {
     console.error('致命错误：', error);
     process.exit(1);

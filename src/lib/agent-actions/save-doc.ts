@@ -3,6 +3,7 @@
  */
 
 import { mkdir, writeFile } from 'fs/promises';
+import { assertDocumentTextWritable } from '@/lib/document-text-write-guard';
 import { getDocumentContentPath, getDocumentsContentDir } from '@/lib/file-store';
 import { readDocsIndexFromDocuments, saveDocsIndexToDocuments } from '@/lib/documents-store';
 import type { DocEntry } from '@/types';
@@ -74,6 +75,9 @@ Markdown 文档内容...
     };
 
     await mkdir(getDocumentsContentDir(), { recursive: true });
+    assertDocumentTextWritable(data.title);
+    if (data.description.trim()) assertDocumentTextWritable(data.description);
+    assertDocumentTextWritable(data.content);
     await writeFile(getDocumentContentPath(fileName), data.content, 'utf-8');
 
     const idx = await readDocsIndexFromDocuments();

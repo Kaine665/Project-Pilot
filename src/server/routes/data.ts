@@ -2,11 +2,20 @@ import { Hono } from 'hono';
 import {
   readProjectIndex,
   writeProjectIndex,
-  readInbox,
-  writeInbox,
   ensureDataDirV2Migrated,
 } from '@/lib/file-store';
-import type { ProjectEntry, ProjectIndex, InboxItem } from '@/types';
+import {
+  readAgentsWorkspaceProjectState,
+  writeAgentsWorkspaceProjectState,
+} from '@/lib/agents-workspace-ui-store';
+import { sanitizeAgentsWorkspaceProjectState } from '@/lib/agents-workspace-ui-sanitize';
+import type {
+  AgentsWorkspaceActivePersist,
+  AgentsWorkspacePerAgentFocusPersist,
+  AgentsWorkspaceProjectPersist,
+} from '@/lib/agents-workspace-ui-shared';
+import { isValidProjectKey } from '@/lib/security';
+import type { ProjectEntry, ProjectIndex } from '@/types';
 
 const app = new Hono();
 
@@ -193,139 +202,126 @@ app.delete('/projects', async (c) => {
 });
 
 // ---------------------------------------------------------------------------
-// /api/data/inbox
+// /api/data/agents-workspace-ui — Agents 工作区已打开标签（按 projectKey）
 // ---------------------------------------------------------------------------
 
-function sanitizeKey(raw: string): string {
-  return raw.replace(/[^a-zA-Z0-9_-]/g, '');
+function parseAgentsWorkspacePersist(body: unknown): AgentsWorkspaceProjectPersist | null {
+  if (body === null || typeof body !== 'object') return null;
+  const o = body as Record<string, unknown>;
+  if (!Array.isArray(o.tabs)) return null;
+  const tabs: AgentsWorkspaceProjectPersist['tabs'] = [];
+  for (const row of o.tabs) {
+    if (row === null || typeof row !== 'object') continue;
+    const r = row as Record<string, unknown>;
+    if (typeof r.agentId !== 'string' || !r.agentId.trim()) continue;
+    const sessionId = r.sessionId === null || r.sessionId === undefined
+      ? null
+      : typeof r.sessionId === 'string'
+        ? r.sessionId
+        : null;
+    tabs.push({ agentId: r.agentId.trim(), sessionId });
+  }
+  let active: AgentsWorkspaceActivePersist | null = null;
+  if (o.active !== null && o.active !== undefined && typeof o.active === 'object') {
+    const a = o.active as Record<string, unknown>;
+    if (a.kind === 'session' && typeof a.agentId === 'string' && a.agentId.trim()) {
+      const sid = a.sessionId === null || a.sessionId === undefined
+        ? null
+        : typeof a.sessionId === 'string'
+          ? a.sessionId
+          : null;
+      active = { kind: 'session', agentId: a.agentId.trim(), sessionId: sid };
+    } else if (a.kind === 'agent' && typeof a.agentId === 'string' && a.agentId.trim()) {
+      const mode = a.mode === 'settings' ? 'settings' : 'chat';
+      active = { kind: 'agent', agentId: a.agentId.trim(), mode };
+    }
+  }
+
+  let lastFocusByAgent: Record<string, AgentsWorkspacePerAgentFocusPersist> | undefined;
+  const lfRaw = o.lastFocusByAgent;
+  if (lfRaw !== null && lfRaw !== undefined && typeof lfRaw === 'object' && !Array.isArray(lfRaw)) {
+    const lf: Record<string, AgentsWorkspacePerAgentFocusPersist> = {};
+    for (const [agentId, v] of Object.entries(lfRaw as Record<string, unknown>)) {
+      const aid = agentId.trim();
+      if (!aid) continue;
+      if (v === null || typeof v !== 'object') continue;
+      const fv = v as Record<string, unknown>;
+      if (fv.kind === 'session') {
+        const sid = fv.sessionId === null || fv.sessionId === undefined
+          ? null
+          : typeof fv.sessionId === 'string'
+            ? fv.sessionId
+            : null;
+        lf[aid] = { kind: 'session', sessionId: sid };
+      } else if (fv.kind === 'agent') {
+        const mode = fv.mode === 'settings' ? 'settings' : 'chat';
+        lf[aid] = { kind: 'agent', mode };
+      }
+    }
+    if (Object.keys(lf).length > 0) lastFocusByAgent = lf;
+  }
+
+  return { tabs, active, lastFocusByAgent };
 }
 
-function getProjectKey(c: { req: { query: (k: string) => string | undefined } }): string | null {
-  const raw = c.req.query('project');
-  if (!raw) return null;
-  const safe = sanitizeKey(raw);
-  return safe || null;
-}
-
-function generateInboxId(): string {
-  return `inbox-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-}
-
-app.get('/inbox', async (c) => {
-  try {
-    const projectKey = getProjectKey(c);
-    if (!projectKey) {
-      return c.json({ error: 'project query parameter is required' }, 400);
-    }
-    const inbox = await readInbox(projectKey);
-    return c.json(inbox);
-  } catch (error) {
-    console.error('[inbox GET]', error);
-    return c.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
-      500,
-    );
+app.get('/agents-workspace-ui', async (c) => {
+  await ensureDataDirV2Migrated();
+  const q = c.req.query('projectKey');
+  if (q !== undefined && q !== '' && !isValidProjectKey(q)) {
+    return c.json({ error: 'invalid projectKey' }, 400);
   }
+  const projectKey = q === undefined || q === '' ? null : q;
+  if (projectKey !== null) {
+    const index = await readIndex();
+    const p = index.projects.find((x) => x.key === projectKey);
+    if (!p || p.archived) {
+      return c.json({ error: 'unknown or archived project' }, 404);
+    }
+  }
+  const state = await readAgentsWorkspaceProjectState(projectKey);
+  const base: AgentsWorkspaceProjectPersist = state ?? { tabs: [], active: null, lastFocusByAgent: undefined };
+  const cleaned = await sanitizeAgentsWorkspaceProjectState(projectKey, base);
+  return c.json(cleaned);
 });
 
-app.post('/inbox', async (c) => {
+app.put('/agents-workspace-ui', async (c) => {
+  await ensureDataDirV2Migrated();
+  let body: unknown;
   try {
-    const projectKey = getProjectKey(c);
-    if (!projectKey) {
-      return c.json({ error: 'project query parameter is required' }, 400);
-    }
-
-    const body = await c.req.json();
-    const { content } = body;
-    if (!content || typeof content !== 'string') {
-      return c.json({ error: 'content is required and must be a string' }, 400);
-    }
-
-    const now = new Date().toISOString();
-    const item: InboxItem = {
-      id: generateInboxId(),
-      content: content.trim(),
-      createdAt: now,
-      status: 'inbox',
-    };
-
-    const inbox = await readInbox(projectKey);
-    inbox.items.push(item);
-    await writeInbox(projectKey, inbox);
-
-    return c.json(item, 201);
-  } catch (error) {
-    console.error('[inbox POST]', error);
-    return c.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
-      500,
-    );
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid JSON' }, 400);
   }
-});
-
-app.patch('/inbox', async (c) => {
-  try {
-    const projectKey = getProjectKey(c);
-    if (!projectKey) {
-      return c.json({ error: 'project query parameter is required' }, 400);
-    }
-
-    const body = await c.req.json();
-    const { id, content, status, archivedTo } = body;
-    if (!id || typeof id !== 'string') {
-      return c.json({ error: 'id is required' }, 400);
-    }
-
-    const inbox = await readInbox(projectKey);
-    const item = inbox.items.find((i) => i.id === id);
-    if (!item) {
-      return c.json({ error: 'item not found' }, 404);
-    }
-
-    if (content !== undefined) item.content = content;
-    if (status !== undefined) item.status = status;
-    if (archivedTo !== undefined) item.archivedTo = archivedTo;
-
-    await writeInbox(projectKey, inbox);
-    return c.json(item);
-  } catch (error) {
-    console.error('[inbox PATCH]', error);
-    return c.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
-      500,
-    );
+  if (body === null || typeof body !== 'object') {
+    return c.json({ error: 'body required' }, 400);
   }
-});
-
-app.delete('/inbox', async (c) => {
-  try {
-    const projectKey = getProjectKey(c);
-    if (!projectKey) {
-      return c.json({ error: 'project query parameter is required' }, 400);
-    }
-
-    const itemId = c.req.query('id');
-    if (!itemId) {
-      return c.json({ error: 'id query parameter is required' }, 400);
-    }
-
-    const inbox = await readInbox(projectKey);
-    const idx = inbox.items.findIndex((i) => i.id === itemId);
-    if (idx === -1) {
-      return c.json({ error: 'item not found' }, 404);
-    }
-
-    inbox.items.splice(idx, 1);
-    await writeInbox(projectKey, inbox);
-
-    return c.json({ ok: true });
-  } catch (error) {
-    console.error('[inbox DELETE]', error);
-    return c.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
-      500,
-    );
+  const rec = body as Record<string, unknown>;
+  const pkRaw = rec.projectKey;
+  let projectKey: string | null;
+  if (pkRaw === null || pkRaw === undefined || pkRaw === '') {
+    projectKey = null;
+  } else if (typeof pkRaw === 'string' && isValidProjectKey(pkRaw)) {
+    projectKey = pkRaw;
+  } else {
+    return c.json({ error: 'invalid projectKey' }, 400);
   }
+
+  if (projectKey !== null) {
+    const index = await readIndex();
+    const p = index.projects.find((x) => x.key === projectKey);
+    if (!p || p.archived) {
+      return c.json({ error: 'unknown or archived project' }, 404);
+    }
+  }
+
+  const parsed = parseAgentsWorkspacePersist(body);
+  if (!parsed) {
+    return c.json({ error: 'invalid tabs' }, 400);
+  }
+
+  const cleaned = await sanitizeAgentsWorkspaceProjectState(projectKey, parsed);
+  await writeAgentsWorkspaceProjectState(projectKey, cleaned.tabs.length > 0 ? cleaned : null);
+  return c.json({ ok: true });
 });
 
 export default app;

@@ -19,6 +19,7 @@ import {
   getSessionPromptOverridePath,
 } from './file-store';
 import { readBuiltinPrompt } from './builtin-defaults';
+import { assertDocumentTextWritable } from './document-text-write-guard';
 
 /** 最大 prompt 文件大小：10MB */
 const MAX_PROMPT_SIZE = 10 * 1024 * 1024;
@@ -53,6 +54,9 @@ export async function readPromptFile(agentId: string): Promise<string | undefine
  * 写入前自动快照当前版本到 .history/。
  */
 export async function writePromptFile(agentId: string, content: string): Promise<void> {
+  if (content.length > 0) {
+    assertDocumentTextWritable(content);
+  }
   await snapshotPromptVersion(agentId);
   await fs.mkdir(getPromptsDir(), { recursive: true });
   await fs.writeFile(getPromptFilePath(agentId), content, 'utf-8');

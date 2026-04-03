@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import { getDocumentContentPath, getDocumentsContentDir } from '@/lib/file-store';
 import { readDocsIndexFromDocuments, saveDocsIndexToDocuments } from '@/lib/documents-store';
 import { badRequest, notFound } from '@/lib/http-error';
+import { assertDocumentTextWritable, documentTextWriteErrorResponse } from '@/lib/document-text-write-guard';
 import type { DocEntry, DocsIndexData, DocStatus, CategoryDef, DocumentKind } from '@/types';
 
 const app = new Hono();
@@ -121,7 +122,16 @@ app.post('/', async (c) => {
   };
 
   await fs.mkdir(getDocumentsContentDir(), { recursive: true });
-  await fs.writeFile(getDocumentContentPath(fileName), content ?? '', 'utf-8');
+  try {
+    assertDocumentTextWritable(title.trim());
+    if (description?.trim()) assertDocumentTextWritable(description);
+    assertDocumentTextWritable(content ?? '');
+    await fs.writeFile(getDocumentContentPath(fileName), content ?? '', 'utf-8');
+  } catch (e) {
+    const enc = documentTextWriteErrorResponse(e);
+    if (enc) return c.json(enc.body, enc.status);
+    throw e;
+  }
 
   const data = await readIndex();
   if (!data.projects[entry.projectKey]) {
@@ -434,6 +444,18 @@ app.patch('/:id', async (c) => {
 
   const { entry } = found;
   const now = new Date().toISOString();
+
+  try {
+    if (body.title !== undefined && body.title.trim()) assertDocumentTextWritable(body.title.trim());
+    if (body.description !== undefined && body.description?.trim()) {
+      assertDocumentTextWritable(body.description);
+    }
+    if (body.content !== undefined) assertDocumentTextWritable(body.content);
+  } catch (e) {
+    const enc = documentTextWriteErrorResponse(e);
+    if (enc) return c.json(enc.body, enc.status);
+    throw e;
+  }
 
   if (body.title !== undefined) entry.title = body.title.trim();
   if (body.description !== undefined) {

@@ -14,7 +14,7 @@ export default function NotFound() {
       setCountdown(prev => {
         if (prev <= 1) {
           clearInterval(timer);
-          router.replace(`/${locale}/flows/agents`);
+          router.replace(`/${locale}/workspace/agents`);
           return 0;
         }
         return prev - 1;

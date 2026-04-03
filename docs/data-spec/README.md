@@ -57,7 +57,7 @@
 
 | 域 | 文档 |
 |----|------|
-| **projects**（`projects/index.json`、`inboxes/`） | **[projects/README.md](./projects/README.md)** |
+| **projects**（`projects/index.json`） | **[projects/README.md](./projects/README.md)** |
 
 ## 当前建模共识
 

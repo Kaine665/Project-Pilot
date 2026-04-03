@@ -24,6 +24,7 @@ import {
   updateSegmentContent,
   deleteSegment,
 } from '@/lib/segmented-prompt-store';
+import { assertDocumentTextWritable, documentTextWriteErrorResponse } from '@/lib/document-text-write-guard';
 
 const app = new Hono();
 
@@ -78,6 +79,7 @@ async function readSingleFileContent(scope: PromptSegmentScope): Promise<string>
 }
 
 async function writeSingleFileContent(scope: PromptSegmentScope, content: string): Promise<void> {
+  assertDocumentTextWritable(content);
   if (scope.type === 'global') {
     await mkdir(getPromptsDir(), { recursive: true });
     await writeFile(getGlobalPromptPath(), content, 'utf-8');
@@ -113,9 +115,11 @@ app.put('/global-prompt', async (c) => {
       return c.json({ error: 'content must be a string' }, 400);
     }
     await mkdir(getPromptsDir(), { recursive: true });
-    await writeFile(getGlobalPromptPath(), content, 'utf-8');
+    await writeSingleFileContent({ type: 'global' }, content);
     return c.json({ ok: true });
   } catch (err) {
+    const enc = documentTextWriteErrorResponse(err);
+    if (enc) return c.json(enc.body, enc.status);
     console.error('[global-prompt] PUT error:', err);
     return c.json({ error: 'Failed to write global prompt' }, 500);
   }
@@ -149,9 +153,11 @@ app.put('/project-prompt/:projectKey', async (c) => {
       return c.json({ error: 'content must be a string' }, 400);
     }
     await mkdir(getProjectPromptsDir(), { recursive: true });
-    await writeFile(getProjectPromptPath(projectKey), content, 'utf-8');
+    await writeSingleFileContent({ type: 'project', projectKey }, content);
     return c.json({ ok: true });
   } catch (err) {
+    const enc = documentTextWriteErrorResponse(err);
+    if (enc) return c.json(enc.body, enc.status);
     console.error('[project-prompt] PUT error:', err);
     return c.json({ error: 'Failed to write project prompt' }, 500);
   }
@@ -326,6 +332,8 @@ app.post('/prompt-segments', async (c) => {
     const index = await createSegment(scope, segment, body.content ?? '');
     return c.json({ ok: true, segments: index.segments });
   } catch (err) {
+    const enc = documentTextWriteErrorResponse(err);
+    if (enc) return c.json(enc.body, enc.status);
     console.error('[prompt-segments] POST error:', err);
     const msg = err instanceof Error ? err.message : 'Failed to create segment';
     return c.json({ error: msg }, 500);
@@ -366,6 +374,8 @@ app.put('/prompt-segments', async (c) => {
         return c.json({ error: 'Unknown action' }, 400);
     }
   } catch (err) {
+    const enc = documentTextWriteErrorResponse(err);
+    if (enc) return c.json(enc.body, enc.status);
     console.error('[prompt-segments] PUT error:', err);
     const msg = err instanceof Error ? err.message : 'Failed to process action';
     return c.json({ error: msg }, 500);
@@ -432,6 +442,8 @@ app.put('/prompt-segments/:segmentId', async (c) => {
 
     return c.json({ ok: true, segments: index.segments });
   } catch (err) {
+    const enc = documentTextWriteErrorResponse(err);
+    if (enc) return c.json(enc.body, enc.status);
     console.error('[prompt-segments] PUT error:', err);
     const msg = err instanceof Error ? err.message : 'Failed to update segment';
     return c.json({ error: msg }, 500);

@@ -1,6 +1,6 @@
 /**
- * FlowsLayout — adapted from src/app/[locale]/flows/layout.tsx for React Router.
- * Uses Outlet instead of children prop, React.lazy instead of next/dynamic.
+ * 主工作区壳（侧栏 + Outlet）。
+ * 页面组件位于 `src/app/[locale]/flows/`（目录名为历史遗留；对外 URL 使用 `/workspace/*`）。
  */
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { Outlet } from 'react-router';
@@ -17,7 +17,7 @@ const AgentChatPanel = lazy(() =>
   import('@/components/agent-chat-panel').then((m) => ({ default: m.AgentChatPanel })),
 );
 
-export default function FlowsLayout({ children }: { children?: React.ReactNode }) {
+export default function WorkspaceShell({ children }: { children?: React.ReactNode }) {
   const { activeKey } = useProject();
   const router = useRouter();
   const pathname = usePathname();
@@ -27,17 +27,17 @@ export default function FlowsLayout({ children }: { children?: React.ReactNode }
   const [schedulesPageEnabled, setSchedulesPageEnabled] = useState(true);
   const [taskTriggersPageEnabled, setTaskTriggersPageEnabled] = useState(true);
 
-  const isAgentsPage = pathname.startsWith('/flows/agents');
-  const isContextPage = pathname.startsWith('/flows/context');
-  const isButlerPage = pathname.startsWith('/flows/butler');
-  const isDocsPage = pathname.startsWith('/flows/docs');
-  const isTodosPage = pathname.startsWith('/flows/todos');
-  const isTaskTriggersPage = pathname.startsWith('/flows/task-triggers');
-  const isSchedulesPage = pathname.startsWith('/flows/schedules');
-  const isChatPage = pathname.startsWith('/flows/chat');
-  const isSkillsPage = pathname.startsWith('/flows/skills');
-  const isKnowledgePage = pathname.startsWith('/flows/knowledge');
-  const isPromptsPage = pathname.startsWith('/flows/prompts');
+  const isAgentsPage = pathname.startsWith('/workspace/agents');
+  const isContextPage = pathname.startsWith('/workspace/context');
+  const isButlerPage = pathname.startsWith('/workspace/butler');
+  const isDocsPage = pathname.startsWith('/workspace/docs');
+  const isTodosPage = pathname.startsWith('/workspace/todos');
+  const isTaskTriggersPage = pathname.startsWith('/workspace/task-triggers');
+  const isSchedulesPage = pathname.startsWith('/workspace/schedules');
+  const isChatPage = pathname.startsWith('/workspace/chat');
+  const isSkillsPage = pathname.startsWith('/workspace/skills');
+  const isKnowledgePage = pathname.startsWith('/workspace/knowledge');
+  const isPromptsPage = pathname.startsWith('/workspace/prompts');
 
   const isSubRoute =
     isAgentsPage ||
@@ -87,17 +87,17 @@ export default function FlowsLayout({ children }: { children?: React.ReactNode }
 
   useEffect(() => {
     if (isSchedulesPage && !schedulesPageEnabled) {
-      router.replace('/flows/projects');
+      router.replace('/workspace/projects');
       return;
     }
     if (isTaskTriggersPage && !taskTriggersPageEnabled) {
-      router.replace('/flows/projects');
+      router.replace('/workspace/projects');
     }
   }, [isSchedulesPage, isTaskTriggersPage, router, schedulesPageEnabled, taskTriggersPageEnabled]);
 
   const handleToggleProjects = () => {
-    if (isSubRoute || !pathname.startsWith('/flows/projects')) {
-      router.push('/flows/projects');
+    if (isSubRoute || !pathname.startsWith('/workspace/projects')) {
+      router.push('/workspace/projects');
     }
   };
 
@@ -109,7 +109,7 @@ export default function FlowsLayout({ children }: { children?: React.ReactNode }
           <TooltipProvider delayDuration={300}>
             <div className="flex w-13 flex-col items-center gap-2 border-r border-zinc-200 bg-zinc-50/50 py-4 dark:border-zinc-800 dark:bg-zinc-950">
               <SidebarIconButton icon={FolderKanban} tooltip="项目管理" isActive={!isSubRoute} onClick={handleToggleProjects} />
-              <SidebarIconButton icon={Bot} tooltip="Agents" isActive={isAgentsPage} onClick={() => router.push('/flows/agents')} />
+              <SidebarIconButton icon={Bot} tooltip="Agents" isActive={isAgentsPage} onClick={() => router.push('/workspace/agents')} />
 
               <div className="w-6 border-t border-zinc-200 dark:border-zinc-700" />
 
@@ -117,22 +117,22 @@ export default function FlowsLayout({ children }: { children?: React.ReactNode }
                 icon={BookOpen}
                 tooltip="文档"
                 isActive={isContextPage || isDocsPage}
-                onClick={() => router.push(activeKey ? `/flows/docs/${activeKey}` : '/flows/docs')}
+                onClick={() => router.push(activeKey ? `/workspace/docs/${activeKey}` : '/workspace/docs')}
               />
-              <SidebarIconButton icon={Blocks} tooltip="Skills" isActive={isSkillsPage} onClick={() => router.push('/flows/skills')} />
-              <SidebarIconButton icon={ScrollText} tooltip="提示词" isActive={isPromptsPage} onClick={() => router.push('/flows/prompts')} />
+              <SidebarIconButton icon={Blocks} tooltip="Skills" isActive={isSkillsPage} onClick={() => router.push('/workspace/skills')} />
+              <SidebarIconButton icon={ScrollText} tooltip="提示词" isActive={isPromptsPage} onClick={() => router.push('/workspace/prompts')} />
 
               <div className="w-6 border-t border-zinc-200 dark:border-zinc-700" />
 
-              <SidebarIconButton icon={ListTodo} tooltip="待办" isActive={isTodosPage} onClick={() => router.push('/flows/todos')} />
+              <SidebarIconButton icon={ListTodo} tooltip="待办" isActive={isTodosPage} onClick={() => router.push('/workspace/todos')} />
               {taskTriggersPageEnabled && (
-                <SidebarIconButton icon={Zap} tooltip="任务触发" isActive={isTaskTriggersPage} onClick={() => router.push('/flows/task-triggers')} />
+                <SidebarIconButton icon={Zap} tooltip="任务触发" isActive={isTaskTriggersPage} onClick={() => router.push('/workspace/task-triggers')} />
               )}
 
               <div className="w-6 border-t border-zinc-200 dark:border-zinc-700" />
 
               {schedulesPageEnabled && (
-                <SidebarIconButton icon={Timer} tooltip="定时运行" isActive={isSchedulesPage} onClick={() => router.push('/flows/schedules')} />
+                <SidebarIconButton icon={Timer} tooltip="定时运行" isActive={isSchedulesPage} onClick={() => router.push('/workspace/schedules')} />
               )}
             </div>
           </TooltipProvider>

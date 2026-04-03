@@ -80,8 +80,8 @@ Session（会话容器，点击即创建）
 
 | 字段 | 来源 | 说明 |
 |------|------|------|
-| `projectKey` | FlowsLayout.activeKey | 当前选中的项目 |
-| `projectName` | FlowsLayout.projects 中匹配的 name | 项目显示名 |
+| `projectKey` | `ProjectProvider` 当前 `activeKey` | 当前选中的项目 |
+| `projectName` | 项目列表中匹配的 `name` | 项目显示名 |
 | `taskId` | Flow.Task.id | 链路侧任务 ID，用于回写状态 |
 | `taskContent` | Flow.Task.content | 任务短语，如"开发者回复通知" |
 | `flowId` | Flow.id | 所属流程 ID |
@@ -169,19 +169,20 @@ nodeName: "提交后"            ──────┐              goal: "完�
 - 时间压力影响方案选择
 - 例：还有 2 天截止 → 优先做最小可行方案
 
-## 存储方式
+## 存储方式（历史说明）
 
-FlowTaskContext 作为 Session 的可选字段存储：
+当前 **Agent Chat** 的权威会话模型为 `AgentChatSession` / `SessionMeta`（`src/types/agent-chat.ts`），持久化见 `sessions/index.json` 与 `sessions/messages/*.jsonl`。
+
+历史 Task Worker 形状 `LegacyTaskWorkerSession`（`types/index.ts`）上可带：
 
 ```typescript
-// src/types/index.ts
-interface Session {
-  // ...现有字段
-  flowContext?: FlowTaskContext;  // 从链路发起时附带的上下文
-}
+// src/types/index.ts — LegacyTaskWorkerSession
+flowContext?: FlowTaskContext;
 ```
 
-选择存在 Session 上而非 SessionArtifacts 里，因为：
+新 UI 不再从树形链路写入上述字段；类型保留仅为兼容旧数据/文档叙述。
+
+选择挂在历史会话记录上而非 SessionArtifacts 里，因为（原设计）：
 - 这是会话的**来源信息**，不是 Phase 执行过程中产出的
 - `get_task_detail` 工具需要在第一次对话就读到，不能等 AI 产出后才有
 - 它是一次性快照，创建后不会变化
@@ -196,8 +197,8 @@ FlowTaskContext **不直接注入 prompt**，而是作为 `get_task_detail` 工�
 AI 需要的是"这个任务的四要素状态"，不需要关心信息是从 FlowTaskContext 来的还是从 ProjectConfig 来的。`get_task_detail` 工具聚合所有数据源，统一输出四要素的已知/模糊/未知状态。
 
 ```
-get_task_detail(sessionId) 的数据源：
-  ├── Session（必有）         → title, content, projectKey
+get_task_detail(sessionId) 的数据源（历史架构叙述）：
+  ├── 会话记录（必有）         → title, content, projectKey
   ├── FlowTaskContext（可选） → 本协议定义的链路上下文
   ├── ProjectConfig（可选）   → 项目配置
   └── SessionArtifacts（可选）→ AI 之前产出的理解

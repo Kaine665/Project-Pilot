@@ -1,5 +1,7 @@
 /**
- * AgentDataInfoLoader — 告知 Agent 其私有工作区（agents/workspaces/<agentId>/）的路径与文件列表。
+ * AgentDataInfoLoader — 列出 Agent 私有工作区目录内已有文件（动态）。
+ *
+ * 路径约定与 **全局约束**（\`global-prompt\` / \`prompts/global.md\`）中的「Agent 数据工作区（磁盘约定）」一节一致。
  *
  * ref.id = agentId（通常从 ctx.agentId 获取）。
  * 仅在 Agent 开启 dataStore 能力时才会注入此资源。

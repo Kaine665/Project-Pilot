@@ -15,6 +15,7 @@ import type { AgentPackage, PackagedContext } from '@/types/agent-package';
 import type { ResourceRef } from '@/types/resource';
 import { promises as fs } from 'fs';
 import { invalidateAgentsCache } from '@/lib/agents-store';
+import { assertDocumentTextWritable } from '@/lib/document-text-write-guard';
 
 // ── 导出 ──
 
@@ -88,6 +89,8 @@ export async function importAgent(pkg: AgentPackage): Promise<ImportResult> {
       const docId = `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const ext = ctx.format === 'json' ? 'json' : ctx.format === 'markdown' ? 'md' : 'txt';
       const fileName = `${docId}.${ext}`;
+      assertDocumentTextWritable(ctx.label);
+      assertDocumentTextWritable(ctx.content);
       await fs.writeFile(getDocumentContentPath(fileName), ctx.content, 'utf-8');
 
       const entry: DocEntry = {

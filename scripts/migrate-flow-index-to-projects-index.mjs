@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 将备份的 workflows/flows/_index.json（或等价 JSON：顶层含 projects 数组）
+ * 将备份的 workflows/legacy-board/_index.json（或旧路径 workflows/flows/_index.json；等价 JSON：顶层含 projects 数组）
  * 转为 projects/index.json（磁盘字段以 id 为主，不写 techStack）。
  *
  * 用法：

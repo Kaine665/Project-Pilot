@@ -35,12 +35,12 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
     label: '设计文档索引',
   });
 
-  // Active tasks board — always present
+  // 并行执行看板（agents/active-tasks.json）— always present
   refs.push({
     type: 'active-tasks',
     id: '_running',
     priority: 22,
-    label: '活跃任务看板',
+    label: '并行执行看板',
   });
 
   // Shared memory (blackboard) — always present

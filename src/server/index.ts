@@ -31,6 +31,8 @@ import schedulesRoutes from './routes/schedules';
 import eventTriggersRoutes from './routes/event-triggers';
 
 import { ensureDataDirV2Migrated } from '@/lib/file-store';
+import { schedulerManager } from '@/lib/scheduler-manager';
+import { eventTriggerManager } from '@/lib/event-trigger-manager';
 
 const app = new Hono();
 
@@ -83,6 +85,8 @@ const port = parseInt(process.env.PORT ?? '4500', 10);
 
 async function startServer(): Promise<void> {
   await ensureDataDirV2Migrated();
+  await schedulerManager.init();
+  await eventTriggerManager.init();
   console.log(`[server] Starting Hono backend on http://127.0.0.1:${port}`);
 
   serve(

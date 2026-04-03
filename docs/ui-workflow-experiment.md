@@ -10,7 +10,7 @@
 | 项 | 内容 |
 |----|------|
 | **研究问题** | 在相同功能与布局前提下，不同「设计工作流程」导致的 **Agents 工作区** 观感与可读性差异，是否值得固定某一种流程。 |
-| **控制变量** | 路由与功能：`/[locale]/flows/agents`；视口：建议固定 1440×900；数据：同一运行环境（代码默认根见 **[`docs/data-storage.md`](./data-storage.md)**；本机真实树见 `~/.project-pilot/数据文件夹现状.md`）或同一套 demo 数据。**对齐**：2026-03-31。 |
+| **控制变量** | 路由与功能：`/workspace/agents`（英文可加前缀 `/en`）；视口：建议固定 1440×900；数据：同一运行环境（代码默认根见 **[`docs/data-storage.md`](./data-storage.md)**；本机真实树见 `~/.project-pilot/数据文件夹现状.md`）或同一套 demo 数据。**对齐**：2026-03-31。 |
 | **自变量** | 分支 / worktree 所代表的 **流程叙事** 及其 **终点 token**（本实验用 CSS 变量落在页面根容器上，仅影响 Agents 子树继承的语义色）。 |
 | **因变量** | 截图；可选：评审量表得分；可选：WCAG 对比度抽检（浏览器插件 / axe）。 |
 | **样本量** | 本预设含 **对照 + 2 条流程**；扩展时可增加 `exp/ui-workflow-c-*` worktree。 |
@@ -76,7 +76,7 @@ git branch -D exp/ui-workflow-b-agents
 ## 3. 截图协议（可复现）
 
 1. 同一时间只在一个 worktree 里 `npm run dev`（默认端口 **4000**）；换分支对比时 **停掉上一进程** 再起，避免端口冲突。
-2. 浏览器打开 Agents：**Vite 当前栈** 为 `http://127.0.0.1:4000/flows/agents`；若仍为 Next + next-intl，多为 `http://127.0.0.1:4000/zh/flows/agents`。截图脚本默认前者，可传第 4 参数或环境变量 `PP_UI_CAPTURE_PATH` 覆盖。
+2. 浏览器打开 Agents：**Vite 当前栈** 为 `http://127.0.0.1:4000/workspace/agents`；英文界面可为 `http://127.0.0.1:4000/en/workspace/agents`。截图脚本默认前者，可传第 4 参数或环境变量 `PP_UI_CAPTURE_PATH` 覆盖。
 3. 建议输出目录：`develop-static/tmp/ui-workflow-experiment/`；命名：`baseline.png`、`workflow-a.png`、`workflow-b.png`。
 
 自动化（依赖已安装的 Playwright）：
@@ -91,7 +91,7 @@ npm run ui-workflow:train
 
 ```bash
 npm run ui-workflow:capture -- 4000 baseline
-# 或：node tmp/ui-workflow-experiment-capture.mjs 4000 workflow-a /zh/flows/agents
+# 或：node tmp/ui-workflow-experiment-capture.mjs 4000 workflow-a /en/workspace/agents
 ```
 
 **注意**：部分 IDE 内置 Agent 终端对 `localhost` 有限制，若出现 `ECONNREFUSED`，请在系统终端运行上述命令。

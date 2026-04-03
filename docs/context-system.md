@@ -56,8 +56,8 @@ Agent 仍可通过描述/摘要判断是否需要读取某正文文件，避免�
 
 ## 前端入口
 
-- **文档库（按项目）**：`/flows/docs/[projectKey]` — 设计文档与知识文档统一列表与编辑。
-- **旧路径 `/flows/context`**：保留为**跳转页**，重定向到文档库并带 `view=knowledge`（筛选知识类），避免书签失效。
+- **文档库（按项目）**：`/workspace/docs/[projectKey]` — 设计文档与知识文档统一列表与编辑。
+- **`/workspace/context`**：保留为**跳转页**，重定向到文档库并带 `view=knowledge`（筛选知识类）。
 
 ## 与 Agent / Resource 的关系
 

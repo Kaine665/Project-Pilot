@@ -9,13 +9,13 @@
 
 ```
 <DATA_DIR>/projects/
-├── index.json          # 项目注册表（唯一真相源）
-└── inboxes/            # 按项目的收件箱
-    └── <id>.json       # 与 index 中项目的 id 对应（安全化后的 key）
+└── index.json          # 项目注册表（唯一真相源）
 ```
 
-**不再使用**：`workflows/flows/<id>.json` 作为 per-project Flow 看板；`workflows/flows/_index.json` 仅作一次性迁移来源。  
+**不再使用**：`workflows/legacy-board/<id>.json`（未迁移前可能为 `workflows/flows/`）作为 per-project 树形看板；其 `_index.json` 仅作一次性迁移来源。  
 **旧扁平文件**：`<DATA_DIR>/projects.json` 仅作迁移读取，新数据写入 `projects/index.json`。
+
+**已移除**：原 `projects/inboxes/<id>.json`「项目收件箱」及从 `*_inbox.json` 的迁移逻辑；若磁盘上仍有残留目录或文件，可手动删除（见 [`docs/data-storage.md`](../../data-storage.md)「可选 / 遗留」）。
 
 ## `index.json` 磁盘格式（Schema）
 
@@ -83,14 +83,9 @@
 }
 ```
 
-## `inboxes/<id>.json`
-
-每项目一个收件箱 JSON，结构见类型 **`ProjectInbox`**（`items` 数组等）。  
-若仍存在旧路径 `workflows/flows/<id>_inbox.json`，首次 `readInbox` 会迁到 `projects/inboxes/<id>.json`。
-
 ## 迁移与工具
 
-1. **自动**：应用启动链中的 **`ensureDataDirV2Migrated`** → **`ensureProjectsMigrated`**：合并已有 `projects/index.json`、旧 **`workflows/flows/_index.json`**、扁平 **`projects.json`**。
+1. **自动**：应用启动链中的 **`ensureDataDirV2Migrated`** → **`ensureProjectsMigrated`**：合并已有 `projects/index.json`、旧 **`workflows/legacy-board/_index.json`**（或尚未重命名时的 **`workflows/flows/_index.json`**）、扁平 **`projects.json`**。
 2. **手动脚本**：仓库 [`scripts/migrate-flow-index-to-projects-index.mjs`](../../../scripts/migrate-flow-index-to-projects-index.mjs)  
    - 从备份的 `_index.json` 生成 **`~/.project-pilot/projects/index.json`**（可通过第 3 个参数指定输出目录）。
 
@@ -109,7 +104,6 @@
 本目录由 ProjectPilot 维护。
 
 - **index.json**：项目注册表；每条项目用字段 **id**（即应用内的 project key），不要依赖已废弃的 per-project Flow JSON。
-- **inboxes/**：各项目收件箱数据。
 
 仓库内完整说明见项目源码：develop-static/docs/data-spec/projects/README.md
 ```

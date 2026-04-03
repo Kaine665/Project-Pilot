@@ -44,6 +44,13 @@ interface SkillItem {
   description: string;
 }
 
+interface SlashItem {
+  kind: 'skill' | 'command';
+  name: string;
+  description: string;
+  commandText: string;
+}
+
 /** Uploaded file info returned from /api/upload */
 interface UploadedFile {
   name: string;
@@ -137,6 +144,14 @@ export const ChatInput = memo(function ChatInput({
   const [slashIndex, setSlashIndex] = useState(0);
   const skillsCacheRef = useRef<SkillItem[] | null>(null);
   const [skillsLoaded, setSkillsLoaded] = useState(false);
+  const builtinSlashItems: SlashItem[] = [
+    {
+      kind: 'command',
+      name: 'run',
+      description: '手动开启一次 Run（不会发送给模型）',
+      commandText: '/run ',
+    },
+  ];
 
   // Listen for external text insertion (e.g. from folder explorer @reference)
   useEffect(() => {
@@ -211,21 +226,27 @@ export const ChatInput = memo(function ChatInput({
     setSkillsLoaded(true);
   }, []);
 
-  // 获取过滤后的 skills 列表
-  const getFilteredSkills = useCallback((): SkillItem[] => {
-    const skills = skillsCacheRef.current ?? [];
-    if (!slashQuery) return skills;
+  // 获取过滤后的 slash 列表（内置命令 + skills）
+  const getFilteredSlashItems = useCallback((): SlashItem[] => {
+    const skills = (skillsCacheRef.current ?? []).map<SlashItem>((s) => ({
+      kind: 'skill',
+      name: s.name,
+      description: s.description,
+      commandText: `/${s.name} `,
+    }));
+    const all = [...builtinSlashItems, ...skills];
+    if (!slashQuery) return all;
     const q = slashQuery.toLowerCase();
-    return skills.filter(s =>
-      s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)
+    return all.filter(item =>
+      item.name.toLowerCase().includes(q) || item.description.toLowerCase().includes(q)
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slashQuery, skillsLoaded]);
 
-  // 选中 skill：把 /name 填入输入框
-  const handleSkillSelect = useCallback((skill: SkillItem) => {
+  // 选中 slash 命令：把命令填入输入框
+  const handleSlashSelect = useCallback((item: SlashItem) => {
     setSlashOpen(false);
-    setInput(`/${skill.name} `);
+    setInput(item.commandText);
     requestAnimationFrame(() => {
       if (textareaRef.current) {
         textareaRef.current.focus();
@@ -290,7 +311,7 @@ export const ChatInput = memo(function ChatInput({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Slash 菜单键盘导航（优先于其他处理）
     if (slashOpen && enableSlashCommands) {
-      const filtered = getFilteredSkills();
+      const filtered = getFilteredSlashItems();
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         setSlashIndex(i => Math.min(i + 1, filtered.length - 1));
@@ -303,7 +324,7 @@ export const ChatInput = memo(function ChatInput({
       }
       if (e.key === 'Enter' && filtered.length > 0) {
         e.preventDefault();
-        handleSkillSelect(filtered[slashIndex]);
+        handleSlashSelect(filtered[slashIndex]);
         return;
       }
       if (e.key === 'Escape') {
@@ -608,29 +629,29 @@ export const ChatInput = memo(function ChatInput({
       )}
       {/* Slash 命令菜单 */}
       {slashOpen && enableSlashCommands && (() => {
-        const filtered = getFilteredSkills();
+        const filtered = getFilteredSlashItems();
         return (
           <div className="relative mb-1">
             <div className="absolute bottom-0 left-0 right-0 z-50 max-h-48 overflow-y-auto rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
               {filtered.length === 0 ? (
                 <div className="px-3 py-2 text-sm text-zinc-400 dark:text-zinc-500">
-                  {skillsCacheRef.current === null ? '加载中...' : '没有匹配的 Skill'}
+                  {skillsCacheRef.current === null ? '加载中...' : '没有匹配的命令'}
                 </div>
               ) : (
-                filtered.map((skill, i) => (
+                filtered.map((item, i) => (
                   <button
-                    key={skill.name}
+                    key={`${item.kind}:${item.name}`}
                     className={`w-full text-left px-3 py-2 text-sm flex items-baseline gap-2 transition-colors ${
                       i === slashIndex
                         ? 'bg-zinc-100 dark:bg-zinc-800'
                         : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/60'
                     }`}
-                    onMouseDown={(e) => { e.preventDefault(); handleSkillSelect(skill); }}
+                    onMouseDown={(e) => { e.preventDefault(); handleSlashSelect(item); }}
                     onMouseEnter={() => setSlashIndex(i)}
                   >
-                    <span className="font-mono font-medium text-zinc-900 dark:text-zinc-100 shrink-0">/{skill.name}</span>
-                    {skill.description && (
-                      <span className="text-xs text-zinc-400 dark:text-zinc-500 truncate">{skill.description}</span>
+                    <span className="font-mono font-medium text-zinc-900 dark:text-zinc-100 shrink-0">/{item.name}</span>
+                    {item.description && (
+                      <span className="text-xs text-zinc-400 dark:text-zinc-500 truncate">{item.description}</span>
                     )}
                   </button>
                 ))

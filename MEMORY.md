@@ -21,6 +21,7 @@
 
 **Prompt / Resource**
 
+- **领域口径**：④ Resource = 上下文来源（开放集合）；`prompts/` 按 scope 分桶存储、非独立聚合根；scope 级指令见 **`docs/领域与数据.md` §2、§5**
 - 设计文档索引表：资源类型名仍为 `design-docs-index`（历史命名），数据来自统一 `documents` 索引
 - Code Card 等：从知识类 `DocEntry` + `documents/content` 匹配，无独立 context API
 
@@ -43,16 +44,21 @@
 
 ## 数据存储
 
-- 数据布局：本机 `~/.project-pilot/README.md` + **`数据文件夹现状.md`**；仓库内与代码对齐的索引 **[`docs/data-storage.md`](docs/data-storage.md)**（`file-store` 默认 **`~/.project-pilot`**，不再默认 `~/.project-pilot/data/`）。对齐 2026-03-31
+- 数据布局：本机 `~/.project-pilot/README.md` + **`数据文件夹现状.md`**；仓库内与代码对齐的索引 **[`docs/data-storage.md`](docs/data-storage.md)**（`file-store` 默认 **`~/.project-pilot`**，不再默认 `~/.project-pilot/data/`）。对齐 2026-04-03
+- **Agents 工作区 UI**：`config/agents-workspace-ui.json` 按项目保存已打开会话标签、当前面板与 **`lastFocusByAgent`**；`GET/PUT /api/data/agents-workspace-ui` 会校验 **projectKey**（格式 + 未归档项目存在）、**agentId** 在注册表、**sessionId** 在会话索引且 **agentId / projectKey** 与桶一致，并去重；实现见 `lib/agents-workspace-ui-sanitize.ts`
 - 可通过 `PROJECT_PILOT_DATA_DIR` 环境变量自定义
 - JSON 文件读写有 50MB 大小限制
 - `writeJsonFile()` 自动创建父目录
+- **Hono 启动**：`src/server/index.ts` 在 `ensureDataDirV2Migrated` 之后会 **`schedulerManager.init()`** 与 **`eventTriggerManager.init()`**，进程重启后恢复 **cron 定时**与 **GitHub PR 轮询**（路线图 C1）
+- **并行执行看板**：`agents/active-tasks.json`（多 Agent 运行时登记）；与 **Todo**（`todos/`）不同，见 `docs/领域与数据.md` §6
+- **会话（领域）= 连续上下文**：实现类型 **`AgentChatSession`** / 索引行 **`SessionMeta`**（`sessions/index.json` + `sessions/messages/*.jsonl`）；**`LegacyTaskWorkerSession`** 为历史形状，勿与当前会话混用。权威对照表见 **`docs/领域与数据.md` §0**
+- **Execution Event 落盘**：每个 Turn 结束后从内存归约出 `ExecutionEvent`（完整事件，非 delta），追加到 `sessions/events/<sessionId>.jsonl`。Run 元数据存 `sessions/runs/<sessionId>.json`。API：`GET /api/agent-chat/sessions/:id/events`、`/runs`、`POST /runs`、`PATCH /runs/:runId`。详见 `types/execution.ts`、`lib/execution-event-store.ts`、`docs/领域与数据.md` §3
 
 ## 前端布局约定
 
-- flows 子页面用 `max-w-[1100px] px-6 py-10` 居中布局
+- 主工作区（`/workspace/*`）子页面用 `max-w-[1100px] px-6 py-10` 居中布局
 - 卡片网格用 3 列 `grid-cols-3 gap-4`
-- Flows **侧栏无「上下文」入口**：`BookOpen` 按钮 tooltip 为 **「文档」**，跳转 `/flows/docs/...`（`src/app/[locale]/flows/layout.tsx` 与 `src/client/routes/flows-layout.tsx` 内容一致）。`/flows/context` 仅为保留路由（重定向到文档库），`isContextPage` 用于与文档页共用同一高亮
+- **侧栏无单独「上下文」入口**：`BookOpen` 为 **「文档」**，跳转 `/workspace/docs/...`（壳组件 `src/client/routes/workspace-shell.tsx`；`app/[locale]/flows/layout.tsx` 为同源镜像）。`/workspace/context` 保留为重定向到文档库 `?view=knowledge`，`isContextPage` 与文档页共用高亮
 
 ## Agent 架构
 
@@ -60,6 +66,7 @@
 - Prompt 构建通过 **Resource 系统**：`defaultResources` / `resourceRefs` → `ResourceRegistry.loadAll()` → 按 priority 排序加载
 - Resource 类型（节选）：`design-docs-index`、`global-prompt`、`project-prompt`、`inline-text`、`todo-list`、`flow-context`、`reference-turns`、`skill` 等；**无** `context-index` / `context` 运行时加载
 - Butler 是默认 agent；内置提示字符串见 `src/data/defaults/builtin-prompts.ts`
+- **全局约束**（`global-prompt`）：默认模板 `PROMPT_GLOBAL` 含「Agent 数据工作区（磁盘约定）」等；用户可在 `prompts/global.md` 或设置里编辑。`agent-data-info` 仅在 **dataStore** 时列出 `agents/workspaces/<id>/` 下文件
 - **未读消息**：`AgentChatSession.unreadCount` 字段，`persistSession()` 递增，`markAsRead()` 清零
 - **设计文档 / 知识文档**：统一写入 `documents/`，通过 `<save-doc>` / `PATCH /api/docs/:id` 等；旧「知识草稿弹窗」已移除
 - **Guest Agent**：`parentSessionId` + `importedTurnIndices` 实现对话旁听
@@ -116,16 +123,7 @@
 2. 自定义 agent 未设置 `executionMode` 时，`task-detail.tsx` 默认按 `'chat'` 处理（`executionMode ?? 'chat'`）
 3. chat 模式不显示 ArtifactPanel（无阶段/产物概念）
 
-**Task Worker 预绑定到任务：**
-- `TreeItem.agentId` 存储预绑定的 agent ID（持久化到 flows JSON）
-- 点 Sparkles 启动时，`agentId` 传入 POST `/api/tasks`，写入 `task.agentId`
-- `task-detail.tsx` 读取 `task.agentId` → 拉取 agent → 判断 `executionMode` → 渲染对应 panel
-
-**相关代码：**
-- `src/types/index.ts` — `Agent.executionMode` 字段定义
-- `src/lib/default-agents.ts` — task worker `executionMode: 'task'`
-- `src/components/task-detail.tsx` — `isChatMode` 判断 + 条件渲染
-- `src/components/miller-columns.tsx` — TreeItem 绑定 agent 的 UI（Bot 按钮 + picker）
+**Task Worker（已归档）与树形链路 UI：** 原 `TreeItem` / Miller 看板 / 独立看板 JSON 已移除；磁盘遗留为 `workflows/legacy-board/`（未迁移时可能仍为 `workflows/flows/`）；`Session.flowContext`（`FlowTaskContext`）类型仍保留以兼容旧会话数据。
 
 ## 设计知识记录规范
 

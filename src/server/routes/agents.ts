@@ -17,6 +17,7 @@ import { resolveSystemPrompt } from '@/lib/agent-prompt-store';
 import { exportAgent } from '@/lib/agent-package';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { documentTextWriteErrorResponse } from '@/lib/document-text-write-guard';
 
 const app = new Hono();
 
@@ -141,34 +142,46 @@ app.get('/', async (c) => {
 // ─── POST / — create a new agent ───────────────────────────────
 
 app.post('/', async (c) => {
-  const body = await c.req.json();
-  if (!body.name?.trim()) {
-    return c.json({ error: 'name is required' }, 400);
-  }
+  try {
+    const body = await c.req.json();
+    if (!body.name?.trim()) {
+      return c.json({ error: 'name is required' }, 400);
+    }
 
-  const agent = await createAgent(body);
-  return c.json({ ok: true, agent });
+    const agent = await createAgent(body);
+    return c.json({ ok: true, agent });
+  } catch (err) {
+    const enc = documentTextWriteErrorResponse(err);
+    if (enc) return c.json(enc.body, enc.status);
+    throw err;
+  }
 });
 
 // ─── PATCH / — update an existing agent ─────────────────────────
 
 app.patch('/', async (c) => {
-  const body = await c.req.json();
-  const { id } = body;
-  if (!id) {
-    return c.json({ error: 'id is required' }, 400);
-  }
+  try {
+    const body = await c.req.json();
+    const { id } = body;
+    if (!id) {
+      return c.json({ error: 'id is required' }, 400);
+    }
 
-  if (body.slug !== undefined || body.builtIn !== undefined) {
-    return c.json({ error: 'Cannot modify slug or builtIn fields' }, 403);
-  }
+    if (body.slug !== undefined || body.builtIn !== undefined) {
+      return c.json({ error: 'Cannot modify slug or builtIn fields' }, 403);
+    }
 
-  const agent = await updateAgent(id, body);
-  if (!agent) {
-    return c.json({ error: 'agent not found' }, 404);
-  }
+    const agent = await updateAgent(id, body);
+    if (!agent) {
+      return c.json({ error: 'agent not found' }, 404);
+    }
 
-  return c.json({ ok: true, agent });
+    return c.json({ ok: true, agent });
+  } catch (err) {
+    const enc = documentTextWriteErrorResponse(err);
+    if (enc) return c.json(enc.body, enc.status);
+    throw err;
+  }
 });
 
 // ─── DELETE / — soft-delete an agent ────────────────────────────
@@ -223,6 +236,7 @@ app.get('/official', async (c) => {
 // ─── POST /official — official write API ────────────────────────
 
 app.post('/official', async (c) => {
+  try {
   const body = await c.req.json() as OfficialAgentsWriteRequest;
 
   if (body.action === 'upsert') {
@@ -297,6 +311,11 @@ app.post('/official', async (c) => {
     { ok: false, error: { code: 'INVALID_ACTION', message: 'Supported actions: upsert, archive' } },
     400,
   );
+  } catch (err) {
+    const enc = documentTextWriteErrorResponse(err);
+    if (enc) return c.json({ ok: false, error: { code: enc.body.code as string, message: String(enc.body.error), issues: enc.body.issues } }, enc.status);
+    throw err;
+  }
 });
 
 // ─── POST /import — import .ppagent file ────────────────────────
@@ -317,6 +336,8 @@ app.post('/import', async (c) => {
       contextsImported: result.contextsImported,
     });
   } catch (err) {
+    const enc = documentTextWriteErrorResponse(err);
+    if (enc) return c.json({ error: enc.body.error, code: enc.body.code, issues: enc.body.issues }, enc.status);
     console.error('[agents/import] Import failed:', err);
     return c.json(
       { error: '导入失败: ' + (err instanceof Error ? err.message : String(err)) },

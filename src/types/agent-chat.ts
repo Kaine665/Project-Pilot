@@ -1,5 +1,8 @@
 /**
  * Agent 聊天会话类型定义
+ *
+ * **产品内「会话」以本文件为准**：持久化元数据为 `SessionMeta`（`sessions/index.json`），
+ * 完整含消息为 `AgentChatSession`。勿与 `types/index.ts` 的 `LegacyTaskWorkerSession`（历史 Task Worker 形状）混淆。
  */
 
 import type { SessionExecution } from '@/lib/chat-managers/types';
@@ -87,7 +90,8 @@ export type PendingUserQueueState = DeferredInputBufferState;
 export interface AgentChatSession {
   id: string;                    // "agent-chat-{timestamp}-{random}"
   agentId: string;
-  projectKey?: string;           // 项目作用域（管家侧边栏/全屏模式）
+  /** 会话所属项目上下文；与 UI 当前选中的 project 一致后写入磁盘，见 agent-chat-manager `start()` 与列表筛选 */
+  projectKey?: string;
   title: string;                 // AI 生成或 fallback
   messages: ChatMessage[];
   claudeSessionId?: string;      // 用于 --resume

@@ -849,7 +849,7 @@ interface DataSectionProps extends TranslationProps {
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   onExport: () => void;
   onImportFile: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onClear: (target: 'sessions' | 'flows' | 'all') => void;
+  onClear: (target: 'sessions' | 'legacyBoard' | 'all') => void;
   onSetConfirmAction: (a: string | null) => void;
 }
 
@@ -959,15 +959,15 @@ export function SettingsDataSection({
 
             <div className="border-t border-zinc-100 dark:border-zinc-800" />
 
-            {/* Clear Flows */}
+            {/* Clear legacy board */}
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{t('clearFlows')}</p>
-                <p className="text-xs text-zinc-500">{t('clearFlowsHint')}</p>
+                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{t('clearLegacyBoard')}</p>
+                <p className="text-xs text-zinc-500">{t('clearLegacyBoardHint')}</p>
               </div>
-              {confirmAction === 'flows' ? (
+              {confirmAction === 'legacyBoard' ? (
                 <div className="flex gap-2">
-                  <Button variant="destructive" size="sm" onClick={() => onClear('flows')}>
+                  <Button variant="destructive" size="sm" onClick={() => onClear('legacyBoard')}>
                     {tActions('confirm')}
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => onSetConfirmAction(null)}>
@@ -975,9 +975,9 @@ export function SettingsDataSection({
                   </Button>
                 </div>
               ) : (
-                <Button variant="outline" size="sm" onClick={() => onSetConfirmAction('flows')}>
+                <Button variant="outline" size="sm" onClick={() => onSetConfirmAction('legacyBoard')}>
                   <Trash2 className="h-3.5 w-3.5" />
-                  {t('clearFlows')}
+                  {t('clearLegacyBoard')}
                 </Button>
               )}
             </div>

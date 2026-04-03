@@ -89,8 +89,8 @@ export function syncUrlParams(params: Record<string, string | null | undefined>)
 
 /**
  * 构建跳转到指定会话的 URL。
- * 统一走 /flows/agents 路由，通过 query params 定位 agent + session。
+ * 统一走 /workspace/agents 路由，通过 query params 定位 agent + session。
  */
 export function buildSessionUrl(agentId: string, sessionId: string, locale = 'zh'): string {
-  return `/${locale}/flows/agents?agent=${encodeURIComponent(agentId)}&session=${encodeURIComponent(sessionId)}`;
+  return `/${locale}/workspace/agents?agent=${encodeURIComponent(agentId)}&session=${encodeURIComponent(sessionId)}`;
 }
