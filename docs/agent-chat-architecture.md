@@ -1,10 +1,10 @@
 # Agent Chat 架构文档
 
-> 关联：`src/lib/chat-managers/agent-chat-manager.ts`、`src/app/api/agent-chat/`、`src/components/agent-chat-panel.tsx`
+> 关联：`src/lib/chat-managers/agent-chat-manager.ts`、`src/server/routes/agent-chat.ts`、`src/components/agent-chat/agent-chat-panel.tsx`
 >
-> 更新时间：2026-03-02
+> 更新时间：2026-04-05
 >
-> **参见**：[供应商/模型/SDK 支持关系](./provider-model-support.md) — Agent Chat 仅支持 Anthropic，OpenAI 需走 Codex SDK
+> **参见**：[供应商/模型/SDK 支持关系](./provider-model-support.md)
 
 ---
 
@@ -14,18 +14,50 @@
 前端 AgentChatPanel
   │  POST /api/agent-chat  (message + images?)
   ▼
-API route.ts
+Hono route (agent-chat.ts)
   │  校验 → agentChatManager.start()
   ▼
 AgentChatManager (extends BaseChatManager，内存单例)
   │  ResourceRegistry 加载 agent resources → 拼接 prompt
-  │  spawn('claude', ['-p', '--image', ...])
+  │  createAgentRunner(provider) → runner.stream(prompt)
   ▼
-Claude CLI 子进程
-  │  NDJSON → StreamParser → ChatSSEEvent[]
+AgentRunner 层（详见下节）
+  │  SDKMessage / CodexEvent → EventAdapter → AgentEvent
   ▼
 SSE stream  ←  前端 EventSource
 ```
+
+---
+
+## Agent Runner 层
+
+`agent-runner.ts` 提供统一 `IAgentRunner` 接口，按 provider 路由到不同 SDK：
+
+```
+createAgentRunner(opts)
+  ├─ provider === 'openai'  → CodexAgentRunner   (@openai/codex-sdk)
+  └─ 其余全部                → ClaudeAgentRunner  (@anthropic-ai/claude-agent-sdk)
+```
+
+| Runner | SDK | 工具支持 | 适用供应商 |
+|--------|-----|---------|-----------|
+| ClaudeAgentRunner | Claude Agent SDK (`query()`) | 完整（Read/Bash/Write 等本地工具） | Anthropic、MiniMax、DeepSeek、Kimi、智谱等全量 Anthropic 兼容端 |
+| CodexAgentRunner | Codex SDK (`thread.runStreamed()`) | 完整（Codex 本地沙箱工具） | OpenAI |
+
+**设计约束：**
+
+- **所有 Anthropic 兼容供应商必须走 ClaudeAgentRunner**。该 Runner 通过 Claude Agent SDK spawn Claude Code 子进程，子进程带完整工具定义（`tool_use` 协议）。若改走裸 Messages API，模型会丢失工具调用能力，表现为「把工具调用当文字输出」。
+- 自定义供应商（`custom-*`）目前也走 ClaudeAgentRunner；仅当 `apiProtocol === 'openai'` 时此路径可能不适用，但当前实现中不做区分。
+
+**相关文件：**
+
+| 职责 | 文件 |
+|------|------|
+| Runner 工厂与实现 | `src/lib/chat-managers/agent-runner.ts` |
+| Claude SDK 事件适配 | `src/lib/sdk-event-adapter.ts` |
+| Codex SDK 事件适配 | `src/lib/codex-sdk-adapter.ts` |
+| SDK Options 构造 | `src/lib/settings-manager.ts` — `buildSdkQueryOptions()` |
+| Agent 事件类型 | `src/types/index.ts` — `AgentEvent` |
 
 ### Resource-based Prompt 构建
 
