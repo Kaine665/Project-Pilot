@@ -10,10 +10,13 @@
 
 import type { ResourceLoader, LoaderContext } from '../resource-loader';
 import type { ResourceRef, ResolvedResource } from '@/types/resource';
+import { resolveSegmentedContent } from '../segmented-prompt-store';
 
 export interface SystemPromptLoaderContext extends LoaderContext {
   /** The resolved system prompt text (from agent.systemPrompt or fallback) */
   systemPromptText?: string;
+  /** Agent ID — used to check for segmented agent prompts */
+  agentId?: string;
   /** Absolute path to the prompt .md file — injected when exposePromptPath is enabled */
   promptFilePath?: string;
   /** Absolute path to the session prompt override working copy — session-level isolation */
@@ -28,12 +31,25 @@ export class SystemPromptLoader implements ResourceLoader {
   async resolve(ref: ResourceRef, ctx: LoaderContext): Promise<ResolvedResource> {
     const {
       systemPromptText,
+      agentId,
       promptFilePath,
       sessionPromptOverridePath,
       runtimePromptPath,
     } = ctx as SystemPromptLoaderContext;
     const effectiveSessionPromptOverridePath = sessionPromptOverridePath ?? runtimePromptPath;
+
+    // Try segmented agent prompt first (if agent scope is in segmented mode)
     let text = systemPromptText ?? '';
+    if (agentId) {
+      try {
+        const segmented = await resolveSegmentedContent({ type: 'agent', agentId });
+        if (segmented !== undefined) {
+          text = segmented;
+        }
+      } catch {
+        // Segmented mode failed — use systemPromptText fallback
+      }
+    }
 
     // Append prompt file path if the agent opted in
     if (promptFilePath) {
