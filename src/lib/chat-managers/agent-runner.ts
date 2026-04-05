@@ -5,9 +5,8 @@
  * 不感知底层是哪套 SDK。新增 provider 时在 AGENT_RUNNER_FACTORIES 注册即可。
  *
  *   IAgentRunner
- *   ├── ClaudeAgentRunner        (@anthropic-ai/claude-agent-sdk — 仅 Anthropic 官方)
- *   ├── SimpleAnthropicRunner    (裸 Anthropic Messages API — 第三方兼容端)
- *   └── CodexAgentRunner         (@openai/codex-sdk)
+ *   ├── ClaudeAgentRunner   (@anthropic-ai/claude-agent-sdk — 全量 Anthropic 兼容供应商)
+ *   └── CodexAgentRunner    (@openai/codex-sdk — provider=openai)
  */
 
 import { query, type Query as SdkQuery, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
@@ -24,7 +23,7 @@ import { resolveCodexBinaryPath } from '@/lib/codex-cli';
 import { shouldApplyOpenAIFastMode } from '@/lib/openai-fast-mode';
 import { DEFAULT_OPENAI_REASONING_EFFORT, normalizeOpenAIReasoningEffort } from '@/lib/openai-reasoning-effort';
 import { getAppWorkingDir } from '@/lib/app-paths';
-import { buildSdkQueryOptions, buildClaudeEnv, buildCodexExecEnv, getEffectiveAuthMode, getProviderScopedModel, getSettings } from '@/lib/settings-manager';
+import { buildSdkQueryOptions, buildCodexExecEnv, getEffectiveAuthMode, getProviderScopedModel, getSettings } from '@/lib/settings-manager';
 import type { AgentEvent, AgentCapabilities, ProviderId } from '@/types';
 
 /** 运行时统一输入：正文为 UTF-8 字符串；多模态由 StreamOptions.images 传入 */
@@ -80,9 +79,6 @@ const AGENT_RUNNER_FACTORIES: Partial<Record<ProviderId, RunnerFactory>> = {
   openai: createOpenAiCodexRunner,
 };
 
-/** 需要走 Claude Agent SDK（完整 Agent 协议）的供应商。其余走 SimpleAnthropicRunner。 */
-const CLAUDE_AGENT_SDK_PROVIDERS = new Set<ProviderId>(['anthropic']);
-
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 /**
@@ -99,17 +95,11 @@ export async function createAgentRunner(opts: AgentRunnerCreateOptions): Promise
     return factory(opts, cwd);
   }
 
-  // 2) 官方 Anthropic → ClaudeAgentRunner（完整 Agent SDK）
-  if (CLAUDE_AGENT_SDK_PROVIDERS.has(opts.provider)) {
-    console.log(`[AgentRunner] provider=${opts.provider} -> ClaudeAgentRunner (Claude Agent SDK; expect tool_use_* when model invokes tools)`);
-    return createClaudeAgentRunner(opts, cwd);
-  }
-
-  // 3) 第三方 Anthropic 兼容端 → SimpleAnthropicRunner（裸 Messages API）
+  // 2) 其余全部走 Claude Agent SDK（含官方 Anthropic、DeepSeek、Kimi、MiniMax 等全量 Anthropic 兼容供应商）
   console.log(
-    `[AgentRunner] provider=${opts.provider} -> SimpleAnthropicRunner (Messages API only; no local Read/Bash/tool_use — expect text_delta only)`,
+    `[AgentRunner] provider=${opts.provider} -> ClaudeAgentRunner (Claude Agent SDK; expect tool_use_* when model invokes tools)`,
   );
-  return createSimpleAnthropicRunner(opts, cwd);
+  return createClaudeAgentRunner(opts, cwd);
 }
 
 async function createOpenAiCodexRunner(opts: AgentRunnerCreateOptions, cwd: string): Promise<IAgentRunner> {
@@ -198,6 +188,9 @@ class ClaudeAgentRunner implements IAgentRunner {
     const images = options?.images;
 
     console.log(`[ClaudeRunner] Creating SDK query, model=${this.sdkOpts?.model}, baseUrl=${this.sdkOpts?.env?.ANTHROPIC_BASE_URL ?? '(default)'}`);
+    console.log(`[ClaudeRunner] sdkOpts keys: ${Object.keys(this.sdkOpts).join(', ')}`);
+    console.log(`[ClaudeRunner] permissionMode=${this.sdkOpts?.permissionMode} allowDangerouslySkipPermissions=${this.sdkOpts?.allowDangerouslySkipPermissions} effort=${this.sdkOpts?.effort} maxTurns=${this.sdkOpts?.maxTurns} thinking=${JSON.stringify(this.sdkOpts?.thinking)} includePartialMessages=${this.sdkOpts?.includePartialMessages} hasStderr=${typeof this.sdkOpts?.stderr === 'function'} DEBUG_SDK=${this.sdkOpts?.env?.DEBUG_CLAUDE_AGENT_SDK}`);
+    console.log(`[ClaudeRunner] promptLen=${input.length} promptPreview=${input.slice(0, 200).replace(/\n/g, '\\n')}`);
 
     if (images && images.length > 0) {
       // Build multimodal prompt: images + text as content blocks inside SDKUserMessage
@@ -324,206 +317,5 @@ class CodexAgentRunner implements IAgentRunner {
 
   get capturedSessionId(): string | null {
     return this._capturedSessionId;
-  }
-}
-
-// ── Simple Anthropic Runner (第三方兼容端) ────────────────────────────────────
-
-async function createSimpleAnthropicRunner(opts: AgentRunnerCreateOptions, cwd: string): Promise<IAgentRunner> {
-  const env = await buildClaudeEnv(opts.provider, opts.effortOverride, opts.model);
-  const model = opts.model ?? (await getSettings().then(s => getProviderScopedModel(s.claude, opts.provider)));
-  const baseUrl = (env.ANTHROPIC_BASE_URL ?? 'https://api.anthropic.com').replace(/\/$/, '');
-  const apiKey = env.ANTHROPIC_API_KEY ?? '';
-  const authToken = env.ANTHROPIC_AUTH_TOKEN ?? '';
-  // 经验规则：
-  // - ANTHROPIC_API_KEY   -> 默认用 x-api-key（DeepSeek/Kimi/智谱常见）
-  // - ANTHROPIC_AUTH_TOKEN -> 默认用 Authorization（OpenRouter/部分 custom 常见）
-  // 但供应商网关并不总是稳定遵循上述约定，stream() 里还有 401 自适应重试兜底。
-  const authScheme: 'x-api-key' | 'bearer' = apiKey ? 'x-api-key' : 'bearer';
-  const token = apiKey || authToken;
-
-  console.log(
-    `[SimpleAnthropicRunner:create] provider=${opts.provider} model=${model}`
-    + ` baseUrl=${baseUrl} auth=${authScheme} tokenLen=${token.length}`,
-  );
-
-  return new SimpleAnthropicRunner({ baseUrl, token, authScheme, model: model ?? 'deepseek-chat' });
-}
-
-interface SimpleAnthropicConfig {
-  baseUrl: string;
-  token: string;
-  authScheme: 'x-api-key' | 'bearer';
-  model: string;
-}
-
-/**
- * 用裸 fetch + SSE 调用 Anthropic Messages API。
- * 适用于 DeepSeek、Qwen、OpenRouter 等只兼容基本 Messages 协议的供应商。
- * 不支持 Agent 工具调用——纯文本对话。
- */
-class SimpleAnthropicRunner implements IAgentRunner {
-  private _abortController: AbortController | null = null;
-  private _sessionId: string | null = null;
-
-  constructor(private readonly config: SimpleAnthropicConfig) {}
-
-  async *stream(input: AgentRunnerInput, _options?: StreamOptions): AsyncIterable<AgentEvent> {
-    const url = `${this.config.baseUrl}/v1/messages`;
-    this._abortController = new AbortController();
-
-    const body = JSON.stringify({
-      model: this.config.model,
-      max_tokens: 8192,
-      stream: true,
-      messages: [{ role: 'user', content: input }],
-    });
-
-    console.log(`[SimpleAnthropicRunner] POST ${url} model=${this.config.model} inputLen=${input.length}`);
-
-    let response: Response;
-    let firstAuthErrorBody = '';
-    try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers: this.buildHeaders(this.config.authScheme),
-        body,
-        signal: this._abortController.signal,
-      });
-
-      // 某些供应商网关要求固定鉴权头（如 MiniMax 可能要求 Authorization）。
-      // 若 401 且报文提示鉴权头不匹配，自动切换头重试一次。
-      //
-      // 场景示例：
-      // - 当前发 x-api-key，返回 “Please carry ... in Authorization” -> 改用 Bearer 重试
-      // - 当前发 Bearer，返回 “missing x-api-key”                 -> 改用 x-api-key 重试
-      //
-      // 设计目标：将“供应商头部差异”收敛在 runner 层，避免把兼容逻辑扩散到上层业务。
-      if (!response.ok && response.status === 401) {
-        firstAuthErrorBody = await response.text().catch(() => '');
-        const needAuthorization = /authorization/i.test(firstAuthErrorBody);
-        const needApiKeyHeader = /x-api-key|api[_ -]?key/i.test(firstAuthErrorBody);
-        if (this.config.authScheme === 'x-api-key' && needAuthorization) {
-          console.warn('[SimpleAnthropicRunner] 401 with x-api-key, retrying with Authorization');
-          response = await fetch(url, {
-            method: 'POST',
-            headers: this.buildHeaders('bearer'),
-            body,
-            signal: this._abortController.signal,
-          });
-        } else if (this.config.authScheme === 'bearer' && needApiKeyHeader) {
-          console.warn('[SimpleAnthropicRunner] 401 with Authorization, retrying with x-api-key');
-          response = await fetch(url, {
-            method: 'POST',
-            headers: this.buildHeaders('x-api-key'),
-            body,
-            signal: this._abortController.signal,
-          });
-        }
-      }
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') return;
-      console.error('[SimpleAnthropicRunner] fetch error:', err);
-      yield { type: 'error', message: `Request failed: ${err}` };
-      return;
-    }
-
-    if (!response.ok) {
-      const text = firstAuthErrorBody || await response.text().catch(() => '(unreadable)');
-      console.error(`[SimpleAnthropicRunner] HTTP ${response.status}: ${text}`);
-      yield { type: 'error', message: `API returned ${response.status}: ${text}` };
-      return;
-    }
-
-    if (!response.body) {
-      yield { type: 'error', message: 'Response has no body' };
-      return;
-    }
-
-    yield* this._parseSSE(response.body);
-  }
-
-  private buildHeaders(scheme: 'x-api-key' | 'bearer'): Record<string, string> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'anthropic-version': '2023-06-01',
-    };
-    if (scheme === 'x-api-key') {
-      headers['x-api-key'] = this.config.token;
-    } else {
-      headers.authorization = `Bearer ${this.config.token}`;
-    }
-    return headers;
-  }
-
-  private async *_parseSSE(body: ReadableStream<Uint8Array>): AsyncIterable<AgentEvent> {
-    const decoder = new TextDecoder();
-    const reader = body.getReader();
-    let buffer = '';
-    let inputTokens = 0;
-    let outputTokens = 0;
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-
-        let eventType = '';
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            eventType = line.slice(7).trim();
-            continue;
-          }
-          if (!line.startsWith('data: ')) continue;
-          const data = line.slice(6);
-          if (data === '[DONE]') return;
-
-          try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const parsed: any = JSON.parse(data);
-
-            if (eventType === 'message_start' && parsed.message?.id) {
-              this._sessionId = parsed.message.id;
-              const usage = parsed.message?.usage;
-              if (usage) inputTokens = usage.input_tokens ?? 0;
-            } else if (eventType === 'content_block_delta') {
-              const delta = parsed.delta;
-              if (delta?.type === 'text_delta' && delta.text) {
-                yield { type: 'text_delta', text: delta.text };
-              } else if (delta?.type === 'thinking_delta' && delta.thinking) {
-                yield { type: 'thinking_delta', text: delta.thinking };
-              }
-            } else if (eventType === 'message_delta') {
-              const usage = parsed.usage;
-              if (usage) outputTokens = usage.output_tokens ?? 0;
-            }
-          } catch {
-            // Ignore malformed JSON lines
-          }
-        }
-      }
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') return;
-      console.error('[SimpleAnthropicRunner] SSE read error:', err);
-      yield { type: 'error', message: `Stream error: ${err}` };
-    } finally {
-      reader.releaseLock();
-      if (inputTokens > 0 || outputTokens > 0) {
-        yield { type: 'token_usage', inputTokens, outputTokens, final: true };
-      }
-    }
-  }
-
-  abort(): void {
-    this._abortController?.abort();
-    this._abortController = null;
-  }
-
-  get capturedSessionId(): string | null {
-    return this._sessionId;
   }
 }
