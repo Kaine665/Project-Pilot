@@ -13,7 +13,7 @@ interface ChatNotificationBannersProps {
   onResumeCheckpoint?: () => void;
   onDismissCheckpoint?: () => void;
   /**
-   * 当前模型渠道为纯 Messages API，无本地 Read/Bash 等工具（与 SimpleAnthropicRunner 一致）
+   * 当前模型渠道为纯 Messages API，无本地 Read/Bash 等工具
    */
   textOnlyAgentChannel?: boolean;
   /** 流式输出中：隐藏文档/检查点类横幅，但仍可显示 textOnlyAgentChannel */

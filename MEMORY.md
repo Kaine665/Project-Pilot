@@ -63,6 +63,7 @@
 ## Agent 架构
 
 - Agent 对话管理在 `src/lib/chat-managers/agent-chat-manager.ts`（SDK `query()` 路径，非继承 Task Worker 的 `BaseChatManager` 执行链）
+- **Agent Runner 路由**（`agent-runner.ts`）：`openai` → CodexAgentRunner（Codex SDK）；**其余全部** → ClaudeAgentRunner（Claude Agent SDK）。**不可引入无工具的裸 Messages Runner**——第三方供应商（MiniMax/DeepSeek/Kimi 等）必须走 ClaudeAgentRunner 才能获得 tool_use 支持
 - Prompt 构建通过 **Resource 系统**：`defaultResources` / `resourceRefs` → `ResourceRegistry.loadAll()` → 按 priority 排序加载
 - Resource 类型（节选）：`design-docs-index`、`global-prompt`、`project-prompt`、`inline-text`、`todo-list`、`flow-context`、`reference-turns`、`skill` 等；**无** `context-index` / `context` 运行时加载
 - Butler 是默认 agent；内置提示字符串见 `src/data/defaults/builtin-prompts.ts`

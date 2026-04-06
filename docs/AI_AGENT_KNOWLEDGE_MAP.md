@@ -97,5 +97,6 @@
 | 2026-04-03 | Agents 工作区 UI API：**服务端清洗**（`agents-workspace-ui-sanitize.ts`）对齐注册表与会话索引；**projectKey** 校验格式与项目存在；非法 `projectKey` 400、未知/已归档项目 404 | `agents-workspace-ui-sanitize.ts`、`routes/data.ts`、`MEMORY.md`、本文件 |
 | 2026-04-03 | 内置提示词：行为准则（PP 自身 bug 归代码侧、禁止假读盘）+ **与当前栈对齐**（Vite+Hono+Electron、4000/4500、Bun、\`projects/index.json\`、\`agents-workspace-ui.json\`；去 Next.js/单 4000/npm 过时表述） | `builtin-prompts.ts`、本文件 |
 | 2026-04-03 | **Agent 磁盘工作区约定**并入 **全局约束**（\`PROMPT_GLOBAL\` / \`global.md\`），不再在 \`buildResourcePrompt\` 单独硬编码注入；\`agent-data-info-loader\` 指向全局约束一节 | `builtin-prompts.ts`、`agent-chat-manager.ts`、`agent-data-info-loader.ts`、`MEMORY.md`、本文件 |
+| 2026-04-05 | **删除 SimpleAnthropicRunner**：527438b 引入的裸 Messages Runner 意外成为 MiniMax/DeepSeek/Kimi 等的默认路径（无 tool_use），导致第三方供应商工具调用全部失效。恢复为全量走 ClaudeAgentRunner | `agent-runner.ts`、`chat-notification-banners.tsx`、`docs/agent-chat-architecture.md`、`MEMORY.md`、本文件 |
 
 （后续变更请继续追加表格行，勿删历史。）
