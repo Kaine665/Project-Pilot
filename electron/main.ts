@@ -10,6 +10,10 @@ const isDev = !!process.env.ELECTRON_DEV;
 const APP_ENTRY_PATH = '/workspace/projects';
 const DEFAULT_PORT = 4000;
 
+/** 开发态 Vite 偶发未就绪或连接被重置时首屏白屏；限次自动重载 */
+let devMainLoadAttempts = 0;
+const DEV_MAIN_LOAD_MAX = 30;
+
 /** develop-static 根目录（main 编译在 electron/dist 下） */
 const projectRoot = path.join(__dirname, '..', '..');
 
@@ -48,8 +52,13 @@ app.on('second-instance', () => {
 });
 
 // ── IPC: 打开文件夹选择对话框 ──
-ipcMain.handle('open-folder-dialog', async () => {
-  const win = mainWindow ?? BrowserWindow.getFocusedWindow() ?? undefined;
+// 必须用发起 IPC 的 BrowserWindow 作 parent；仅用 mainWindow / getFocusedWindow 在嵌套 UI 下常错配，导致对话框打不开或焦点异常。
+ipcMain.handle('open-folder-dialog', async (event) => {
+  const win =
+    BrowserWindow.fromWebContents(event.sender) ??
+    mainWindow ??
+    BrowserWindow.getFocusedWindow() ??
+    undefined;
   const options = { properties: ['openDirectory' as const], title: '选择文件夹' };
   const result = win
     ? await dialog.showOpenDialog(win, options)
@@ -145,9 +154,33 @@ function createMainWindow() {
   mainWindow.removeMenu();
 
   if (isDev) {
-    mainWindow.webContents.on('did-fail-load', (_e, code, desc, validatedURL) => {
-      console.error('[electron] did-fail-load', code, desc, validatedURL);
+    const devEntryUrl = () => `${windowLoadOrigin}${APP_ENTRY_PATH}`;
+
+    mainWindow.webContents.on('did-finish-load', () => {
+      devMainLoadAttempts = 0;
     });
+
+    mainWindow.webContents.on(
+      'did-fail-load',
+      (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+        if (!isMainFrame) return;
+        console.error('[electron] did-fail-load', errorCode, errorDescription, validatedURL);
+        // ERR_ABORTED：被新导航取代等，勿重试
+        if (errorCode === -3) return;
+        if (devMainLoadAttempts >= DEV_MAIN_LOAD_MAX) return;
+        devMainLoadAttempts += 1;
+        const delay = Math.min(400 + devMainLoadAttempts * 200, 4000);
+        const target = devEntryUrl();
+        console.warn(
+          `[electron] dev reload ${devMainLoadAttempts}/${DEV_MAIN_LOAD_MAX} in ${delay}ms → ${target}`,
+        );
+        setTimeout(() => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            void mainWindow.loadURL(target);
+          }
+        }, delay);
+      },
+    );
   }
 
   mainWindow.loadURL(`${windowLoadOrigin}${APP_ENTRY_PATH}`);

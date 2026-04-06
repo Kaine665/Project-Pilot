@@ -3,6 +3,7 @@ import {
   readJsonFile,
   writeJsonFile,
   ensureDataDirV2Migrated,
+  deleteAgentCustomAvatarFiles,
 } from '@/lib/file-store';
 import {
   loadAgentsFromObjectModel,
@@ -48,6 +49,8 @@ export interface AgentMutationInput {
   defaultModel?: string;
   defaultOpenAIReasoningEffort?: OpenAIReasoningEffort | null;
   contextStrategy?: 'additive' | 'exclusive';
+  /** false = 删除本机自定义头像并清除标记；true 仅应由上传接口写入 */
+  customAvatar?: boolean;
 }
 
 export interface CreateAgentInput extends Required<Pick<AgentMutationInput, 'name'>> {
@@ -109,7 +112,8 @@ export async function readAgentsData(): Promise<AgentsData> {
     ? await loadAgentsFromObjectModel()
     : await readJsonFile<AgentsData>(getAgentsPath(), { agents: [] });
 
-  const { data, changed: mergedChanged } = await mergeAndRepairAgentsData(rawAgents);
+  const { data, changed: mergedChanged, bypassCountDropGuard } =
+    await mergeAndRepairAgentsData(rawAgents);
   let changed = mergedChanged;
 
   for (const agent of data.agents) {
@@ -124,7 +128,7 @@ export async function readAgentsData(): Promise<AgentsData> {
   }
 
   if (changed) {
-    await writeAgentsData(data);
+    await writeAgentsData(data, { bypassCountDropGuard });
   }
 
   lastKnownAgentCount = data.agents.length;
@@ -135,9 +139,16 @@ export async function readAgentsData(): Promise<AgentsData> {
   return data;
 }
 
-export async function writeAgentsData(data: AgentsData): Promise<void> {
+export async function writeAgentsData(
+  data: AgentsData,
+  options?: { bypassCountDropGuard?: boolean },
+): Promise<void> {
   const newCount = data.agents.length;
-  if (lastKnownAgentCount > DEFAULT_AGENTS.length && newCount <= DEFAULT_AGENTS.length) {
+  if (
+    !options?.bypassCountDropGuard &&
+    lastKnownAgentCount > DEFAULT_AGENTS.length &&
+    newCount <= DEFAULT_AGENTS.length
+  ) {
     console.error(
       `[agents] WRITE BLOCKED: agent count dropped from ${lastKnownAgentCount} to ${newCount}. ` +
       'This looks like data corruption. Refusing to overwrite agents.json.',
@@ -284,6 +295,15 @@ export async function updateAgent(id: string, input: AgentMutationInput): Promis
     }
   }
   if (input.contextStrategy !== undefined) agent.contextStrategy = input.contextStrategy || undefined;
+
+  if (input.customAvatar !== undefined) {
+    if (input.customAvatar === false) {
+      await deleteAgentCustomAvatarFiles(id);
+      delete agent.customAvatar;
+    } else {
+      agent.customAvatar = true;
+    }
+  }
 
   if (input.systemPrompt !== undefined) {
     const promptText = input.systemPrompt.trim();

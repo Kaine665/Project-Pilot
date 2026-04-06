@@ -14,6 +14,15 @@
 
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentEvent } from '@/types';
+import {
+  buildError,
+  buildTextDelta,
+  buildThinkingDelta,
+  buildTokenUsage,
+  buildToolUseEnd,
+  buildToolUseStart,
+  stringifyToolInput,
+} from '@/lib/agent-event-builders';
 
 /** Tools whose is_error should be treated as completed (flow-control tools) */
 const FLOW_CONTROL_TOOLS = new Set(['ExitPlanMode', 'EnterPlanMode']);
@@ -28,6 +37,12 @@ export class SdkEventAdapter {
 
   /** Map tool_use id → tool name for resolving status in tool_result events */
   private toolNames = new Map<string, string>();
+
+  /**
+   * 已发出过 tool_use_start 的 id（流式 content_block_stop 与完整 assistant 消息可能各发一次）。
+   * 按 id 去重，避免同一次工具调用在对话里出现两张卡片（例如「写入文件」重复两行）。
+   */
+  private emittedToolUseIds = new Set<string>();
 
   /** Claude SDK session ID, captured from system.init event */
   sessionId: string | null = null;
@@ -77,7 +92,7 @@ export class SdkEventAdapter {
       }
       // 如果是错误结果（error_during_execution 等），emit error event
       if (msg.subtype !== 'success') {
-        events.push({ type: 'error', message: `SDK query ended: ${msg.subtype}` });
+        events.push(buildError(`SDK query ended: ${msg.subtype}`));
       }
       // 从 modelUsage 提取精确的累计 token 用量（含跨工具调用的所有轮次）
       // modelUsage 字段使用 camelCase，且包含 contextWindow，是最可靠的数据来源
@@ -93,13 +108,14 @@ export class SdkEventAdapter {
           contextWindow = Math.max(contextWindow, mu.contextWindow ?? 0);
         }
         if (inputTokens > 0 || outputTokens > 0) {
-          events.push({
-            type: 'token_usage',
-            inputTokens,
-            outputTokens,
-            ...(contextWindow > 0 ? { contextWindow } : {}),
-            final: true, // result 事件的累计总量，直接替换而非累加
-          });
+          events.push(
+            buildTokenUsage({
+              inputTokens,
+              outputTokens,
+              ...(contextWindow > 0 ? { contextWindow } : {}),
+              final: true,
+            }),
+          );
         }
       }
       // NOTE: 不在此处 emit done — done 由 AgentChatManager 在 query 迭代结束后统一处理
@@ -137,9 +153,9 @@ export class SdkEventAdapter {
         const index = event.index as number;
         const delta = event.delta;
         if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
-          events.push({ type: 'text_delta', text: delta.text });
+          events.push(buildTextDelta(delta.text));
         } else if (delta?.type === 'thinking_delta' && typeof delta.thinking === 'string') {
-          events.push({ type: 'thinking_delta', text: delta.thinking });
+          events.push(buildThinkingDelta(delta.thinking));
         } else if (delta?.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
           const acc = this.toolAccumulators.get(index);
           if (acc) {
@@ -154,12 +170,10 @@ export class SdkEventAdapter {
         const acc = this.toolAccumulators.get(index);
         if (acc) {
           this.toolNames.set(acc.id, acc.name);
-          events.push({
-            type: 'tool_use_start',
-            id: acc.id,
-            toolName: acc.name,
-            input: acc.inputJson,
-          });
+          if (!this.emittedToolUseIds.has(acc.id)) {
+            this.emittedToolUseIds.add(acc.id);
+            events.push(buildToolUseStart(acc.id, acc.name, acc.inputJson));
+          }
           this.toolAccumulators.delete(index);
         }
         break;
@@ -169,7 +183,7 @@ export class SdkEventAdapter {
         // 捕获输入 token 数（系统提示词 + 历史消息 + 当前用户消息）
         const usage = event.message?.usage;
         if (usage && typeof usage.input_tokens === 'number') {
-          events.push({ type: 'token_usage', inputTokens: usage.input_tokens, outputTokens: 0 });
+          events.push(buildTokenUsage({ inputTokens: usage.input_tokens, outputTokens: 0 }));
         }
         break;
       }
@@ -178,7 +192,7 @@ export class SdkEventAdapter {
         // 捕获输出 token 数（当前助手回复）
         const usage = event.usage;
         if (usage && typeof usage.output_tokens === 'number') {
-          events.push({ type: 'token_usage', inputTokens: 0, outputTokens: usage.output_tokens });
+          events.push(buildTokenUsage({ inputTokens: 0, outputTokens: usage.output_tokens }));
         }
         break;
       }
@@ -205,30 +219,28 @@ export class SdkEventAdapter {
         // 如果已经通过 stream_event 接收过增量，跳过完整消息中的文本
         // 避免同一句话被显示两次
         if (!this.hasReceivedStreamEvents) {
-          events.push({ type: 'text_delta', text: block.text });
+          events.push(buildTextDelta(block.text));
         }
       } else if (block.type === 'thinking') {
         const thinkingText = typeof block.thinking === 'string' ? block.thinking : '';
         if (thinkingText && !this.hasReceivedStreamEvents) {
-          events.push({ type: 'thinking_delta', text: thinkingText });
+          events.push(buildThinkingDelta(thinkingText));
         }
       } else if (block.type === 'tool_use') {
-        const input = typeof block.input === 'string'
-          ? block.input
-          : JSON.stringify(block.input);
+        if (this.emittedToolUseIds.has(block.id)) {
+          // 与流式 content_block_stop 重复的同 id，跳过（文本/思考已在 hasReceivedStreamEvents 分支跳过）
+          continue;
+        }
+        const input = stringifyToolInput(block.input);
         this.toolNames.set(block.id, block.name);
-        events.push({
-          type: 'tool_use_start',
-          id: block.id,
-          toolName: block.name,
-          input,
-        });
+        this.emittedToolUseIds.add(block.id);
+        events.push(buildToolUseStart(block.id, block.name, input));
       }
     }
 
     // 如果助手消息有错误，emit error
     if (msg.error) {
-      events.push({ type: 'error', message: `Assistant error: ${msg.error}` });
+      events.push(buildError(`Assistant error: ${msg.error}`));
     }
 
     return events;
@@ -251,12 +263,13 @@ export class SdkEventAdapter {
           : JSON.stringify(block.content).slice(0, 3000);
         const toolName = this.toolNames.get(toolId);
         const isFlowControl = toolName && FLOW_CONTROL_TOOLS.has(toolName);
-        events.push({
-          type: 'tool_use_end',
-          id: toolId,
-          output,
-          status: (block.is_error && !isFlowControl) ? 'failed' : 'completed',
-        });
+        events.push(
+          buildToolUseEnd(
+            toolId,
+            output,
+            block.is_error && !isFlowControl ? 'failed' : 'completed',
+          ),
+        );
       }
     }
 

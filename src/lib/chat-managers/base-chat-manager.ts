@@ -20,6 +20,7 @@ import path from 'path';
 import fs from 'fs';
 import { spawnClaude } from '@/lib/claude-cli';
 import { StreamParser, LineBuffer } from '@/lib/claude-stream-parser';
+import { hasToolCallWithId } from '@/lib/agent-tool-call-dedupe';
 import { detectDangerousCommand } from '@/lib/danger-detector';
 import { getSettings } from '@/lib/settings-manager';
 import type { AgentEvent, ChatToolCall, ContentBlock } from '@/types';
@@ -357,6 +358,9 @@ export abstract class BaseChatManager<TRun extends BaseRun> {
         run.contentBlocks.push({ type: 'text', text: event.text });
       }
     } else if (event.type === 'tool_use_start') {
+      if (hasToolCallWithId(run.toolCalls, event.id)) {
+        return;
+      }
       const tc: ChatToolCall = {
         id: event.id,
         toolName: event.toolName,

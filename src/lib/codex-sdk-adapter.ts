@@ -3,10 +3,27 @@
  *
  * 与 CodexStreamParser 逻辑一致，但直接消费 SDK 的 typed events。
  * 使用有状态类以正确拼接 reasoning 项的流式 text。
+ *
+ * 目标：尽量映射为与 Claude Agent SDK 相同的 AgentEvent（tool_use_* / thinking_delta），
+ * 避免 OpenAI 线路在前端「只有纯文本、没有工具卡片」的割裂感。
  */
 
 import type { ThreadEvent, ThreadItem } from '@openai/codex-sdk';
 import type { AgentEvent } from '@/types';
+import {
+  buildError,
+  buildTextDelta,
+  buildThinkingDelta,
+  buildTokenUsage,
+  buildToolUseEnd,
+  buildToolUseStart,
+  formatCodexTodoSummaryLine,
+  jsonBashCommand,
+  jsonEditInputFromChanges,
+  jsonTodoWriteFromCodexItems,
+  jsonWebSearchQuery,
+  mapCodexTodosToTodoWriteRows,
+} from '@/lib/agent-event-builders';
 
 /**
  * 将单个 ThreadEvent 转换为零或多个 AgentEvent（无状态；不适用于 reasoning 流式拼接）。
@@ -20,6 +37,18 @@ export class CodexSdkEventAdapter {
   /** reasoning 项 id → 已发出的完整前缀长度，用于计算增量 */
   private reasoningPrev = new Map<string, string>();
 
+  /** todo_list：部分环境仅有 item.updated，补发一次 tool_use_start */
+  private todoListToolStarted = new Set<string>();
+
+  /** web_search：与 Claude 侧 WebSearch 卡片对齐 */
+  private webSearchToolStarted = new Set<string>();
+
+  /** error 项只上报一次，避免 started/completed 双发 */
+  private errorItemEmitted = new Set<string>();
+
+  /** todo_list 上一帧摘要 → 只发 thinking 增量 */
+  private todoListThinkingPrev = new Map<string, string>();
+
   adapt(event: ThreadEvent): { events: AgentEvent[]; sessionId?: string } {
     const events: AgentEvent[] = [];
     let sessionId: string | undefined;
@@ -27,6 +56,10 @@ export class CodexSdkEventAdapter {
     switch (event.type) {
       case 'thread.started':
         this.reasoningPrev.clear();
+        this.todoListToolStarted.clear();
+        this.webSearchToolStarted.clear();
+        this.errorItemEmitted.clear();
+        this.todoListThinkingPrev.clear();
         sessionId = event.thread_id;
         break;
 
@@ -43,26 +76,21 @@ export class CodexSdkEventAdapter {
         break;
 
       case 'turn.failed':
-        events.push({
-          type: 'error',
-          message: event.error?.message ?? 'Codex turn failed',
-        });
+        events.push(buildError(event.error?.message ?? 'Codex turn failed'));
         break;
 
       case 'error':
-        events.push({
-          type: 'error',
-          message: event.message ?? 'Codex error',
-        });
+        events.push(buildError(event.message ?? 'Codex error'));
         break;
 
       case 'turn.completed':
         if (event.usage && (event.usage.input_tokens > 0 || event.usage.output_tokens > 0)) {
-          events.push({
-            type: 'token_usage',
-            inputTokens: event.usage.input_tokens,
-            outputTokens: event.usage.output_tokens,
-          });
+          events.push(
+            buildTokenUsage({
+              inputTokens: event.usage.input_tokens,
+              outputTokens: event.usage.output_tokens,
+            }),
+          );
         }
         break;
 
@@ -77,30 +105,35 @@ export class CodexSdkEventAdapter {
     const id = item.id ?? `item-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     if (item.type === 'command_execution') {
-      return [{
-        type: 'tool_use_start',
-        id,
-        toolName: 'Bash',
-        input: item.command,
-      }];
+      return [buildToolUseStart(id, 'Bash', jsonBashCommand(item.command))];
     }
 
     if (item.type === 'file_change') {
-      return [{
-        type: 'tool_use_start',
-        id,
-        toolName: 'Edit',
-        input: JSON.stringify({ changes: item.changes }),
-      }];
+      return [buildToolUseStart(id, 'Edit', jsonEditInputFromChanges(item.changes))];
     }
 
     if (item.type === 'mcp_tool_call') {
-      return [{
-        type: 'tool_use_start',
-        id,
-        toolName: `mcp__${item.server}__${item.tool}`,
-        input: typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments ?? {}),
-      }];
+      return [
+        buildToolUseStart(
+          id,
+          `mcp__${item.server}__${item.tool}`,
+          typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments ?? {}),
+        ),
+      ];
+    }
+
+    if (item.type === 'web_search') {
+      this.webSearchToolStarted.add(id);
+      return [buildToolUseStart(id, 'WebSearch', jsonWebSearchQuery(item.query))];
+    }
+
+    if (item.type === 'todo_list') {
+      this.todoListToolStarted.add(id);
+      return [buildToolUseStart(id, 'TodoWrite', jsonTodoWriteFromCodexItems(item.items))];
+    }
+
+    if (item.type === 'error') {
+      return this.emitErrorItemOnce(id, item.message);
     }
 
     return [];
@@ -108,11 +141,36 @@ export class CodexSdkEventAdapter {
 
   private adaptItemUpdated(item: ThreadItem): AgentEvent[] {
     if (item.type === 'agent_message' && item.text) {
-      return [{ type: 'text_delta', text: item.text }];
+      return [buildTextDelta(item.text)];
     }
 
     if (item.type === 'reasoning' && typeof item.text === 'string') {
       return this.reasoningDeltas(item.id, item.text);
+    }
+
+    if (item.type === 'web_search') {
+      const id = item.id ?? '';
+      const out: AgentEvent[] = [];
+      if (id && !this.webSearchToolStarted.has(id)) {
+        this.webSearchToolStarted.add(id);
+        out.push(buildToolUseStart(id, 'WebSearch', jsonWebSearchQuery(item.query)));
+      }
+      return out;
+    }
+
+    if (item.type === 'todo_list') {
+      const id = item.id ?? '';
+      const out: AgentEvent[] = [];
+      if (id && !this.todoListToolStarted.has(id)) {
+        this.todoListToolStarted.add(id);
+        out.push(buildToolUseStart(id, 'TodoWrite', jsonTodoWriteFromCodexItems(item.items)));
+      }
+      out.push(...this.todoListThinkingDeltas(id, item.items));
+      return out;
+    }
+
+    if (item.type === 'error' && item.message) {
+      return this.emitErrorItemOnce(item.id ?? '', item.message);
     }
 
     return [];
@@ -124,19 +182,11 @@ export class CodexSdkEventAdapter {
     if (item.type === 'command_execution') {
       const output = item.aggregated_output ?? '';
       const status = (item.exit_code === 0 ? 'completed' : 'failed') as 'completed' | 'failed';
-      return [{
-        type: 'tool_use_end',
-        id,
-        output,
-        status,
-      }];
+      return [buildToolUseEnd(id, output, status)];
     }
 
     if (item.type === 'agent_message' && item.text) {
-      return [{
-        type: 'text_delta',
-        text: item.text,
-      }];
+      return [buildTextDelta(item.text)];
     }
 
     if (item.type === 'reasoning' && typeof item.text === 'string') {
@@ -148,26 +198,82 @@ export class CodexSdkEventAdapter {
         ? JSON.stringify(item.result)
         : item.error?.message ?? '';
       const status = item.status === 'completed' ? 'completed' : 'failed';
-      return [{
-        type: 'tool_use_end',
-        id,
-        output,
-        status,
-      }];
+      return [buildToolUseEnd(id, output, status)];
     }
 
     if (item.type === 'file_change') {
       const output = '';
       const status = item.status === 'completed' ? 'completed' : 'failed';
-      return [{
-        type: 'tool_use_end',
-        id,
-        output,
-        status,
-      }];
+      return [buildToolUseEnd(id, output, status)];
+    }
+
+    if (item.type === 'web_search') {
+      const out: AgentEvent[] = [];
+      if (id && !this.webSearchToolStarted.has(id)) {
+        this.webSearchToolStarted.add(id);
+        out.push(buildToolUseStart(id, 'WebSearch', jsonWebSearchQuery(item.query)));
+      }
+      if (id) this.webSearchToolStarted.delete(id);
+      out.push(
+        buildToolUseEnd(id, item.query ? `query: ${item.query}` : '', 'completed'),
+      );
+      return out;
+    }
+
+    if (item.type === 'todo_list') {
+      const out: AgentEvent[] = [];
+      if (id && !this.todoListToolStarted.has(id)) {
+        this.todoListToolStarted.add(id);
+        out.push(buildToolUseStart(id, 'TodoWrite', jsonTodoWriteFromCodexItems(item.items)));
+      }
+      if (id) {
+        this.todoListToolStarted.delete(id);
+        this.todoListThinkingPrev.delete(id);
+      }
+      out.push(
+        buildToolUseEnd(
+          id,
+          JSON.stringify({ todos: mapCodexTodosToTodoWriteRows(item.items) }),
+          'completed',
+        ),
+      );
+      return out;
+    }
+
+    if (item.type === 'error' && item.message) {
+      return this.emitErrorItemOnce(id, item.message);
     }
 
     return [];
+  }
+
+  private todoListThinkingDeltas(
+    itemId: string,
+    items: Array<{ text: string; completed: boolean }>,
+  ): AgentEvent[] {
+    if (!itemId) return [];
+    const full = formatCodexTodoSummaryLine(items);
+    const prev = this.todoListThinkingPrev.get(itemId) ?? '';
+    if (full.length < prev.length) {
+      this.todoListThinkingPrev.set(itemId, full);
+      return [];
+    }
+    if (full === prev) return [];
+    if (full.startsWith(prev)) {
+      const delta = full.slice(prev.length);
+      this.todoListThinkingPrev.set(itemId, full);
+      return delta ? [buildThinkingDelta(`${delta}\n`)] : [];
+    }
+    this.todoListThinkingPrev.set(itemId, full);
+    return full ? [buildThinkingDelta(`${full}\n`)] : [];
+  }
+
+  private emitErrorItemOnce(id: string, message: string): AgentEvent[] {
+    if (!message.trim()) return [];
+    const key = id || `_msg_${message.slice(0, 120)}`;
+    if (this.errorItemEmitted.has(key)) return [];
+    this.errorItemEmitted.add(key);
+    return [buildError(message)];
   }
 
   private reasoningDeltas(itemId: string, fullText: string): AgentEvent[] {
@@ -180,6 +286,6 @@ export class CodexSdkEventAdapter {
     if (fullText === prev) return [];
     const delta = fullText.slice(prev.length);
     this.reasoningPrev.set(itemId, fullText);
-    return delta ? [{ type: 'thinking_delta', text: delta }] : [];
+    return delta ? [buildThinkingDelta(delta)] : [];
   }
 }

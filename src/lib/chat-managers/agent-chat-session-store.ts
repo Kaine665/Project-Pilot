@@ -7,7 +7,7 @@
  *   - Adjuncts (sessions/adjuncts.json): per-session deferred input queue, etc.
  *
  * Benefits over the v1 monolithic JSON:
- *   - Appending a message is O(1) (appendFileSync), not O(total-messages) rewrite
+ *   - Appending a message is O(1) (async appendFile), not O(total-messages) rewrite
  *   - Index file stays small (~100 bytes per session), fast to parse
  *   - Crash during write loses at most one message, not the entire file
  *   - Individual sessions can be deleted/archived without rewriting all others
@@ -20,7 +20,6 @@
  */
 
 import { promises as fs } from 'fs';
-import { appendFileSync, mkdirSync } from 'fs';
 import path from 'path';
 import {
   getAgentChatSessionsPath,
@@ -34,6 +33,7 @@ import {
   parseJsonSafe,
 } from '@/lib/file-store';
 import { deleteEventsFile, deleteRunsFile } from '@/lib/execution-event-store';
+import { dedupeContentBlocksByToolUseId } from '@/lib/agent-tool-call-dedupe';
 import { deleteRuntimePromptCopy } from '@/lib/agent-prompt-store';
 import { looksLikeCorruptedStoredText, repairStoredTextIfNeeded } from '@/lib/text-repair-server';
 import type { Agent, ContentBlock } from '@/types';
@@ -282,7 +282,15 @@ export async function readMessages(sessionId: string): Promise<ChatMessage[]> {
       const trimmed = line.trim();
       if (!trimmed) continue;
       try {
-        messages.push(parseJsonSafe<ChatMessage>(trimmed));
+        const msg = parseJsonSafe<ChatMessage>(trimmed);
+        if (msg.role === 'assistant' && msg.contentBlocks?.length) {
+          const contentBlocks = dedupeContentBlocksByToolUseId(msg.contentBlocks);
+          messages.push(
+            contentBlocks !== msg.contentBlocks ? { ...msg, contentBlocks } : msg,
+          );
+        } else {
+          messages.push(msg);
+        }
       } catch {
         // Skip malformed lines (partial write from crash)
         console.warn(`[readMessages] Skipping malformed line in ${sessionId}`);
@@ -299,16 +307,15 @@ export async function readMessages(sessionId: string): Promise<ChatMessage[]> {
 
 /**
  * Append multiple messages to the session's JSONL file.
+ * 使用异步 I/O，避免在 Agent Chat 启动路径上长时间占用事件循环（Windows 上同步写盘易卡住整进程）。
  */
-function appendMessages(sessionId: string, messages: ChatMessage[]): void {
+async function appendMessages(sessionId: string, messages: ChatMessage[]): Promise<void> {
   if (messages.length === 0) return;
   const filePath = getAgentChatMessagePath(sessionId);
   const dir = getAgentChatMessagesDir();
-  try {
-    mkdirSync(dir, { recursive: true });
-  } catch { /* already exists */ }
+  await fs.mkdir(dir, { recursive: true });
   const lines = messages.map(m => JSON.stringify(m)).join('\n') + '\n';
-  appendFileSync(filePath, lines, 'utf-8');
+  await fs.appendFile(filePath, lines, 'utf-8');
 }
 
 /**
@@ -798,12 +805,19 @@ export async function eagerlySaveUserTurn(opts: {
   sourceType?: AgentChatSession['sourceType'];
   sourceId?: string;
   todoId?: string;
-  messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }>;
+  messages: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+    images?: string[];
+    contentBlocks?: ContentBlock[];
+    meta?: ChatMessage['meta'];
+  }>;
   claudeSessionId?: string;
   config?: SessionConfig;
   parentSessionId?: string;
   importedTurnIndices?: number[];
 }): Promise<void> {
+  const saveT0 = Date.now();
   const now = new Date().toISOString();
 
   // Read existing messages from JSONL to determine what's new
@@ -814,7 +828,7 @@ export async function eagerlySaveUserTurn(opts: {
   // Only append genuinely new messages
   if (incomingLen > existingLen) {
     const newMessages = opts.messages.slice(existingLen) as ChatMessage[];
-    appendMessages(opts.sessionId, newMessages);
+    await appendMessages(opts.sessionId, newMessages);
   }
 
   // Update or create index entry
@@ -855,6 +869,10 @@ export async function eagerlySaveUserTurn(opts: {
     },
   );
   invalidateIndexCache();
+  console.log(
+    `[PP-AgentChat:save] eagerlySaveUserTurn done sessionId=${opts.sessionId}`
+    + ` in ${Date.now() - saveT0}ms (messages ${existingLen}→${incomingLen})`,
+  );
 }
 
 /**

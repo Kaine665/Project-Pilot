@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslations, useLocale } from '@/client/i18n/use-translations';
 import { useRouter, usePathname } from '@/client/i18n/routing';
-import { TopNav } from '@/components/top-nav';
 import { Loader2, Brain, Wrench, Palette, Database, Eye, Settings, ShieldAlert, Sparkles, Satellite } from 'lucide-react';
 import { getProviderPreset, PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import { providerSupportsOAuthUi } from '@/lib/ai-auth-ui';
@@ -947,38 +946,34 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen flex-col">
-        <TopNav />
-        <div className="flex flex-1 items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
-        </div>
+      <div className="flex h-full min-h-0 flex-1 items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen flex-col">
-      <TopNav />
-      <div className="flex-1 overflow-hidden">
-        <div className="mx-auto flex h-full max-w-[1100px] px-6 py-8">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <div className="mx-auto flex h-full max-w-[1100px] flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:flex-row lg:gap-0">
           {/* ── Sidebar ── */}
-          <nav className="w-52 shrink-0 pr-8">
-            <h1 className="mb-6 flex items-center gap-2 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+          <nav className="w-full shrink-0 lg:w-52 lg:pr-8">
+            <h1 className="mb-4 flex items-center gap-2 text-lg font-semibold text-zinc-900 sm:mb-6 dark:text-zinc-100">
               <Settings className="h-5 w-5" />
               {t('title')}
             </h1>
-            <ul className="space-y-1">
+            <ul className="flex flex-row gap-1 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] lg:flex-col lg:space-y-1 lg:gap-0 lg:overflow-visible lg:pb-0 [&::-webkit-scrollbar]:hidden">
               {navItems.map((item) => (
-                <li key={item.id}>
+                <li key={item.id} className="shrink-0 lg:w-full">
                   <button
                     onClick={() => setActiveSection(item.id)}
-                    className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
+                    className={`flex w-full items-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm transition-colors lg:whitespace-normal ${
                       activeSection === item.id
                         ? 'bg-zinc-100 font-medium text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
                         : 'text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-300'
                     }`}
                   >
-                    <item.icon className="h-4 w-4" />
+                    <item.icon className="h-4 w-4 shrink-0" />
                     {item.label}
                   </button>
                 </li>
@@ -987,7 +982,7 @@ export default function SettingsPage() {
           </nav>
 
           {/* ── Content ── */}
-          <div className="flex-1 min-w-0 pl-8 border-l border-zinc-200 dark:border-zinc-800 space-y-6 overflow-y-auto">
+          <div className="min-h-0 flex-1 min-w-0 space-y-6 overflow-y-auto border-t border-zinc-200 pt-6 dark:border-zinc-800 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
             {activeSection === 'ai' && (
               <SettingsAISection
                 t={t} tActions={tActions} btnActive={btnActive} btnInactive={btnInactive}

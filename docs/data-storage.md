@@ -32,6 +32,7 @@ export PROJECT_PILOT_DATA_DIR=/path/to/custom-root
   config/
     settings.json
     agents-workspace-ui.json       # Agents 工作区已打开会话标签（按 projectKey）
+    agent-presets.json             # Agent 运行预设（模型/能力/Skills 等模板）
     dimensions.json
     worktree-ports.json
     models-health.json          # 若已生成
@@ -86,6 +87,7 @@ export PROJECT_PILOT_DATA_DIR=/path/to/custom-root
 |----------|------|------------------|
 | `config/settings.json` | 用户设置 | `getSettingsPath` |
 | `config/agents-workspace-ui.json` | Agents 工作区已打开标签 / 当前面板（按项目 `_global` 或 `projectKey`） | `getAgentsWorkspaceUiPath` |
+| `config/agent-presets.json` | Agent 运行预设列表 | `getAgentPresetsPath` |
 | `config/dimensions.json` | 维度 | `getDimensionsPath` |
 | `config/worktree-ports.json` | Worktree 端口 | `getWorktreePortsPath` |
 | `projects/index.json` | 项目索引 | `getProjectsIndexPath` |

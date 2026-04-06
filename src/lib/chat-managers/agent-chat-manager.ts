@@ -35,11 +35,8 @@ import '@/lib/resource-loaders'; // side-effect: registers non-action loaders
 import '@/lib/agent-actions';    // side-effect: registers actions + their loaders
 import { actionRegistry } from '@/lib/agent-actions';
 import { estimateTokens } from '@/lib/token-estimate';
-import {
-  appendTextOnlyAgentChannelNotice,
-  resolveEffectiveAgentChatProvider,
-} from '@/lib/agent-provider-capabilities';
-import { migrateAgentToResources } from '@/lib/resource-migration';
+import { appendLocalAgentSdkToolingNotice } from '@/lib/agent-provider-capabilities';
+import { CALLABLE_AGENTS_RESOURCE_REF, migrateAgentToResources } from '@/lib/resource-migration';
 import { updateAgentStatus } from '@/lib/agents-store';
 import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
 import { repairStoredTextIfNeeded } from '@/lib/text-repair-server';
@@ -47,6 +44,7 @@ import type { RunStatus, RunStatusInfo, SessionExecution } from './types';
 import { appendUsageRecord } from '@/lib/usage-store';
 import { normalizeOpenAIFastMode } from '@/lib/openai-fast-mode';
 import { normalizeOpenAIReasoningEffort } from '@/lib/openai-reasoning-effort';
+import { hasToolCallWithId } from '@/lib/agent-tool-call-dedupe';
 
 import {
   reduceAndPersistTurnEvents,
@@ -168,7 +166,13 @@ export interface AgentChatRun {
   dangerSettings?: import('@/types').DangerDetectorSettings;
 
   // Session data
-  messages: Array<{ role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }>;
+  messages: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+    images?: string[];
+    contentBlocks?: ContentBlock[];
+    meta?: import('@/types/agent-chat').ChatMessageDiskMeta;
+  }>;
   config?: SessionConfig;
   parentSessionId?: string;
   importedTurnIndices?: number[];
@@ -238,6 +242,7 @@ class AgentChatManager {
     sourceType?: SessionSourceType,
     sourceId?: string,
     todoId?: string,
+    userMessageMeta?: import('@/types/agent-chat').ChatMessageDiskMeta,
   ): Promise<string> {
     const agent = await loadAgent(agentId);
     void _depth;
@@ -253,7 +258,12 @@ class AgentChatManager {
     const existingMessages = existingRun?.messages ?? diskSession?.messages ?? [];
     const messages = [...existingMessages];
     const dataUrls = images?.map(img => `data:${img.mediaType};base64,${img.data}`);
-    messages.push({ role: 'user', content: message, images: dataUrls?.length ? dataUrls : undefined });
+    messages.push({
+      role: 'user',
+      content: message,
+      images: dataUrls?.length ? dataUrls : undefined,
+      ...(userMessageMeta ? { meta: userMessageMeta } : {}),
+    });
 
     const sessionConfig = initialConfig ?? existingRun?.config ?? diskSession?.config;
     const existingProjectKey = existingRun?.projectKey ?? diskSession?.projectKey;
@@ -337,33 +347,36 @@ class AgentChatManager {
       console.log(`${LOG_PREFIX} [${sessionId}] Resume unavailable, injecting ${existingMessages.length} messages as conversation history`);
     }
 
+    const tBuildPrompt = Date.now();
     let promptContent: string;
     if (flowContext) {
       promptContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext, persistedConfig, sessionId, conversationHistory ?? undefined);
     } else {
       promptContent = await buildAgentChatPrompt(agent, message, persistedConfig, sessionId, sessionProjectKey, conversationHistory ?? undefined);
     }
+    console.log(
+      `${LOG_PREFIX} [${sessionId}] buildPrompt done in ${Date.now() - tBuildPrompt}ms (chars=${promptContent.length})`,
+    );
 
     // Merge capabilities
     const effectiveCaps = mergeCapabilities(agent.capabilities, persistedConfig?.capabilities);
 
-    // Eagerly save user turn before starting query
-    if (!ephemeral) {
-      await eagerlySaveUserTurn({
-        sessionId,
-        agentId,
-        projectKey: flowContext?.projectKey ?? existingProjectKey,
-        sessionTitle: existingSessionTitle ?? initialTitle,
-        sourceType: sourceType ?? diskSession?.sourceType ?? 'manual',
-        sourceId: sourceId ?? diskSession?.sourceId,
-        todoId: todoId ?? diskSession?.todoId,
-        messages,
-        claudeSessionId: resumeSessionId,
-        config: persistedConfig,
-        parentSessionId: parentSessionId ?? existingParentSessionId,
-        importedTurnIndices: undefined,
-      });
-    }
+    const eagerSavePayload = !ephemeral
+      ? {
+          sessionId,
+          agentId,
+          projectKey: flowContext?.projectKey ?? existingProjectKey,
+          sessionTitle: existingSessionTitle ?? initialTitle,
+          sourceType: sourceType ?? diskSession?.sourceType ?? 'manual',
+          sourceId: sourceId ?? diskSession?.sourceId,
+          todoId: todoId ?? diskSession?.todoId,
+          messages,
+          claudeSessionId: resumeSessionId,
+          config: persistedConfig,
+          parentSessionId: parentSessionId ?? existingParentSessionId,
+          importedTurnIndices: undefined,
+        }
+      : null;
 
     // ── Create run ──
     const runId = `run-${sessionId}-${Date.now()}`;
@@ -404,6 +417,7 @@ class AgentChatManager {
     }
 
     this.runs.set(sessionId, run);
+    console.log(`${LOG_PREFIX} [${sessionId}] runs.set (status=running, events=0)`);
 
     // Update agent status to busy (fire-and-forget)
     updateAgentStatus(agentId, {
@@ -414,18 +428,32 @@ class AgentChatManager {
 
     // ── Launch runner（provider 无关）──
     try {
-      const cwd = await resolveAgentChatCwd(flowContext, sessionProjectKey);
-      console.log(`${LOG_PREFIX} [${sessionId}] Creating runner: provider=${resolvedProvider ?? 'anthropic'} model=${resolvedModel} cwd=${cwd} resumeSessionId=${resumeSessionId ?? 'none'} promptLen=${promptContent.length}`);
-      const runner = await createAgentRunner({
-        provider: resolvedProvider ?? 'anthropic',
-        capabilities: effectiveCaps,
-        model: resolvedModel,
-        effortOverride: resolvedOpenAIEffort,
-        fastModeOverride: resolvedOpenAIFastMode,
-        resumeSessionId,
-        cwd,
-      });
-      console.log(`${LOG_PREFIX} [${sessionId}] Runner created successfully`);
+      const tParallel = Date.now();
+      const savePromise = eagerSavePayload
+        ? eagerlySaveUserTurn(eagerSavePayload).catch((e) => {
+          console.error(`${LOG_PREFIX} [${sessionId}] eagerlySaveUserTurn failed:`, e);
+          throw e;
+        })
+        : Promise.resolve();
+
+      const runnerPromise = (async () => {
+        const cwd = await resolveAgentChatCwd(flowContext, sessionProjectKey);
+        console.log(`${LOG_PREFIX} [${sessionId}] Creating runner: provider=${resolvedProvider ?? 'anthropic'} model=${resolvedModel} cwd=${cwd} resumeSessionId=${resumeSessionId ?? 'none'} promptLen=${promptContent.length}`);
+        return createAgentRunner({
+          provider: resolvedProvider ?? 'anthropic',
+          capabilities: effectiveCaps,
+          model: resolvedModel,
+          effortOverride: resolvedOpenAIEffort,
+          fastModeOverride: resolvedOpenAIFastMode,
+          resumeSessionId,
+          cwd,
+        });
+      })();
+
+      const [, runner] = await Promise.all([savePromise, runnerPromise]);
+      console.log(
+        `${LOG_PREFIX} [${sessionId}] parallel save+runner done in ${Date.now() - tParallel}ms, spawning consumeRunnerStream`,
+      );
       run.runner = runner;
 
       run._completionPromise = new Promise<void>(resolve => { run._resolveCompletion = resolve; });
@@ -442,6 +470,7 @@ class AgentChatManager {
       await this.persistAfterClose(run, false);
     }
 
+    console.log(`${LOG_PREFIX} [${sessionId}] start() return runId=${run.runId} (POST may now respond)`);
     return run.runId;
   }
 
@@ -493,7 +522,7 @@ class AgentChatManager {
       ?? agent.defaultProvider
       ?? 'anthropic';
 
-    const promptContent = await buildGuestAgentPrompt(agent, message, selectedTurns, resolvedProvider);
+    const promptContent = await buildGuestAgentPrompt(agent, message, selectedTurns, diskSession?.config);
 
     // Create run
     const runId = `run-${guestSessionId}-${Date.now()}`;
@@ -710,7 +739,11 @@ class AgentChatManager {
     prompt: string,
     images?: ImageAttachment[],
   ): Promise<void> {
-    console.log(`${LOG_PREFIX} [${run.sessionId}] consumeRunnerStream started, promptLen=${prompt.length}`);
+    const consumeT0 = Date.now();
+    console.log(
+      `${LOG_PREFIX} [${run.sessionId}] consumeRunnerStream start promptLen=${prompt.length}`
+      + ` — next: await first chunk from runner.stream()`,
+    );
 
     const firstEventTimer = setTimeout(() => {
       console.warn(
@@ -722,7 +755,12 @@ class AgentChatManager {
     try {
       let eventCount = 0;
       for await (const event of runner.stream(prompt, { images })) {
-        if (eventCount === 0) clearTimeout(firstEventTimer);
+        if (eventCount === 0) {
+          clearTimeout(firstEventTimer);
+          console.log(
+            `${LOG_PREFIX} [${run.sessionId}] first runner event after ${Date.now() - consumeT0}ms type=${event.type}`,
+          );
+        }
         if (run.status === 'stopped') break;
         eventCount++;
         if (eventCount <= 5 || event.type === 'error' || event.type === 'done') {
@@ -914,6 +952,9 @@ class AgentChatManager {
         run.contentBlocks.push({ type: 'thinking', text: event.text });
       }
     } else if (event.type === 'tool_use_start') {
+      if (hasToolCallWithId(run.toolCalls, event.id)) {
+        return;
+      }
       const tc: ChatToolCall = {
         id: event.id,
         toolName: event.toolName,
@@ -1170,6 +1211,13 @@ async function buildResourcePrompt(
   const baseRefs = agent.defaultResources ?? migrateAgentToResources(agent);
   const merged: Array<ResourceRef | InlineTextRef> = [...baseRefs];
 
+  const hasCallableAgents = merged.some(
+    r => 'type' in r && r.type === 'available-agents' && r.id === '_callable',
+  );
+  if (!hasCallableAgents) {
+    merged.push(CALLABLE_AGENTS_RESOURCE_REF);
+  }
+
   merged.push({ type: 'global-prompt', id: '_global', priority: 1 });
 
   if (projectKey) {
@@ -1329,7 +1377,8 @@ async function buildResourcePrompt(
   };
 
   const resolvedResources = await resourceRegistry.resolveAll(allRefs, ctx);
-  return resourceRegistry.formatAsPrompt(resolvedResources);
+  const formatted = resourceRegistry.formatAsPrompt(resolvedResources);
+  return appendLocalAgentSdkToolingNotice(formatted, effectiveCaps);
 }
 
 // ── Prompt Builders (powered by Resource Registry) ──
@@ -1344,8 +1393,7 @@ ${historyBlock}
 ---
 
 用户消息：${message}`;
-  const provider = resolveEffectiveAgentChatProvider(sessionConfig, agent);
-  return appendTextOnlyAgentChannelNotice(body, provider);
+  return body;
 }
 
 async function buildAgentChatPromptWithFlowContext(
@@ -1377,15 +1425,14 @@ ${historyBlock}
 ---
 
 用户消息：${message}`;
-  const provider = resolveEffectiveAgentChatProvider(sessionConfig, agent);
-  return appendTextOnlyAgentChannelNotice(body, provider);
+  return body;
 }
 
 async function buildGuestAgentPrompt(
   agent: Agent,
   message: string,
   importedTurns: Array<{ role: 'user' | 'assistant'; content: string }>,
-  resolvedProvider: ProviderId,
+  guestSessionConfig?: SessionConfig,
 ): Promise<string> {
   const extraRefs: ResourceRef[] = [];
 
@@ -1400,14 +1447,14 @@ async function buildGuestAgentPrompt(
     extraRefs.push(turnsRef);
   }
 
-  const resourcePrompt = await buildResourcePrompt(agent, extraRefs);
+  const resourcePrompt = await buildResourcePrompt(agent, extraRefs, guestSessionConfig);
 
   const body = `${resourcePrompt}
 
 ---
 
 用户消息：${message}`;
-  return appendTextOnlyAgentChannelNotice(body, resolvedProvider);
+  return body;
 }
 
 // ── Prompt Preview ──
@@ -1428,9 +1475,7 @@ export async function buildPromptPreview(
   config?: import('@/types/agent-chat').SessionConfig,
 ): Promise<{ charCount: number; estimatedTokens: number }> {
   const agent = await loadAgent(agentId);
-  let promptText = await buildResourcePrompt(agent, undefined, config, sessionId, projectKey);
-  const provider = resolveEffectiveAgentChatProvider(config, agent);
-  promptText = appendTextOnlyAgentChannelNotice(promptText, provider);
+  const promptText = await buildResourcePrompt(agent, undefined, config, sessionId, projectKey);
   return {
     charCount: promptText.length,
     estimatedTokens: estimateTokens(promptText),

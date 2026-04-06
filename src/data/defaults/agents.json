@@ -25,25 +25,6 @@
       "updatedAt": "2026-02-25T00:00:00.000Z"
     },
     {
-      "id": "agent-builtin-task-worker",
-      "slug": "task-worker",
-      "builtIn": true,
-      "name": "ProjectPilot 任务执行者",
-      "description": "在项目目录中执行编码、文件修改、调研等通用任务",
-      "icon": "bot",
-      "capabilities": {
-        "bash": true,
-        "fileAccess": true,
-        "web": true,
-        "subAgent": true,
-        "skipReview": true,
-        "todoRead": false,
-        "exposePromptPath": true
-      },
-      "createdAt": "2026-02-26T00:00:00.000Z",
-      "updatedAt": "2026-02-26T00:00:00.000Z"
-    },
-    {
       "id": "agent-builtin-self-dev",
       "slug": "self-dev",
       "builtIn": true,
@@ -55,25 +36,6 @@
         "fileAccess": true,
         "web": true,
         "subAgent": true,
-        "skipReview": true,
-        "todoRead": false,
-        "exposePromptPath": true
-      },
-      "createdAt": "2026-02-25T00:00:00.000Z",
-      "updatedAt": "2026-02-25T00:00:00.000Z"
-    },
-    {
-      "id": "agent-builtin-manager",
-      "slug": "manager",
-      "builtIn": true,
-      "name": "团队管理员",
-      "description": "管理 Agent 团队构成、协调职责边界、引导创建新 Agent",
-      "icon": "users",
-      "capabilities": {
-        "bash": true,
-        "fileAccess": true,
-        "web": false,
-        "subAgent": false,
         "skipReview": true,
         "todoRead": false,
         "exposePromptPath": true

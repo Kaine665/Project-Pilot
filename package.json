@@ -23,6 +23,7 @@
     "check:env": "node scripts/check-env.js",
     "clean:desktop": "node scripts/clean-desktop-artifacts.js",
     "prepare:desktop-bundle": "node scripts/prepare-desktop-bundle.js",
+    "preelectron:start": "npm run electron:compile",
     "electron:start": "electron ."
   },
   "build": {

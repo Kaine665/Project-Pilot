@@ -3,8 +3,8 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
-import { isValidWorkingDir } from '@/lib/security';
-import { getDataDir } from '@/lib/file-store';
+import { isValidProjectKey, isValidWorkingDir } from '@/lib/security';
+import { getDataDir, readProjectIndex } from '@/lib/file-store';
 
 const execAsync = promisify(exec);
 
@@ -171,9 +171,40 @@ app.get('/read-file', async (c) => {
 
   const decoded = decodeURIComponent(pathParam).trim();
   const resolveMode = c.req.query('resolve');
+  const projectKeyParam = c.req.query('projectKey');
 
   let resolved: string;
-  if (resolveMode === 'data') {
+  if (resolveMode === 'project') {
+    if (!projectKeyParam || typeof projectKeyParam !== 'string' || !isValidProjectKey(projectKeyParam)) {
+      return c.json({ error: 'Valid projectKey is required for resolve=project' }, 400);
+    }
+    let root: string;
+    try {
+      const index = await readProjectIndex();
+      const proj = index.projects.find((p) => p.key === projectKeyParam);
+      if (!proj?.path || typeof proj.path !== 'string') {
+        return c.json({ error: 'Project not found' }, 404);
+      }
+      root = path.normalize(path.resolve(proj.path.trim()));
+    } catch {
+      return c.json({ error: 'Project not found' }, 404);
+    }
+    if (!isValidWorkingDir(root)) {
+      return c.json({ error: 'Invalid project path' }, 400);
+    }
+    const decodedNorm = decoded.replace(/\\/g, '/');
+    const looksAbsolute =
+      /^[a-zA-Z]:\//.test(decodedNorm)
+      || decodedNorm.startsWith('/')
+      || decodedNorm.startsWith('\\\\');
+    const candidate = looksAbsolute
+      ? path.normalize(path.resolve(decoded))
+      : path.normalize(path.resolve(root, decoded));
+    if (!isPathInsideRoot(root, candidate)) {
+      return c.json({ error: 'Path escapes project root' }, 400);
+    }
+    resolved = candidate;
+  } else if (resolveMode === 'data') {
     resolved = path.normalize(path.resolve(getDataDir(), decoded));
   } else {
     resolved = path.normalize(path.resolve(decoded));
@@ -443,6 +474,44 @@ app.get('/git-info', async (c) => {
     fileCount,
     dirCount,
   });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/fs/pick-folder — 后端调系统选文件夹对话框（PowerShell / zenity）
+// 适用于非 Electron 环境（浏览器直接访问 Vite 时没有 window.electron）
+// ---------------------------------------------------------------------------
+
+app.post('/pick-folder', async (c) => {
+  try {
+    if (process.platform === 'win32') {
+      const ps = `Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = 'Select project folder'; $f.ShowNewFolderButton = $true; if ($f.ShowDialog() -eq 'OK') { $f.SelectedPath } else { '' }`;
+      const { stdout } = await execAsync(
+        `powershell -NoProfile -Command "${ps.replace(/"/g, '\\"')}"`,
+        { timeout: 120_000, windowsHide: false },
+      );
+      const folder = stdout.trim();
+      if (!folder) return c.json({ path: null });
+      return c.json({ path: folder });
+    }
+    // macOS / Linux — zenity or osascript
+    if (process.platform === 'darwin') {
+      const { stdout } = await execAsync(
+        `osascript -e 'POSIX path of (choose folder with prompt "Select project folder")'`,
+        { timeout: 120_000 },
+      );
+      const folder = stdout.trim();
+      return c.json({ path: folder || null });
+    }
+    // Linux fallback
+    try {
+      const { stdout } = await execAsync('zenity --file-selection --directory --title="Select project folder"', { timeout: 120_000 });
+      return c.json({ path: stdout.trim() || null });
+    } catch {
+      return c.json({ path: null, error: 'no dialog available' });
+    }
+  } catch (err) {
+    return c.json({ path: null, error: String(err) });
+  }
 });
 
 export default app;

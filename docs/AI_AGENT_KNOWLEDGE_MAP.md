@@ -33,6 +33,7 @@
 | Agent Chat 架构 | [`agent-chat-architecture.md`](./agent-chat-architecture.md) |
 | 统一文档（设计 + 知识） | [`context-system.md`](./context-system.md) |
 | Git 分支策略与 GitHub 权限（维护者） | [`github-branch-policy.md`](./github-branch-policy.md) |
+| 社区市场（LobeHub 对标 OKR + 契约） | [`community-marketplace-lobechat-okr.md`](./community-marketplace-lobechat-okr.md) |
 | 产品说明与快速开始 | [`../README.md`](../README.md) |
 
 ## 变更时同步检查清单
@@ -98,5 +99,7 @@
 | 2026-04-03 | 内置提示词：行为准则（PP 自身 bug 归代码侧、禁止假读盘）+ **与当前栈对齐**（Vite+Hono+Electron、4000/4500、Bun、\`projects/index.json\`、\`agents-workspace-ui.json\`；去 Next.js/单 4000/npm 过时表述） | `builtin-prompts.ts`、本文件 |
 | 2026-04-03 | **Agent 磁盘工作区约定**并入 **全局约束**（\`PROMPT_GLOBAL\` / \`global.md\`），不再在 \`buildResourcePrompt\` 单独硬编码注入；\`agent-data-info-loader\` 指向全局约束一节 | `builtin-prompts.ts`、`agent-chat-manager.ts`、`agent-data-info-loader.ts`、`MEMORY.md`、本文件 |
 | 2026-04-05 | **删除 SimpleAnthropicRunner**：527438b 引入的裸 Messages Runner 意外成为 MiniMax/DeepSeek/Kimi 等的默认路径（无 tool_use），导致第三方供应商工具调用全部失效。恢复为全量走 ClaudeAgentRunner | `agent-runner.ts`、`chat-notification-banners.tsx`、`docs/agent-chat-architecture.md`、`MEMORY.md`、本文件 |
+| 2026-04-05 | **Agent 运行预设**：`config/agent-presets.json` + `ProjectEntry.defaultPresetId`；API `GET/POST/PATCH/DELETE /api/data/agent-presets`；独立页 `/workspace/presets`（侧栏图标）；项目设置链至预设页；新建 Agent 可合并项目默认预设 | `types/index.ts`、`file-store.ts`、`agent-presets-store.ts`、`routes/data.ts`、`agent-form.tsx`、`components/agent-presets/*`、`project-settings.tsx`、`flows/agents/page.tsx`、`flows/presets/page.tsx`、`workspace-shell.tsx`、`App.tsx`、`messages/zh.json` & `en.json`、`data-storage.md`、`builtin-prompts.ts`、本文件 |
+| 2026-04-05 | **社区市场 P0**：LobeHub 类「发现 → 安装」调研与 OKR 文档；`GET /api/community/catalog` + 种子目录；`/workspace/community` + 侧栏入口；一键写入运行预设 | `docs/community-marketplace-lobechat-okr.md`、`src/data/community-catalog-seed.json`、`server/routes/community.ts`、`server/index.ts`、`components/community/*`、`flows/community/page.tsx`、`App.tsx`、`workspace-sidebar-rail.tsx`、`messages/zh.json` & `en.json`、本文件 |
 
 （后续变更请继续追加表格行，勿删历史。）

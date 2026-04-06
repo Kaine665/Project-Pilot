@@ -60,11 +60,23 @@ export function validatePackage(data: unknown): data is AgentPackage {
   );
 }
 
+export interface ImportAgentOptions {
+  /** 自定义 Agent 必须绑定项目，不可再创建「全局」Agent */
+  targetProjectKey: string;
+}
+
 /**
  * 导入 .ppagent 包，创建新 Agent。
  * 旧版包中的 contexts[] 会写入知识类文档（projectKey=_imported）。
  */
-export async function importAgent(pkg: AgentPackage): Promise<ImportResult> {
+export async function importAgent(
+  pkg: AgentPackage,
+  options: ImportAgentOptions,
+): Promise<ImportResult> {
+  const targetProjectKey = options.targetProjectKey.trim();
+  if (!targetProjectKey) {
+    throw new Error('targetProjectKey is required');
+  }
   const now = new Date().toISOString();
   const agentId = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -123,6 +135,7 @@ export async function importAgent(pkg: AgentPackage): Promise<ImportResult> {
     capabilities,
     requiredParams: pkg.agent.requiredParams,
     defaultResources,
+    projectKey: targetProjectKey,
     createdAt: now,
     updatedAt: now,
   };

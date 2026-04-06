@@ -11,7 +11,7 @@
 export type ResourceType =
   | 'design-docs-index'           // Design docs index table (AI cats on demand)
   | 'active-tasks'                // 并行执行看板 agents/active-tasks.json（非用户 Todo）
-  | 'available-agents'            // Callable agents list (sub-agent invocation)
+  | 'available-agents'            // Callable PP agents + call-agent CLI（全体 Agent 注入）
   | 'system-prompt'               // Agent system prompt text
   | 'todo-list'                   // Pending todo items
   | 'inline-text'                 // Inline text snippet (content stored in ref)

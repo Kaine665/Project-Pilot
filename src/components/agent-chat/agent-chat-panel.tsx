@@ -17,6 +17,8 @@ import { buildSessionUrl } from '@/components/agent-session-utils';
 import { imageAttachmentFromDataUrl } from '@/lib/image-assets';
 import { repairTextIfNeeded } from '@/lib/text-repair';
 import { providerSupportsLocalAgentTools } from '@/lib/agent-provider-capabilities';
+import { hasToolCallWithId } from '@/lib/agent-tool-call-dedupe';
+import { notifyFilesystemMutatedDebounced, toolMayMutateWorkspaceFiles } from '@/lib/fs-mutation-events';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
 import type { DeferredInputBufferItem, DeferredInputBufferState, SessionConfig } from '@/types/agent-chat';
 import type { ChatMessage, ChatToolCall, ContentBlock } from '@/types';
@@ -86,8 +88,13 @@ export function AgentChatPanel({
   }, [projectKey, projects]);
 
   const assistantAvatarSrc = useMemo(
-    () => resolveAgentAvatarSrc(agent.slug, agent.icon),
-    [agent.slug, agent.icon],
+    () =>
+      resolveAgentAvatarSrc(agent.slug, agent.icon, {
+        customAvatar: agent.customAvatar,
+        agentId: agent.id,
+        updatedAt: agent.updatedAt,
+      }),
+    [agent.slug, agent.icon, agent.customAvatar, agent.id, agent.updatedAt],
   );
 
   // Insert file path reference into chat input via CustomEvent
@@ -190,6 +197,8 @@ export function AgentChatPanel({
   const messagesRef = useRef<ChatMessage[]>([]);
   const pendingAnswerRef = useRef<{ answer: string; targetSessionId: string } | null>(null);
   const pendingUserMessagesRef = useRef<DeferredInputBufferItem[]>([]);
+  /** /run <goal> 成功后、下一条用户消息携带的 execution meta（写入 JSONL） */
+  const pendingRunTaskMetaRef = useRef<{ type: 'run_task'; executionRunId: string } | null>(null);
   const [pendingUserQueueCount, setPendingUserQueueCount] = useState(0);
   const [pendingUserMessages, setPendingUserMessages] = useState<DeferredInputBufferItem[]>([]);
   const [queueExpanded, setQueueExpanded] = useState(true);
@@ -482,6 +491,7 @@ export function AgentChatPanel({
         content: string;
         images?: string[];
         contentBlocks?: ContentBlock[];
+        meta?: ChatMessage['meta'];
       }> = data.messages ?? [];
 
       // Defensive: if disk data ends with a user message, check in-memory status
@@ -505,12 +515,19 @@ export function AgentChatPanel({
       }
 
       const restored: ChatMessage[] = messages.map(
-        (m: { role: 'user' | 'assistant'; content: string; images?: string[]; contentBlocks?: ContentBlock[] }, i: number) => ({
+        (m: {
+          role: 'user' | 'assistant';
+          content: string;
+          images?: string[];
+          contentBlocks?: ContentBlock[];
+          meta?: ChatMessage['meta'];
+        }, i: number) => ({
           id: `restored-${i}`,
           role: m.role,
           content: m.content,
           images: m.images,
           contentBlocks: m.contentBlocks,
+          meta: m.meta,
           timestamp: '',
         }),
       );
@@ -744,6 +761,9 @@ export function AgentChatPanel({
             }
 
             case 'tool_use_start': {
+              if (hasToolCallWithId(toolCallsRef.current, event.id)) {
+                break;
+              }
               const tc: ChatToolCall = {
                 id: event.id,
                 toolName: event.toolName,
@@ -776,6 +796,10 @@ export function AgentChatPanel({
                 tc.output = event.output;
                 tc.status = event.status;
                 chunkHasDisplayEvents = true;
+
+                if (event.status === 'completed' && toolMayMutateWorkspaceFiles(tc.toolName)) {
+                  notifyFilesystemMutatedDebounced();
+                }
 
                 if (tc.toolName === 'ExitPlanMode') {
                   chatDispatch({ type: 'PLAN_FINISHED' });
@@ -1057,30 +1081,35 @@ export function AgentChatPanel({
       }
       const goal = trimmedText.replace(/^\/run\s*/i, '').trim();
       try {
-        const res = await fetch(`/api/agent-chat/sessions/${currentSessionId}/runs`, {
+        const runRes = await fetch(`/api/agent-chat/sessions/${currentSessionId}/runs`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ goal: goal || undefined }),
         });
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || `HTTP ${res.status}`);
+        if (!runRes.ok) {
+          const errData = await runRes.json().catch(() => ({}));
+          throw new Error(errData.error || `HTTP ${runRes.status}`);
+        }
+        const executionRun = await runRes.json() as { runId?: string };
+        const executionRunId = typeof executionRun.runId === 'string' ? executionRun.runId : '';
+        if (!executionRunId) {
+          throw new Error('服务器未返回 runId');
         }
         await refreshSessionRuns(currentSessionId);
-        const note: ChatMessage = {
-          id: `run-note-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          role: 'assistant',
-          content: goal
-            ? `已手动开启 Run：${goal}`
-            : '已手动开启 Run。',
-          timestamp: new Date().toISOString(),
-        };
-        chatDispatch({ type: 'APPEND_MESSAGE', message: note });
         if (!goal) {
+          const note: ChatMessage = {
+            id: `run-open-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            role: 'assistant',
+            content: '\u200b',
+            timestamp: new Date().toISOString(),
+            meta: { type: 'run_open', executionRunId },
+          };
+          chatDispatch({ type: 'APPEND_MESSAGE', message: note });
           return;
         }
-        // /run <goal>：开 Run 后立即把 goal 当本轮用户任务发送给模型
+        // /run <goal>：开 Run 后以「带 meta 的同一条用户消息」进入对话流并发给模型
         effectiveInput = goal;
+        pendingRunTaskMetaRef.current = { type: 'run_task', executionRunId };
       } catch (err) {
         chatDispatch({
           type: 'STREAM_ERROR',
@@ -1095,12 +1124,16 @@ export function AgentChatPanel({
     const imagesToSend = images ?? [];
     const imageAttachments = imagesToSend.map(imageAttachmentFromDataUrl);
 
+    const runTaskMeta = pendingRunTaskMetaRef.current;
+    pendingRunTaskMetaRef.current = null;
+
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       role: 'user',
       content: effectiveInput,
       timestamp: new Date().toISOString(),
       images: imagesToSend.length > 0 ? imagesToSend : undefined,
+      ...(runTaskMeta ? { meta: runTaskMeta } : {}),
     };
 
     chatDispatch({ type: 'UPDATE_MESSAGES', updater: (prev) => {
@@ -1196,6 +1229,7 @@ export function AgentChatPanel({
                 || configWithModel.openaiFastMode;
               return hasAny ? configWithModel : undefined;
             })(),
+            ...(runTaskMeta ? { userMessageMeta: runTaskMeta } : {}),
           }),
         });
       } finally {
@@ -1397,6 +1431,7 @@ export function AgentChatPanel({
     }
     sessionDispatch({ type: 'NEW', defaultTitle: hasProject ? t('chat.newSession') : 'New Session' });
     sessionIdRef.current = null;
+    pendingRunTaskMetaRef.current = null;
     refreshSessionRuns(null);
     chatDispatch({ type: 'SET_MESSAGES', messages: [] });
     setShowConfig(false);
@@ -1435,6 +1470,7 @@ export function AgentChatPanel({
     }
     sessionDispatch({ type: 'SELECT', id: target.id, title: target.title });
     sessionIdRef.current = target.id;
+    pendingRunTaskMetaRef.current = null;
     chatDispatch({ type: 'RESET' });
     setShowConfig(false);
     setCompressDismissed(false);
@@ -1701,6 +1737,7 @@ export function AgentChatPanel({
       {previewFilePath && (
         <FilePreviewDialog
           filePath={previewFilePath}
+          projectKey={hasProject ? projectKey : undefined}
           onClose={() => setPreviewFilePath(null)}
         />
       )}
@@ -1761,10 +1798,13 @@ export function AgentChatPanel({
     onActionRestore: handleActionRestore,
   };
 
+  const activeSessionRun = sessionRuns.find((r) => r.status === 'active') ?? null;
+
   const plainToolbar = (
     <PlainToolbarControls
       workspaceMode={workspaceMode}
-      hasActiveRun={!!sessionRuns.find((r) => r.status === 'active')}
+      hasActiveRun={!!activeSessionRun}
+      activeRun={activeSessionRun}
       showConfig={showConfig}
       showRuntimePanel={showRuntimePanel}
       onToggleConfig={() => setShowConfig(v => !v)}
@@ -1819,7 +1859,7 @@ export function AgentChatPanel({
       onCompressOpen={() => setCompressDialogOpen(true)}
       showRuntimePanel={showRuntimePanel}
       onToggleRuntimePanel={() => setShowRuntimePanel(v => !v)}
-      activeRun={sessionRuns.find((r) => r.status === 'active') ?? null}
+      activeRun={activeSessionRun}
     />
   );
 

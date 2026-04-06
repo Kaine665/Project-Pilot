@@ -30,6 +30,9 @@ export class StreamParser {
   /** Map tool_use id → tool name for resolving status in tool_result events */
   private toolNames = new Map<string, string>();
 
+  /** 流式 content_block_stop 与 assistant 全量内容可能各发一次同 id 的 tool_use */
+  private emittedToolUseIds = new Set<string>();
+
   /** Claude CLI session ID, captured from system.init or result events */
   sessionId: string | null = null;
 
@@ -65,13 +68,16 @@ export class StreamParser {
           if (block.type === 'text' && typeof block.text === 'string' && block.text) {
             events.push({ type: 'text_delta', text: block.text as string });
           } else if (block.type === 'tool_use') {
+            const id = block.id as string;
+            if (this.emittedToolUseIds.has(id)) continue;
             const input = typeof block.input === 'string'
               ? block.input
               : JSON.stringify(block.input);
-            this.toolNames.set(block.id as string, block.name as string);
+            this.toolNames.set(id, block.name as string);
+            this.emittedToolUseIds.add(id);
             events.push({
               type: 'tool_use_start',
-              id: block.id as string,
+              id,
               toolName: block.name as string,
               input,
             });
@@ -119,12 +125,15 @@ export class StreamParser {
         if (acc) {
           // Tool input is now complete, emit the tool_use_start event
           this.toolNames.set(acc.id, acc.name);
-          events.push({
-            type: 'tool_use_start',
-            id: acc.id,
-            toolName: acc.name,
-            input: acc.inputJson,
-          });
+          if (!this.emittedToolUseIds.has(acc.id)) {
+            this.emittedToolUseIds.add(acc.id);
+            events.push({
+              type: 'tool_use_start',
+              id: acc.id,
+              toolName: acc.name,
+              input: acc.inputJson,
+            });
+          }
           this.toolAccumulators.delete(index);
         }
         break;

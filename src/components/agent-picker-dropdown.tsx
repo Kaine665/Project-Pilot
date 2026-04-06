@@ -163,7 +163,14 @@ export function AgentPickerDropdown({
           : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
       }`}
     >
-      <AgentAvatar slug={agent.slug} iconKey={agent.icon} className="h-7 w-7 shrink-0 rounded-md" />
+      <AgentAvatar
+        slug={agent.slug}
+        iconKey={agent.icon}
+        agentId={agent.id}
+        customAvatar={agent.customAvatar}
+        updatedAt={agent.updatedAt}
+        className="h-7 w-7 shrink-0 rounded-md"
+      />
       <span className="min-w-0 flex-1 truncate text-[13px] text-zinc-800 dark:text-zinc-200">
         {agent.name}
       </span>

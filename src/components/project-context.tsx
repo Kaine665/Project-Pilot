@@ -16,6 +16,9 @@ interface ProjectContextValue {
 
 const ProjectContext = createContext<ProjectContextValue | null>(null);
 
+/** 上次在顶栏/工作区选中的项目 key，Electron 重启后无 ?project= 时仍可恢复 */
+const LAST_ACTIVE_PROJECT_STORAGE_KEY = 'pp.lastActiveProjectKey';
+
 export function useProject() {
   const ctx = useContext(ProjectContext);
   if (!ctx) throw new Error('useProject must be used inside ProjectProvider');
@@ -58,7 +61,21 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Initial load: fetch projects and set active key from URL or first project
+  // 将当前选中项目写入 localStorage，供下次启动恢复（与 URL ?project= 互补）
+  useEffect(() => {
+    if (!initialized) return;
+    try {
+      if (activeKeyRaw) {
+        localStorage.setItem(LAST_ACTIVE_PROJECT_STORAGE_KEY, activeKeyRaw);
+      } else {
+        localStorage.removeItem(LAST_ACTIVE_PROJECT_STORAGE_KEY);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [activeKeyRaw, initialized]);
+
+  // Initial load: fetch projects and set active key from URL → 上次持久化 → 第一项
   useEffect(() => {
     if (initializedRef.current) return;
     initializedRef.current = true;
@@ -67,8 +84,17 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       if (list.length > 0) {
         const urlParams = new URLSearchParams(window.location.search);
         const projectParam = urlParams.get('project');
+        let stored: string | null = null;
+        try {
+          stored = localStorage.getItem(LAST_ACTIVE_PROJECT_STORAGE_KEY);
+        } catch {
+          /* ignore */
+        }
+
         if (projectParam && list.some(p => p.key === projectParam)) {
           setActiveKey(projectParam);
+        } else if (stored && list.some(p => p.key === stored)) {
+          setActiveKey(stored);
         } else {
           setActiveKey(list[0].key);
         }

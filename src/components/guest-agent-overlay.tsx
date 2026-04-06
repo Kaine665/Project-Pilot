@@ -6,6 +6,7 @@ import { useTranslations } from '@/client/i18n/use-translations';
 import { ChatBubble } from '@/components/chat-bubble';
 import type { Agent } from '@/types';
 import type { ChatMessage, ChatToolCall, AgentEvent, ContentBlock } from '@/types';
+import { hasToolCallWithId } from '@/lib/agent-tool-call-dedupe';
 
 type IndexedSSEEvent = AgentEvent & { _idx: number };
 
@@ -182,6 +183,9 @@ export function GuestAgentOverlay({
               break;
             }
             case 'tool_use_start': {
+              if (hasToolCallWithId(toolCallsRef.current, event.id)) {
+                break;
+              }
               const tc: ChatToolCall = {
                 id: event.id,
                 toolName: event.toolName,

@@ -39,6 +39,74 @@ function TokenRing({ used, total, size = 16 }: { used: number; total: number; si
   );
 }
 
+/** 输入区外壳：对话框式圆角卡片（非模态，仅视觉容器） */
+function ChatComposeDialogSurface({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className={[
+        'rounded-2xl border border-zinc-200/90 bg-gradient-to-b from-white to-zinc-50/90 p-2',
+        'shadow-[0_2px_14px_rgba(15,23,42,0.07)] ring-1 ring-zinc-900/[0.04]',
+        'dark:border-zinc-600/70 dark:from-zinc-900 dark:to-zinc-950 dark:ring-white/[0.06]',
+        'dark:shadow-[0_2px_20px_rgba(0,0,0,0.45)]',
+      ].join(' ')}
+    >
+      {children}
+    </div>
+  );
+}
+
+const composeActionBtnBase = [
+  'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-all duration-150',
+  'focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-900',
+].join(' ');
+
+/**
+ * 正方形主操作按钮：发送 / 中止共用同一尺寸与圆角，仅配色与图标不同。
+ */
+function ComposeActionButton(props: {
+  variant: 'send' | 'abort';
+  onClick: () => void;
+  disabled?: boolean;
+  title: string;
+}) {
+  const { variant, onClick, disabled, title } = props;
+  if (variant === 'abort') {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title={title}
+        aria-label={title}
+        className={[
+          composeActionBtnBase,
+          'bg-red-500 text-white shadow-sm hover:bg-red-600 active:scale-[0.97]',
+          'focus-visible:ring-red-400/90',
+        ].join(' ')}
+      >
+        <Square className="h-[14px] w-[14px]" fill="currentColor" stroke="currentColor" strokeWidth={0} />
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-label={title}
+      className={[
+        composeActionBtnBase,
+        'bg-zinc-900 text-white shadow-sm hover:bg-zinc-800 active:scale-[0.97]',
+        'disabled:pointer-events-none disabled:opacity-35 disabled:shadow-none',
+        'focus-visible:ring-zinc-400/80',
+        'dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200',
+      ].join(' ')}
+    >
+      <Send className="h-[18px] w-[18px]" strokeWidth={2.25} />
+    </button>
+  );
+}
+
 interface SkillItem {
   name: string;
   description: string;
@@ -660,19 +728,8 @@ export const ChatInput = memo(function ChatInput({
           </div>
         );
       })()}
-      {/* Textarea + send button */}
-      {fullWidth ? (
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={handleInputChange}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          placeholder={placeholder}
-          style={{ minHeight }}
-          className="w-full resize-none rounded-md border border-zinc-200 bg-white px-2.5 py-2 text-sm outline-none transition-colors focus:border-zinc-400 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-500"
-        />
-      ) : (
+      {/* 自定义对话框式输入区 + 统一正方形发送/中止按钮 */}
+      <ChatComposeDialogSurface>
         <div className="flex items-end gap-2">
           <textarea
             ref={textareaRef}
@@ -681,30 +738,33 @@ export const ChatInput = memo(function ChatInput({
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={placeholder}
-            rows={1}
-            className="flex-1 resize-none rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-500"
-            style={{ minHeight: '40px', maxHeight: '200px' }}
+            rows={fullWidth ? undefined : 1}
+            style={
+              fullWidth
+                ? { minHeight, maxHeight: 'min(50vh, 320px)' }
+                : { minHeight: '40px', maxHeight: '200px' }
+            }
+            className={[
+              'flex-1 text-sm text-zinc-900 outline-none transition-colors placeholder:text-zinc-400',
+              'border-0 bg-transparent focus:ring-0 disabled:opacity-50',
+              'dark:text-zinc-100 dark:placeholder:text-zinc-500',
+              fullWidth
+                ? 'min-h-0 resize-y rounded-lg px-2 py-2'
+                : 'resize-none rounded-lg px-2 py-1.5',
+            ].join(' ')}
           />
           {isStreaming ? (
-            <button
-              onClick={onAbort}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-red-500 text-white hover:bg-red-600 transition-colors"
-              title="停止"
-            >
-              <Square className="h-4 w-4" />
-            </button>
+            <ComposeActionButton variant="abort" onClick={onAbort} title="中止对话" />
           ) : (
-            <button
+            <ComposeActionButton
+              variant="send"
               onClick={handleSubmit}
               disabled={!hasContent}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-zinc-900 text-white hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
               title="发送"
-            >
-              <Send className="h-4 w-4" />
-            </button>
+            />
           )}
         </div>
-      )}
+      </ChatComposeDialogSurface>
     </div>
   );
 });

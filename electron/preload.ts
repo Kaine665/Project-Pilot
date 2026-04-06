@@ -1,7 +1,7 @@
 /**
  * Preload script — 通过 contextBridge 向渲染进程暴露安全的 API
  */
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import {
   IPC_AGENT_EVENT_CHANNEL,
   type IndexedAgentEventPayload,
@@ -9,6 +9,8 @@ import {
 
 contextBridge.exposeInMainWorld('electron', {
   openFolderDialog: () => ipcRenderer.invoke('open-folder-dialog'),
+  /** 将渲染进程 <input type="file"> 选中的 File 转为绝对路径（Electron ≥22，用于 webkitdirectory 选文件夹） */
+  getPathForFile: (file: File) => webUtils.getPathForFile(file),
   openFile: (path: string) => ipcRenderer.invoke('open-file', path),
 });
 

@@ -6,14 +6,23 @@ import { FormattedText } from '@/components/formatted-text';
 
 interface FilePreviewDialogProps {
   filePath: string;
+  /** 当前 Agent 会话关联的项目；用于把「模板与流程/foo.md」等相对路径解析到项目根目录 */
+  projectKey?: string | null;
   onClose: () => void;
+}
+
+function pathLooksAbsolute(fsPath: string): boolean {
+  const norm = fsPath.trim().replace(/\\/g, '/');
+  return /^[a-zA-Z]:\//.test(norm) || norm.startsWith('/') || norm.startsWith('\\\\');
 }
 
 export const FilePreviewDialog = memo(function FilePreviewDialog({
   filePath,
+  projectKey,
   onClose,
 }: FilePreviewDialogProps) {
   const [content, setContent] = useState<string | null>(null);
+  const [resolvedDiskPath, setResolvedDiskPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -27,16 +36,25 @@ export const FilePreviewDialog = memo(function FilePreviewDialog({
     setLoading(true);
     setError(null);
     setContent(null);
+    setResolvedDiskPath(null);
 
     (async () => {
       try {
-        // Try the path directly first
-        let res = await fetch(
-          `/api/fs/read-file?path=${encodeURIComponent(filePath)}`,
-          { cache: 'no-store' },
-        );
-        // If 404 and the path looks relative, try resolving via the data directory
-        if (res.status === 404 && !filePath.match(/^([a-zA-Z]:[/\\]|\/)/)) {
+        const abs = pathLooksAbsolute(filePath);
+        let res: Response;
+        if (projectKey && !abs) {
+          res = await fetch(
+            `/api/fs/read-file?path=${encodeURIComponent(filePath)}&resolve=project&projectKey=${encodeURIComponent(projectKey)}`,
+            { cache: 'no-store' },
+          );
+        } else {
+          res = await fetch(
+            `/api/fs/read-file?path=${encodeURIComponent(filePath)}`,
+            { cache: 'no-store' },
+          );
+        }
+        // 无项目上下文时的相对路径：回退到数据目录（~/.project-pilot）
+        if (res.status === 404 && !abs && !projectKey) {
           res = await fetch(
             `/api/fs/read-file?path=${encodeURIComponent(filePath)}&resolve=data`,
             { cache: 'no-store' },
@@ -48,6 +66,9 @@ export const FilePreviewDialog = memo(function FilePreviewDialog({
           setError(data.error ?? '读取失败');
         } else {
           setContent(data.content);
+          if (typeof data.path === 'string' && data.path.length > 0) {
+            setResolvedDiskPath(data.path);
+          }
         }
       } catch {
         if (!cancelled) setError('无法读取文件');
@@ -57,28 +78,30 @@ export const FilePreviewDialog = memo(function FilePreviewDialog({
     })();
 
     return () => { cancelled = true; };
-  }, [filePath]);
+  }, [filePath, projectKey]);
+
+  const pathForOs = resolvedDiskPath ?? filePath;
 
   const handleCopyPath = useCallback(() => {
-    navigator.clipboard.writeText(filePath);
+    navigator.clipboard.writeText(pathForOs);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
-  }, [filePath]);
+  }, [pathForOs]);
 
   const handleOpenExternal = useCallback(async () => {
     const electron = (window as Window & { electron?: { openFile: (p: string) => Promise<{ ok?: boolean; error?: string }> } }).electron;
     if (electron?.openFile) {
-      await electron.openFile(filePath);
+      await electron.openFile(pathForOs);
     } else {
       try {
         await fetch('/api/fs/open-file', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: filePath }),
+          body: JSON.stringify({ path: pathForOs }),
         });
       } catch { /* ignore */ }
     }
-  }, [filePath]);
+  }, [pathForOs]);
 
   // Close on Escape
   useEffect(() => {
@@ -94,8 +117,8 @@ export const FilePreviewDialog = memo(function FilePreviewDialog({
       {/* Header */}
       <div className="flex shrink-0 items-center gap-2 border-b border-zinc-200 px-4 py-2.5 dark:border-zinc-700">
         <FileText className="h-4 w-4 shrink-0 text-zinc-400" />
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-700 dark:text-zinc-300" title={filePath}>
-          {filePath.replace(/\\/g, '/')}
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-700 dark:text-zinc-300" title={pathForOs}>
+          {(resolvedDiskPath ?? filePath).replace(/\\/g, '/')}
         </span>
 
         <button

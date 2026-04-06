@@ -5,7 +5,7 @@
 ## 路由与入口
 
 - 页面：`src/app/[locale]/flows/agents/page.tsx`（大型客户端页：会话列表、多 Tab、与 URL 同步等）。
-- 侧栏组件：`src/components/agents-workspace-rail.tsx`（文件夹区、提示词栈、能力卡片；上下分栏比例持久化键 `pp.agentsRail.folderRatio`；文件夹区折叠状态持久化键 `pp.agentsRail.folderCollapsed`，首次打开默认折叠，用户手动展开后记住偏好）。
+- 侧栏组件：`src/components/agents-workspace-rail.tsx`（VS Code 风格四面板：项目工作区、Agent 数据目录、提示词注入栈、系统能力，四块平级；每两块之间都有独立拖拽条，weights 持久化键 `pp.agentsRail.panelWeights`。折叠持久化：`pp.agentsRail.projectWorkspaceCollapsed`、`pp.agentsRail.folderCollapsed`、`pp.agentsRail.promptCollapsed`、`pp.agentsRail.capCollapsed`）。
 
 ## 对话区
 

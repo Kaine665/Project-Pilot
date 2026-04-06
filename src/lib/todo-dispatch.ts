@@ -92,6 +92,7 @@ export async function dispatchTodoToAgent(
     options.sourceType ?? 'todo',
     options.sourceId ?? todoId,
     todoId,
+    undefined,
   );
 
   const now = new Date().toISOString();

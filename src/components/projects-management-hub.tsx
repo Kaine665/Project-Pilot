@@ -9,6 +9,7 @@ import {
   Copy,
   ExternalLink,
   FolderKanban,
+  FolderOpen,
   FolderPlus,
   GitBranch,
   Globe,
@@ -24,7 +25,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import type { ProjectEntry, ProjectLocation, ProjectTechStack } from '@/types';
+import { hasElectronFolderPicker, canPickFolder, pickLocalFolderPath } from '@/lib/electron-folder-picker';
+import type { ProjectEntry, ProjectLocation } from '@/types';
 
 const LOCATION_OPTIONS: { value: ProjectLocation; labelKey: string }[] = [
   { value: 'local', labelKey: 'locationLocal' },
@@ -32,22 +34,6 @@ const LOCATION_OPTIONS: { value: ProjectLocation; labelKey: string }[] = [
   { value: 'gitee', labelKey: 'locationGitee' },
   { value: 'cloud-server', labelKey: 'locationCloudServer' },
   { value: 'hybrid', labelKey: 'locationHybrid' },
-];
-
-const TECH_STACK_OPTIONS: { value: ProjectTechStack; label: string }[] = [
-  { value: 'nextjs', label: 'Next.js' },
-  { value: 'react', label: 'React' },
-  { value: 'react-native', label: 'React Native' },
-  { value: 'vue', label: 'Vue' },
-  { value: 'angular', label: 'Angular' },
-  { value: 'node', label: 'Node.js' },
-  { value: 'python', label: 'Python' },
-  { value: 'go', label: 'Go' },
-  { value: 'rust', label: 'Rust' },
-  { value: 'java', label: 'Java' },
-  { value: 'electron', label: 'Electron' },
-  { value: 'flutter', label: 'Flutter' },
-  { value: 'other', label: 'Other' },
 ];
 
 const ACTIVE_RECENT_DAYS = 45;
@@ -90,14 +76,11 @@ function rowDotStyle(project: ProjectEntry): CSSProperties {
 }
 
 function domainLabel(project: ProjectEntry, t: (k: string) => string) {
-  if (project.techStack) {
-    return TECH_STACK_OPTIONS.find(o => o.value === project.techStack)?.label ?? project.techStack;
-  }
   if (project.location) {
     const loc = LOCATION_OPTIONS.find(o => o.value === project.location);
     return loc ? t(loc.labelKey) : t('locationLocal');
   }
-  return '—';
+  return t('locationLocal');
 }
 
 /** 右侧详情：除「概览 / 工作区」外的区块，仅在有数据时展示 */
@@ -140,9 +123,30 @@ export function ProjectsManagementHub() {
   const [formName, setFormName] = useState('');
   const [formPath, setFormPath] = useState('');
   const [formDescription, setFormDescription] = useState('');
-  const [formLocation, setFormLocation] = useState('');
-  const [formTechStack, setFormTechStack] = useState('');
+  const [formLocation, setFormLocation] = useState<ProjectLocation>('local');
+  const [formRepoUrl, setFormRepoUrl] = useState('');
+  const [formRepoBranch, setFormRepoBranch] = useState('');
+  const [formSshKey, setFormSshKey] = useState('');
   const [pathCopied, setPathCopied] = useState(false);
+
+  const handleCreateDialogOpenChange = useCallback((open: boolean) => {
+    setCreateOpen(open);
+    if (!open) {
+      setFormName('');
+      setFormPath('');
+      setFormDescription('');
+      setFormLocation('local');
+      setFormRepoUrl('');
+      setFormRepoBranch('');
+      setFormSshKey('');
+    }
+  }, []);
+
+  const handlePickLocalFolder = useCallback(async () => {
+    console.log('[pick-folder] button clicked, canPick:', hasElectronFolderPicker());
+    const picked = await pickLocalFolderPath();
+    if (picked) setFormPath(picked);
+  }, []);
 
   const formatDate = useCallback(
     (value?: string) => {
@@ -256,15 +260,38 @@ export function ProjectsManagementHub() {
     setFormName('');
     setFormPath('');
     setFormDescription('');
-    setFormLocation('');
-    setFormTechStack('');
+    setFormLocation('local');
+    setFormRepoUrl('');
+    setFormRepoBranch('');
+    setFormSshKey('');
     setCreateOpen(false);
   }, []);
 
+  const createFormValid = useMemo(() => {
+    const nameOk = formName.trim().length > 0;
+    if (!nameOk) return false;
+    const loc = formLocation;
+    const pathOk = formPath.trim().length > 0;
+    const repoOk = formRepoUrl.trim().length > 0;
+    switch (loc) {
+      case 'local':
+      case 'cloud-server':
+        return pathOk;
+      case 'github':
+      case 'gitee':
+        return repoOk;
+      case 'hybrid':
+        return pathOk && repoOk;
+      default:
+        return pathOk;
+    }
+  }, [formLocation, formName, formPath, formRepoUrl]);
+
   const handleCreateProject = useCallback(async () => {
+    if (!createFormValid) return;
     const name = formName.trim();
     const path = formPath.trim();
-    if (!name || !path) return;
+    const loc = formLocation;
 
     setCreating(true);
     try {
@@ -273,17 +300,35 @@ export function ProjectsManagementHub() {
         projects.map(project => project.key),
       );
 
+      const body: Record<string, unknown> = {
+        key,
+        name,
+        location: loc,
+        description: formDescription.trim() || undefined,
+      };
+
+      if (path) body.path = path;
+
+      if (loc === 'github' || loc === 'gitee' || loc === 'hybrid') {
+        const url = formRepoUrl.trim();
+        if (url) {
+          const provider = loc === 'gitee' ? 'gitee' : 'github';
+          body.repository = {
+            url,
+            defaultBranch: formRepoBranch.trim() || undefined,
+            provider,
+          };
+        }
+      }
+
+      if ((loc === 'cloud-server' || loc === 'hybrid') && formSshKey.trim()) {
+        body.access = { sshKey: formSshKey.trim() };
+      }
+
       const res = await fetch('/api/data/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          key,
-          name,
-          path,
-          description: formDescription.trim() || undefined,
-          location: formLocation || undefined,
-          techStack: formTechStack || undefined,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) return;
@@ -296,11 +341,14 @@ export function ProjectsManagementHub() {
       setCreating(false);
     }
   }, [
+    createFormValid,
     formDescription,
     formLocation,
     formName,
     formPath,
-    formTechStack,
+    formRepoBranch,
+    formRepoUrl,
+    formSshKey,
     projects,
     refreshProjects,
     resetCreateForm,
@@ -364,22 +412,19 @@ export function ProjectsManagementHub() {
   );
 
   return (
-    <Dialog.Root
-      open={createOpen}
-      onOpenChange={open => {
-        setCreateOpen(open);
-        if (!open) {
-          setFormName('');
-          setFormPath('');
-          setFormDescription('');
-          setFormLocation('');
-          setFormTechStack('');
-        }
-      }}
-    >
-      <div className="flex h-[calc(100dvh-3.5rem)] min-h-[min(100dvh-3.5rem,900px)] w-full min-w-0 flex-col overflow-hidden bg-zinc-50/30 dark:bg-zinc-950">
+    <Dialog.Root modal={false} open={createOpen} onOpenChange={handleCreateDialogOpenChange}>
+      <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-zinc-50/30 dark:bg-zinc-950">
         <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50" />
+          {/*
+            modal={false}：避免 Radix 模态层拦截 onFocusOutside，否则 Electron 系统选文件夹对话框无法获得焦点（表现为按钮无反应）。
+            遮罩改用手动层，点击关闭行为与原先一致。
+          */}
+          <button
+            type="button"
+            className="fixed inset-0 z-40 cursor-default border-0 bg-black/50 p-0"
+            aria-label={tActions('close')}
+            onClick={() => handleCreateDialogOpenChange(false)}
+          />
           <Dialog.Content className="fixed left-1/2 top-1/2 z-50 flex w-[min(92vw,560px)] -translate-x-1/2 -translate-y-1/2 flex-col gap-5 rounded-[24px] border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-950">
             <div className="space-y-2">
               <Dialog.Title className="text-xl font-semibold text-zinc-950 dark:text-zinc-50">
@@ -391,19 +436,21 @@ export function ProjectsManagementHub() {
             </div>
 
             <div className="grid gap-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('projectName')}</label>
-                  <Input value={formName} onChange={e => setFormName(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('projectPath')}</label>
-                  <Input
-                    value={formPath}
-                    onChange={e => setFormPath(e.target.value)}
-                    placeholder={t('projectPathPlaceholder')}
-                  />
-                </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('projectName')}</label>
+                <Input value={formName} onChange={e => setFormName(e.target.value)} />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('location')}</label>
+                <Select
+                  value={formLocation}
+                  onChange={v => setFormLocation((v || 'local') as ProjectLocation)}
+                  options={LOCATION_OPTIONS.map(option => ({
+                    value: option.value,
+                    label: t(option.labelKey),
+                  }))}
+                />
               </div>
 
               <div className="space-y-2">
@@ -417,28 +464,174 @@ export function ProjectsManagementHub() {
                 />
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('location')}</label>
-                  <Select
-                    value={formLocation}
-                    onChange={setFormLocation}
-                    placeholder={t('location')}
-                    options={LOCATION_OPTIONS.map(option => ({
-                      value: option.value,
-                      label: t(option.labelKey),
-                    }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('techStack')}</label>
-                  <Select
-                    value={formTechStack}
-                    onChange={setFormTechStack}
-                    placeholder={t('techStack')}
-                    options={TECH_STACK_OPTIONS}
-                  />
-                </div>
+              <div className="space-y-3 rounded-xl border border-zinc-200 bg-zinc-50/60 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
+                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{t('locationPathsSection')}</p>
+
+                {formLocation === 'local' && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('createLocalPathLabel')}</label>
+                    <div className="flex gap-2">
+                      <Input
+                        className="min-w-0 flex-1 font-mono text-sm"
+                        value={formPath}
+                        onChange={e => setFormPath(e.target.value)}
+                        placeholder={t('projectPathPlaceholder')}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 shrink-0 gap-1.5 px-3"
+                        disabled={!canPickFolder()}
+                        title={t('browseFolder')}
+                        onClick={handlePickLocalFolder}
+                      >
+                        <FolderOpen className="h-4 w-4" />
+                        {t('browseFolder')}
+                      </Button>
+                    </div>
+                    <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400">{t('createLocalPathHint')}</p>
+                  </div>
+                )}
+
+                {(formLocation === 'github' || formLocation === 'gitee') && (
+                  <div className="grid gap-3">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                        {t('repoUrl')} <span className="text-red-500">*</span>
+                      </label>
+                      <Input
+                        value={formRepoUrl}
+                        onChange={e => setFormRepoUrl(e.target.value)}
+                        placeholder={t('repoUrlPlaceholder')}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('defaultBranch')}</label>
+                      <Input
+                        value={formRepoBranch}
+                        onChange={e => setFormRepoBranch(e.target.value)}
+                        placeholder={t('defaultBranchPlaceholder')}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('createClonePathLabel')}</label>
+                      <div className="flex gap-2">
+                        <Input
+                          className="min-w-0 flex-1 font-mono text-sm"
+                          value={formPath}
+                          onChange={e => setFormPath(e.target.value)}
+                          placeholder={t('projectPathPlaceholder')}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-9 shrink-0 gap-1.5 px-3"
+                          disabled={!canPickFolder()}
+                          title={t('browseFolder')}
+                          onClick={handlePickLocalFolder}
+                        >
+                          <FolderOpen className="h-4 w-4" />
+                          {t('browseFolder')}
+                        </Button>
+                      </div>
+                      <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400">{t('createClonePathHint')}</p>
+                    </div>
+                  </div>
+                )}
+
+                {formLocation === 'cloud-server' && (
+                  <div className="grid gap-3">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                        {t('createCloudPathLabel')} <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex gap-2">
+                        <Input
+                          className="min-w-0 flex-1 font-mono text-sm"
+                          value={formPath}
+                          onChange={e => setFormPath(e.target.value)}
+                          placeholder={t('createCloudPathPlaceholder')}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-9 shrink-0 gap-1.5 px-3"
+                          disabled={!canPickFolder()}
+                          title={t('browseFolder')}
+                          onClick={handlePickLocalFolder}
+                        >
+                          <FolderOpen className="h-4 w-4" />
+                          {t('browseFolder')}
+                        </Button>
+                      </div>
+                      <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400">{t('createCloudPathHint')}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('createSshKeyOptionalLabel')}</label>
+                      <Input
+                        value={formSshKey}
+                        onChange={e => setFormSshKey(e.target.value)}
+                        placeholder={t('sshKeyPlaceholder')}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {formLocation === 'hybrid' && (
+                  <div className="grid gap-3">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                        {t('repoUrl')} <span className="text-red-500">*</span>
+                      </label>
+                      <Input
+                        value={formRepoUrl}
+                        onChange={e => setFormRepoUrl(e.target.value)}
+                        placeholder={t('repoUrlPlaceholder')}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('defaultBranch')}</label>
+                      <Input
+                        value={formRepoBranch}
+                        onChange={e => setFormRepoBranch(e.target.value)}
+                        placeholder={t('defaultBranchPlaceholder')}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                        {t('createHybridLocalPathLabel')} <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex gap-2">
+                        <Input
+                          className="min-w-0 flex-1 font-mono text-sm"
+                          value={formPath}
+                          onChange={e => setFormPath(e.target.value)}
+                          placeholder={t('projectPathPlaceholder')}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-9 shrink-0 gap-1.5 px-3"
+                          disabled={!canPickFolder()}
+                          title={t('browseFolder')}
+                          onClick={handlePickLocalFolder}
+                        >
+                          <FolderOpen className="h-4 w-4" />
+                          {t('browseFolder')}
+                        </Button>
+                      </div>
+                      <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400">{t('createHybridLocalPathHint')}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('createSshKeyOptionalLabel')}</label>
+                      <Input
+                        value={formSshKey}
+                        onChange={e => setFormSshKey(e.target.value)}
+                        placeholder={t('sshKeyPlaceholder')}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -450,7 +643,7 @@ export function ProjectsManagementHub() {
               </Dialog.Close>
               <Button
                 onClick={handleCreateProject}
-                disabled={creating || !formName.trim() || !formPath.trim()}
+                disabled={creating || !createFormValid}
                 className="rounded-xl"
               >
                 {creating ? t('creatingProject') : t('createProject')}
@@ -600,11 +793,6 @@ export function ProjectsManagementHub() {
                           {activeProject.location && (
                             <Badge variant="outline" className="rounded-full text-xs font-medium">
                               {t(LOCATION_OPTIONS.find(o => o.value === activeProject.location)?.labelKey ?? 'locationLocal')}
-                            </Badge>
-                          )}
-                          {activeProject.techStack && (
-                            <Badge variant="outline" className="rounded-full text-xs font-medium">
-                              {TECH_STACK_OPTIONS.find(o => o.value === activeProject.techStack)?.label ?? activeProject.techStack}
                             </Badge>
                           )}
                           {isActiveRecent(activeProject) && !activeProject.archived && (

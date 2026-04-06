@@ -29,8 +29,10 @@ import aiDiscussRoutes from './routes/ai-discuss';
 import agentChatRoutes from './routes/agent-chat';
 import schedulesRoutes from './routes/schedules';
 import eventTriggersRoutes from './routes/event-triggers';
+import communityRoutes from './routes/community';
 
 import { ensureDataDirV2Migrated } from '@/lib/file-store';
+import { ensureGlobalAgentsMigratedToPresets } from '@/lib/migrations/migrate-global-agents-to-presets';
 import { schedulerManager } from '@/lib/scheduler-manager';
 import { eventTriggerManager } from '@/lib/event-trigger-manager';
 
@@ -62,6 +64,7 @@ app.route('/api/ai-discuss', aiDiscussRoutes);
 app.route('/api/agent-chat', agentChatRoutes);
 app.route('/api/schedules', schedulesRoutes);
 app.route('/api/event-triggers', eventTriggersRoutes);
+app.route('/api/community', communityRoutes);
 
 // --- Static file serving (production) ---
 const clientDistPath = path.resolve(__dirname, '../../dist/client');
@@ -80,11 +83,15 @@ if (fs.existsSync(clientDistPath)) {
   });
 }
 
-// --- Start server ---
-const port = parseInt(process.env.PORT ?? '4500', 10);
+// --- Start server（与 config/load-dev-server.cjs 一致：PROJECT_PILOT_API_PORT 优先于 PORT）---
+const port = parseInt(
+  process.env.PROJECT_PILOT_API_PORT ?? process.env.PORT ?? '4500',
+  10,
+);
 
 async function startServer(): Promise<void> {
   await ensureDataDirV2Migrated();
+  await ensureGlobalAgentsMigratedToPresets();
   await schedulerManager.init();
   await eventTriggerManager.init();
   console.log(`[server] Starting Hono backend on http://127.0.0.1:${port}`);

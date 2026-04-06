@@ -6,13 +6,21 @@
 import type { Agent } from '@/types';
 import type { ResourceRef } from '@/types/resource';
 
+/** 所有 Agent 提示词均注入：Bash + call-agent 可委派给其他 PP Agent（与 capabilities.subAgent 无关） */
+export const CALLABLE_AGENTS_RESOURCE_REF: ResourceRef = {
+  type: 'available-agents',
+  id: '_callable',
+  priority: 18,
+  label: '可调用 Agent',
+};
+
 /**
  * Build a default ResourceRef[] from an Agent that has no `defaultResources`.
  *
  * Maps the legacy fields:
  *   agent.systemPrompt / fallback  → system-prompt ref (priority 0)
  *   design-docs-index              → always included (priority 25)
- *   subAgent capability             → available-agents ref (priority 18)
+ *   available-agents               → always included (priority 18)
  *   todoRead capability            → todo-list ref (priority 40)
  *   doc-save-instructions          → always included (priority 85)
  */
@@ -51,15 +59,7 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
     label: 'Agent 共享记忆',
   });
 
-  // Available agents list (only when agent has subAgent capability)
-  if (agent.capabilities?.subAgent) {
-    refs.push({
-      type: 'available-agents',
-      id: '_callable',
-      priority: 18,
-      label: '可调用 Agent',
-    });
-  }
+  refs.push(CALLABLE_AGENTS_RESOURCE_REF);
 
   // Agent private data store (if agent has dataStore capability)
   if (agent.capabilities?.dataStore) {

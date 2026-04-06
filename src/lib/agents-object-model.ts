@@ -180,6 +180,23 @@ export async function saveAgentsToObjectModel(data: AgentsData): Promise<void> {
   } catch {
     /* ok */
   }
+
+  const bindDir = getAgentsBindingsDir();
+  try {
+    const bFiles = await fs.readdir(bindDir);
+    for (const f of bFiles) {
+      if (!f.startsWith('binding-') || !f.endsWith('.json')) continue;
+      const m = f.match(/^binding-(.+)--(?:global|project-.+)\.json$/);
+      if (!m) continue;
+      const sid = m[1]!.replace(/[^a-zA-Z0-9_-]/g, '');
+      if (!keep.has(sid)) {
+        await fs.unlink(path.join(bindDir, f)).catch(() => {});
+      }
+    }
+  } catch {
+    /* ok */
+  }
+
   const stDir = getAgentsStatusesDir();
   try {
     const stFiles = await fs.readdir(stDir);

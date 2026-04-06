@@ -1,18 +1,22 @@
 /**
- * AvailableAgentsLoader — renders the list of agents callable via sub-agent invocation.
+ * AvailableAgentsLoader — 列出可委派的 PP Agent，并说明如何通过 Bash 调用 call-agent CLI。
  *
- * When an agent has `subAgent: true`, this resource injects a table of
- * other available agents and instructions on how to invoke them via
- * the call-agent CLI tool.
+ * 该资源对**所有** Agent 注入（与 capabilities.subAgent 无关）。
+ * `subAgent` 仅控制 Claude Code 的 Task / TaskOutput / TaskStop 工具。
  *
  * ref.id is always '_callable'.
  */
 
+import path from 'path';
+import { fileURLToPath } from 'url';
 import type { ResourceLoader, LoaderContext } from '../resource-loader';
 import type { ResourceRef, ResolvedResource } from '@/types/resource';
 import { getAgentsPath, readJsonFile } from '@/lib/file-store';
 import type { AgentsData, Agent, AgentCapabilities } from '@/types';
 import { mergeAndRepairAgentsData } from '@/lib/agent-metadata-repair';
+
+/** develop-static 根目录（含 src/lib/call-agent.ts），与当前 Agent Bash cwd（常为业务仓库根）解耦 */
+const PP_APP_CODE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
 export class AvailableAgentsLoader implements ResourceLoader {
   readonly type = 'available-agents' as const;
@@ -57,7 +61,16 @@ export class AvailableAgentsLoader implements ResourceLoader {
       hintsSection = `\n### 何时找谁（Agent 黄页）\n\n以下场景建议主动调用对应 Agent：\n\n${lines.join('\n')}\n`;
     }
 
-    const md = `你可以通过 \`call-agent\` CLI 调用以下 Agent 来协助完成子任务。
+    const shAppRoot = PP_APP_CODE_ROOT.replace(/\\/g, '/');
+
+    const md = `你可以通过 **Bash** 执行 \`call-agent\` CLI 调用以下 Agent 来协助完成子任务。
+
+**重要**：
+- Claude Agent SDK **没有**名为 \`Agent\`、\`InvokeAgent\` 等「一键切换 Agent」的原生工具；若尝试调用会失败。
+- 委派方式：使用 **Bash** 工具，\`cd\` 到下方 **PP 应用代码根**（与当前会话 \`cwd\` 常为业务项目根目录**不是**同一目录），再运行 \`npx tsx src/lib/call-agent.ts ...\`。
+- 若当前 Agent **未开启 Bash**（\`capabilities.bash = false\`），无法执行上述命令，应请用户在界面中**新建会话并切换**到目标 Agent。
+
+**PP 应用代码根（用于 call-agent）**：\`${shAppRoot}\`
 
 ${tableHeader}
 ${callable.map(toRow).join('\n')}
@@ -78,7 +91,7 @@ ${hintsSection}
 ### 同步调用（默认，等待完成）
 
 \`\`\`bash
-cd "$PROJECT_ROOT" && npx tsx src/lib/call-agent.ts \\
+cd "${shAppRoot}" && npx tsx src/lib/call-agent.ts \\
   --agent-id <AGENT_ID> \\
   --message "你的指令" \\
   [--project <PROJECT_KEY>] \\
@@ -93,7 +106,7 @@ cd "$PROJECT_ROOT" && npx tsx src/lib/call-agent.ts \\
 
 \`\`\`bash
 # 1. 发起异步调用（返回 JSON，从中提取 sessionId）
-ASYNC_RESULT=$(cd "$PROJECT_ROOT" && npx tsx src/lib/call-agent.ts \\
+ASYNC_RESULT=$(cd "${shAppRoot}" && npx tsx src/lib/call-agent.ts \\
   --agent-id <AGENT_ID> \\
   --message "你的指令" \\
   --async \\
@@ -104,7 +117,7 @@ ASYNC_RESULT=$(cd "$PROJECT_ROOT" && npx tsx src/lib/call-agent.ts \\
 # 2. 继续做你自己的事...
 
 # 3. 稍后检查结果（exit 0=完成, 2=仍在运行, 1=失败）
-POLL_RESULT=$(cd "$PROJECT_ROOT" && npx tsx src/lib/call-agent.ts --poll <sessionId>)
+POLL_RESULT=$(cd "${shAppRoot}" && npx tsx src/lib/call-agent.ts --poll <sessionId>)
 # POLL_RESULT = {"status":"completed","sessionId":"xxx","content":"..."}
 \`\`\`
 
@@ -121,7 +134,7 @@ POLL_RESULT=$(cd "$PROJECT_ROOT" && npx tsx src/lib/call-agent.ts --poll <sessio
 - \`--parent-session\`：可选，将子会话关联到当前会话（推荐传入）
 - \`--timeout\`：可选，超时秒数（默认 300 秒，仅同步模式）
 - \`--depth\`：可选，调用深度（递归保护，默认 0，上限 3）
-- \`$PROJECT_ROOT\` 是 ProjectPilot 项目根目录
+- 上述 \`cd\` 目标必须是 **PP 应用代码根**（本文件已给出绝对路径），不要用当前 Bash 默认 cwd 代替
 `;
 
     return {

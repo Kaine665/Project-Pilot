@@ -1,5 +1,10 @@
 import { readPromptFile } from '@/lib/agent-prompt-store';
 import { DEFAULT_AGENTS } from '@/lib/default-agents';
+import {
+  physicallyPurgeAgentDiskData,
+  RETIRED_BUILTIN_AGENT_IDS,
+  RETIRED_BUILTIN_SLUGS,
+} from '@/lib/physically-purge-agent-disk-data';
 import type { Agent, AgentsData } from '@/types';
 
 const MOJIBAKE_PATTERNS = [
@@ -132,8 +137,11 @@ async function repairAgent(agent: Agent): Promise<boolean> {
   return changed;
 }
 
-export async function mergeAndRepairAgentsData(data: AgentsData): Promise<{ data: AgentsData; changed: boolean }> {
+export async function mergeAndRepairAgentsData(
+  data: AgentsData,
+): Promise<{ data: AgentsData; changed: boolean; bypassCountDropGuard?: boolean }> {
   let changed = false;
+  let bypassCountDropGuard = false;
 
   for (const defaultAgent of DEFAULT_AGENTS) {
     const existing = data.agents.find((agent) => agent.id === defaultAgent.id);
@@ -150,5 +158,19 @@ export async function mergeAndRepairAgentsData(data: AgentsData): Promise<{ data
     changed = (await repairAgent(agent)) || changed;
   }
 
-  return { data, changed };
+  const isRetiredBuiltin = (a: Agent) =>
+    RETIRED_BUILTIN_AGENT_IDS.has(a.id) ||
+    (a.builtIn === true && !!a.slug && RETIRED_BUILTIN_SLUGS.has(a.slug));
+
+  const toRemove = data.agents.filter(isRetiredBuiltin);
+  if (toRemove.length > 0) {
+    bypassCountDropGuard = true;
+    for (const a of toRemove) {
+      await physicallyPurgeAgentDiskData(a.id);
+    }
+    data.agents = data.agents.filter((a) => !isRetiredBuiltin(a));
+    changed = true;
+  }
+
+  return { data, changed, bypassCountDropGuard };
 }

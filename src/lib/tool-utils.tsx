@@ -142,6 +142,14 @@ export function getToolOneLiner(tc: ChatToolCall): string {
       const query = parsed?.query as string | undefined;
       return query ?? 'WebSearch';
     }
+    case 'TodoWrite': {
+      const todos = parsed?.todos as Array<{ content?: string; status?: string }> | undefined;
+      if (Array.isArray(todos) && todos.length > 0) {
+        const done = todos.filter((x) => x.status === 'completed').length;
+        return `${done}/${todos.length} 项`;
+      }
+      return 'TodoWrite';
+    }
     case 'Task': {
       const desc = parsed?.description as string | undefined;
       return desc ?? 'Task';

@@ -99,7 +99,7 @@ app.post('/', async (c) => {
     agentId, message, sessionId: requestedSessionId, projectKey,
     providerOverride, modelOverride, effortOverride, fastModeOverride,
     images, initialTitle, config, parentSessionId, depth, background,
-    sourceType, sourceId, todoId,
+    sourceType, sourceId, todoId, userMessageMeta: rawUserMessageMeta,
   } = body as {
     agentId: string;
     message: string;
@@ -118,7 +118,24 @@ app.post('/', async (c) => {
     sourceType?: 'manual' | 'schedule' | 'todo' | 'event';
     sourceId?: string;
     todoId?: string;
+    userMessageMeta?: unknown;
   };
+
+  let userMessageMeta: import('@/types/agent-chat').ChatMessageDiskMeta | undefined;
+  if (rawUserMessageMeta !== undefined && rawUserMessageMeta !== null) {
+    if (typeof rawUserMessageMeta === 'object') {
+      const um = rawUserMessageMeta as { type?: unknown; executionRunId?: unknown };
+      if (
+        um.type === 'run_task'
+        && typeof um.executionRunId === 'string'
+        && um.executionRunId.length > 0
+        && um.executionRunId.length <= 120
+        && /^run-\d+-[a-z0-9]+$/.test(um.executionRunId)
+      ) {
+        userMessageMeta = { type: 'run_task', executionRunId: um.executionRunId };
+      }
+    }
+  }
 
   if (!agentId) {
     return c.json({ error: 'agentId is required' }, 400);
@@ -172,6 +189,13 @@ app.post('/', async (c) => {
   const sessionId = requestedSessionId || generateSessionId();
 
   try {
+    const ppApiT0 = Date.now();
+    console.log(
+      `[PP-AgentChat:API] POST / begin sessionId=${sessionId} agentId=${agentId}`
+      + ` provider=${normalizedProvider || '(body default)'} model=${normalizedModel || '(default)'}`
+      + ` msgLen=${message.length}${projectKey ? ` projectKey=${projectKey}` : ''}`,
+    );
+
     let flowContext: FlowContext | undefined;
     if (projectKey) {
       await ensureDataDirV2Migrated();
@@ -228,11 +252,19 @@ app.post('/', async (c) => {
       (sourceType || 'manual') as 'manual' | 'schedule' | 'todo' | 'event',
       sourceId,
       todoId,
+      userMessageMeta,
     );
 
+    console.log(
+      `[PP-AgentChat:API] POST / ok sessionId=${sessionId} runId=${runId} elapsedMs=${Date.now() - ppApiT0}`,
+    );
     return c.json({ runId, sessionId });
   } catch (err) {
     const status = err instanceof HttpError ? err.statusCode : 500;
+    console.error(
+      `[PP-AgentChat:API] POST / fail sessionId=${sessionId}`,
+      err instanceof Error ? err.message : err,
+    );
     return c.json({ error: (err as Error).message }, status as 400 | 500);
   }
 });
@@ -284,6 +316,8 @@ app.get('/stream', (c) => {
   }
 
   return streamSSE(c, async (stream) => {
+    const sseT0 = Date.now();
+    console.log(`[PP-AgentChat:API] GET stream open sessionId=${sessionId} since=${since}`);
     await stream.writeSSE({ data: '' }); // initial heartbeat
 
     const sink = new SSETransportSink(stream);
@@ -292,7 +326,10 @@ app.get('/stream', (c) => {
     const keepAlive = new Promise<void>((r) => { resolveKeepAlive = r; });
 
     const push = (event: AgentEvent, index: number): void => {
-      console.log(`[SSE-DEBUG] push event type=${event.type} idx=${index} session=${sessionId}`);
+      console.log(
+        `[PP-AgentChat:API] SSE push type=${event.type} idx=${index} session=${sessionId}`
+        + ` (+${Date.now() - sseT0}ms since stream open)`,
+      );
       sink.send({ event, index });
       if (event.type === 'done' || event.type === 'stream_end') {
         resolveKeepAlive?.();
@@ -300,7 +337,10 @@ app.get('/stream', (c) => {
     };
 
     const unsubscribe = agentChatManager.subscribe(sessionId, since, push);
-    console.log(`[SSE-DEBUG] subscribe result: ${unsubscribe ? 'listener added' : 'null (no run)'} session=${sessionId} since=${since}`);
+    console.log(
+      `[PP-AgentChat:API] GET stream subscribe session=${sessionId} since=${since}`
+      + ` → ${unsubscribe ? 'listener added' : 'null (no run — client will get empty done)'}`,
+    );
 
     if (!unsubscribe) {
       await stream.writeSSE({ data: agentEventToSSEData({ type: 'done' }) });
@@ -309,13 +349,13 @@ app.get('/stream', (c) => {
     }
 
     stream.onAbort(() => {
-      console.log(`[SSE-DEBUG] onAbort fired session=${sessionId}`);
+      console.log(`[PP-AgentChat:API] GET stream abort session=${sessionId}`);
       unsubscribe();
       resolveKeepAlive?.();
     });
 
     await keepAlive;
-    console.log(`[SSE-DEBUG] keepAlive resolved, closing SSE session=${sessionId}`);
+    console.log(`[PP-AgentChat:API] GET stream close session=${sessionId} totalMs=${Date.now() - sseT0}`);
   });
 });
 
