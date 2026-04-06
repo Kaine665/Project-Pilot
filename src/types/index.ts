@@ -809,7 +809,9 @@ export interface ScheduleRunsData {
 /** Scope for segmented prompts */
 export type PromptSegmentScope =
   | { type: 'global' }
-  | { type: 'project'; projectKey: string };
+  | { type: 'project'; projectKey: string }
+  | { type: 'agent'; agentId: string }
+  | { type: 'runtime'; agentId: string; sessionId: string };
 
 /** A single segment within a segmented prompt */
 export interface PromptSegment {

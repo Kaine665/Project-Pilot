@@ -45,6 +45,7 @@ import {
   getLegacySessionPromptOverridePath,
   getPromptRuntimePath,
 } from '@/lib/file-store';
+import { resolveSegmentedContent } from '@/lib/segmented-prompt-store';
 import { HttpError } from '@/lib/http-error';
 import { spawnClaude } from '@/lib/claude-cli';
 import { readTaskCard } from '@/lib/task-card-store';
@@ -417,6 +418,16 @@ app.get('/runtime-prompt', async (c) => {
 
   if (!agentId || !sessionId) {
     return c.json({ error: 'agentId and sessionId are required' }, 400);
+  }
+
+  // Try segmented mode first
+  try {
+    const segmented = await resolveSegmentedContent({ type: 'runtime', agentId, sessionId });
+    if (segmented !== undefined) {
+      return c.json({ content: segmented });
+    }
+  } catch {
+    // Segmented mode failed — fall through to single file
   }
 
   const primary = getPromptRuntimePath(agentId, sessionId);

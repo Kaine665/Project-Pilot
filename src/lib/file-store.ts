@@ -916,6 +916,24 @@ export function getSegmentedPromptDir(scope: PromptSegmentScope): string {
       }
       return path.join(DATA_DIR, 'prompts', 'projects', `${safe}.d`);
     }
+    case 'agent': {
+      const safe = scope.agentId.replace(/[^a-zA-Z0-9_-]/g, '');
+      if (!safe || safe.length < 1 || safe.length > 100) {
+        throw new Error(`Invalid agent id: ${scope.agentId}`);
+      }
+      return path.join(DATA_DIR, 'prompts', 'agents', `${safe}.d`);
+    }
+    case 'runtime': {
+      const safeAgent = scope.agentId.replace(/[^a-zA-Z0-9_-]/g, '');
+      if (!safeAgent || safeAgent.length < 1 || safeAgent.length > 100) {
+        throw new Error(`Invalid agent id: ${scope.agentId}`);
+      }
+      const safeSession = scope.sessionId.replace(/[^a-zA-Z0-9_-]/g, '');
+      if (!safeSession || safeSession.length < 1 || safeSession.length > 100) {
+        throw new Error(`Invalid session id: ${scope.sessionId}`);
+      }
+      return path.join(DATA_DIR, 'prompts', 'runtime', safeAgent, `${safeSession}.d`);
+    }
   }
 }
 

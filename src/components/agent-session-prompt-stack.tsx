@@ -1,15 +1,29 @@
 'use client';
 
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from '@/client/i18n/use-translations';
 import {
+  Check,
+  ChevronDown,
+  ChevronUp,
   Eye,
   FileText,
   FolderOpen,
   LoaderCircle,
+  Pencil,
+  Plus,
+  SplitSquareHorizontal,
+  Trash2,
   X,
 } from 'lucide-react';
 import { WorkspaceRailPanelHeader } from '@/components/workspace-rail-panel-header';
+import {
+  usePromptSegments,
+  type SegmentWithContent,
+} from '@/hooks/use-prompt-segments';
+import type { PromptSegment, PromptSegmentScope } from '@/types';
+
+// ── Types ──
 
 type PromptTarget = 'global' | 'project' | 'agent' | 'session';
 
@@ -27,62 +41,12 @@ export interface PromptStackSeedItem {
   content?: string;
 }
 
-interface PromptGroup {
-  id: string;
-  label: string;
-  badge: string;
-  accent: string;
-  item: PromptStackSeedItem;
-}
-
-interface DetailState {
-  item: PromptStackSeedItem;
-  content: string;
-  loading: boolean;
-  error: string | null;
-}
-
-interface EditorState {
-  item: PromptStackSeedItem;
-  draft: string;
-  loading: boolean;
-  saving: boolean;
-  error: string | null;
-}
-
 interface AgentSessionPromptStackProps {
   items: PromptStackSeedItem[];
-  /** 外层已提供统一顶栏时隐藏组件自带标题行 */
   hideHeader?: boolean;
 }
 
-function getItemId(item: PromptStackSeedItem): string {
-  return item.scope.toLowerCase();
-}
-
-function buildGroups(items: PromptStackSeedItem[]): PromptGroup[] {
-  return items.map((item) => ({
-    id: getItemId(item),
-    label:
-      item.scope === 'Global'
-        ? '全局'
-        : item.scope === 'Project'
-          ? '项目'
-          : item.scope === 'Agent'
-            ? 'Agent'
-            : '会话',
-    badge:
-      item.scope === 'Global'
-        ? 'GLOBAL'
-        : item.scope === 'Project'
-          ? 'PROJECT'
-          : item.scope === 'Agent'
-            ? 'AGENT'
-            : 'SESSION',
-    accent: item.accent,
-    item,
-  }));
-}
+// ── Helpers ──
 
 function estimateTokenCount(content: string | undefined): number | null {
   const normalized = content?.trim() ?? '';
@@ -96,51 +60,73 @@ function formatTokenLabel(tokens: number | null): string {
   return `~${tokens} Token`;
 }
 
-function getScopeTone(groupId: string) {
-  if (groupId === 'global') {
+function getScopeTone(target: PromptTarget) {
+  if (target === 'global') {
     return {
       rail: 'border-sky-200',
       token: 'text-sky-700',
       title: 'text-slate-900',
       card: 'border-slate-200 hover:border-sky-200 hover:ring-sky-100',
       panel: 'border-sky-100 bg-sky-50/70',
+      badge: 'bg-sky-50 text-sky-700 border-sky-100',
     };
   }
-
-  if (groupId === 'project') {
+  if (target === 'project') {
     return {
       rail: 'border-amber-200',
       token: 'text-amber-700',
       title: 'text-slate-900',
       card: 'border-slate-200 hover:border-amber-200 hover:ring-amber-100',
       panel: 'border-amber-100 bg-amber-50/70',
+      badge: 'bg-amber-50 text-amber-700 border-amber-100',
     };
   }
-
-  if (groupId === 'agent') {
+  if (target === 'agent') {
     return {
       rail: 'border-emerald-200',
       token: 'text-emerald-700',
       title: 'text-emerald-900',
       card: 'border-emerald-200 bg-emerald-50/50 hover:border-emerald-300 hover:ring-emerald-100',
       panel: 'border-emerald-100 bg-emerald-50/70',
+      badge: 'bg-emerald-50 text-emerald-700 border-emerald-100',
     };
   }
-
   return {
     rail: 'border-violet-200',
     token: 'text-violet-700',
     title: 'text-slate-900',
     card: 'border-slate-200 hover:border-violet-200 hover:ring-violet-100',
     panel: 'border-violet-100 bg-violet-50/70',
+    badge: 'bg-zinc-100 text-zinc-700 border-zinc-200',
   };
 }
 
-function getFriendlyError(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message;
+function getScopeLabel(target: PromptTarget): string {
+  switch (target) {
+    case 'global': return '全局';
+    case 'project': return '项目';
+    case 'agent': return 'Agent';
+    case 'session': return '会话';
   }
-  return '操作失败，请稍后再试。';
+}
+
+function buildSegmentScope(item: PromptStackSeedItem): PromptSegmentScope | null {
+  switch (item.target) {
+    case 'global':
+      return { type: 'global' };
+    case 'project':
+      return item.projectKey ? { type: 'project', projectKey: item.projectKey } : null;
+    case 'agent':
+      return item.agentId ? { type: 'agent', agentId: item.agentId } : null;
+    case 'session':
+      return item.agentId && item.sessionId
+        ? { type: 'runtime', agentId: item.agentId, sessionId: item.sessionId }
+        : null;
+  }
+}
+
+function generateSegmentId(): string {
+  return `seg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
 async function readJson(response: Response) {
@@ -151,9 +137,7 @@ async function readJson(response: Response) {
   return data;
 }
 
-function canEditItem(item: PromptStackSeedItem): boolean {
-  return item.target !== 'session' || Boolean(item.sessionId && item.agentId);
-}
+// ── Modal ──
 
 function PromptModal({
   title,
@@ -174,9 +158,7 @@ function PromptModal({
     <div
       className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
+        if (event.target === event.currentTarget) onClose();
       }}
     >
       <div
@@ -202,9 +184,7 @@ function PromptModal({
             <X className="h-4 w-4" />
           </button>
         </div>
-
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
-
         {footer ? (
           <div className="border-t border-slate-200 bg-slate-50/80 px-6 py-4">{footer}</div>
         ) : null}
@@ -213,234 +193,490 @@ function PromptModal({
   );
 }
 
+// ── Scope Group (renders one scope with its blocks) ──
+
+function ScopeGroup({
+  item,
+  defaultOpen,
+}: {
+  item: PromptStackSeedItem;
+  defaultOpen: boolean;
+}) {
+  const t = useTranslations('agentsWorkspace');
+  const tone = getScopeTone(item.target);
+  const scope = useMemo(() => buildSegmentScope(item), [item]);
+  const segments = usePromptSegments(scope);
+
+  const [collapsed, setCollapsed] = useState(!defaultOpen);
+  const [viewSegment, setViewSegment] = useState<SegmentWithContent | null>(null);
+  const [editSegment, setEditSegment] = useState<SegmentWithContent | null>(null);
+  const [editDraft, setEditDraft] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [createTitle, setCreateTitle] = useState('');
+  const [createContent, setCreateContent] = useState('');
+  const [createSaving, setCreateSaving] = useState(false);
+
+  // Legacy single-file content for non-segmented scopes
+  const [legacyContent, setLegacyContent] = useState<string | null>(null);
+  const [legacyLoading, setLegacyLoading] = useState(false);
+
+  // Close modal on Escape
+  useEffect(() => {
+    if (!viewSegment && !editSegment && !showCreate) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setViewSegment(null);
+        setEditSegment(null);
+        setShowCreate(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [viewSegment, editSegment, showCreate]);
+
+  const totalTokens = useMemo(() => {
+    if (segments.isSegmented) {
+      return segments.segments
+        .filter(s => s.enabled)
+        .reduce((sum, s) => sum + (estimateTokenCount(s.content) ?? 0), 0);
+    }
+    return item.tokens;
+  }, [segments.segments, segments.isSegmented, item.tokens]);
+
+  const loadLegacyContent = useCallback(async () => {
+    if (legacyContent !== null) return legacyContent;
+    setLegacyLoading(true);
+    try {
+      let content = '';
+      switch (item.target) {
+        case 'global': {
+          const data = await readJson(await fetch('/api/global-prompt', { cache: 'no-store' }));
+          content = typeof data.content === 'string' ? data.content : '';
+          break;
+        }
+        case 'project': {
+          if (item.projectKey) {
+            const data = await readJson(
+              await fetch(`/api/project-prompt/${encodeURIComponent(item.projectKey)}`, { cache: 'no-store' }),
+            );
+            content = typeof data.content === 'string' ? data.content : '';
+          }
+          break;
+        }
+        case 'agent':
+          content = item.content ?? '';
+          break;
+        case 'session': {
+          if (item.agentId && item.sessionId) {
+            const data = await readJson(
+              await fetch(
+                `/api/agent-chat/runtime-prompt?agentId=${encodeURIComponent(item.agentId)}&sessionId=${encodeURIComponent(item.sessionId)}`,
+                { cache: 'no-store' },
+              ),
+            );
+            content = typeof data.content === 'string' ? data.content : '';
+          }
+          break;
+        }
+      }
+      setLegacyContent(content);
+      return content;
+    } finally {
+      setLegacyLoading(false);
+    }
+  }, [item, legacyContent]);
+
+  const handleInitSegmented = async () => {
+    await segments.initSegmented();
+    setLegacyContent(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editSegment) return;
+    setEditSaving(true);
+    try {
+      await segments.updateSegmentContent(editSegment.id, editDraft);
+      setEditSegment(null);
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleCreate = async () => {
+    if (!createTitle.trim()) return;
+    setCreateSaving(true);
+    try {
+      const seg: PromptSegment = {
+        id: generateSegmentId(),
+        title: createTitle.trim(),
+        enabled: true,
+      };
+      await segments.createSegment(seg, createContent);
+      setShowCreate(false);
+      setCreateTitle('');
+      setCreateContent('');
+    } finally {
+      setCreateSaving(false);
+    }
+  };
+
+  const handleMoveUp = async (index: number) => {
+    if (index <= 0) return;
+    const ids = segments.segments.map(s => s.id);
+    [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
+    await segments.reorderSegments(ids);
+  };
+
+  const handleMoveDown = async (index: number) => {
+    if (index >= segments.segments.length - 1) return;
+    const ids = segments.segments.map(s => s.id);
+    [ids[index], ids[index + 1]] = [ids[index + 1], ids[index]];
+    await segments.reorderSegments(ids);
+  };
+
+  return (
+    <section>
+      <WorkspaceRailPanelHeader
+        variant="group"
+        title={getScopeLabel(item.target)}
+        icon={<FolderOpen className="h-3 w-3 text-[#cfb690]" />}
+        collapsed={collapsed}
+        onToggleCollapsed={() => setCollapsed(v => !v)}
+        toggleTitle={collapsed ? t('workspaceRail.expandSection') : t('workspaceRail.collapseSection')}
+        actions={
+          <div className="flex items-center gap-1.5">
+            <span className={`text-[9px] font-medium ${tone.token}`}>
+              {formatTokenLabel(totalTokens)}
+            </span>
+            {segments.isSegmented && !collapsed ? (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setShowCreate(true); }}
+                className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title="添加 Block"
+              >
+                <Plus className="h-3 w-3" />
+              </button>
+            ) : null}
+          </div>
+        }
+      />
+
+      {!collapsed ? (
+        <div className="px-1.5 pb-1.5 pt-0.5 space-y-0.5">
+          {segments.loading ? (
+            <div className="flex items-center justify-center gap-1.5 py-3 text-[10px] text-muted-foreground">
+              <LoaderCircle className="h-3 w-3 animate-spin" />
+              加载中...
+            </div>
+          ) : segments.isSegmented ? (
+            <>
+              {segments.segments.length === 0 ? (
+                <div className="py-2 text-center text-[10px] text-muted-foreground">
+                  暂无 Block，点击 + 添加
+                </div>
+              ) : (
+                segments.segments.map((seg, idx) => {
+                  const segTokens = estimateTokenCount(seg.content);
+                  return (
+                    <article
+                      key={seg.id}
+                      className={`group rounded-lg border bg-card p-1.5 shadow-sm transition-all hover:ring-1 hover:ring-ring/30 ${tone.card} ${
+                        !seg.enabled ? 'opacity-50' : ''
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        {/* Enable/disable checkbox */}
+                        <button
+                          type="button"
+                          onClick={() => segments.toggleSegment(seg.id, !seg.enabled)}
+                          className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-colors ${
+                            seg.enabled
+                              ? 'border-emerald-400 bg-emerald-500 text-white'
+                              : 'border-slate-300 bg-white'
+                          }`}
+                          title={seg.enabled ? '禁用' : '启用'}
+                        >
+                          {seg.enabled ? <Check className="h-2 w-2" /> : null}
+                        </button>
+
+                        {/* Title & tokens */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1">
+                            <FileText className="h-2.5 w-2.5 shrink-0 text-muted-foreground/50" />
+                            <span className={`truncate text-[10px] font-semibold ${tone.title}`}>
+                              {seg.title}
+                            </span>
+                            <span className={`text-[8px] font-medium ${tone.token}`}>
+                              {formatTokenLabel(segTokens)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                          {idx > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => handleMoveUp(idx)}
+                              className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                              title="上移"
+                            >
+                              <ChevronUp className="h-2.5 w-2.5" />
+                            </button>
+                          ) : null}
+                          {idx < segments.segments.length - 1 ? (
+                            <button
+                              type="button"
+                              onClick={() => handleMoveDown(idx)}
+                              className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                              title="下移"
+                            >
+                              <ChevronDown className="h-2.5 w-2.5" />
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => setViewSegment(seg)}
+                            className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                            title="查看"
+                          >
+                            <Eye className="h-2.5 w-2.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditSegment(seg);
+                              setEditDraft(seg.content);
+                            }}
+                            className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                            title="编辑"
+                          >
+                            <Pencil className="h-2.5 w-2.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`确定删除 Block「${seg.title}」？`)) {
+                                segments.deleteSegment(seg.id);
+                              }
+                            }}
+                            className="rounded p-0.5 text-muted-foreground hover:bg-red-50 hover:text-red-600"
+                            title="删除"
+                          >
+                            <Trash2 className="h-2.5 w-2.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })
+              )}
+            </>
+          ) : (
+            /* Non-segmented: single card with split action */
+            <article className={`rounded-lg border bg-card p-2 shadow-sm transition-all hover:ring-1 hover:ring-ring/30 ${tone.card}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="mb-0.5 flex items-start gap-1.5">
+                    <FileText className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground/50" />
+                    <span className={`truncate text-[11px] font-semibold ${tone.title}`}>
+                      {item.label}
+                    </span>
+                  </div>
+                  <p className="line-clamp-2 pl-[18px] text-[10px] leading-4 text-muted-foreground">
+                    {item.description || '暂无摘要'}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const content = await loadLegacyContent();
+                      setViewSegment({
+                        id: '_legacy',
+                        title: item.label,
+                        enabled: true,
+                        content: content ?? '',
+                      });
+                    }}
+                    className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    title="查看"
+                  >
+                    <Eye className="h-3 w-3" />
+                  </button>
+                  {scope ? (
+                    <button
+                      type="button"
+                      onClick={handleInitSegmented}
+                      className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      title="拆分为 Blocks"
+                    >
+                      <SplitSquareHorizontal className="h-3 w-3" />
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </article>
+          )}
+        </div>
+      ) : null}
+
+      {/* View Modal */}
+      {viewSegment ? (
+        <PromptModal
+          title={`${viewSegment.title}`}
+          subtitle={`${getScopeLabel(item.target)}级 Block`}
+          onClose={() => setViewSegment(null)}
+          footer={
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setViewSegment(null)}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 transition-colors hover:bg-white hover:text-slate-900"
+              >
+                关闭
+              </button>
+              {viewSegment.id !== '_legacy' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditSegment(viewSegment);
+                    setEditDraft(viewSegment.content);
+                    setViewSegment(null);
+                  }}
+                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700"
+                >
+                  编辑
+                </button>
+              ) : null}
+            </div>
+          }
+        >
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] ${tone.badge}`}>
+                {item.target}
+              </span>
+              <span className={`text-xs font-medium ${tone.token}`}>
+                {formatTokenLabel(estimateTokenCount(viewSegment.content))}
+              </span>
+            </div>
+            <pre className="min-h-[200px] whitespace-pre-wrap break-words rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-7 text-slate-700">
+              {viewSegment.content || '暂无内容'}
+            </pre>
+          </div>
+        </PromptModal>
+      ) : null}
+
+      {/* Edit Modal */}
+      {editSegment ? (
+        <PromptModal
+          title={`编辑 ${editSegment.title}`}
+          subtitle={`${getScopeLabel(item.target)}级 Block`}
+          onClose={() => setEditSegment(null)}
+          footer={
+            <div className="flex items-center justify-between gap-3">
+              <span className={`text-xs font-medium ${tone.token}`}>
+                {formatTokenLabel(estimateTokenCount(editDraft))}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditSegment(null)}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 transition-colors hover:bg-white hover:text-slate-900"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveEdit}
+                  disabled={editSaving}
+                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  {editSaving ? '保存中...' : '保存'}
+                </button>
+              </div>
+            </div>
+          }
+        >
+          <textarea
+            value={editDraft}
+            onChange={(e) => setEditDraft(e.target.value)}
+            disabled={editSaving}
+            placeholder="输入 Block 内容..."
+            className="min-h-[360px] w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-7 text-slate-700 outline-none transition-colors focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100"
+          />
+        </PromptModal>
+      ) : null}
+
+      {/* Create Modal */}
+      {showCreate ? (
+        <PromptModal
+          title="新建 Block"
+          subtitle={`添加到 ${getScopeLabel(item.target)} 层`}
+          size="md"
+          onClose={() => setShowCreate(false)}
+          footer={
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowCreate(false)}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 transition-colors hover:bg-white hover:text-slate-900"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleCreate}
+                disabled={!createTitle.trim() || createSaving}
+                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                {createSaving ? '创建中...' : '创建'}
+              </button>
+            </div>
+          }
+        >
+          <div className="space-y-4">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Block 名称</label>
+              <input
+                type="text"
+                value={createTitle}
+                onChange={(e) => setCreateTitle(e.target.value)}
+                placeholder="例如：项目架构、API 文档、角色定义..."
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-slate-400"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">内容</label>
+              <textarea
+                value={createContent}
+                onChange={(e) => setCreateContent(e.target.value)}
+                placeholder="输入 Block 内容..."
+                className="min-h-[200px] w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm leading-6 outline-none transition-colors focus:border-slate-400"
+              />
+            </div>
+          </div>
+        </PromptModal>
+      ) : null}
+    </section>
+  );
+}
+
+// ── Main Component ──
+
 export function AgentSessionPromptStack({
   items,
   hideHeader = false,
 }: AgentSessionPromptStackProps) {
   const t = useTranslations('agentsWorkspace');
-  const groups = useMemo(() => buildGroups(items), [items]);
-  const [openGroupIds, setOpenGroupIds] = useState<string[]>(() =>
-    groups.map((group) => group.id),
-  );
-  const [contentOverrides, setContentOverrides] = useState<Record<string, string>>({});
-  const [detail, setDetail] = useState<DetailState | null>(null);
-  const [editor, setEditor] = useState<EditorState | null>(null);
-
-  useEffect(() => {
-    if (!detail && !editor) return;
-
-    const previousOverflow = document.body.style.overflow;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setDetail(null);
-        setEditor(null);
-      }
-    };
-
-    document.body.style.overflow = 'hidden';
-    window.addEventListener('keydown', onKeyDown);
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [detail, editor]);
-
-  const toggleGroup = (groupId: string) => {
-    setOpenGroupIds((current) =>
-      current.includes(groupId)
-        ? current.filter((id) => id !== groupId)
-        : [...current, groupId],
-    );
-  };
-
-  const loadPromptContent = async (item: PromptStackSeedItem): Promise<string> => {
-    const itemId = getItemId(item);
-    if (contentOverrides[itemId] !== undefined) {
-      return contentOverrides[itemId];
-    }
-    if (item.content !== undefined) {
-      return item.content;
-    }
-
-    switch (item.target) {
-      case 'global': {
-        const data = await readJson(await fetch('/api/global-prompt', { cache: 'no-store' }));
-        return typeof data.content === 'string' ? data.content : '';
-      }
-
-      case 'project': {
-        if (!item.projectKey) return '';
-        const data = await readJson(
-          await fetch(`/api/project-prompt/${encodeURIComponent(item.projectKey)}`, {
-            cache: 'no-store',
-          }),
-        );
-        return typeof data.content === 'string' ? data.content : '';
-      }
-
-      case 'agent':
-        return item.content ?? '';
-
-      case 'session': {
-        if (!item.agentId || !item.sessionId) return '';
-        const data = await readJson(
-          await fetch(
-            `/api/agent-chat/runtime-prompt?agentId=${encodeURIComponent(item.agentId)}&sessionId=${encodeURIComponent(item.sessionId)}`,
-            { cache: 'no-store' },
-          ),
-        );
-        return typeof data.content === 'string' ? data.content : '';
-      }
-
-      default:
-        return '';
-    }
-  };
-
-  const savePromptContent = async (item: PromptStackSeedItem, content: string) => {
-    switch (item.target) {
-      case 'global': {
-        await readJson(
-          await fetch('/api/global-prompt', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content }),
-          }),
-        );
-        return;
-      }
-
-      case 'project': {
-        if (!item.projectKey) {
-          throw new Error('缺少 projectKey，无法保存项目级提示词。');
-        }
-        await readJson(
-          await fetch(`/api/project-prompt/${encodeURIComponent(item.projectKey)}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content }),
-          }),
-        );
-        return;
-      }
-
-      case 'agent': {
-        if (!item.agentId) {
-          throw new Error('缺少 agentId，无法保存 Agent 提示词。');
-        }
-        await readJson(
-          await fetch('/api/agents', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: item.agentId, systemPrompt: content }),
-          }),
-        );
-        return;
-      }
-
-      case 'session': {
-        if (!item.agentId || !item.sessionId) {
-          throw new Error('当前会话还没有生成运行时提示词副本。');
-        }
-        await readJson(
-          await fetch(
-            `/api/agent-chat/runtime-prompt?agentId=${encodeURIComponent(item.agentId)}&sessionId=${encodeURIComponent(item.sessionId)}`,
-            {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ content }),
-            },
-          ),
-        );
-        return;
-      }
-    }
-  };
-
-  const openDetail = async (item: PromptStackSeedItem) => {
-    const itemId = getItemId(item);
-    setEditor(null);
-    setDetail({
-      item,
-      content: '',
-      loading: true,
-      error: null,
-    });
-
-    try {
-      const content = await loadPromptContent(item);
-      setDetail((current) =>
-        current && getItemId(current.item) === itemId
-          ? { ...current, content, loading: false, error: null }
-          : current,
-      );
-    } catch (error) {
-      setDetail((current) =>
-        current && getItemId(current.item) === itemId
-          ? { ...current, content: '', loading: false, error: getFriendlyError(error) }
-          : current,
-      );
-    }
-  };
-
-  const openEditor = async (item: PromptStackSeedItem) => {
-    const itemId = getItemId(item);
-    setDetail(null);
-    setEditor({
-      item,
-      draft: '',
-      loading: true,
-      saving: false,
-      error: null,
-    });
-
-    try {
-      const content = await loadPromptContent(item);
-      setEditor((current) =>
-        current && getItemId(current.item) === itemId
-          ? { ...current, draft: content, loading: false, error: null }
-          : current,
-      );
-    } catch (error) {
-      setEditor((current) =>
-        current && getItemId(current.item) === itemId
-          ? { ...current, draft: '', loading: false, error: getFriendlyError(error) }
-          : current,
-      );
-    }
-  };
-
-  const handleSaveEditor = async () => {
-    if (!editor) return;
-
-    const itemId = getItemId(editor.item);
-    setEditor((current) => (current ? { ...current, saving: true, error: null } : current));
-
-    try {
-      await savePromptContent(editor.item, editor.draft);
-      setContentOverrides((current) => ({
-        ...current,
-        [itemId]: editor.draft,
-      }));
-      setEditor(null);
-    } catch (error) {
-      setEditor((current) =>
-        current
-          ? {
-              ...current,
-              saving: false,
-              error: getFriendlyError(error),
-            }
-          : current,
-      );
-    }
-  };
-
-  const detailTone = detail ? getScopeTone(getItemId(detail.item)) : null;
-  const editorTone = editor ? getScopeTone(getItemId(editor.item)) : null;
-  const editorTokenEstimate = editor ? estimateTokenCount(editor.draft) : null;
-  const editorCanSave = editor ? canEditItem(editor.item) && !editor.loading && !editor.saving : false;
 
   return (
     <div className="relative flex h-full min-h-0 flex-col bg-background">
@@ -454,269 +690,15 @@ export function AgentSessionPromptStack({
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-0.5 py-1">
         <div className="space-y-0.5">
-          {groups.map((group) => {
-            const isOpen = openGroupIds.includes(group.id);
-            const tone = getScopeTone(group.id);
-            const overriddenContent = contentOverrides[group.id];
-            const displayTokens =
-              overriddenContent !== undefined
-                ? estimateTokenCount(overriddenContent)
-                : group.item.tokens;
-
-            return (
-              <section key={group.id}>
-                <WorkspaceRailPanelHeader
-                  variant="group"
-                  title={group.label}
-                  icon={<FolderOpen className="h-3 w-3 text-[#cfb690]" />}
-                  collapsed={!isOpen}
-                  onToggleCollapsed={() => toggleGroup(group.id)}
-                  toggleTitle={isOpen ? t('workspaceRail.collapseSection') : t('workspaceRail.expandSection')}
-                  actions={
-                    <span className={`text-[9px] font-medium ${tone.token}`}>
-                      {formatTokenLabel(displayTokens)}
-                    </span>
-                  }
-                />
-
-                {isOpen ? (
-                  <div className="px-1.5 pb-1.5 pt-0.5">
-                    <article
-                      className={`rounded-lg border bg-card p-2 shadow-sm transition-all hover:ring-1 hover:ring-ring/30 ${tone.card}`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="mb-0.5 flex items-start gap-1.5">
-                            <FileText className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground/50" />
-                            <span className={`truncate text-[11px] font-semibold ${tone.title}`}>
-                              {group.item.label}
-                            </span>
-                          </div>
-                          <p className="line-clamp-2 pl-[18px] text-[10px] leading-4 text-muted-foreground">
-                            {group.item.description || '暂无摘要'}
-                          </p>
-                        </div>
-
-                        <div className="flex shrink-0 items-center">
-                          <button
-                            type="button"
-                            onClick={() => openDetail(group.item)}
-                            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                            aria-label={t('promptStack.viewDetailAria')}
-                          >
-                            <Eye className="h-3 w-3" aria-hidden />
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  </div>
-                ) : null}
-              </section>
-            );
-          })}
+          {items.map((item) => (
+            <ScopeGroup
+              key={item.target}
+              item={item}
+              defaultOpen
+            />
+          ))}
         </div>
       </div>
-
-      {detail && detailTone ? (
-        <PromptModal
-          title={`${detail.item.label} 详情`}
-          subtitle="这里看的是完整 prompt 正文，不重复做卡片摘要预览。"
-          onClose={() => setDetail(null)}
-          footer={
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-xs text-slate-500">
-                {detail.error
-                  ? '正文加载失败时，可以直接进入编辑重新写入。'
-                  : '如果正文不对，就直接点右侧按钮进入编辑。'}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setDetail(null)}
-                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 transition-colors hover:bg-white hover:text-slate-900"
-                >
-                  关闭
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openEditor(detail.item)}
-                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700"
-                >
-                  编辑正文
-                </button>
-              </div>
-            </div>
-          }
-        >
-          <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-            <section className={`space-y-3 rounded-3xl border px-5 py-5 ${detailTone.panel}`}>
-              <div className="flex flex-wrap items-center gap-2">
-                <span
-                  className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] ${groups.find((group) => group.id === getItemId(detail.item))?.accent ?? ''}`}
-                >
-                  {detail.item.scope}
-                </span>
-                <span className={`text-xs font-medium ${detailTone.token}`}>
-                  {formatTokenLabel(
-                    detail.loading ? detail.item.tokens : estimateTokenCount(detail.content) ?? detail.item.tokens,
-                  )}
-                </span>
-              </div>
-
-              <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                  名称
-                </div>
-                <div className="mt-2 text-sm font-semibold text-slate-900">{detail.item.label}</div>
-              </div>
-
-              <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                  摘要
-                </div>
-                <div className="mt-2 text-sm leading-6 text-slate-700">{detail.item.description}</div>
-              </div>
-
-              <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                  来源路径
-                </div>
-                <div className="mt-2 break-all text-xs leading-6 text-slate-600">{detail.item.path}</div>
-              </div>
-            </section>
-
-            <section className="rounded-3xl border border-slate-200 bg-white">
-              <div className="border-b border-slate-200 px-5 py-4">
-                <div className="text-sm font-semibold text-slate-900">正文内容</div>
-                <div className="mt-1 text-sm text-slate-500">
-                  查看按钮看的是完整内容本身，不是卡片再放大一遍。
-                </div>
-              </div>
-
-              <div className="px-5 py-5">
-                {detail.loading ? (
-                  <div className="flex min-h-[360px] items-center justify-center gap-2 text-sm text-slate-500">
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                    正在加载正文...
-                  </div>
-                ) : detail.error ? (
-                  <div className="min-h-[360px] rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm leading-6 text-red-700">
-                    {detail.error}
-                  </div>
-                ) : (
-                  <pre className="min-h-[360px] whitespace-pre-wrap break-words rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-7 text-slate-700">
-                    {detail.content || '当前没有可显示的正文内容。'}
-                  </pre>
-                )}
-              </div>
-            </section>
-          </div>
-        </PromptModal>
-      ) : null}
-
-      {editor && editorTone ? (
-        <PromptModal
-          title={`编辑 ${editor.item.label}`}
-          subtitle="这里直接编辑 prompt 正文。名称和摘要只是列表信息，不是这次的主编辑对象。"
-          onClose={() => setEditor(null)}
-          footer={
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-xs text-slate-500">
-                {editor.error
-                  ? editor.error
-                  : canEditItem(editor.item)
-                    ? '保存后会直接写回对应的 prompt 文件或会话副本。'
-                    : '当前还没有运行时副本，暂时不能编辑会话级正文。'}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setEditor(null)}
-                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 transition-colors hover:bg-white hover:text-slate-900"
-                >
-                  取消
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveEditor}
-                  disabled={!editorCanSave}
-                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-                >
-                  {editor.saving ? '保存中...' : '保存正文'}
-                </button>
-              </div>
-            </div>
-          }
-        >
-          <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-            <section className={`space-y-3 rounded-3xl border px-5 py-5 ${editorTone.panel}`}>
-              <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                  名称
-                </div>
-                <div className="mt-2 text-sm font-semibold text-slate-900">{editor.item.label}</div>
-              </div>
-
-              <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                  摘要
-                </div>
-                <div className="mt-2 text-sm leading-6 text-slate-700">{editor.item.description}</div>
-              </div>
-
-              <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                  来源路径
-                </div>
-                <div className="mt-2 break-all text-xs leading-6 text-slate-600">{editor.item.path}</div>
-              </div>
-
-              <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                  当前估算
-                </div>
-                <div className="mt-2 text-sm font-semibold text-slate-900">
-                  {formatTokenLabel(editorTokenEstimate)}
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-3xl border border-slate-200 bg-white">
-              <div className="border-b border-slate-200 px-5 py-4">
-                <div className="text-sm font-semibold text-slate-900">正文编辑器</div>
-                <div className="mt-1 text-sm text-slate-500">
-                  直接改正文。你要看的、要改的核心内容都在这里。
-                </div>
-              </div>
-
-              <div className="px-5 py-5">
-                {editor.loading ? (
-                  <div className="flex min-h-[420px] items-center justify-center gap-2 text-sm text-slate-500">
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                    正在加载正文...
-                  </div>
-                ) : (
-                  <textarea
-                    value={editor.draft}
-                    onChange={(event) =>
-                      setEditor((current) =>
-                        current ? { ...current, draft: event.target.value, error: null } : current,
-                      )
-                    }
-                    disabled={!canEditItem(editor.item) || editor.saving}
-                    placeholder={
-                      canEditItem(editor.item)
-                        ? '在这里直接编辑 prompt 正文...'
-                        : '当前会话还没有运行时副本，暂时不能编辑。'
-                    }
-                    className="min-h-[420px] w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-7 text-slate-700 outline-none transition-colors focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100"
-                  />
-                )}
-              </div>
-            </section>
-          </div>
-        </PromptModal>
-      ) : null}
     </div>
   );
 }

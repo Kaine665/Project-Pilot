@@ -6,6 +6,8 @@ import {
   getProjectPromptPath,
   getProjectPromptsDir,
   getPromptFilePath,
+  getSessionPromptOverridePath,
+  getSessionPromptOverrideDir,
   getScopedSkillsDir,
   getSkillFilePath,
   type SkillScope,
@@ -64,14 +66,37 @@ function parseScopeFromQuery(q: Record<string, string>): PromptSegmentScope | nu
     if (!projectKey) return null;
     return { type: 'project', projectKey };
   }
+  if (scope === 'agent') {
+    const agentId = q['agentId'];
+    if (!agentId) return null;
+    return { type: 'agent', agentId };
+  }
+  if (scope === 'runtime') {
+    const agentId = q['agentId'];
+    const sessionId = q['sessionId'];
+    if (!agentId || !sessionId) return null;
+    return { type: 'runtime', agentId, sessionId };
+  }
   return null;
 }
 
 async function readSingleFileContent(scope: PromptSegmentScope): Promise<string> {
   try {
-    const filePath = scope.type === 'global'
-      ? getGlobalPromptPath()
-      : getProjectPromptPath(scope.projectKey);
+    let filePath: string;
+    switch (scope.type) {
+      case 'global':
+        filePath = getGlobalPromptPath();
+        break;
+      case 'project':
+        filePath = getProjectPromptPath(scope.projectKey);
+        break;
+      case 'agent':
+        filePath = getPromptFilePath(scope.agentId);
+        break;
+      case 'runtime':
+        filePath = getSessionPromptOverridePath(scope.agentId, scope.sessionId);
+        break;
+    }
     return await readFile(filePath, 'utf-8');
   } catch {
     return '';
@@ -80,12 +105,23 @@ async function readSingleFileContent(scope: PromptSegmentScope): Promise<string>
 
 async function writeSingleFileContent(scope: PromptSegmentScope, content: string): Promise<void> {
   assertDocumentTextWritable(content);
-  if (scope.type === 'global') {
-    await mkdir(getPromptsDir(), { recursive: true });
-    await writeFile(getGlobalPromptPath(), content, 'utf-8');
-  } else {
-    await mkdir(getProjectPromptsDir(), { recursive: true });
-    await writeFile(getProjectPromptPath(scope.projectKey), content, 'utf-8');
+  switch (scope.type) {
+    case 'global':
+      await mkdir(getPromptsDir(), { recursive: true });
+      await writeFile(getGlobalPromptPath(), content, 'utf-8');
+      break;
+    case 'project':
+      await mkdir(getProjectPromptsDir(), { recursive: true });
+      await writeFile(getProjectPromptPath(scope.projectKey), content, 'utf-8');
+      break;
+    case 'agent':
+      await mkdir(getPromptsDir() + '/agents', { recursive: true });
+      await writeFile(getPromptFilePath(scope.agentId), content, 'utf-8');
+      break;
+    case 'runtime':
+      await mkdir(getSessionPromptOverrideDir(scope.agentId), { recursive: true });
+      await writeFile(getSessionPromptOverridePath(scope.agentId, scope.sessionId), content, 'utf-8');
+      break;
   }
 }
 
