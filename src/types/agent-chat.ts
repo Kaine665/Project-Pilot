@@ -64,12 +64,20 @@ export interface SessionConfig {
   resourceRefs?: import('@/types/resource').ResourceRef[];
 }
 
+/**
+ * 与会话 JSONL 一并存储的消息元数据（UI / 审计）。
+ * 不进入多轮协议负载：模型侧仍只消费 content / contentBlocks / images。
+ */
+export type ChatMessageDiskMeta =
+  | { type: 'run_task'; executionRunId: string };
+
 /** 单条消息 */
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   images?: string[];
   contentBlocks?: import('./index').ContentBlock[];
+  meta?: ChatMessageDiskMeta;
 }
 
 export interface DeferredInputBufferItem {

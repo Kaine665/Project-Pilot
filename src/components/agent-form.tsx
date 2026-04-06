@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Bot, X, Maximize2,
   Terminal, FileText, Globe, Users, ShieldOff, ListTodo, Eye, Check,
@@ -8,7 +8,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type {
-  Agent, AgentCapabilities, OpenAIReasoningEffort, ProviderId,
+  Agent, AgentCapabilities, AgentPreset, OpenAIReasoningEffort, ProviderId,
 } from '@/types';
 import type { ProjectEntry } from '@/components/project-context';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
@@ -54,15 +54,29 @@ export function AgentIcon({ iconKey, className }: { iconKey?: string; className?
 export function AgentAvatar({
   slug,
   iconKey,
+  agentId,
+  customAvatar,
+  updatedAt,
   className,
   alt,
 }: {
   slug?: string | null;
   iconKey?: string | null;
+  agentId?: string | null;
+  customAvatar?: boolean;
+  updatedAt?: string | null;
   className?: string;
   alt?: string;
 }) {
-  const src = useMemo(() => resolveAgentAvatarSrc(slug, iconKey), [slug, iconKey]);
+  const src = useMemo(
+    () =>
+      resolveAgentAvatarSrc(slug, iconKey, {
+        customAvatar,
+        agentId,
+        updatedAt,
+      }),
+    [slug, iconKey, customAvatar, agentId, updatedAt],
+  );
   const [failed, setFailed] = useState(false);
   const onError = useCallback(() => setFailed(true), []);
 
@@ -96,7 +110,7 @@ export const CAPABILITY_ITEMS: Array<{
   { key: 'bash',       label: 'Bash 执行',     description: '命令行执行（含 Git 操作）',    icon: Terminal },
   { key: 'fileAccess', label: '文件读写',       description: 'Read、Write、Edit、Glob、Grep', icon: FileText },
   { key: 'web',        label: 'Web 搜索/抓取',  description: 'WebFetch、WebSearch',          icon: Globe },
-  { key: 'subAgent',   label: '子 Agent',       description: 'Task 工具（创建子代理）',       icon: Users },
+  { key: 'subAgent',   label: '子 Agent',       description: 'Task 工具（Claude 内置子代理）。委派其他 PP Agent 用 Bash + call-agent，全体 Agent 提示词中均有说明', icon: Users },
   { key: 'skipReview',      label: '无需审核',       description: '自动批准所有工具调用',                icon: ShieldOff, danger: true },
   { key: 'todoRead',        label: '读取待办',       description: '将 pending 待办注入提示词',           icon: ListTodo },
   { key: 'exposePromptPath', label: '暴露提示词路径', description: '将 prompt 文件路径注入提示词，AI 可自行读写', icon: Eye },
@@ -114,7 +128,7 @@ export type FormData = {
   requiredParamsText: string;
   contextIds: string[];
   skillIds: string[];   // skill names bound via defaultResources
-  projectKey: string; // '' = 全局
+  projectKey: string; // 自定义 Agent 须非空；内置在表单中只读展示
   defaultProvider: ProviderId | ''; // '' = 继承全局设置
   defaultModel: string;             // '' = 继承全局设置
   defaultOpenAIReasoningEffort: OpenAIReasoningEffort | '';
@@ -133,6 +147,43 @@ export const emptyForm: FormData = {
   defaultOpenAIReasoningEffort: '',
   contextStrategy: 'additive',
 };
+
+/** 将运行预设合并进表单（保留 name、projectKey、requiredParams、contextIds） */
+export function applyAgentPresetToForm(base: FormData, preset: AgentPreset): FormData {
+  return {
+    ...base,
+    capabilities: { ...DEFAULT_AGENT_CAPABILITIES, ...preset.capabilities },
+    icon: preset.icon ?? base.icon,
+    skillIds: [...(preset.skillIds ?? [])],
+    defaultProvider: (preset.defaultProvider ?? '') as FormData['defaultProvider'],
+    defaultModel: preset.defaultModel ?? '',
+    defaultOpenAIReasoningEffort: (preset.defaultOpenAIReasoningEffort ?? '') as FormData['defaultOpenAIReasoningEffort'],
+    contextStrategy: preset.contextStrategy ?? 'additive',
+    systemPrompt: preset.systemPrompt ?? '',
+    description: preset.description ?? base.description,
+  };
+}
+
+/** 从当前表单生成 POST /api/data/agent-presets 的请求体 */
+export function buildAgentPresetRequestBody(
+  form: FormData,
+  name: string,
+  projectKey?: string,
+): Record<string, unknown> {
+  return {
+    name: name.trim(),
+    description: form.description.trim() || undefined,
+    projectKey: projectKey?.trim() || undefined,
+    icon: form.icon.trim() || undefined,
+    capabilities: form.capabilities,
+    defaultProvider: form.defaultProvider || undefined,
+    defaultModel: form.defaultModel || undefined,
+    defaultOpenAIReasoningEffort: form.defaultOpenAIReasoningEffort || undefined,
+    skillIds: form.skillIds,
+    contextStrategy: form.contextStrategy,
+    systemPrompt: form.systemPrompt.trim() || undefined,
+  };
+}
 
 export function agentToForm(a: Agent): FormData {
   return {
@@ -196,6 +247,7 @@ export function SettingsForm({
   selectedId,
   onExpandPrompt,
   projects,
+  onAvatarChanged,
 }: {
   creating: boolean;
   form: FormData;
@@ -209,6 +261,8 @@ export function SettingsForm({
   selectedId: string | null;
   onExpandPrompt: () => void;
   projects?: ProjectEntry[];
+  /** 自定义头像上传/清除成功后刷新 Agent 列表 */
+  onAvatarChanged?: () => void | Promise<void>;
 }) {
   // Fetch available skills for the picker
   const [availableSkills, setAvailableSkills] = useState<{ name: string; description: string }[]>([]);
@@ -255,6 +309,53 @@ export function SettingsForm({
         : [...f.skillIds, name],
     }));
   };
+
+  const avatarFileRef = useRef<HTMLInputElement>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+
+  const handleAvatarFileChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file || !selectedId) return;
+      setAvatarBusy(true);
+      try {
+        const fd = new FormData();
+        fd.append('avatar', file);
+        const res = await fetch(`/api/agents/avatar/${encodeURIComponent(selectedId)}`, {
+          method: 'POST',
+          body: fd,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          window.alert(typeof data.error === 'string' ? data.error : `上传失败 (${res.status})`);
+          return;
+        }
+        await onAvatarChanged?.();
+      } finally {
+        setAvatarBusy(false);
+      }
+    },
+    [selectedId, onAvatarChanged],
+  );
+
+  const handleClearAvatar = useCallback(async () => {
+    if (!selectedId) return;
+    setAvatarBusy(true);
+    try {
+      const res = await fetch(`/api/agents/avatar/${encodeURIComponent(selectedId)}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        window.alert(typeof data.error === 'string' ? data.error : `清除失败 (${res.status})`);
+        return;
+      }
+      await onAvatarChanged?.();
+    } finally {
+      setAvatarBusy(false);
+    }
+  }, [selectedId, onAvatarChanged]);
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -320,7 +421,12 @@ export function SettingsForm({
           </div>
 
           {/* Project */}
-          {projects && projects.length > 0 && (
+          {!selectedAgent?.builtIn && (!projects || projects.length === 0) && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
+              自定义 Agent 必须绑定项目。请先在项目设置中创建至少一个项目。
+            </div>
+          )}
+          {(selectedAgent?.builtIn || (projects && projects.length > 0)) && (
             <div>
               <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
                 所属项目
@@ -329,20 +435,21 @@ export function SettingsForm({
                 <div className="w-full rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-400">
                   全局（所有项目）
                 </div>
-              ) : (
+              ) : projects && projects.length > 0 ? (
                 <select
                   value={form.projectKey}
                   onChange={e => setForm(f => ({ ...f, projectKey: e.target.value }))}
                   className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
                 >
-                  <option value="">全局（所有项目）</option>
                   {projects.map(p => (
                     <option key={p.key} value={p.key}>{p.name}</option>
                   ))}
                 </select>
-              )}
+              ) : null}
               <p className="mt-1 text-xs text-zinc-400">
-                全局 Agent 在所有项目下可见
+                {selectedAgent?.builtIn
+                  ? '内置 Agent 在所有项目下可用'
+                  : '须绑定到具体项目；跨项目复用配置请使用「运行预设」页'}
               </p>
             </div>
           )}
@@ -374,6 +481,44 @@ export function SettingsForm({
               })}
             </div>
           </div>
+
+          {!creating && selectedAgent && selectedId && (
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                自定义头像
+              </label>
+              <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                上传本地图片覆盖侧栏与对话中的头像（PNG / JPEG / WebP / GIF / SVG，最大 2MB）。内置与自定义 Agent 均可使用。
+              </p>
+              <input
+                ref={avatarFileRef}
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,image/svg+xml"
+                className="hidden"
+                onChange={handleAvatarFileChange}
+              />
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={avatarBusy}
+                  onClick={() => avatarFileRef.current?.click()}
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                >
+                  {avatarBusy ? '处理中…' : '上传图片'}
+                </button>
+                {selectedAgent.customAvatar && (
+                  <button
+                    type="button"
+                    disabled={avatarBusy}
+                    onClick={handleClearAvatar}
+                    className="rounded-lg border border-zinc-200 px-3 py-1.5 text-sm text-zinc-500 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                  >
+                    恢复预设头像
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* System Prompt */}
           <div>
@@ -605,7 +750,7 @@ export function SettingsForm({
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-3 pt-4">
+          <div className="flex flex-wrap items-center gap-3 pt-4">
             <button
               onClick={onSave}
               disabled={!form.name.trim() || saving || !hasChanges}

@@ -9,6 +9,8 @@ import {
   GitBranch, FileText, ArrowLeft, RefreshCw,
 } from 'lucide-react';
 import { FileTypeIcon } from '@/components/file-type-icon';
+import { hasElectronFolderPicker, pickLocalFolderPath } from '@/lib/electron-folder-picker';
+import { PP_FILESYSTEM_MUTATED } from '@/lib/fs-mutation-events';
 
 // ── Types ──
 
@@ -77,6 +79,55 @@ async function fetchGitInfo(dirPath: string): Promise<GitInfo> {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
   return data;
+}
+
+/**
+ * 与磁盘对齐当前层及已展开子层，保留展开/折叠与已加载子树状态（路径仍存在时）。
+ * 子路径一律用 list-dir 返回的绝对路径，不再带 resolve=data。
+ */
+async function mergeTreeWithDisk(parentAbsPath: string, prevNodes: TreeNode[]): Promise<TreeNode[]> {
+  let entries: DirEntry[];
+  try {
+    const res = await fetchDir(parentAbsPath);
+    entries = res.entries;
+  } catch {
+    return prevNodes;
+  }
+
+  const sorted = [...entries].sort((a, b) => {
+    if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+  });
+  const oldByPath = new Map(prevNodes.map((n) => [n.path, n]));
+  const out: TreeNode[] = [];
+
+  for (const e of sorted) {
+    const old = oldByPath.get(e.path);
+    if (old?.loading) {
+      out.push({ ...old, name: e.name, path: e.path });
+      continue;
+    }
+
+    let node: TreeNode;
+    if (old && old.isDirectory === e.isDirectory) {
+      node = { ...old, name: e.name, path: e.path };
+    } else {
+      node = {
+        name: e.name,
+        path: e.path,
+        isDirectory: e.isDirectory,
+        expanded: false,
+        loaded: false,
+      };
+    }
+
+    if (node.isDirectory && node.expanded && node.loaded) {
+      const prevKids = node.children ?? [];
+      node = { ...node, children: await mergeTreeWithDisk(node.path, prevKids) };
+    }
+    out.push(node);
+  }
+  return out;
 }
 
 async function apiCreate(filePath: string, type: 'file' | 'directory') {
@@ -226,6 +277,8 @@ export function FolderExplorerPanel({
   const [deleteConfirm, setDeleteConfirm] = useState<{ path: string; name: string; isDir: boolean } | null>(null);
 
   const panelRef = useRef<HTMLDivElement>(null);
+  const treeRef = useRef<TreeNode[]>([]);
+  treeRef.current = tree;
   const closePreview = useCallback(() => {
     setViewingFile(null);
     setExpandedView(false);
@@ -288,11 +341,39 @@ export function FolderExplorerPanel({
     }
   }, [embedded]);
 
+  const resyncSeqRef = useRef(0);
+  const resyncFromDisk = useCallback(async () => {
+    if (!rootPath) return;
+    const seq = ++resyncSeqRef.current;
+    const next = await mergeTreeWithDisk(rootPath, treeRef.current);
+    if (seq !== resyncSeqRef.current) return;
+    setTree(next);
+  }, [rootPath]);
+
   // Auto-open initialPath
   useEffect(() => {
     if (initialPath) loadRoot(initialPath, initialResolveMode);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPath, initialResolveMode]);
+
+  // Agent 工具改盘、切回页签时对齐磁盘，避免侧栏树长期陈旧
+  useEffect(() => {
+    if (!rootPath) return;
+
+    const onMutated = () => {
+      void resyncFromDisk();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void resyncFromDisk();
+    };
+
+    window.addEventListener(PP_FILESYSTEM_MUTATED, onMutated);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener(PP_FILESYSTEM_MUTATED, onMutated);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [rootPath, resyncFromDisk]);
 
   // ── Expand/collapse directory ──
   const handleExpand = useCallback(async (node: TreeNode) => {
@@ -356,22 +437,27 @@ export function FolderExplorerPanel({
 
   // ── Refresh ──
   const handleRefresh = useCallback(() => {
-    if (rootPath) loadRoot(rootPath);
-  }, [rootPath, loadRoot]);
+    if (!rootPath) return;
+    void (async () => {
+      await resyncFromDisk();
+      if (!embedded) {
+        fetchGitInfo(rootPath).then(setGitInfo).catch(() => setGitInfo(null));
+      }
+    })();
+  }, [rootPath, embedded, resyncFromDisk]);
 
   // ── Open folder dialog ──
   const handleOpenFolder = useCallback(async () => {
-    const electron = (window as Window & { electron?: { openFolderDialog: () => Promise<string | null> } }).electron;
-    if (electron?.openFolderDialog) {
-      try {
-        const selected = await electron.openFolderDialog();
-        if (selected?.trim()) await loadRoot(selected.trim());
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed');
+    try {
+      if (!hasElectronFolderPicker()) {
+        setError('Please type or paste a folder path above');
+        return;
       }
-      return;
+      const selected = await pickLocalFolderPath();
+      if (selected?.trim()) await loadRoot(selected.trim());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed');
     }
-    setError('Please type or paste a folder path above');
   }, [loadRoot]);
 
   // ── Context menu actions ──

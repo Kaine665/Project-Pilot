@@ -9,6 +9,7 @@ import {
   Copy,
   GitBranch,
   Pencil,
+  Play,
   RefreshCw,
   Trash2,
   User,
@@ -20,6 +21,15 @@ import { ToolExecutionWindow } from '@/components/tool-execution-window';
 import type { ParsedActionTag } from '@/lib/action-tag-parser';
 import { isRepetitiveTool } from '@/lib/tool-utils';
 import type { ChatMessage, ChatToolCall, ContentBlock } from '@/types';
+
+/** 旧版「已手动开启 Run：…」助手提示，解析后改卡片展示 */
+function parseLegacyAssistantRunNotice(content: string): { body: string } | null {
+  const t = content.replace(/\u200b/g, '').trim();
+  if (t === '已手动开启 Run。') return { body: '' };
+  const m = t.match(/^已手动开启 Run[：:]\s*([\s\S]*)$/);
+  if (!m) return null;
+  return { body: m[1].trim() };
+}
 
 const ThinkingFoldable = memo(function ThinkingFoldable({
   text,
@@ -96,6 +106,7 @@ export const ChatBubble = memo(function ChatBubble({
   const t = useTranslations();
   const tActions = useTranslations('actions');
   const isUser = message.role === 'user';
+  const isRunTaskUser = isUser && message.meta?.type === 'run_task';
   const [copied, setCopied] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -296,7 +307,13 @@ export const ChatBubble = memo(function ChatBubble({
       {message.content && (
         <div className="wrap-break-word">
           {isUser ? (
-            <div className="whitespace-pre-wrap leading-relaxed">{message.content}</div>
+            <div
+              className={`whitespace-pre-wrap leading-relaxed ${
+                isRunTaskUser ? 'text-emerald-950 dark:text-emerald-50' : ''
+              }`}
+            >
+              {message.content}
+            </div>
           ) : (
             <FormattedText
               text={message.content}
@@ -340,6 +357,48 @@ export const ChatBubble = memo(function ChatBubble({
     </>
   );
 
+  const legacyRunParsed = !isUser ? parseLegacyAssistantRunNotice(message.content) : null;
+
+  if (!isUser && message.meta?.type === 'run_open') {
+    const rid = message.meta.executionRunId;
+    return (
+      <div className="flex w-full justify-center py-1.5" data-chat-message-id={message.id}>
+        <div className="w-full max-w-[min(560px,92%)] rounded-xl border border-emerald-200/90 bg-emerald-50/85 px-3 py-2.5 text-xs text-emerald-950 shadow-sm dark:border-emerald-800/55 dark:bg-emerald-950/35 dark:text-emerald-50">
+          <div className="flex items-center gap-2 font-semibold text-emerald-900 dark:text-emerald-100">
+            <Play className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <span>已开启 Run（记录区间）</span>
+          </div>
+          <p className="mt-1.5 pl-5 text-[11px] leading-relaxed text-emerald-800/88 dark:text-emerald-200/85">
+            尚未附带具体任务；你接下来在本会话发送的内容仍在这段对话里。绑定 Run：
+            <code className="ml-1 rounded bg-emerald-100/90 px-1 py-0.5 font-mono text-[10px] dark:bg-emerald-900/55">
+              {rid.length > 18 ? `${rid.slice(0, 18)}…` : rid}
+            </code>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (legacyRunParsed) {
+    return (
+      <div className="flex w-full justify-center py-1.5" data-chat-message-id={message.id}>
+        <div className="w-full max-w-[min(560px,92%)] rounded-xl border border-amber-200/80 bg-amber-50/80 px-3 py-2.5 text-xs text-amber-950 dark:border-amber-900/45 dark:bg-amber-950/30 dark:text-amber-50">
+          <div className="font-semibold text-amber-900 dark:text-amber-100">旧版 /run 提示（仅展示）</div>
+          <p className="mt-1 text-[11px] leading-relaxed text-amber-900/85 dark:text-amber-200/80">
+            当时为助手气泡；新版已改为「单条用户消息 + Run 卡片」。若下方紧跟你自己的任务正文，二者本属同一次操作。
+          </p>
+          {legacyRunParsed.body ? (
+            <div className="mt-2 whitespace-pre-wrap rounded-md border border-amber-200/60 bg-white/70 px-2 py-1.5 text-[13px] leading-relaxed text-amber-950 dark:border-amber-900/40 dark:bg-zinc-900/40 dark:text-amber-50">
+              {legacyRunParsed.body}
+            </div>
+          ) : (
+            <p className="mt-2 text-[11px] text-amber-800/80 dark:text-amber-300/75">未附带任务摘要。</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`group/bubble flex w-full items-start ${
@@ -349,7 +408,9 @@ export const ChatBubble = memo(function ChatBubble({
       <div
         className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full ${
           isUser
-            ? 'bg-user-subtle text-user'
+            ? isRunTaskUser
+              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/55 dark:text-emerald-300'
+              : 'bg-user-subtle text-user'
             : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
         } ${isUser ? 'order-2' : 'order-1'}`}
       >
@@ -365,11 +426,29 @@ export const ChatBubble = memo(function ChatBubble({
       <div className={`max-w-[85%] ${isUser ? 'order-1 ml-auto' : 'order-2'}`}>
         <div
           className={`rounded-lg px-3 py-2 text-sm ${
-            isUser
-              ? 'bg-user text-white'
-              : 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200'
+            isRunTaskUser
+              ? 'border border-emerald-400/40 bg-gradient-to-b from-emerald-50/95 to-white text-emerald-950 dark:border-emerald-700/45 dark:from-emerald-950/55 dark:to-zinc-900 dark:text-emerald-50'
+              : isUser
+                ? 'bg-user text-white'
+                : 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200'
           }`}
         >
+          {isRunTaskUser && message.meta?.type === 'run_task' && (
+            <div className="mb-2 space-y-1 border-b border-emerald-200/75 pb-2 text-left dark:border-emerald-800/50">
+              <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-emerald-900 dark:text-emerald-100">
+                <Play className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <span>/run 本轮任务</span>
+                <code className="rounded bg-emerald-100/90 px-1 py-0.5 font-mono text-[10px] font-normal text-emerald-800 dark:bg-emerald-900/55 dark:text-emerald-200">
+                  {message.meta.executionRunId.length > 20
+                    ? `${message.meta.executionRunId.slice(0, 20)}…`
+                    : message.meta.executionRunId}
+                </code>
+              </div>
+              <p className="text-[11px] leading-snug text-emerald-800/80 dark:text-emerald-300/85">
+                此正文即发给模型的用户消息；紧随其后的 AI 回复与工具调用，同属这一轮 Run 的执行记录。
+              </p>
+            </div>
+          )}
           {isEditing && isUser ? (
             <div className="space-y-2">
               {renderImages()}

@@ -473,6 +473,8 @@ class EventTriggerManager {
         undefined,
         'event',
         trigger.id,
+        undefined,
+        undefined,
       );
 
       run.sessionId = sessionId;

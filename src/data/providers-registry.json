@@ -84,10 +84,12 @@
       "modelsListBaseUrl": "https://open.bigmodel.cn/api/paas",
       "modelsListProtocol": "openai",
       "models": [
-        { "id": "glm-4.7", "label": "GLM-4.7", "contextWindow": 128000 },
+        { "id": "glm-5", "label": "GLM-5", "contextWindow": 200000 },
+        { "id": "glm-4.7", "label": "GLM-4.7", "contextWindow": 200000 },
         { "id": "glm-4.7-flashx", "label": "GLM-4.7 FlashX", "contextWindow": 128000 },
         { "id": "glm-4.5", "label": "GLM-4.5", "contextWindow": 128000 },
-        { "id": "glm-4.5-air", "label": "GLM-4.5 Air", "contextWindow": 128000 }
+        { "id": "glm-4.5-air", "label": "GLM-4.5 Air", "contextWindow": 128000 },
+        { "id": "glm-4.5-flash", "label": "GLM-4.5 Flash", "contextWindow": 128000 }
       ],
       "supportsOAuth": false,
       "editableBaseUrl": false,
@@ -102,19 +104,22 @@
     {
       "id": "minimax",
       "nameKey": "settings.providers.minimax",
-      "baseUrl": "https://api.minimax.chat/anthropic",
+      "baseUrl": "https://api.minimaxi.com/anthropic",
       "candidateBaseUrls": [
+        "https://api.minimaxi.com/anthropic",
         "https://api.minimax.chat/anthropic",
-        "https://api.minimax.io/anthropic",
-        "https://api.minimaxi.com/anthropic"
+        "https://api.minimax.io/anthropic"
       ],
       "modelsListBaseUrl": "https://api.minimax.chat",
       "modelsListProtocol": "openai",
       "models": [
-        { "id": "MiniMax-M2.5", "label": "MiniMax M2.5", "contextWindow": 1000000 },
-        { "id": "MiniMax-M2.5-highspeed", "label": "MiniMax M2.5 Highspeed", "contextWindow": 1000000 },
-        { "id": "MiniMax-M2.1", "label": "MiniMax M2.1", "contextWindow": 1000000 },
-        { "id": "MiniMax-M2", "label": "MiniMax M2", "contextWindow": 1000000 }
+        { "id": "MiniMax-M2.7", "label": "MiniMax M2.7", "contextWindow": 204800 },
+        { "id": "MiniMax-M2.7-highspeed", "label": "MiniMax M2.7 Highspeed", "contextWindow": 204800 },
+        { "id": "MiniMax-M2.5", "label": "MiniMax M2.5", "contextWindow": 204800 },
+        { "id": "MiniMax-M2.5-highspeed", "label": "MiniMax M2.5 Highspeed", "contextWindow": 204800 },
+        { "id": "MiniMax-M2.1", "label": "MiniMax M2.1", "contextWindow": 204800 },
+        { "id": "MiniMax-M2.1-highspeed", "label": "MiniMax M2.1 Highspeed", "contextWindow": 204800 },
+        { "id": "MiniMax-M2", "label": "MiniMax M2", "contextWindow": 204800 }
       ],
       "supportsOAuth": false,
       "editableBaseUrl": true,
@@ -146,6 +151,95 @@
       "extraEnv": {
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
         "ENABLE_TOOL_SEARCH": "FALSE"
+      }
+    },
+    {
+      "id": "moonshot",
+      "nameKey": "settings.providers.moonshot",
+      "baseUrl": "https://api.moonshot.cn/anthropic",
+      "candidateBaseUrls": [
+        "https://api.moonshot.cn/anthropic",
+        "https://api.moonshot.ai/anthropic"
+      ],
+      "models": [
+        { "id": "kimi-k2.5", "label": "Kimi K2.5", "contextWindow": 131072 },
+        { "id": "kimi-k2", "label": "Kimi K2", "contextWindow": 131072 },
+        { "id": "kimi-k2-thinking", "label": "Kimi K2 Thinking", "contextWindow": 131072 }
+      ],
+      "supportsOAuth": false,
+      "editableBaseUrl": false,
+      "editableModel": true,
+      "apiKeyPlaceholder": "sk-...",
+      "extraEnv": {
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+      }
+    },
+    {
+      "id": "siliconflow",
+      "nameKey": "settings.providers.siliconflow",
+      "baseUrl": "https://api.siliconflow.cn/",
+      "candidateBaseUrls": ["https://api.siliconflow.cn/", "https://api.siliconflow.com/"],
+      "models": [
+        { "id": "deepseek-ai/DeepSeek-V3.2", "label": "DeepSeek V3.2", "contextWindow": 65536 },
+        { "id": "Qwen/Qwen3-Coder-480B-A35B-Instruct", "label": "Qwen3 Coder 480B", "contextWindow": 131072 }
+      ],
+      "supportsOAuth": false,
+      "editableBaseUrl": true,
+      "editableModel": true,
+      "apiKeyPlaceholder": "sk-...",
+      "useApiKeyForAuth": true,
+      "authMethod": "API_KEY",
+      "extraEnv": {
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+      }
+    },
+    {
+      "id": "zenmux",
+      "nameKey": "settings.providers.zenmux",
+      "baseUrl": "https://zenmux.ai/api/anthropic",
+      "candidateBaseUrls": ["https://zenmux.ai/api/anthropic"],
+      "models": [
+        { "id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6 (ZenMux)", "contextWindow": 200000 },
+        { "id": "claude-opus-4-6", "label": "Claude Opus 4.6 (ZenMux)", "contextWindow": 200000 }
+      ],
+      "supportsOAuth": false,
+      "editableBaseUrl": false,
+      "editableModel": true,
+      "apiKeyPlaceholder": "sk-...",
+      "extraEnv": {
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+      }
+    },
+    {
+      "id": "volcengine",
+      "nameKey": "settings.providers.volcengine",
+      "baseUrl": "https://ark.cn-beijing.volces.com/api/compatible",
+      "candidateBaseUrls": ["https://ark.cn-beijing.volces.com/api/compatible"],
+      "models": [
+        { "id": "doubao-seed-1-6-251015", "label": "Doubao Seed 1.6 (replace with Ark endpoint ID)", "contextWindow": 256000 }
+      ],
+      "supportsOAuth": false,
+      "editableBaseUrl": true,
+      "editableModel": true,
+      "apiKeyPlaceholder": "ARK API Key",
+      "extraEnv": {
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+      }
+    },
+    {
+      "id": "arkcoding",
+      "nameKey": "settings.providers.arkcoding",
+      "baseUrl": "https://ark.cn-beijing.volces.com/api/coding",
+      "candidateBaseUrls": ["https://ark.cn-beijing.volces.com/api/coding"],
+      "models": [
+        { "id": "doubao-seed-code-preview-251028", "label": "Volcengine Coding sample (use console model ID)", "contextWindow": 256000 }
+      ],
+      "supportsOAuth": false,
+      "editableBaseUrl": false,
+      "editableModel": true,
+      "apiKeyPlaceholder": "Coding Plan API Key",
+      "extraEnv": {
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
       }
     },
     {
@@ -205,10 +299,12 @@
       { "pattern": "o3", "contextWindow": 200000 },
       { "pattern": "deepseek-", "contextWindow": 65536 },
       { "pattern": "qwen", "contextWindow": 131072 },
+      { "pattern": "glm-5", "contextWindow": 200000 },
+      { "pattern": "glm-4.7", "contextWindow": 200000 },
       { "pattern": "glm-", "contextWindow": 128000 },
       { "pattern": "kimi-", "contextWindow": 131072 },
       { "pattern": "moonshot-", "contextWindow": 131072 },
-      { "pattern": "MiniMax-", "contextWindow": 1000000 }
+      { "pattern": "MiniMax-", "contextWindow": 204800 }
     ],
     "containsRules": [
       { "pattern": "gemini-2.5", "contextWindow": 1000000 },

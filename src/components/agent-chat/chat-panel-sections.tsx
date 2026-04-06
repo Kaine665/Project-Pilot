@@ -169,7 +169,15 @@ export function PlainEmptyStateSection({
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-zinc-400 dark:text-zinc-500">
       <div className="h-14 w-14 overflow-hidden rounded-2xl bg-zinc-100 dark:bg-zinc-800">
-        <AgentAvatar slug={agent.slug} iconKey={agent.icon} className="h-full w-full object-cover" />
+        <AgentAvatar
+          slug={agent.slug}
+          iconKey={agent.icon}
+          agentId={agent.id}
+          customAvatar={agent.customAvatar}
+          updatedAt={agent.updatedAt}
+          className="h-full w-full object-cover"
+          alt={agentDisplayName}
+        />
       </div>
       <div className="space-y-1">
         <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">{agentDisplayName}</p>
@@ -196,7 +204,15 @@ export function ProjectEmptyStateSection({
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center text-zinc-400 dark:text-zinc-500">
         <div className="h-16 w-16 overflow-hidden rounded-[24px] bg-zinc-100 dark:bg-zinc-800">
-          <AgentAvatar slug={agent.slug} iconKey={agent.icon} className="h-full w-full object-cover" />
+          <AgentAvatar
+          slug={agent.slug}
+          iconKey={agent.icon}
+          agentId={agent.id}
+          customAvatar={agent.customAvatar}
+          updatedAt={agent.updatedAt}
+          className="h-full w-full object-cover"
+          alt={agentDisplayName}
+        />
         </div>
         <div className="space-y-1.5">
           <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">{agentDisplayName}</p>

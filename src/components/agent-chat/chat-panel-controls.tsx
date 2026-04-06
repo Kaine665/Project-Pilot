@@ -1,6 +1,6 @@
 'use client';
 
-import { PanelRight, Settings } from 'lucide-react';
+import { PanelRight, Play, Settings } from 'lucide-react';
 import type { SessionConfig } from '@/types/agent-chat';
 import type { SessionAction } from './session-reducer';
 import type { SessionListItem } from './types';
@@ -8,9 +8,35 @@ import type { SessionNavLink } from '@/components/agent-session-utils';
 import type { Dispatch } from 'react';
 import { ChatSessionHeader } from './chat-session-header';
 
+type ActiveRunChip = { runId: string; goal?: string; startedAt: string };
+
+function WorkspaceActiveRunStrip({ activeRun }: { activeRun: ActiveRunChip }) {
+  return (
+    <div
+      className="flex shrink-0 items-center gap-2 border-b border-emerald-200/80 bg-emerald-50/70 px-4 py-1.5 dark:border-emerald-900/45 dark:bg-emerald-950/30"
+      role="status"
+      aria-label="会话 Run 进行中"
+    >
+      <Play className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+      <span className="text-[11px] font-medium leading-snug text-emerald-900 dark:text-emerald-100">
+        Run 进行中
+        <span className="mx-1.5 font-normal text-emerald-700/65 dark:text-emerald-300/50">·</span>
+        <span className="font-normal text-emerald-800/88 dark:text-emerald-200/85">
+          任务与 Run 绑定见对话列表中的「/run 本轮任务」气泡；Run ID{' '}
+          <code className="rounded bg-emerald-100/90 px-1 font-mono text-[10px] dark:bg-emerald-900/55">
+            {activeRun.runId.length > 22 ? `${activeRun.runId.slice(0, 22)}…` : activeRun.runId}
+          </code>
+        </span>
+      </span>
+    </div>
+  );
+}
+
 export interface PlainToolbarControlsProps {
   workspaceMode: boolean;
   hasActiveRun: boolean;
+  /** 与 hasActiveRun 一致；工作区用其展示 Run 摘要（goal / runId） */
+  activeRun?: ActiveRunChip | null;
   showConfig: boolean;
   showRuntimePanel: boolean;
   onToggleConfig: () => void;
@@ -20,12 +46,17 @@ export interface PlainToolbarControlsProps {
 export function PlainToolbarControls({
   workspaceMode,
   hasActiveRun,
+  activeRun,
   showConfig,
   showRuntimePanel,
   onToggleConfig,
   onToggleRuntimePanel,
 }: PlainToolbarControlsProps) {
-  if (workspaceMode) return null;
+  if (workspaceMode) {
+    const run = activeRun ?? null;
+    if (!run || !hasActiveRun) return null;
+    return <WorkspaceActiveRunStrip activeRun={run} />;
+  }
   return (
     <div className="flex items-center justify-end gap-0.5 border-b border-zinc-100 px-3 py-1.5 dark:border-zinc-800">
       {hasActiveRun && (
@@ -81,14 +112,18 @@ export interface ProjectSessionHeaderControlsProps {
   onCompressOpen: () => void;
   showRuntimePanel?: boolean;
   onToggleRuntimePanel?: () => void;
-  activeRun: { runId: string; goal?: string; startedAt: string } | null;
+  activeRun: ActiveRunChip | null;
 }
 
 export function ProjectSessionHeaderControls({
   workspaceMode,
+  activeRun,
   ...props
 }: ProjectSessionHeaderControlsProps) {
-  if (workspaceMode) return null;
-  return <ChatSessionHeader {...props} />;
+  if (workspaceMode) {
+    if (!activeRun) return null;
+    return <WorkspaceActiveRunStrip activeRun={activeRun} />;
+  }
+  return <ChatSessionHeader {...props} activeRun={activeRun} />;
 }
 

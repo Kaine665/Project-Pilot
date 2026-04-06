@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, memo, type MouseEven
 import { useTranslations } from '@/client/i18n/use-translations';
 import {
   Plus, Trash2, X, Minimize2,
+  PanelLeft, PanelRight,
   MessageSquare, Archive, ArchiveRestore,
   Settings,
   Download, Upload, Search, Folder, FolderOpen,
@@ -13,7 +14,7 @@ import {
   Clock, History,
 } from 'lucide-react';
 import { lazy, Suspense } from 'react';
-import type { Agent, AgentCapabilities, OpenAIReasoningEffort } from '@/types';
+import type { Agent, AgentCapabilities, AgentPreset, OpenAIReasoningEffort } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import { AgentsWorkspaceRail } from '@/components/agents-workspace-rail';
 import { type PromptStackSeedItem } from '@/components/agent-session-prompt-stack';
@@ -32,17 +33,26 @@ function AgentChatPanel(props: React.ComponentProps<typeof AgentChatPanelLazy>) 
     </Suspense>
   );
 }
-import { AgentAvatar, SettingsForm, type FormData, emptyForm, agentToForm } from '@/components/agent-form';
+import {
+  AgentAvatar,
+  SettingsForm,
+  type FormData,
+  emptyForm,
+  agentToForm,
+  applyAgentPresetToForm,
+} from '@/components/agent-form';
 import { AgentPickerDropdown } from '@/components/agent-picker-dropdown';
 import { AgentPickerModal } from '@/components/agent-picker-modal';
 import { type AllSessionItem, type OpenedSession, syncUrlParams } from '@/components/agent-session-utils';
 import { useProject } from '@/components/project-context';
+import { Link } from '@/client/i18n/routing';
 import { repairTextIfNeeded } from '@/lib/text-repair';
 import type {
   AgentsWorkspacePerAgentFocusPersist,
   AgentsWorkspaceProjectPersist,
 } from '@/lib/agents-workspace-ui-shared';
 import { agentsWorkspaceStorageKey } from '@/lib/agents-workspace-ui-shared';
+import { useMediaQuery } from '@/hooks/use-media-query';
 import { cn } from '@/lib/utils';
 
 const WORKSPACE_UI_LS_PREFIX = 'pp.agentsWorkspaceUi.v1.';
@@ -145,7 +155,14 @@ const SessionCard = memo(function SessionCard({
             : 'bg-muted/80 text-muted-foreground ring-border/60',
         )}
       >
-        <AgentAvatar slug={s.agentSlug} iconKey={s.agentIcon} className="h-full w-full object-cover" />
+        <AgentAvatar
+          slug={s.agentSlug}
+          iconKey={s.agentIcon}
+          agentId={s.agentId}
+          customAvatar={s.agentCustomAvatar}
+          updatedAt={s.agentUpdatedAt}
+          className="h-full w-full object-cover"
+        />
       </div>
       <div className="min-w-0 flex-1">
         <div className="mb-0.5 flex items-center justify-between">
@@ -193,6 +210,7 @@ export default function AgentsPage() {
   const { projects, activeKey } = useProject();
   const t = useTranslations('agentsWorkspace');
   const tAgents = useTranslations('agents');
+  const tPresets = useTranslations('presets');
   const tActions = useTranslations('actions');
 
   // ── Core data ──
@@ -261,9 +279,26 @@ export default function AgentsPage() {
   const [saving, setSaving] = useState(false);
   const [expandedPrompt, setExpandedPrompt] = useState(false);
 
+  /** 侧栏「+」下拉：外部导入 / 自主填写 / 使用预设 */
+  const [newAgentMenuOpen, setNewAgentMenuOpen] = useState(false);
+  const newAgentMenuRef = useRef<HTMLDivElement>(null);
+  const [newAgentModal, setNewAgentModal] = useState<'closed' | 'import' | 'presetPick' | 'create'>('closed');
+
   const [sessionQuery, setSessionQuery] = useState('');
   const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [mobileAgentsListOpen, setMobileAgentsListOpen] = useState(false);
+  const [mobileWorkspaceRailOpen, setMobileWorkspaceRailOpen] = useState(false);
+  const mdUpAgents = useMediaQuery('(min-width: 768px)');
+  const lgUpAgents = useMediaQuery('(min-width: 1024px)');
   const conversationStripRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (mdUpAgents) setMobileAgentsListOpen(false);
+  }, [mdUpAgents]);
+
+  useEffect(() => {
+    if (lgUpAgents) setMobileWorkspaceRailOpen(false);
+  }, [lgUpAgents]);
 
   useEffect(() => {
     if (!historyExpanded) return;
@@ -286,6 +321,26 @@ export default function AgentsPage() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [historyExpanded]);
+
+  useEffect(() => {
+    if (!newAgentMenuOpen) return;
+    const onDown = (e: PointerEvent) => {
+      const el = newAgentMenuRef.current;
+      if (!el || !(e.target instanceof Node) || el.contains(e.target)) return;
+      setNewAgentMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    return () => document.removeEventListener('pointerdown', onDown, true);
+  }, [newAgentMenuOpen]);
+
+  useEffect(() => {
+    if (newAgentModal !== 'import' && newAgentModal !== 'presetPick') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setNewAgentModal('closed');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [newAgentModal]);
 
   // ── New session agent picker (dropdown + modal) ──
   const [showAgentDropdown, setShowAgentDropdown] = useState(false);
@@ -331,7 +386,19 @@ export default function AgentsPage() {
     }
   }, []);
 
+  const [agentPresets, setAgentPresets] = useState<AgentPreset[]>([]);
+  const fetchAgentPresets = useCallback(async () => {
+    try {
+      const res = await fetch('/api/data/agent-presets', { cache: 'no-store' });
+      const data = await res.json();
+      setAgentPresets(data.presets ?? []);
+    } catch {
+      setAgentPresets([]);
+    }
+  }, []);
+
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
+  useEffect(() => { void fetchAgentPresets(); }, [fetchAgentPresets]);
 
   const [urlProjectKey, setUrlProjectKey] = useState<string | null>(null);
   useEffect(() => {
@@ -340,6 +407,19 @@ export default function AgentsPage() {
 
   // 实际使用的 projectKey：优先用 ProjectProvider 的值，挂载后再同步 URL 参数
   const effectiveProjectKey = activeKey ?? urlProjectKey;
+
+  const projectRootPath = useMemo(() => {
+    const key = effectiveProjectKey;
+    if (!key) return null;
+    const entry = projects.find((p) => p.key === key);
+    const raw = entry?.path?.trim();
+    return raw && raw.length > 0 ? raw : null;
+  }, [effectiveProjectKey, projects]);
+
+  const currentProject = useMemo(
+    () => (activeKey ? projects.find((p) => p.key === activeKey) : undefined),
+    [projects, activeKey],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -600,6 +680,8 @@ export default function AgentsPage() {
           agentName: agent?.name ?? s.agentId ?? '已删除 Agent',
           agentSlug: agent?.slug,
           agentIcon: agent?.icon,
+          agentCustomAvatar: agent?.customAvatar,
+          agentUpdatedAt: agent?.updatedAt,
           unreadCount: s.unreadCount,
           archived: s.archived,
           projectKey: s.projectKey,
@@ -682,36 +764,106 @@ export default function AgentsPage() {
     return () => clearInterval(timer);
   }, [hasRunningSession]);
 
-  // ── Project-filtered agents（项目专属排前面，全局排后面）──
-  const filteredAgents = useMemo(() => {
-    if (!effectiveProjectKey) return agents;
-    return agents
-      .filter(a => !a.projectKey || a.projectKey === effectiveProjectKey)
-      .sort((a, b) => {
-        const aGlobal = a.projectKey ? 0 : 1;
-        const bGlobal = b.projectKey ? 0 : 1;
-        return aGlobal - bGlobal;
-      });
-  }, [agents, effectiveProjectKey]);
-
-  // ── Recent agent IDs (derived from sessions) ──
-  const recentAgentIds = useMemo(() => {
-    const seen = new Set<string>();
-    const result: string[] = [];
-    // allSessions are already sorted by most recent first
+  // ── 每个 Agent 最近一条未归档会话（侧栏排序 + 预览行，不依赖 allSessions 全局顺序）──
+  const agentLatestNonArchivedSession = useMemo(() => {
+    const m = new Map<string, AllSessionItem>();
     for (const s of allSessions) {
-      if (!seen.has(s.agentId)) {
-        seen.add(s.agentId);
-        result.push(s.agentId);
-      }
-      if (result.length >= 5) break;
+      if (s.archived) continue;
+      const t = new Date(s.updatedAt).getTime();
+      if (!Number.isFinite(t)) continue;
+      const prev = m.get(s.agentId);
+      const pt = prev ? new Date(prev.updatedAt).getTime() : -Infinity;
+      if (t >= pt) m.set(s.agentId, s);
     }
-    return result;
+    return m;
   }, [allSessions]);
+
+  // ── Project-filtered agents；有对话的按最近活动时间倒序置顶（类即时通讯）──
+  const filteredAgents = useMemo(() => {
+    const filtered = !effectiveProjectKey
+      ? agents
+      : agents.filter(a => !a.projectKey || a.projectKey === effectiveProjectKey);
+
+    const activityTs = (id: string) => {
+      const s = agentLatestNonArchivedSession.get(id);
+      return s ? new Date(s.updatedAt).getTime() : -1;
+    };
+
+    return [...filtered].sort((a, b) => {
+      const ta = activityTs(a.id);
+      const tb = activityTs(b.id);
+      if (ta !== tb) return tb - ta;
+      if (effectiveProjectKey) {
+        const ap = a.projectKey ? 1 : 0;
+        const bp = b.projectKey ? 1 : 0;
+        if (ap !== bp) return bp - ap;
+      }
+      return 0;
+    });
+  }, [agents, effectiveProjectKey, agentLatestNonArchivedSession]);
+
+  /** 侧栏搜索过滤后的 Agent（与列表展示一致） */
+  const sidebarAgentsSearchFiltered = useMemo(() => {
+    const q = sessionQuery.trim().toLowerCase();
+    if (!q) return filteredAgents;
+    return filteredAgents.filter(
+      (a) =>
+        (a.name ?? '').toLowerCase().includes(q) ||
+        (a.id ?? '').toLowerCase().includes(q),
+    );
+  }, [filteredAgents, sessionQuery]);
+
+  /**
+   * 侧栏分组：内置 / 项目专属（有 projectKey）/ 全局自定义，组内仍按最近活动时间排序。
+   * 与 AgentPicker 的 picker.group.* 分类一致。
+   */
+  const sidebarAgentsGrouped = useMemo(() => {
+    const activityTs = (id: string) => {
+      const s = agentLatestNonArchivedSession.get(id);
+      return s ? new Date(s.updatedAt).getTime() : -1;
+    };
+    const sortAgents = (list: Agent[]) =>
+      [...list].sort((a, b) => {
+        const ta = activityTs(a.id);
+        const tb = activityTs(b.id);
+        if (ta !== tb) return tb - ta;
+        if (effectiveProjectKey) {
+          const ap = a.projectKey ? 1 : 0;
+          const bp = b.projectKey ? 1 : 0;
+          if (ap !== bp) return bp - ap;
+        }
+        return 0;
+      });
+
+    const builtin: Agent[] = [];
+    const project: Agent[] = [];
+    const global: Agent[] = [];
+    for (const a of sidebarAgentsSearchFiltered) {
+      if (a.builtIn) builtin.push(a);
+      else if (a.projectKey) project.push(a);
+      else global.push(a);
+    }
+
+    const sections: Array<{ id: 'builtin' | 'project' | 'global'; agents: Agent[] }> = [
+      { id: 'builtin', agents: sortAgents(builtin) },
+      { id: 'project', agents: sortAgents(project) },
+      { id: 'global', agents: sortAgents(global) },
+    ];
+    return sections.filter((s) => s.agents.length > 0);
+  }, [sidebarAgentsSearchFiltered, agentLatestNonArchivedSession, effectiveProjectKey]);
+
+  // ── Recent agent IDs（与侧栏最近活跃一致，供选择器复用）──
+  const recentAgentIds = useMemo(() => {
+    return [...agentLatestNonArchivedSession.entries()]
+      .sort(([, sa], [, sb]) => new Date(sb.updatedAt).getTime() - new Date(sa.updatedAt).getTime())
+      .map(([id]) => id)
+      .slice(0, 5);
+  }, [agentLatestNonArchivedSession]);
 
   // ── Handlers: Conversations tab ──
 
   const handleSessionClick = useCallback((session: AllSessionItem) => {
+    setMobileAgentsListOpen(false);
     setHistoryExpanded(false);
     persistWorkspaceFocusFromRefs();
     // Mark as read (fire-and-forget + clear local state immediately)
@@ -740,6 +892,7 @@ export default function AgentsPage() {
   }, [persistWorkspaceFocusFromRefs]);
 
   const handleNewSession = (agent: Agent) => {
+    setMobileAgentsListOpen(false);
     setHistoryExpanded(false);
     const key = nextKeyRef.current++;
     setOpenedSessions(prev => [...prev, { sessionId: null, agentId: agent.id, key }]);
@@ -772,6 +925,9 @@ export default function AgentsPage() {
   // ── Handlers: Agents tab ──
 
   const handleAgentClick = (agent: Agent) => {
+    setMobileAgentsListOpen(false);
+    setNewAgentMenuOpen(false);
+    setNewAgentModal('closed');
     const opened = openedSessionsRef.current;
     const fromAid = getWorkspaceContextAgentIdFromRefs();
 
@@ -849,6 +1005,8 @@ export default function AgentsPage() {
   }, [activePanel, agents]);
 
   const handleAgentSettingsClick = (agent: Agent) => {
+    setNewAgentMenuOpen(false);
+    setNewAgentModal('closed');
     setCreating(false);
     setSelectedAgentId(agent.id);
     setForm(agentToForm(agent));
@@ -860,15 +1018,46 @@ export default function AgentsPage() {
   // Alias for handleAgentClick used by handleClone
   const handleSelect = handleAgentClick;
 
-  const handleStartCreate = () => {
+  /** 自主填写：空白表单，不自动合并项目默认预设 */
+  const openNewAgentManual = useCallback(() => {
+    setNewAgentMenuOpen(false);
     setSelectedAgentId(null);
     setCreating(true);
-    setForm({ ...emptyForm, projectKey: activeKey ?? '' });
+    const defaultPk = (activeKey?.trim() || projects[0]?.key || '').trim();
+    setForm({ ...emptyForm, projectKey: defaultPk });
     setExpandedPrompt(false);
     setActivePanel(null);
-  };
+    setNewAgentModal('create');
+  }, [activeKey, projects]);
+
+  const openNewAgentPresetPicker = useCallback(() => {
+    setNewAgentMenuOpen(false);
+    setNewAgentModal('presetPick');
+  }, []);
+
+  const handlePresetChosenForNewAgent = useCallback(
+    (preset: AgentPreset) => {
+      setSelectedAgentId(null);
+      setCreating(true);
+      const defaultPk = (activeKey?.trim() || projects[0]?.key || '').trim();
+      let initial: FormData = { ...emptyForm, projectKey: defaultPk };
+      initial = applyAgentPresetToForm(initial, preset);
+      setForm(initial);
+      setExpandedPrompt(false);
+      setActivePanel(null);
+      setNewAgentModal('create');
+    },
+    [activeKey, projects],
+  );
+
+  const openNewAgentImportModal = useCallback(() => {
+    setNewAgentMenuOpen(false);
+    setNewAgentModal('import');
+  }, []);
 
   const handleClose = () => {
+    setNewAgentMenuOpen(false);
+    setNewAgentModal('closed');
     setSelectedAgentId(null);
     setCreating(false);
     setForm(emptyForm);
@@ -882,6 +1071,10 @@ export default function AgentsPage() {
   const handleSave = async () => {
     const name = form.name.trim();
     if (!name) return;
+    if (creating && !form.projectKey?.trim()) {
+      alert(t('agent.saveNeedsProject'));
+      return;
+    }
     setSaving(true);
     const parsedParams = form.requiredParamsText
       .split('\n')
@@ -902,7 +1095,7 @@ export default function AgentsPage() {
             requiredParams: parsedParams.length > 0 ? parsedParams : undefined,
             contextIds: form.contextIds.length > 0 ? form.contextIds : undefined,
             defaultResources: skillRefs.length > 0 ? skillRefs : undefined,
-            projectKey: form.projectKey || undefined,
+            projectKey: form.projectKey.trim(),
             defaultProvider: form.defaultProvider || undefined,
             defaultModel: form.defaultModel || undefined,
             defaultOpenAIReasoningEffort: form.defaultProvider === 'openai'
@@ -915,10 +1108,18 @@ export default function AgentsPage() {
           const data = await res.json();
           await fetchAgents();
           setCreating(false);
+          setNewAgentModal('closed');
           setSelectedAgentId(data.agent.id);
           setForm(agentToForm(data.agent));
           setActivePanel({ type: 'agent', agentId: data.agent.id, mode: 'chat' });
           syncUrlParams({ agent: data.agent.id, session: null });
+        } else {
+          try {
+            const err = await res.json() as { error?: string };
+            alert(t('agent.saveErrorWithReason', { reason: err.error ?? String(res.status) }));
+          } catch {
+            alert(t('agent.saveErrorWithReason', { reason: String(res.status) }));
+          }
         }
       } else if (selectedAgentId) {
         const skillRefs = form.skillIds.map(id => ({ type: 'skill' as const, id, priority: 60 }));
@@ -938,7 +1139,7 @@ export default function AgentsPage() {
             requiredParams: parsedParams.length > 0 ? parsedParams : [],
             contextIds: form.contextIds,
             defaultResources: updatedDefaultResources.length > 0 ? updatedDefaultResources : [],
-            projectKey: form.projectKey || undefined,
+            projectKey: form.projectKey.trim(),
             defaultProvider: form.defaultProvider || undefined,
             defaultModel: form.defaultModel || undefined,
             defaultOpenAIReasoningEffort: form.defaultProvider === 'openai'
@@ -947,7 +1148,16 @@ export default function AgentsPage() {
             contextStrategy: form.contextStrategy || undefined,
           }),
         });
-        if (res.ok) await fetchAgents();
+        if (res.ok) {
+          await fetchAgents();
+        } else {
+          try {
+            const err = await res.json() as { error?: string };
+            alert(t('agent.saveErrorWithReason', { reason: err.error ?? String(res.status) }));
+          } catch {
+            alert(t('agent.saveErrorWithReason', { reason: String(res.status) }));
+          }
+        }
       }
     } catch { /* ignore */ }
     setSaving(false);
@@ -991,7 +1201,7 @@ export default function AgentsPage() {
     } catch { /* ignore */ }
   };
 
-  const handleImport = () => {
+  const runAgentPackageImportFilePicker = () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.ppagent';
@@ -1000,23 +1210,29 @@ export default function AgentsPage() {
       if (!file) return;
       try {
         const text = await file.text();
-        const pkg = JSON.parse(text);
+        const pkg = JSON.parse(text) as Record<string, unknown>;
+        const importTargetKey = (activeKey?.trim() || projects[0]?.key || '').trim();
+        if (!importTargetKey) {
+          alert(t('agent.importNeedsProject'));
+          return;
+        }
         const res = await fetch('/api/agents/import', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(pkg),
+          body: JSON.stringify({ ...pkg, targetProjectKey: importTargetKey }),
         });
         if (res.ok) {
           const data = await res.json();
           await fetchAgents();
           handleSelect(data.agent);
+          setNewAgentModal('closed');
           const msg = data.contextsImported > 0
             ? t('agent.importSuccessWithContexts', { name: data.agent.name, count: data.contextsImported })
             : t('agent.importSuccess', { name: data.agent.name });
           alert(msg);
         } else {
-          const err = await res.json();
-          alert(t('agent.importErrorWithReason', { reason: err.error }));
+          const err = await res.json() as { error?: string };
+          alert(t('agent.importErrorWithReason', { reason: err.error ?? String(res.status) }));
         }
       } catch {
         alert(t('agent.importErrorInvalidFile'));
@@ -1074,12 +1290,16 @@ export default function AgentsPage() {
       session.agentName === agent.name
       && session.agentIcon === agent.icon
       && session.agentSlug === agent.slug
+      && session.agentCustomAvatar === agent.customAvatar
+      && session.agentUpdatedAt === agent.updatedAt
     ) return session;
     return {
       ...session,
       agentName: agent.name,
       agentSlug: agent.slug,
       agentIcon: agent.icon,
+      agentCustomAvatar: agent.customAvatar,
+      agentUpdatedAt: agent.updatedAt,
     };
   }), [allSessions, agentLookup]);
 
@@ -1106,12 +1326,16 @@ export default function AgentsPage() {
         session.agentName === agent.name
         && session.agentIcon === agent.icon
         && session.agentSlug === agent.slug
+        && session.agentCustomAvatar === agent.customAvatar
+        && session.agentUpdatedAt === agent.updatedAt
       ) return session;
       return {
         ...session,
         agentName: agent.name,
         agentSlug: agent.slug,
         agentIcon: agent.icon,
+        agentCustomAvatar: agent.customAvatar,
+        agentUpdatedAt: agent.updatedAt,
       };
     }));
   }, [agents, agentLookup]);
@@ -1421,6 +1645,8 @@ export default function AgentsPage() {
                 agentName: displayText(agent.name, agent.id),
                 agentSlug: agent.slug,
                 agentIcon: agent.icon,
+                agentCustomAvatar: agent.customAvatar,
+                agentUpdatedAt: agent.updatedAt,
                 ...(newSession.isRunning !== undefined && {
                   isRunning: newSession.isRunning,
                   runningStartedAt: newSession.runningStartedAt,
@@ -1439,6 +1665,8 @@ export default function AgentsPage() {
           agentName: displayText(agent.name, agent.id),
           agentSlug: agent.slug,
           agentIcon: agent.icon,
+          agentCustomAvatar: agent.customAvatar,
+          agentUpdatedAt: agent.updatedAt,
           isRunning: newSession.isRunning,
           runningStartedAt: newSession.runningStartedAt,
           unreadCount: newSession.unreadCount,
@@ -1480,9 +1708,29 @@ export default function AgentsPage() {
     }
   }, [effectiveProjectKey, fetchAllSessions]);
 
+  const mobileChromeTitle = creating
+    ? tAgents('newAgent')
+    : displayText(selectedAgent?.name ?? activeWorkspaceAgent?.name, tAgents('title'));
+
   return (
-    <div className="flex h-full overflow-hidden bg-background text-foreground">
-      <aside className="relative flex w-[292px] shrink-0 flex-col border-r border-border bg-muted/20">
+    <div className="flex h-full min-h-0 w-full min-w-0 overflow-hidden bg-background text-foreground">
+      {mobileAgentsListOpen && (
+        <button
+          type="button"
+          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          aria-label={t('workspace.closeOverlayAria')}
+          onClick={() => setMobileAgentsListOpen(false)}
+        />
+      )}
+      <aside
+        className={cn(
+          'relative z-50 flex w-[292px] shrink-0 flex-col border-r border-border bg-muted/20',
+          'md:z-auto',
+          'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:h-full max-md:w-[min(100%,300px)] max-md:max-w-[90vw] max-md:shadow-xl',
+          'max-md:transition-transform max-md:duration-200 max-md:ease-out',
+          mobileAgentsListOpen ? 'max-md:translate-x-0' : 'max-md:pointer-events-none max-md:-translate-x-full',
+        )}
+      >
         <div className="border-b border-border/80 bg-card/40 px-4 pb-3 pt-4 backdrop-blur-sm">
           <div className="mb-3 flex items-start justify-between gap-2">
             <div className="flex min-w-0 items-start gap-2.5">
@@ -1498,25 +1746,55 @@ export default function AgentsPage() {
                 </p>
               </div>
             </div>
-            <div className="flex shrink-0 items-center gap-0.5">
+            <div ref={newAgentMenuRef} className="relative flex shrink-0 items-center gap-0.5">
               <button
                 type="button"
-                onClick={handleImport}
-                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                title={t('agent.importButton')}
-                aria-label={t('agent.importButton')}
-              >
-                <Upload className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={handleStartCreate}
-                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => setNewAgentMenuOpen((o) => !o)}
+                aria-haspopup="menu"
+                aria-expanded={newAgentMenuOpen}
+                aria-label={t('agent.newAgentMenuAria')}
                 title={t('agent.createButton')}
-                aria-label={t('agent.createButton')}
+                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <Plus className="h-4 w-4" />
               </button>
+              {newAgentMenuOpen ? (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full z-[100] mt-1 w-44 overflow-hidden rounded-lg border border-border bg-popover py-1 text-popover-foreground shadow-md"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center px-3 py-2 text-left text-sm transition-colors hover:bg-muted/80"
+                    onClick={() => {
+                      openNewAgentImportModal();
+                    }}
+                  >
+                    {t('agent.menuImportExternal')}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center px-3 py-2 text-left text-sm transition-colors hover:bg-muted/80"
+                    onClick={() => {
+                      openNewAgentManual();
+                    }}
+                  >
+                    {t('agent.menuManualEntry')}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center px-3 py-2 text-left text-sm transition-colors hover:bg-muted/80"
+                    onClick={() => {
+                      openNewAgentPresetPicker();
+                    }}
+                  >
+                    {t('agent.menuFromPreset')}
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
           <label className="sr-only" htmlFor="agents-sidebar-search">
@@ -1535,7 +1813,7 @@ export default function AgentsPage() {
         </div>
 
         <div className="flex-1 overflow-y-auto px-2 py-2">
-          {filteredAgents.filter(a => !sessionQuery || a.name.toLowerCase().includes(sessionQuery.toLowerCase()) || a.id.toLowerCase().includes(sessionQuery.toLowerCase())).length === 0 ? (
+          {sidebarAgentsSearchFiltered.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border bg-muted/30 px-4 py-12 text-center">
               <MessageSquare className="mx-auto mb-3 h-8 w-8 text-muted-foreground/50" aria-hidden />
               <p className="text-sm text-muted-foreground">
@@ -1543,143 +1821,155 @@ export default function AgentsPage() {
               </p>
             </div>
           ) : (
-            <div className="flex flex-col gap-1">
-              {filteredAgents
-                .filter(a => !sessionQuery || a.name.toLowerCase().includes(sessionQuery.toLowerCase()) || a.id.toLowerCase().includes(sessionQuery.toLowerCase()))
-                .map((agent) => {
-                  const isActive = activeWorkspaceAgent?.id === agent.id;
-                  const agentSessions = allSessions.filter(s => s.agentId === agent.id && !s.archived);
-                  const lastSession = agentSessions[0];
-                  const totalUnread = agentSessions.reduce((sum, s) => sum + (s.unreadCount || 0), 0);
-                  const hasRunning = agentSessions.some(s => s.isRunning);
-                  return (
-                    <div
-                      key={agent.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => handleAgentClick(agent)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          handleAgentClick(agent);
-                        }
-                      }}
-                      className={cn(
-                        'group/agent flex cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2.5 transition-colors',
-                        isActive
-                          ? 'bg-card shadow-sm ring-1 ring-border'
-                          : 'hover:bg-muted/70',
-                      )}
-                    >
-                      <div
-                        className={cn(
-                          'h-10 w-10 shrink-0 overflow-hidden rounded-xl ring-1 ring-inset',
-                          isActive
-                            ? 'bg-primary/10 text-primary ring-primary/15'
-                            : 'bg-muted/80 text-muted-foreground ring-border/60',
-                        )}
-                      >
-                        <AgentAvatar slug={agent.slug} iconKey={agent.icon} className="h-full w-full object-cover" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="mb-0.5 flex items-center justify-between gap-2">
-                          <div className="flex min-w-0 items-center gap-1.5">
-                            <span
-                              className={cn(
-                                'truncate text-sm',
-                                isActive ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
-                              )}
-                            >
-                              {agent.name}
-                            </span>
-                            {agent.builtIn && (
-                              <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                                {t('agent.builtInBadge')}
-                              </span>
+            <div className="flex flex-col gap-3">
+              {sidebarAgentsGrouped.map((group) => (
+                <section key={group.id} aria-label={t(`picker.group.${group.id}`)}>
+                  <h3 className="mb-1.5 px-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      {t(`picker.group.${group.id}`)}
+                    </span>
+                  </h3>
+                  <div className="flex flex-col gap-1">
+                    {group.agents.map((agent) => {
+                      const isActive = activeWorkspaceAgent?.id === agent.id;
+                      const agentSessions = allSessions.filter(s => s.agentId === agent.id && !s.archived);
+                      const lastSession = agentLatestNonArchivedSession.get(agent.id);
+                      const totalUnread = agentSessions.reduce((sum, s) => sum + (s.unreadCount || 0), 0);
+                      const hasRunning = agentSessions.some(s => s.isRunning);
+                      return (
+                        <div
+                          key={agent.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => handleAgentClick(agent)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              handleAgentClick(agent);
+                            }
+                          }}
+                          className={cn(
+                            'group/agent flex cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2.5 transition-colors',
+                            isActive
+                              ? 'bg-card shadow-sm ring-1 ring-border'
+                              : 'hover:bg-muted/70',
+                          )}
+                        >
+                          <div
+                            className={cn(
+                              'h-10 w-10 shrink-0 overflow-hidden rounded-xl ring-1 ring-inset',
+                              isActive
+                                ? 'bg-primary/10 text-primary ring-primary/15'
+                                : 'bg-muted/80 text-muted-foreground ring-border/60',
                             )}
+                          >
+                            <AgentAvatar
+                              slug={agent.slug}
+                              iconKey={agent.icon}
+                              agentId={agent.id}
+                              customAvatar={agent.customAvatar}
+                              updatedAt={agent.updatedAt}
+                              className="h-full w-full object-cover"
+                            />
                           </div>
-                          {lastSession && (
-                            <span className="shrink-0 text-[10px] font-medium tabular-nums text-muted-foreground">
-                              {formatSessionTimestamp(lastSession.updatedAt, Date.now(), t('session.yesterday'))}
+                          <div className="min-w-0 flex-1">
+                            <div className="mb-0.5 flex items-center justify-between gap-2">
+                              <div className="flex min-w-0 items-center gap-1.5">
+                                <span
+                                  className={cn(
+                                    'truncate text-sm',
+                                    isActive ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
+                                  )}
+                                >
+                                  {agent.name}
+                                </span>
+                                {agent.builtIn && (
+                                  <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                    {t('agent.builtInBadge')}
+                                  </span>
+                                )}
+                              </div>
+                              {lastSession && (
+                                <span className="shrink-0 text-[10px] font-medium tabular-nums text-muted-foreground">
+                                  {formatSessionTimestamp(lastSession.updatedAt, Date.now(), t('session.yesterday'))}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                              {hasRunning && (
+                                <span
+                                  className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500 animate-pulse"
+                                  aria-hidden
+                                />
+                              )}
+                              <span className="truncate">
+                                {lastSession
+                                  ? displayText(lastSession.title, agent.description || agent.id)
+                                  : (agent.description || agent.id)}
+                              </span>
+                            </div>
+                          </div>
+                          {totalUnread > 0 && !isActive && (
+                            <span className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
+                              {totalUnread > 99 ? '99+' : totalUnread}
+                            </span>
+                          )}
+                          {agentSessions.length > 0 && (
+                            <span className="shrink-0 rounded-md bg-muted/80 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/agent:opacity-100">
+                              {agentSessions.length}
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          {hasRunning && (
-                            <span
-                              className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500 animate-pulse"
-                              aria-hidden
-                            />
-                          )}
-                          <span className="truncate">
-                            {lastSession
-                              ? displayText(lastSession.title, agent.description || agent.id)
-                              : (agent.description || agent.id)}
-                          </span>
-                        </div>
-                      </div>
-                      {totalUnread > 0 && !isActive && (
-                        <span className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
-                          {totalUnread > 99 ? '99+' : totalUnread}
-                        </span>
-                      )}
-                      {agentSessions.length > 0 && (
-                        <span className="shrink-0 rounded-md bg-muted/80 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/agent:opacity-100">
-                          {agentSessions.length}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
             </div>
           )}
         </div>
 
       </aside>
 
-      <div className="flex min-w-0 flex-1">
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
-        {creating ? (
-          /* ── Creating new agent ── */
-          expandedPrompt ? (
-            <div className="flex flex-1 flex-col p-4 gap-3 overflow-hidden">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  系统提示词 — {form.name || '未命名'}
-                </label>
-                <button
-                  onClick={() => setExpandedPrompt(false)}
-                  className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                  title="收起"
-                >
-                  <Minimize2 className="h-4 w-4" />
-                </button>
-              </div>
-              <textarea
-                autoFocus
-                value={form.systemPrompt}
-                onChange={e => setForm(f => ({ ...f, systemPrompt: e.target.value }))}
-                placeholder="定义 Agent 的行为和能力，例如：你是一个专注于代码审查的助手..."
-                className="flex-1 w-full resize-none rounded-md border border-zinc-300 px-4 py-3 text-sm leading-relaxed outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
-              />
-            </div>
-          ) : (
-            <SettingsForm
-              creating
-              form={form}
-              setForm={setForm}
-              selectedAgent={null}
-              hasChanges={hasChanges}
-              saving={saving}
-              onSave={handleSave}
-              onClose={handleClose}
-              onDelete={handleDelete}
-              selectedId={selectedAgentId}
-              onExpandPrompt={() => setExpandedPrompt(true)}
-              projects={projects}
-            />
-          )
-        ) : activePanel?.type === 'agent' && selectedAgent && agentViewMode === 'settings' ? (
+      <div className="relative flex min-h-0 min-w-0 flex-1">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
+        {/* 占位：顶栏改为 fixed 后避免主内容顶到导航下 */}
+        <div className="h-14 shrink-0 lg:hidden" aria-hidden />
+        {/*
+          fixed + z-[60]：右侧抽屉遮罩为 z-40 全屏，若顶栏仅在文档流中会被挡住，表现为「侧栏按钮丢失」。
+          md:left-[292px]：与左侧 Agent 列表同宽，避免盖住桌面窄窗下的左栏。
+        */}
+        <div
+          role="toolbar"
+          aria-label={t('workspace.mobileAgentsToolbarAria')}
+          className={cn(
+            'fixed right-0 top-16 z-[60] flex h-14 items-center gap-2 border-b border-border bg-card/95 px-3 shadow-sm backdrop-blur-sm lg:hidden',
+            'left-0 md:left-[292px]',
+          )}
+        >
+          <button
+            type="button"
+            onClick={() => setMobileAgentsListOpen(true)}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground shadow-sm transition-colors hover:bg-muted/80 md:hidden"
+            aria-label={t('workspace.openAgentListAria')}
+          >
+            <PanelLeft className="h-5 w-5" aria-hidden />
+          </button>
+          <div className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+            {mobileChromeTitle}
+          </div>
+          <button
+            type="button"
+            onClick={() => setMobileWorkspaceRailOpen((o) => !o)}
+            aria-expanded={mobileWorkspaceRailOpen}
+            aria-controls="agents-workspace-rail-aside"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground shadow-sm transition-colors hover:bg-muted/80"
+            aria-label={t('workspace.openWorkspaceRailAria')}
+          >
+            <PanelRight className="h-5 w-5" aria-hidden />
+          </button>
+        </div>
+        {activePanel?.type === 'agent' && selectedAgent && agentViewMode === 'settings' ? (
           expandedPrompt ? (
             <div className="flex flex-1 flex-col p-4 gap-3 overflow-hidden">
               <div className="flex items-center justify-between">
@@ -1707,7 +1997,14 @@ export default function AgentsPage() {
               <div className="flex items-start justify-between gap-4 border-b border-border bg-card/50 px-6 py-5 backdrop-blur-sm">
                 <div className="flex min-w-0 items-start gap-4">
                   <div className="h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-muted ring-1 ring-border">
-                    <AgentAvatar slug={selectedAgent.slug} iconKey={selectedAgent.icon} className="h-full w-full object-cover" />
+                    <AgentAvatar
+                      slug={selectedAgent.slug}
+                      iconKey={selectedAgent.icon}
+                      agentId={selectedAgent.id}
+                      customAvatar={selectedAgent.customAvatar}
+                      updatedAt={selectedAgent.updatedAt}
+                      className="h-full w-full object-cover"
+                    />
                   </div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -1770,6 +2067,7 @@ export default function AgentsPage() {
                 selectedId={selectedAgentId}
                 onExpandPrompt={() => setExpandedPrompt(true)}
                 projects={projects}
+                onAvatarChanged={fetchAgents}
               />
             </>
           )
@@ -1788,7 +2086,14 @@ export default function AgentsPage() {
                     >
                       <div className="flex min-w-0 flex-1 items-start gap-3">
                         <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-muted ring-1 ring-border">
-                          <AgentAvatar slug={activeWorkspaceAgent.slug} iconKey={activeWorkspaceAgent.icon} className="h-full w-full object-cover" />
+                          <AgentAvatar
+                            slug={activeWorkspaceAgent.slug}
+                            iconKey={activeWorkspaceAgent.icon}
+                            agentId={activeWorkspaceAgent.id}
+                            customAvatar={activeWorkspaceAgent.customAvatar}
+                            updatedAt={activeWorkspaceAgent.updatedAt}
+                            className="h-full w-full object-cover"
+                          />
                         </div>
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -1990,7 +2295,10 @@ export default function AgentsPage() {
                 </div>
 
                 {/* ── Bottom: Chat area (fixed height) ── */}
-                <div className="relative z-0 min-h-0 flex-1" style={{ minHeight: 420 }}>
+                <div
+                  className="relative z-0 min-h-0 flex-1"
+                  style={{ minHeight: 'min(420px, 50svh)' }}
+                >
                   <AgentChatPanel
                     key={`workspace-${activeWorkspaceAgent.id}-${activeWorkspacePanelKey ?? 'root'}`}
                     agent={activeWorkspaceAgent}
@@ -2068,7 +2376,14 @@ export default function AgentsPage() {
               <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)] dark:border-zinc-800 dark:bg-zinc-900/90 dark:shadow-none">
                 <div className="flex items-start gap-3">
                   <div className="h-11 w-11 shrink-0 overflow-hidden rounded-2xl bg-zinc-100 dark:bg-zinc-800">
-                    <AgentAvatar slug={workspaceAgent?.slug} iconKey={workspaceAgent?.icon} className="h-full w-full object-cover" />
+                    <AgentAvatar
+                      slug={workspaceAgent?.slug}
+                      iconKey={workspaceAgent?.icon}
+                      agentId={workspaceAgent?.id}
+                      customAvatar={workspaceAgent?.customAvatar}
+                      updatedAt={workspaceAgent?.updatedAt}
+                      className="h-full w-full object-cover"
+                    />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-100">{workspaceDisplayTitle}</div>
@@ -2231,8 +2546,28 @@ export default function AgentsPage() {
         </aside>
         )}
 
-        <aside className="flex h-full min-h-0 w-[min(100%,288px)] shrink-0 flex-col border-l border-border bg-muted/10 sm:w-[292px]">
+        {mobileWorkspaceRailOpen && (
+          <button
+            type="button"
+            className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+            aria-label={t('workspace.closeOverlayAria')}
+            onClick={() => setMobileWorkspaceRailOpen(false)}
+          />
+        )}
+        <aside
+          id="agents-workspace-rail-aside"
+          className={cn(
+            'flex h-full min-h-0 w-[min(100%,288px)] flex-col border-l border-border bg-muted/10 sm:w-[292px]',
+            'lg:relative lg:shrink-0',
+            'max-lg:absolute max-lg:right-0 max-lg:top-0 max-lg:z-50 max-lg:w-[min(100vw,320px)] max-lg:max-w-[90vw] max-lg:shadow-xl',
+            'max-lg:transition-transform max-lg:duration-200 max-lg:ease-out',
+            mobileWorkspaceRailOpen
+              ? 'max-lg:translate-x-0'
+              : 'max-lg:pointer-events-none max-lg:translate-x-full',
+          )}
+        >
           <AgentsWorkspaceRail
+            projectRootPath={projectRootPath}
             workspaceAgentDataPath={workspaceAgentDataPath}
             promptStackItems={promptStackItems}
             promptStackKey={promptStackItems.map((item) => `${item.scope}:${item.label}:${item.path}`).join('|')}
@@ -2243,6 +2578,209 @@ export default function AgentsPage() {
           />
         </aside>
       </div>
+
+      {newAgentModal === 'import' ? (
+        <div
+          className="fixed inset-0 z-[200] flex items-start justify-center bg-black/40 px-4 pt-[18vh] backdrop-blur-[2px]"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setNewAgentModal('closed');
+          }}
+          role="presentation"
+        >
+          <div
+            className="w-full max-w-md overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="new-agent-import-title"
+          >
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <h2 id="new-agent-import-title" className="text-sm font-semibold">
+                {t('agent.modalImportTitle')}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setNewAgentModal('closed')}
+                className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                aria-label={tActions('close')}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-4 px-4 py-4">
+              <p className="text-sm leading-relaxed text-muted-foreground">{t('agent.modalImportDescription')}</p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => runAgentPackageImportFilePicker()}
+                  className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                >
+                  {t('agent.modalImportChooseFile')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewAgentModal('closed')}
+                  className="inline-flex items-center justify-center rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-muted/80"
+                >
+                  {tActions('cancel')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {newAgentModal === 'presetPick' ? (
+        <div
+          className="fixed inset-0 z-[200] flex items-start justify-center bg-black/40 px-4 pt-[18vh] backdrop-blur-[2px]"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setNewAgentModal('closed');
+          }}
+          role="presentation"
+        >
+          <div
+            className="flex max-h-[min(520px,85vh)] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="new-agent-preset-title"
+          >
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <h2 id="new-agent-preset-title" className="text-sm font-semibold">
+                {t('agent.modalPresetTitle')}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setNewAgentModal('closed')}
+                className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                aria-label={tActions('close')}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="border-b border-border/60 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+              {t('agent.modalPresetDescription')}
+            </p>
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              {agentPresets.length === 0 ? (
+                <div className="px-2 py-8 text-center text-sm text-muted-foreground">
+                  <p>{t('agent.modalPresetEmpty')}</p>
+                  <Link
+                    href="/workspace/presets"
+                    className="mt-3 inline-block text-sm font-medium text-primary underline-offset-2 hover:underline"
+                    onClick={() => setNewAgentModal('closed')}
+                  >
+                    {t('agent.modalPresetManage')}
+                  </Link>
+                </div>
+              ) : (
+                <ul className="space-y-0.5" role="listbox">
+                  {agentPresets.map((preset) => (
+                    <li key={preset.id} role="none">
+                      <button
+                        type="button"
+                        role="option"
+                        className="flex w-full flex-col gap-0.5 rounded-lg px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted/80"
+                        onClick={() => handlePresetChosenForNewAgent(preset)}
+                      >
+                        <span className="font-medium text-foreground">{preset.name}</span>
+                        {preset.description ? (
+                          <span className="line-clamp-2 text-xs text-muted-foreground">{preset.description}</span>
+                        ) : null}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {newAgentModal === 'create' && creating ? (
+        <div
+          className="fixed inset-0 z-[200] flex items-start justify-center bg-black/40 px-4 py-6 backdrop-blur-[2px] sm:py-10"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) handleClose();
+          }}
+          role="presentation"
+        >
+          <div
+            className="flex max-h-[min(90vh,880px)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="new-agent-create-title"
+          >
+            <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
+              <h2 id="new-agent-create-title" className="text-sm font-semibold">
+                {t('agent.modalCreateTitle')}
+              </h2>
+              <button
+                type="button"
+                onClick={handleClose}
+                className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                aria-label={tActions('close')}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              {expandedPrompt ? (
+                <div className="flex h-[min(60vh,480px)] flex-col gap-3 p-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                      系统提示词 — {form.name || '未命名'}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedPrompt(false)}
+                      className="rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                      title="收起"
+                    >
+                      <Minimize2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <textarea
+                    autoFocus
+                    value={form.systemPrompt}
+                    onChange={(e) => setForm((f) => ({ ...f, systemPrompt: e.target.value }))}
+                    placeholder="定义 Agent 的行为和能力，例如：你是一个专注于代码审查的助手..."
+                    className="min-h-0 w-full flex-1 resize-none rounded-md border border-zinc-300 px-4 py-3 text-sm leading-relaxed outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+                  />
+                </div>
+              ) : (
+                <div className="flex h-full min-h-[320px] flex-col overflow-hidden">
+                  <p className="shrink-0 border-b border-border/60 bg-muted/20 px-4 py-2.5 text-center text-[11px] leading-relaxed text-muted-foreground">
+                    {t('workspace.createAgentPresetHintBefore')}
+                    <Link href="/workspace/presets" className="mx-0.5 font-medium text-primary underline-offset-2 hover:underline">
+                      {tPresets('title')}
+                    </Link>
+                    {t('workspace.createAgentPresetHintAfter')}
+                  </p>
+                  <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+                    <SettingsForm
+                      creating
+                      form={form}
+                      setForm={setForm}
+                      selectedAgent={null}
+                      hasChanges={hasChanges}
+                      saving={saving}
+                      onSave={handleSave}
+                      onClose={handleClose}
+                      onDelete={handleDelete}
+                      selectedId={selectedAgentId}
+                      onExpandPrompt={() => setExpandedPrompt(true)}
+                      projects={projects}
+                      onAvatarChanged={fetchAgents}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

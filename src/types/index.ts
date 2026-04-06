@@ -71,6 +71,7 @@ export type ClaudeModel = 'claude-opus-4-6' | 'claude-sonnet-4-5-20250929' | 'cl
 /** 内置供应商 ID */
 export const BUILT_IN_PROVIDER_IDS = [
   'anthropic', 'openai', 'deepseek', 'qwen', 'zhipu', 'minimax', 'kimi',
+  'moonshot', 'siliconflow', 'zenmux', 'volcengine', 'arkcoding',
   'openrouter', 'ollama', 'custom',
 ] as const;
 
@@ -78,7 +79,7 @@ export type BuiltInProviderId = (typeof BUILT_IN_PROVIDER_IDS)[number];
 
 /**
  * AI 供应商 ID。
- * - 内置：anthropic, openai, deepseek, qwen, zhipu, minimax, kimi, openrouter, ollama, custom
+ * - 内置：anthropic, openai, deepseek, qwen, zhipu, minimax, kimi, moonshot, siliconflow, zenmux, volcengine, arkcoding, openrouter, ollama, custom
  * - 自定义：custom-{id}，来自用户添加的自定义供应商
  */
 export type ProviderId = BuiltInProviderId | `custom-${string}`;
@@ -316,6 +317,12 @@ export type ContentBlock =
   | { type: 'thinking'; text: string }
   | { type: 'tool_call'; toolCall: ChatToolCall };
 
+/** 前端消息元数据；run_task 会随会话 JSONL 持久化 */
+export type ChatMessageUIMeta =
+  | { type: 'run_task'; executionRunId: string }
+  /** 仅内存：无 goal 的 /run，通常不落盘 */
+  | { type: 'run_open'; executionRunId: string };
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -325,6 +332,7 @@ export interface ChatMessage {
   toolCalls?: ChatToolCall[];
   contentBlocks?: ContentBlock[];
   interrupted?: boolean;
+  meta?: ChatMessageUIMeta;
 }
 
 export type DangerLevel = 'warning' | 'critical';
@@ -434,6 +442,8 @@ export interface Agent {
   systemPrompt?: string;
   /** Icon identifier (lucide icon name) */
   icon?: string;
+  /** 用户在本机上传的自定义头像（文件在数据目录 agents/avatars/，由 /api/agents/avatar/:id 提供） */
+  customAvatar?: boolean;
   /** Per-agent tool capabilities */
   capabilities?: AgentCapabilities;
   /** Parameter names this agent requires to run (template only, values filled at project/task level) */
@@ -491,6 +501,34 @@ export interface AgentStatus {
 
 export interface AgentsData {
   agents: Agent[];
+}
+
+/**
+ * Agent「运行预设」：复用模型、能力、Skills、上下文策略与系统提示模板，
+ * 供新建 Agent 时加载，或项目级默认（见 ProjectEntry.defaultPresetId）。
+ */
+export interface AgentPreset {
+  id: string;
+  name: string;
+  description?: string;
+  /** 绑定到某项目时，在列表中优先展示；缺省为全局预设 */
+  projectKey?: string;
+  icon?: string;
+  capabilities: AgentCapabilities;
+  defaultProvider?: ProviderId;
+  defaultModel?: string;
+  defaultOpenAIReasoningEffort?: OpenAIReasoningEffort;
+  /** Skill 名称列表，对应 Agent.defaultResources 中 type=skill */
+  skillIds: string[];
+  contextStrategy?: 'additive' | 'exclusive';
+  /** 新建 Agent 时的系统提示词模板 */
+  systemPrompt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentPresetsData {
+  presets: AgentPreset[];
 }
 
 // ==================== Dimension（信息角度） ====================
@@ -672,6 +710,8 @@ export interface ProjectEntry {
   // ── AI 默认配置 ──
   /** 创建待办时默认绑定的 Agent ID */
   defaultAgentId?: string;
+  /** 在本项目下新建 Agent 时默认套用的运行预设（config/agent-presets.json） */
+  defaultPresetId?: string;
 
   // ── 视觉标识 ──
   icon?: string;

@@ -675,6 +675,11 @@ export function getAgentsWorkspaceUiPath(): string {
   return path.join(DATA_DIR, 'config', 'agents-workspace-ui.json');
 }
 
+/** Agent 运行预设列表（模型、能力、Skills 等模板） */
+export function getAgentPresetsPath(): string {
+  return path.join(DATA_DIR, 'config', 'agent-presets.json');
+}
+
 export function getAgentsPath(): string {
   return path.join(DATA_DIR, 'agents', 'registry.json');
 }
@@ -794,11 +799,6 @@ export function getTodosPath(): string {
 }
 
 /** 单条待办 JSON：`todos/entries/<todoId>.json`（与数据根 `todos.json` 聚合并存，读取时合并，分文件优先） */
-export function getTodosEntriesDir(): string {
-  return path.join(DATA_DIR, 'todos', 'entries');
-}
-
-/** 单条待办 JSON：`todos/entries/<todoId>.json`（与聚合文件 `tasks/todos.json` 并存，读取时合并，分文件优先） */
 export function getTodosEntriesDir(): string {
   return path.join(DATA_DIR, 'todos', 'entries');
 }
@@ -1297,6 +1297,50 @@ export function getAgentDataFilePath(agentId: string, fileName: string): string 
     throw new Error(`Invalid file name: ${fileName}`);
   }
   return path.join(getAgentDataPath(agentId), safeFile);
+}
+
+/** 用户上传的 Agent 头像目录：agents/avatars/<agentId>.<ext> */
+export function getAgentCustomAvatarDir(): string {
+  return path.join(DATA_DIR, 'agents', 'avatars');
+}
+
+export async function findAgentCustomAvatarAbsPath(agentId: string): Promise<string | null> {
+  const safe = safeAgentIdSegment(agentId);
+  const dir = getAgentCustomAvatarDir();
+  try {
+    const files = await fs.readdir(dir);
+    const hit = files.find((f) => f.startsWith(`${safe}.`));
+    return hit ? path.join(dir, hit) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteAgentCustomAvatarFiles(agentId: string): Promise<void> {
+  const safe = safeAgentIdSegment(agentId);
+  const dir = getAgentCustomAvatarDir();
+  try {
+    const files = await fs.readdir(dir);
+    for (const f of files) {
+      if (f.startsWith(`${safe}.`)) {
+        await fs.unlink(path.join(dir, f)).catch(() => {});
+      }
+    }
+  } catch {
+    /* 目录不存在 */
+  }
+}
+
+export async function writeAgentCustomAvatarFile(
+  agentId: string,
+  buffer: Buffer,
+  extWithDot: string,
+): Promise<void> {
+  const safe = safeAgentIdSegment(agentId);
+  const dir = getAgentCustomAvatarDir();
+  await fs.mkdir(dir, { recursive: true });
+  await deleteAgentCustomAvatarFiles(agentId);
+  await fs.writeFile(path.join(dir, `${safe}${extWithDot}`), buffer);
 }
 
 // ── Agent Schedules 路径函数 ──

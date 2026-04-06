@@ -290,6 +290,7 @@ export class SchedulerManager {
           'schedule',
           schedule.id,
           schedule.todoId,
+          undefined,
         );
       }
 

@@ -208,7 +208,14 @@ export function AgentPickerModal({
                     : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
                 }`}
               >
-                <AgentAvatar slug={agent.slug} iconKey={agent.icon} className="h-9 w-9 shrink-0 rounded-lg" />
+                <AgentAvatar
+                  slug={agent.slug}
+                  iconKey={agent.icon}
+                  agentId={agent.id}
+                  customAvatar={agent.customAvatar}
+                  updatedAt={agent.updatedAt}
+                  className="h-9 w-9 shrink-0 rounded-lg"
+                />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
                     {agent.name}

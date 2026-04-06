@@ -9,6 +9,9 @@ export interface AllSessionItem {
   /** 内置 Agent 的 slug，用于头像等展示 */
   agentSlug?: string;
   agentIcon?: string;
+  agentCustomAvatar?: boolean;
+  /** Agent registry updatedAt，用于自定义头像 URL 缓存刷新 */
+  agentUpdatedAt?: string;
   unreadCount?: number;
   archived?: boolean;
   projectKey?: string;

@@ -29,14 +29,6 @@ async function main(): Promise<void> {
   const historySelfDev = path.join(root, 'prompts/history/agent-builtin-self-dev/v_260320_191616.md');
   const contentDir = path.join(root, 'documents/content');
 
-  for (const id of ['agent-builtin-manager', 'agent-builtin-task-worker'] as const) {
-    const text = await readBuiltinPrompt(id);
-    if (!text) continue;
-    const p = path.join(agentsDir, `${id}.md`);
-    await fs.writeFile(p, text, 'utf-8');
-    console.log(`[restored] prompts/agents/${id}.md`);
-  }
-
   const selfDev = await readBuiltinPrompt('agent-builtin-self-dev');
   if (selfDev) {
     await fs.mkdir(path.dirname(historySelfDev), { recursive: true });

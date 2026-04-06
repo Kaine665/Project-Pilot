@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from '@/client/i18n/use-translations';
+import { Link } from '@/client/i18n/routing';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select } from '@/components/ui/select';
-import { Settings, X, Archive, Trash2, ChevronDown, ChevronRight, Bot } from 'lucide-react';
-import type { Agent, ProjectEntry, ProjectLocation, ProjectTechStack } from '@/types';
+import { Settings, X, Archive, Trash2, ChevronDown, ChevronRight, Bot, Layers } from 'lucide-react';
+import type { Agent, AgentPreset, ProjectEntry, ProjectLocation, ProjectTechStack } from '@/types';
 
 interface ProjectSettingsProps {
   projectKey: string;
@@ -85,7 +86,9 @@ export function ProjectSettings({
   const [tagsInput, setTagsInput] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [defaultAgentId, setDefaultAgentId] = useState('');
+  const [defaultPresetId, setDefaultPresetId] = useState('');
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [agentPresets, setAgentPresets] = useState<AgentPreset[]>([]);
 
   // Collapsible sections
   const [showRepo, setShowRepo] = useState(false);
@@ -116,6 +119,7 @@ export function ProjectSettings({
       setTags(entry?.tags ?? []);
       setTagsInput('');
       setDefaultAgentId(entry?.defaultAgentId ?? '');
+      setDefaultPresetId(entry?.defaultPresetId ?? '');
       setConfirmingDelete(false);
 
       // Auto-expand sections that have data
@@ -128,6 +132,13 @@ export function ProjectSettings({
       fetch('/api/agents').then(r => r.ok ? r.json() : null).then(data => {
         if (data?.agents) setAgents(data.agents);
       }).catch(() => {});
+
+      fetch('/api/data/agent-presets', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.presets) setAgentPresets(data.presets);
+        })
+        .catch(() => setAgentPresets([]));
     }
   }, [open, projectName, projectDescription, projectEntry]);
 
@@ -148,6 +159,7 @@ export function ProjectSettings({
         color: color.trim() || null,
         tags: tags.length > 0 ? tags : null,
         defaultAgentId: defaultAgentId || null,
+        defaultPresetId: defaultPresetId || null,
       };
 
       // Repository
@@ -197,7 +209,7 @@ export function ProjectSettings({
     } finally {
       setSaving(false);
     }
-  }, [projectKey, name, description, path, location, techStack, repoUrl, defaultBranch, repoProvider, devCommand, devUrl, devPort, sshKey, tokenEnvVar, accessNotes, icon, color, tags, defaultAgentId, onUpdated]);
+  }, [projectKey, name, description, path, location, techStack, repoUrl, defaultBranch, repoProvider, devCommand, devUrl, devPort, sshKey, tokenEnvVar, accessNotes, icon, color, tags, defaultAgentId, defaultPresetId, onUpdated]);
 
   const handleArchive = useCallback(async () => {
     try {
@@ -366,6 +378,40 @@ export function ProjectSettings({
                     <option key={a.id} value={a.id}>{a.name}</option>
                   ))}
                 </select>
+              </div>
+
+              {/* ── Default runtime preset ── */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  <span className="flex items-center gap-1.5">
+                    <Layers className="h-3.5 w-3.5" />
+                    {t('defaultPresetLabel')}
+                  </span>
+                  <span className="text-[10px] font-normal text-zinc-400 mt-0.5 block">{t('defaultPresetHint')}</span>
+                </label>
+                <div className="flex flex-wrap items-stretch gap-2">
+                  <select
+                    value={defaultPresetId}
+                    onChange={(e) => setDefaultPresetId(e.target.value)}
+                    className="min-w-0 flex-1 appearance-none rounded-lg border border-zinc-200 bg-white py-2 pl-3 pr-8 text-sm text-zinc-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                  >
+                    <option value="">{t('defaultPresetNone')}</option>
+                    {agentPresets
+                      .filter((p) => !p.projectKey || p.projectKey === projectKey)
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                          {p.projectKey ? ` (${p.projectKey})` : ''}
+                        </option>
+                      ))}
+                  </select>
+                  <Link
+                    href="/workspace/presets"
+                    className="inline-flex shrink-0 items-center justify-center rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  >
+                    {t('presetManageButton')}
+                  </Link>
+                </div>
               </div>
 
               {/* ── Repository ── */}

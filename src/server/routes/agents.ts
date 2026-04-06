@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Agent, AgentCapabilities, OpenAIReasoningEffort } from '@/types';
+import type { AgentPackage } from '@/types/agent-package';
 import type { ResourceRef } from '@/types/resource';
 import type { AgentsData } from '@/types';
 import {
@@ -11,7 +12,15 @@ import {
   updateAgent,
 } from '@/lib/agents-store';
 import { validatePackage, importAgent } from '@/lib/agent-package';
-import { getAgentsPath, readJsonFile, getDataDir, getAgentDataPath, getLegacyAgentDataPath } from '@/lib/file-store';
+import {
+  getAgentsPath,
+  readJsonFile,
+  getDataDir,
+  getAgentDataPath,
+  getLegacyAgentDataPath,
+  findAgentCustomAvatarAbsPath,
+  writeAgentCustomAvatarFile,
+} from '@/lib/file-store';
 import { mergeAndRepairAgentsData } from '@/lib/agent-metadata-repair';
 import { resolveSystemPrompt } from '@/lib/agent-prompt-store';
 import { exportAgent } from '@/lib/agent-package';
@@ -20,6 +29,96 @@ import path from 'path';
 import { documentTextWriteErrorResponse } from '@/lib/document-text-write-guard';
 
 const app = new Hono();
+
+const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
+const AVATAR_MIME_TO_EXT: Record<string, string> = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/jpg': '.jpg',
+  'image/webp': '.webp',
+  'image/gif': '.gif',
+  'image/svg+xml': '.svg',
+};
+
+function contentTypeForAvatarExt(ext: string): string {
+  switch (ext.toLowerCase()) {
+    case '.png': return 'image/png';
+    case '.jpg':
+    case '.jpeg': return 'image/jpeg';
+    case '.webp': return 'image/webp';
+    case '.gif': return 'image/gif';
+    case '.svg': return 'image/svg+xml';
+    default: return 'application/octet-stream';
+  }
+}
+
+// ─── GET /avatar/:id — custom avatar image ───────────────────────
+
+app.get('/avatar/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const abs = await findAgentCustomAvatarAbsPath(id);
+    if (!abs) return c.body(null, 404);
+    const buf = await fs.readFile(abs);
+    const ext = path.extname(abs).toLowerCase();
+    return c.body(buf, 200, { 'Content-Type': contentTypeForAvatarExt(ext) });
+  } catch {
+    return c.json({ error: 'invalid agent id' }, 400);
+  }
+});
+
+// ─── POST /avatar/:id — upload custom avatar ─────────────────────
+
+app.post('/avatar/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const existing = await getAgentById(id, { includeArchived: true, includePrompt: false });
+    if (!existing) {
+      return c.json({ error: 'agent not found' }, 404);
+    }
+    const body = await c.req.parseBody({ all: true });
+    const raw = body.avatar ?? body.file;
+    if (!(raw instanceof File)) {
+      return c.json({ error: 'Missing file field "avatar" or "file"' }, 400);
+    }
+    if (raw.size > AVATAR_MAX_BYTES) {
+      return c.json({ error: 'Image must be 2MB or smaller' }, 413);
+    }
+    const mime = raw.type;
+    const ext = AVATAR_MIME_TO_EXT[mime];
+    if (!ext) {
+      return c.json({ error: 'Unsupported image type (use PNG, JPEG, WebP, GIF, or SVG)' }, 415);
+    }
+    const buffer = Buffer.from(await raw.arrayBuffer());
+    await writeAgentCustomAvatarFile(id, buffer, ext);
+    const agent = await updateAgent(id, { customAvatar: true });
+    if (!agent) return c.json({ error: 'agent not found' }, 404);
+    return c.json({ ok: true, agent });
+  } catch (err) {
+    const enc = documentTextWriteErrorResponse(err);
+    if (enc) return c.json(enc.body, enc.status);
+    throw err;
+  }
+});
+
+// ─── DELETE /avatar/:id — remove custom avatar ─────────────────
+
+app.delete('/avatar/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const existing = await getAgentById(id, { includeArchived: true, includePrompt: false });
+    if (!existing) {
+      return c.json({ error: 'agent not found' }, 404);
+    }
+    const agent = await updateAgent(id, { customAvatar: false });
+    if (!agent) return c.json({ error: 'agent not found' }, 404);
+    return c.json({ ok: true, agent });
+  } catch (err) {
+    const enc = documentTextWriteErrorResponse(err);
+    if (enc) return c.json(enc.body, enc.status);
+    throw err;
+  }
+});
 
 // ─── Helper functions for /files ────────────────────────────────
 
@@ -147,8 +246,13 @@ app.post('/', async (c) => {
     if (!body.name?.trim()) {
       return c.json({ error: 'name is required' }, 400);
     }
+    const projectKey =
+      typeof body.projectKey === 'string' ? body.projectKey.trim() : '';
+    if (!projectKey) {
+      return c.json({ error: 'projectKey is required' }, 400);
+    }
 
-    const agent = await createAgent(body);
+    const agent = await createAgent({ ...body, projectKey });
     return c.json({ ok: true, agent });
   } catch (err) {
     const enc = documentTextWriteErrorResponse(err);
@@ -169,6 +273,20 @@ app.patch('/', async (c) => {
 
     if (body.slug !== undefined || body.builtIn !== undefined) {
       return c.json({ error: 'Cannot modify slug or builtIn fields' }, 403);
+    }
+    if (body.customAvatar === true) {
+      return c.json({ error: 'Use POST /api/agents/avatar/:id to set a custom avatar' }, 400);
+    }
+
+    const existing = await getAgentById(id, { includeArchived: true, includePrompt: false });
+    if (!existing) {
+      return c.json({ error: 'agent not found' }, 404);
+    }
+    if (!existing.builtIn && body.projectKey !== undefined) {
+      const pk = typeof body.projectKey === 'string' ? body.projectKey.trim() : '';
+      if (!pk) {
+        return c.json({ error: 'projectKey cannot be cleared for custom agents' }, 400);
+      }
     }
 
     const agent = await updateAgent(id, body);
@@ -249,6 +367,22 @@ app.post('/official', async (c) => {
 
     const matched = await resolveMatch(body.match, true);
     if (matched) {
+      if (!matched.builtIn && body.agent.projectKey !== undefined) {
+        const pk =
+          typeof body.agent.projectKey === 'string' ? body.agent.projectKey.trim() : '';
+        if (!pk) {
+          return c.json(
+            {
+              ok: false,
+              error: {
+                code: 'INVALID_REQUEST',
+                message: 'projectKey cannot be cleared for custom agents',
+              },
+            },
+            400,
+          );
+        }
+      }
       const agent = await updateAgent(matched.id, body.agent);
       return c.json({
         ok: true,
@@ -274,9 +408,25 @@ app.post('/official', async (c) => {
       );
     }
 
+    const createPk =
+      typeof body.agent.projectKey === 'string' ? body.agent.projectKey.trim() : '';
+    if (!createPk) {
+      return c.json(
+        {
+          ok: false,
+          error: {
+            code: 'INVALID_REQUEST',
+            message: 'projectKey is required when creating an agent',
+          },
+        },
+        400,
+      );
+    }
+
     const agent = await createAgent({
       ...body.agent,
       name: body.agent.name,
+      projectKey: createPk,
     });
 
     return c.json({
@@ -322,13 +472,20 @@ app.post('/official', async (c) => {
 
 app.post('/import', async (c) => {
   try {
-    const body = await c.req.json();
-
-    if (!validatePackage(body)) {
+    const body = await c.req.json() as Record<string, unknown>;
+    const targetProjectKey =
+      typeof body.targetProjectKey === 'string' ? body.targetProjectKey.trim() : '';
+    const { targetProjectKey: _t, ...pkgUnknown } = body;
+    if (!targetProjectKey) {
+      return c.json({ error: 'targetProjectKey is required' }, 400);
+    }
+    if (!validatePackage(pkgUnknown)) {
       return c.json({ error: '无效的 .ppagent 文件格式' }, 400);
     }
 
-    const result = await importAgent(body);
+    const result = await importAgent(pkgUnknown as AgentPackage, {
+      targetProjectKey,
+    });
 
     return c.json({
       ok: true,

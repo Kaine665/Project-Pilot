@@ -104,7 +104,12 @@ function formatMessages(messages: ChatMessage[]): string {
       content = content.slice(0, MAX_MESSAGE_CHARS) + '\n...(内容过长，已截断)';
     }
 
-    return `**${role}**${imageNote}：\n${content}`;
+    const runNote =
+      msg.role === 'user' && msg.meta?.type === 'run_task'
+        ? '（用户通过 /run 开启的本轮任务，与 execution run 绑定）\n'
+        : '';
+
+    return `**${role}**${imageNote}：\n${runNote}${content}`;
   }).join('\n\n---\n\n');
 }
 

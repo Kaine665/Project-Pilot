@@ -15,7 +15,21 @@ import type {
   AgentsWorkspaceProjectPersist,
 } from '@/lib/agents-workspace-ui-shared';
 import { isValidProjectKey } from '@/lib/security';
-import type { ProjectEntry, ProjectIndex } from '@/types';
+import type {
+  AgentCapabilities,
+  AgentPreset,
+  OpenAIReasoningEffort,
+  ProjectEntry,
+  ProjectIndex,
+  ProviderId,
+} from '@/types';
+import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
+import {
+  createAgentPreset,
+  deleteAgentPreset,
+  readAgentPresets,
+  updateAgentPreset,
+} from '@/lib/agent-presets-store';
 
 const app = new Hono();
 
@@ -120,7 +134,7 @@ app.patch('/projects', async (c) => {
   }
 
   const simpleFields = [
-    'name', 'description', 'location', 'path', 'techStack', 'icon', 'color', 'defaultAgentId',
+    'name', 'description', 'location', 'path', 'techStack', 'icon', 'color', 'defaultAgentId', 'defaultPresetId',
   ] as const;
   for (const field of simpleFields) {
     if (updates[field] !== undefined) {
@@ -198,6 +212,191 @@ app.delete('/projects', async (c) => {
   project.archivedAt = new Date().toISOString();
   await writeIndex(index);
 
+  return c.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// /api/data/agent-presets — Agent 运行预设
+// ---------------------------------------------------------------------------
+
+function parsePresetProjectKey(raw: unknown): string | undefined {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  if (typeof raw !== 'string' || !isValidProjectKey(raw)) return undefined;
+  return raw;
+}
+
+function parseOpenAIRaw(raw: unknown): OpenAIReasoningEffort | undefined {
+  if (raw === 'minimal' || raw === 'low' || raw === 'medium' || raw === 'high' || raw === 'xhigh') return raw;
+  return undefined;
+}
+
+function bodyToPresetCreatePayload(body: Record<string, unknown>): Omit<AgentPreset, 'id' | 'createdAt' | 'updatedAt'> | null {
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!name) return null;
+  const capRaw =
+    body.capabilities !== undefined && typeof body.capabilities === 'object' && body.capabilities
+      ? (body.capabilities as Partial<AgentCapabilities>)
+      : {};
+  const capabilities: AgentCapabilities = { ...DEFAULT_AGENT_CAPABILITIES, ...capRaw };
+  const skillIds = Array.isArray(body.skillIds)
+    ? body.skillIds
+        .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+        .map((s) => s.trim())
+    : [];
+  const defaultProvider =
+    typeof body.defaultProvider === 'string' && body.defaultProvider.trim()
+      ? (body.defaultProvider.trim() as ProviderId)
+      : undefined;
+  const defaultModel =
+    typeof body.defaultModel === 'string' && body.defaultModel.trim() ? body.defaultModel.trim() : undefined;
+  const ctx =
+    body.contextStrategy === 'exclusive'
+      ? 'exclusive'
+      : body.contextStrategy === 'additive'
+        ? 'additive'
+        : undefined;
+  return {
+    name,
+    description: typeof body.description === 'string' && body.description.trim() ? body.description.trim() : undefined,
+    projectKey: parsePresetProjectKey(body.projectKey),
+    icon: typeof body.icon === 'string' && body.icon.trim() ? body.icon.trim() : undefined,
+    capabilities,
+    defaultProvider,
+    defaultModel,
+    defaultOpenAIReasoningEffort: parseOpenAIRaw(body.defaultOpenAIReasoningEffort),
+    skillIds,
+    contextStrategy: ctx,
+    systemPrompt:
+      typeof body.systemPrompt === 'string' && body.systemPrompt.trim() ? body.systemPrompt.trim() : undefined,
+  };
+}
+
+app.get('/agent-presets', async (c) => {
+  await ensureDataDirV2Migrated();
+  const data = await readAgentPresets();
+  return c.json(data);
+});
+
+app.post('/agent-presets', async (c) => {
+  await ensureDataDirV2Migrated();
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid JSON' }, 400);
+  }
+  if (!body || typeof body !== 'object') {
+    return c.json({ error: 'body required' }, 400);
+  }
+  const payload = bodyToPresetCreatePayload(body as Record<string, unknown>);
+  if (!payload) {
+    return c.json({ error: 'name is required' }, 400);
+  }
+  const preset = await createAgentPreset(payload);
+  return c.json({ ok: true, preset });
+});
+
+app.patch('/agent-presets', async (c) => {
+  await ensureDataDirV2Migrated();
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid JSON' }, 400);
+  }
+  if (!body || typeof body !== 'object') {
+    return c.json({ error: 'body required' }, 400);
+  }
+  const rec = body as Record<string, unknown>;
+  const id = typeof rec.id === 'string' ? rec.id.trim() : '';
+  if (!id) {
+    return c.json({ error: 'id is required' }, 400);
+  }
+  const patch: Partial<Omit<AgentPreset, 'id' | 'createdAt'>> = {};
+  if (typeof rec.name === 'string' && rec.name.trim()) patch.name = rec.name.trim();
+  if (rec.description !== undefined) {
+    patch.description =
+      typeof rec.description === 'string' && rec.description.trim() ? rec.description.trim() : undefined;
+  }
+  if (rec.projectKey !== undefined) {
+    patch.projectKey = parsePresetProjectKey(rec.projectKey);
+  }
+  if (rec.icon !== undefined) {
+    patch.icon = typeof rec.icon === 'string' && rec.icon.trim() ? rec.icon.trim() : undefined;
+  }
+  if (rec.capabilities !== undefined && typeof rec.capabilities === 'object' && rec.capabilities) {
+    patch.capabilities = rec.capabilities as AgentCapabilities;
+  }
+  if (rec.defaultProvider !== undefined) {
+    patch.defaultProvider =
+      typeof rec.defaultProvider === 'string' && rec.defaultProvider.trim()
+        ? (rec.defaultProvider.trim() as ProviderId)
+        : undefined;
+  }
+  if (rec.defaultModel !== undefined) {
+    patch.defaultModel =
+      typeof rec.defaultModel === 'string' && rec.defaultModel.trim() ? rec.defaultModel.trim() : undefined;
+  }
+  if (rec.defaultOpenAIReasoningEffort !== undefined) {
+    patch.defaultOpenAIReasoningEffort = parseOpenAIRaw(rec.defaultOpenAIReasoningEffort);
+  }
+  if (rec.skillIds !== undefined) {
+    patch.skillIds = Array.isArray(rec.skillIds)
+      ? rec.skillIds
+          .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+          .map((s) => s.trim())
+      : [];
+  }
+  if (rec.contextStrategy !== undefined) {
+    patch.contextStrategy =
+      rec.contextStrategy === 'exclusive'
+        ? 'exclusive'
+        : rec.contextStrategy === 'additive'
+          ? 'additive'
+          : undefined;
+  }
+  if (rec.systemPrompt !== undefined) {
+    patch.systemPrompt =
+      typeof rec.systemPrompt === 'string' && rec.systemPrompt.trim() ? rec.systemPrompt.trim() : undefined;
+  }
+  const updated = await updateAgentPreset(id, patch);
+  if (!updated) {
+    return c.json({ error: 'preset not found' }, 404);
+  }
+  return c.json({ ok: true, preset: updated });
+});
+
+app.delete('/agent-presets', async (c) => {
+  await ensureDataDirV2Migrated();
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid JSON' }, 400);
+  }
+  if (!body || typeof body !== 'object') {
+    return c.json({ error: 'body required' }, 400);
+  }
+  const id = typeof (body as { id?: unknown }).id === 'string' ? (body as { id: string }).id.trim() : '';
+  if (!id) {
+    return c.json({ error: 'id is required' }, 400);
+  }
+  const ok = await deleteAgentPreset(id);
+  if (!ok) {
+    return c.json({ error: 'preset not found' }, 404);
+  }
+  const index = await readIndex();
+  let touched = false;
+  for (const p of index.projects) {
+    if (p.defaultPresetId === id) {
+      delete p.defaultPresetId;
+      p.updatedAt = new Date().toISOString();
+      touched = true;
+    }
+  }
+  if (touched) {
+    await writeIndex(index);
+  }
   return c.json({ ok: true });
 });
 

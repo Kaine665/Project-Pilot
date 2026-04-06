@@ -17,6 +17,9 @@ const ContextPage = lazy(() => import('@/app/[locale]/flows/context/page'));
 const KnowledgePage = lazy(() => import('@/app/[locale]/flows/knowledge/page'));
 const PromptsPage = lazy(() => import('@/app/[locale]/flows/prompts/page'));
 const SkillsPage = lazy(() => import('@/app/[locale]/flows/skills/page'));
+const PresetsPage = lazy(() => import('@/app/[locale]/flows/presets/page'));
+const CommunityPage = lazy(() => import('@/app/[locale]/flows/community/page'));
+const McpPage = lazy(() => import('@/app/[locale]/flows/mcp/page'));
 const ChatPage = lazy(() => import('@/app/[locale]/flows/chat/page'));
 const SchedulesPage = lazy(() => import('@/app/[locale]/flows/schedules/page'));
 const TaskTriggersPage = lazy(() => import('@/app/[locale]/flows/task-triggers/page'));
@@ -47,9 +50,10 @@ function AppRoutes() {
   return (
     <Suspense fallback={<Loading />}>
       <Routes>
-        <Route path="settings" element={<SettingsPage />} />
+        <Route path="settings" element={<Navigate to="/workspace/settings" replace />} />
         <Route path="workspace" element={<WorkspaceWrapper />}>
           <Route index element={<Navigate to="projects" replace />} />
+          <Route path="settings" element={<SettingsPage />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="agents" element={<AgentsPage />} />
           <Route path="butler" element={<ButlerPage />} />
@@ -60,6 +64,9 @@ function AppRoutes() {
           <Route path="knowledge" element={<KnowledgePage />} />
           <Route path="prompts" element={<PromptsPage />} />
           <Route path="skills" element={<SkillsPage />} />
+          <Route path="presets" element={<PresetsPage />} />
+          <Route path="community" element={<CommunityPage />} />
+          <Route path="mcp" element={<McpPage />} />
           <Route path="chat" element={<ChatPage />} />
           <Route path="schedules" element={<SchedulesPage />} />
           <Route path="task-triggers" element={<TaskTriggersPage />} />

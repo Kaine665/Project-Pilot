@@ -1,14 +1,29 @@
-import type { ProviderId } from '@/types';
-
-/** 使用 Claude Agent SDK 或 Codex、具备真实本地工具的渠道 */
-const LOCAL_AGENT_TOOLS_PROVIDERS = new Set<ProviderId>(['anthropic', 'openai']);
+import type { AgentCapabilities, ProviderId } from '@/types';
 
 /**
- * Agent 对话是否由带本地工具的执行层驱动（Claude Agent SDK / Codex）。
- * 其余渠道走 SimpleAnthropicRunner，仅为 Messages API 纯文本，无 Read/Bash 等工具事件。
+ * 纠正部分模型（尤其第三方 Anthropic 兼容端）谎称「纯文本 API、无本地工具」的幻觉。
+ * 在 Agent Chat 成功启动时，底层恒为 Claude Agent SDK 或 Codex SDK（custom+OpenAI 协议已在入口拦截）。
  */
-export function providerSupportsLocalAgentTools(provider: ProviderId): boolean {
-  return LOCAL_AGENT_TOOLS_PROVIDERS.has(provider);
+export function appendLocalAgentSdkToolingNotice(prompt: string, caps: AgentCapabilities): string {
+  const hasLocalTools = caps.bash || caps.fileAccess || caps.web || caps.subAgent;
+  if (!hasLocalTools) return prompt;
+
+  const notice = `---
+## 运行时环境说明（系统自动附加）
+ProjectPilot 已通过 **Claude Agent SDK**（Anthropic 兼容线路，含 DeepSeek、Kimi 等）或 **OpenAI Codex SDK**（内置 OpenAI 线路）在本机启动 Agent 运行时；已按当前 Agent 能力配置挂载可用工具（如 Read、Bash、Glob、Grep、Write 等，以实际调用为准）。
+- **禁止**向用户声称「当前是纯文本 Messages API」「没有文件读取工具」「无法执行终端命令」等概括性推脱——应优先用工具获取真实输出。
+- 若某次工具调用失败、被用户拒绝或上游 API 报错，可仅针对该次失败说明原因，不要断言「整条线路无工具」。`;
+
+  return `${prompt}\n\n${notice}\n`;
+}
+
+/**
+ * Agent Chat 是否具备本地工具（Read/Bash 等）。
+ * 现策略：OpenAI → Codex；其余内置与 Anthropic 协议 custom-* → Claude Agent SDK。
+ * 仅「自定义且 OpenAI 协议」走裸 API；UI 横幅等若需区分，应结合 settings 中的 customProviders，而非仅靠 provider id。
+ */
+export function providerSupportsLocalAgentTools(_provider: ProviderId): boolean {
+  return true;
 }
 
 /**
@@ -19,18 +34,4 @@ export function resolveEffectiveAgentChatProvider(
   agent: { defaultProvider?: ProviderId },
 ): ProviderId {
   return sessionConfig?.provider ?? agent.defaultProvider ?? 'anthropic';
-}
-
-const TEXT_ONLY_CHANNEL_NOTICE = `---
-## 运行时渠道说明（系统自动附加）
-当前会话使用的 AI 渠道为 **兼容 Anthropic 的纯文本 Messages API**，应用**未向该模型暴露** Read、Bash、Glob、Grep、Write 等本地工具接口。
-- **禁止**假装已执行终端命令或已读取本机路径；**禁止**虚构命令输出或「正在执行」类话术。
-- 若用户需要查看本地目录（例如 ~/.project-pilot/）或运行命令：请明确说明**当前渠道无法代为执行**，并建议改用 **内置 Anthropic** 或 **内置 OpenAI（Codex）** 渠道，或由用户自行在终端执行后粘贴输出。`;
-
-/**
- * 对无本地工具的渠道，在发给模型的 prompt 末尾附加说明，减少「口述指令」式幻觉。
- */
-export function appendTextOnlyAgentChannelNotice(prompt: string, provider: ProviderId): string {
-  if (providerSupportsLocalAgentTools(provider)) return prompt;
-  return `${prompt}\n\n${TEXT_ONLY_CHANNEL_NOTICE}\n`;
 }

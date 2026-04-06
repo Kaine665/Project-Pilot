@@ -70,6 +70,16 @@ function looksLikeFilePath(text: string): boolean {
   return /^[\w.@~-]+$/.test(t);
 }
 
+/** Markdown 链接的 href 有时为 percent-encoding；统一解码后再判断/读盘 */
+function tryDecodeFilePathHref(href: string): string {
+  if (!/%[0-9A-Fa-f]{2}/.test(href)) return href;
+  try {
+    return decodeURIComponent(href);
+  } catch {
+    return href;
+  }
+}
+
 interface FormattedTextProps {
   text: string;
   className?: string;
@@ -267,11 +277,19 @@ export const FormattedText = memo(function FormattedText({
           ),
           // Links — intercept file-path hrefs to open in-app preview
           a: ({ href, children }) => {
-            if (onFileClick && href && !href.startsWith('http://') && !href.startsWith('https://') && !href.startsWith('mailto:') && looksLikeFilePath(href)) {
+            const fileHref = href ? tryDecodeFilePathHref(href) : href;
+            if (
+              onFileClick
+              && fileHref
+              && !fileHref.startsWith('http://')
+              && !fileHref.startsWith('https://')
+              && !fileHref.startsWith('mailto:')
+              && looksLikeFilePath(fileHref)
+            ) {
               return (
                 <button
                   type="button"
-                  onClick={(e) => { e.preventDefault(); onFileClick(href); }}
+                  onClick={(e) => { e.preventDefault(); onFileClick(fileHref.trim()); }}
                   className="inline text-blue-600 dark:text-blue-400 underline underline-offset-2 hover:text-blue-700 dark:hover:text-blue-300 cursor-pointer"
                 >
                   {children}

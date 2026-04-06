@@ -530,20 +530,35 @@ export function buildSdkAllowedTools(capabilities: AgentCapabilities | undefined
 }
 
 /**
- * 根据 Agent 能力配置确定 SDK permissionMode。
+ * 根据 Agent 能力配置与全局设置确定 SDK permissionMode。
+ *
+ * **App 内 Agent Chat** 通过 Claude Agent SDK 拉起 Claude Code 子进程，**无 TTY、也无工具批准确认 UI**。
+ * 若仍使用 `permissionMode: 'default'`，子进程会在首个工具调用前阻塞等待批准，表现为
+ * **长时间「思考」、SDK 迭代 0 条消息**（常见于自定义 Agent 将 `skipReview` 设为 false，
+ * 而内置 Agent 普遍为 true，故「以前用内置正常、换自定义就卡」）。
+ *
+ * 因此：**只要全局「跳过工具权限」开启**（设置里默认开启，`skipPermissions !== false`），
+ * Agent Chat 一律使用 `bypassPermissions`，与 Agent 的 `skipReview` 无关。
+ * 仅当用户在设置中**明确关闭**「跳过工具权限」时，才回落到 `default`（强约束；仍无 UI 时可能卡住）。
  */
 export async function buildSdkPermissionMode(
   capabilities: AgentCapabilities | undefined,
 ): Promise<{ permissionMode: SdkPermissionMode; allowDangerouslySkipPermissions?: boolean }> {
   const caps = capabilities ?? DEFAULT_AGENT_CAPABILITIES;
-  if (!caps.skipReview) {
-    return { permissionMode: 'default' };
-  }
   const settings = await getSettings();
-  const skip = settings.claude.skipPermissions !== false;
-  if (skip) {
+  const globalSkip = settings.claude.skipPermissions !== false;
+
+  if (globalSkip) {
     return { permissionMode: 'bypassPermissions', allowDangerouslySkipPermissions: true };
   }
+
+  if (!caps.skipReview) {
+    console.warn(
+      '[buildSdkPermissionMode] 全局已关闭「跳过工具权限」且 Agent skipReview=false；'
+      + ' Claude Code 可能等待交互批准确认，App 内若无对应界面会无输出。',
+    );
+  }
+
   return { permissionMode: 'default' };
 }
 
@@ -590,10 +605,17 @@ export async function buildSdkQueryOptions(opts: {
   // 会导致 SDK 请求被拒或静默挂住。
   const supportsThinking = provider === 'anthropic';
 
+  const debugSdk = process.env.DEBUG_CLAUDE_AGENT_SDK === '1' || provider !== 'anthropic';
+
+  // Bun + Claude Agent SDK 的 CLI 子进程不兼容（Bun spawn bun cli.js 后 0 条事件）。
+  // 强制使用 node 作为子进程可执行文件。
+  const executable = 'node';
+
   const sdkOpts: SdkQueryOptions = {
-    env,
+    env: { ...env, ...(debugSdk ? { DEBUG_CLAUDE_AGENT_SDK: '1' } : {}) },
     model,
     cwd: opts.cwd,
+    executable,
     includePartialMessages: true,
     ...(supportsThinking ? { thinking: { type: 'adaptive' } } : {}),
     effort,
@@ -605,7 +627,12 @@ export async function buildSdkQueryOptions(opts: {
     ...(opts.systemPrompt ? {
       systemPrompt: opts.systemPrompt,
     } : {}),
-  };
+    stderr: debugSdk ? (data: string) => {
+      for (const line of data.split('\n')) {
+        if (line.trim()) console.log(`[ClaudeRunner:stderr] ${line}`);
+      }
+    } : undefined,
+  } as SdkQueryOptions;
 
   return sdkOpts;
 }

@@ -14,6 +14,21 @@ const electronExe = require("electron");
 
 const cfg = loadDevServerConfig(root);
 
+/** 保证 preload/main 与 electron/*.ts 同步，否则改 preload 后未编译会一直加载旧的 dist（选文件夹等 IPC 会失效）。 */
+function compileElectronMain() {
+  try {
+    execSync("npm run electron:compile", {
+      cwd: root,
+      stdio: "inherit",
+      shell: process.platform === "win32",
+      env: process.env,
+    });
+  } catch {
+    console.error("[electron-dev] electron:compile failed; fix errors above before starting Electron.");
+    process.exit(1);
+  }
+}
+
 /**
  * Windows 上 concurrently 里 `wait-on ... && cross-env ... electron .` 常无法可靠执行，
  * 导致只起了 Vite/Hono、Electron 从未启动。这里用 Node 直接拉起子进程并等待端口。
@@ -133,6 +148,8 @@ async function startDevStackWithElectron() {
   process.on("SIGINT", forwardSignal);
   process.on("SIGTERM", forwardSignal);
 }
+
+compileElectronMain();
 
 const reuseExisting = await isDevStackReady(root);
 

@@ -426,6 +426,11 @@ export default function DocsProjectPage() {
     });
   }, [confirmDiscardIfDirty, replaceUrlState, scope]);
 
+  const startCreateFromHeader = useCallback(() => {
+    if (assetType === 'doc') startCreateDoc();
+    else startCreateKnowledge();
+  }, [assetType, startCreateDoc, startCreateKnowledge]);
+
   const openAsset = useCallback(
     (asset: Asset) => {
       if (!confirmDiscardIfDirty()) return;
@@ -633,78 +638,43 @@ export default function DocsProjectPage() {
   return (
     <div className="h-full overflow-y-auto bg-zinc-50/60">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-3 px-6 py-4">
-        <section className="relative z-40 rounded-2xl border border-zinc-200 bg-white/95 px-5 py-4 shadow-[0_8px_32px_-12px_rgba(15,23,42,0.12)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <section className="relative z-40 rounded-xl border border-zinc-200 bg-white/95 px-4 py-3 shadow-[0_6px_24px_-10px_rgba(15,23,42,0.1)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div className="max-w-3xl">
-              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs font-medium text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-                <Layers3 className="h-3.5 w-3.5" />
+              <div className="mb-1.5 inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-0.5 text-[11px] font-medium text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+                <Layers3 className="h-3 w-3" />
                 文档工作台
               </div>
-              <h1 className="text-[32px] font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">以三列选择组织项目知识</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">
-                先确定范围，再切换类型，最后按标签收束结果。右侧保持预览优先，需要时再进入编辑。
-              </p>
+              <h1 className="text-xl font-semibold tracking-tight text-zinc-950 sm:text-2xl dark:text-zinc-50">以三列选择组织项目知识</h1>
             </div>
 
-            <div className="flex w-full max-w-[360px] flex-col gap-3">
-              <select
-                value={projectKey}
-                onChange={event => {
-                  if (!confirmDiscardIfDirty()) return;
-                  const nextKey = event.target.value;
-                  setActiveKey(nextKey);
-                  const nextQuery = getQueryString({
-                    scope,
-                    type: assetType,
-                    query,
-                    tag: selectedTag,
-                    assetId: null,
-                  });
-                  router.push(`/workspace/docs/${nextKey}${nextQuery ? `?${nextQuery}` : ''}`);
-                }}
-                className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+            <div className="w-full shrink-0 xl:w-auto xl:max-w-[200px]">
+              <button
+                type="button"
+                onClick={startCreateFromHeader}
+                className="w-full rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
               >
-                {projects.map(project => (
-                  <option key={project.key} value={project.key}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
-
-              <div className="grid grid-cols-2 gap-2.5">
-                <button
-                  onClick={startCreateDoc}
-                  className="rounded-xl bg-zinc-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
-                >
-                  <Plus className="mr-2 inline h-4 w-4" />
-                  新建设计文档
-                </button>
-                <button
-                  onClick={startCreateKnowledge}
-                  className="rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                >
-                  <Plus className="mr-2 inline h-4 w-4" />
-                  新建知识文档
-                </button>
-              </div>
+                <Plus className="mr-1.5 inline h-3.5 w-3.5" />
+                新建文档
+              </button>
             </div>
           </div>
 
-          <div className="mt-3 grid items-start gap-2.5 md:grid-cols-3">
-            <div className={`relative rounded-2xl border border-zinc-200 bg-zinc-50/70 p-1 dark:border-zinc-800 dark:bg-zinc-900/80 ${expandedRail === 'scope' ? 'z-30' : 'z-10'}`}>
+          <div className="mt-2 grid grid-cols-1 items-stretch gap-1.5 sm:grid-cols-3 sm:gap-2">
+            <div className={`relative rounded-lg border border-zinc-200 bg-zinc-50/70 p-0.5 dark:border-zinc-800 dark:bg-zinc-900/80 ${expandedRail === 'scope' ? 'z-30' : 'z-10'}`}>
               <button
                 onClick={() => setExpandedRail(prev => (prev === 'scope' ? null : 'scope'))}
-                className="flex min-h-[62px] w-full items-center justify-between rounded-xl px-3 py-2 text-left"
+                className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left"
               >
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">01 范围</div>
-                  <div className="mt-1.5 text-[15px] font-medium text-zinc-900 dark:text-zinc-100">{railScopeSummary}</div>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-400">01 范围</div>
+                  <div className="truncate text-sm font-medium leading-tight text-zinc-900 dark:text-zinc-100">{railScopeSummary}</div>
                 </div>
-                <ChevronDown className={`h-4 w-4 text-zinc-400 transition ${expandedRail === 'scope' ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-zinc-400 transition ${expandedRail === 'scope' ? 'rotate-180' : ''}`} />
               </button>
 
               {expandedRail === 'scope' && (
-                <div className="absolute left-0 top-[calc(100%+10px)] z-[80] w-full space-y-1 rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-[0_18px_48px_-24px_rgba(15,23,42,0.4)] dark:border-zinc-800 dark:bg-zinc-950">
+                <div className="absolute left-0 top-[calc(100%+6px)] z-[80] w-full space-y-0.5 rounded-lg border border-zinc-200 bg-white p-1 shadow-[0_12px_36px_-16px_rgba(15,23,42,0.35)] dark:border-zinc-800 dark:bg-zinc-950">
                   <button
                     onClick={() => {
                       if (!confirmDiscardIfDirty()) return;
@@ -712,7 +682,7 @@ export default function DocsProjectPage() {
                       setScope('project');
                       setExpandedRail(null);
                     }}
-                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition ${
+                    className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-sm transition ${
                       scope === 'project'
                         ? 'bg-zinc-950 text-white dark:bg-zinc-100 dark:text-zinc-950'
                         : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900'
@@ -730,7 +700,7 @@ export default function DocsProjectPage() {
                       setScope('global');
                       setExpandedRail(null);
                     }}
-                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition ${
+                    className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-sm transition ${
                       scope === 'global'
                         ? 'bg-zinc-950 text-white dark:bg-zinc-100 dark:text-zinc-950'
                         : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900'
@@ -745,20 +715,20 @@ export default function DocsProjectPage() {
               )}
             </div>
 
-            <div className={`relative rounded-2xl border border-zinc-200 bg-zinc-50/70 p-1 dark:border-zinc-800 dark:bg-zinc-900/80 ${expandedRail === 'type' ? 'z-30' : 'z-20'}`}>
+            <div className={`relative rounded-lg border border-zinc-200 bg-zinc-50/70 p-0.5 dark:border-zinc-800 dark:bg-zinc-900/80 ${expandedRail === 'type' ? 'z-30' : 'z-20'}`}>
               <button
                 onClick={() => setExpandedRail(prev => (prev === 'type' ? null : 'type'))}
-                className="flex min-h-[62px] w-full items-center justify-between rounded-xl px-3 py-2 text-left"
+                className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left"
               >
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">02 类型</div>
-                  <div className="mt-1.5 text-[15px] font-medium text-zinc-900 dark:text-zinc-100">{railTypeSummary}</div>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-400">02 类型</div>
+                  <div className="truncate text-sm font-medium leading-tight text-zinc-900 dark:text-zinc-100">{railTypeSummary}</div>
                 </div>
-                <ChevronDown className={`h-4 w-4 text-zinc-400 transition ${expandedRail === 'type' ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-zinc-400 transition ${expandedRail === 'type' ? 'rotate-180' : ''}`} />
               </button>
 
               {expandedRail === 'type' && (
-                <div className="absolute left-0 top-[calc(100%+10px)] z-[80] w-full space-y-1 rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-[0_18px_48px_-24px_rgba(15,23,42,0.4)] dark:border-zinc-800 dark:bg-zinc-950">
+                <div className="absolute left-0 top-[calc(100%+6px)] z-[80] w-full space-y-0.5 rounded-lg border border-zinc-200 bg-white p-1 shadow-[0_12px_36px_-16px_rgba(15,23,42,0.35)] dark:border-zinc-800 dark:bg-zinc-950">
                   <button
                     onClick={() => {
                       if (!confirmDiscardIfDirty()) return;
@@ -766,13 +736,13 @@ export default function DocsProjectPage() {
                       setAssetType('knowledge');
                       setExpandedRail(null);
                     }}
-                    className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition ${
+                    className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition ${
                       assetType === 'knowledge'
                         ? 'bg-zinc-950 text-white dark:bg-zinc-100 dark:text-zinc-950'
                         : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900'
                     }`}
                   >
-                    <BookOpen className="h-4 w-4" />
+                    <BookOpen className="h-3.5 w-3.5 shrink-0" />
                     知识文档
                   </button>
                   <button
@@ -784,7 +754,7 @@ export default function DocsProjectPage() {
                       setAssetType('doc');
                       setExpandedRail(null);
                     }}
-                    className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition ${
+                    className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition ${
                       scope === 'global'
                         ? 'cursor-not-allowed bg-zinc-100 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-600'
                         : assetType === 'doc'
@@ -792,28 +762,28 @@ export default function DocsProjectPage() {
                           : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900'
                     }`}
                   >
-                    <FileText className="h-4 w-4" />
+                    <FileText className="h-3.5 w-3.5 shrink-0" />
                     设计文档
-                    {scope === 'global' && <span className="ml-auto text-[11px]">仅项目可用</span>}
+                    {scope === 'global' && <span className="ml-auto text-[10px]">仅项目可用</span>}
                   </button>
                 </div>
               )}
             </div>
 
-            <div className={`relative rounded-2xl border border-zinc-200 bg-zinc-50/70 p-1 dark:border-zinc-800 dark:bg-zinc-900/80 ${expandedRail === 'tag' ? 'z-30' : 'z-10'}`}>
+            <div className={`relative rounded-lg border border-zinc-200 bg-zinc-50/70 p-0.5 dark:border-zinc-800 dark:bg-zinc-900/80 ${expandedRail === 'tag' ? 'z-30' : 'z-10'}`}>
               <button
                 onClick={() => setExpandedRail(prev => (prev === 'tag' ? null : 'tag'))}
-                className="flex min-h-[62px] w-full items-center justify-between rounded-xl px-3 py-2 text-left"
+                className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left"
               >
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">03 标签</div>
-                  <div className="mt-1.5 text-[15px] font-medium text-zinc-900 dark:text-zinc-100">{railTagSummary}</div>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-400">03 标签</div>
+                  <div className="truncate text-sm font-medium leading-tight text-zinc-900 dark:text-zinc-100">{railTagSummary}</div>
                 </div>
-                <ChevronDown className={`h-4 w-4 text-zinc-400 transition ${expandedRail === 'tag' ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-zinc-400 transition ${expandedRail === 'tag' ? 'rotate-180' : ''}`} />
               </button>
 
               {expandedRail === 'tag' && (
-                <div className="absolute left-0 top-[calc(100%+10px)] z-[80] max-h-72 w-full space-y-1 overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-[0_18px_48px_-24px_rgba(15,23,42,0.4)] dark:border-zinc-800 dark:bg-zinc-950">
+                <div className="absolute left-0 top-[calc(100%+6px)] z-[80] max-h-60 w-full space-y-0.5 overflow-y-auto rounded-lg border border-zinc-200 bg-white p-1 shadow-[0_12px_36px_-16px_rgba(15,23,42,0.35)] dark:border-zinc-800 dark:bg-zinc-950">
                   <button
                     onClick={() => {
                       if (!confirmDiscardIfDirty()) return;
@@ -821,7 +791,7 @@ export default function DocsProjectPage() {
                       setSelectedTag(null);
                       setExpandedRail(null);
                     }}
-                    className={`flex w-full items-center rounded-xl px-3 py-2 text-left text-sm transition ${
+                    className={`flex w-full items-center rounded-md px-2.5 py-1.5 text-left text-sm transition ${
                       !selectedTag
                         ? 'bg-zinc-950 text-white dark:bg-zinc-100 dark:text-zinc-950'
                         : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900'
@@ -838,7 +808,7 @@ export default function DocsProjectPage() {
                         setSelectedTag(tag.value);
                         setExpandedRail(null);
                       }}
-                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition ${
+                      className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-sm transition ${
                         selectedTag === tag.value
                           ? 'bg-zinc-950 text-white dark:bg-zinc-100 dark:text-zinc-950'
                           : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900'
@@ -850,7 +820,7 @@ export default function DocsProjectPage() {
                       </span>
                     </button>
                   ))}
-                  {tagFacets.length === 0 && <div className="rounded-xl px-3 py-5 text-sm text-zinc-400">当前范围和类型下还没有标签。</div>}
+                  {tagFacets.length === 0 && <div className="rounded-md px-2.5 py-3 text-xs text-zinc-400">当前范围和类型下还没有标签。</div>}
                 </div>
               )}
             </div>
