@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { modifyTodosMerged, readTodosMerged } from '@/lib/todo-file-store';
 import { HttpError } from '@/lib/http-error';
 import { dispatchTodoToAgent } from '@/lib/todo-dispatch';
+import { changeEmitter } from '@/lib/change-emitter';
 import type { TodosData, TodoItem, TodoLifecycle, TodoSubTask } from '@/types';
 
 const app = new Hono();
@@ -83,6 +84,15 @@ app.post('/', async (c) => {
     ...data,
     todos: [...data.todos, newTodo],
   }));
+
+  changeEmitter.emit({
+    type: 'todo_changed',
+    sourceId: newTodo.id,
+    summary: `新待办「${newTodo.title}」已创建`,
+    timestamp: now,
+    projectKey: newTodo.projectKey,
+    agentId: newTodo.agentId,
+  });
 
   return c.json(newTodo, 201);
 });
@@ -197,6 +207,16 @@ app.patch('/:id', async (c) => {
   }));
 
   if (!updated) throw new HttpError('Todo not found', 404);
+
+  const statusLabel = status ? `状态变为 ${status}` : '已更新';
+  changeEmitter.emit({
+    type: 'todo_changed',
+    sourceId: id,
+    summary: `待办「${(updated as TodoItem).title}」${statusLabel}`,
+    timestamp: new Date().toISOString(),
+    projectKey: (updated as TodoItem).projectKey,
+    agentId: (updated as TodoItem).agentId,
+  });
 
   return c.json(updated);
 });

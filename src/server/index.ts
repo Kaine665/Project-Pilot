@@ -30,11 +30,13 @@ import agentChatRoutes from './routes/agent-chat';
 import schedulesRoutes from './routes/schedules';
 import eventTriggersRoutes from './routes/event-triggers';
 import communityRoutes from './routes/community';
+import agentInboxRoutes from './routes/agent-inbox';
 
 import { ensureDataDirV2Migrated } from '@/lib/file-store';
 import { ensureGlobalAgentsMigratedToPresets } from '@/lib/migrations/migrate-global-agents-to-presets';
 import { schedulerManager } from '@/lib/scheduler-manager';
 import { eventTriggerManager } from '@/lib/event-trigger-manager';
+import { initInboxRouting } from '@/lib/inbox-manager';
 
 const app = new Hono();
 
@@ -65,6 +67,7 @@ app.route('/api/agent-chat', agentChatRoutes);
 app.route('/api/schedules', schedulesRoutes);
 app.route('/api/event-triggers', eventTriggersRoutes);
 app.route('/api/community', communityRoutes);
+app.route('/api/agent-inbox', agentInboxRoutes);
 
 // --- Static file serving (production) ---
 const clientDistPath = path.resolve(__dirname, '../../dist/client');
@@ -92,6 +95,7 @@ const port = parseInt(
 async function startServer(): Promise<void> {
   await ensureDataDirV2Migrated();
   await ensureGlobalAgentsMigratedToPresets();
+  initInboxRouting();
   await schedulerManager.init();
   await eventTriggerManager.init();
   console.log(`[server] Starting Hono backend on http://127.0.0.1:${port}`);

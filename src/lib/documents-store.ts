@@ -224,4 +224,18 @@ export async function saveDocsIndexToDocuments(data: DocsIndexData): Promise<voi
     documents: summaries,
     ...(data.categories?.length ? { categories: data.categories } : {}),
   });
+
+  // Emit change events for inbox routing
+  try {
+    const { changeEmitter } = await import('./change-emitter');
+    for (const d of fromApi) {
+      changeEmitter.emit({
+        type: 'doc_updated',
+        sourceId: d.id,
+        summary: `文档「${d.title}」已更新`,
+        timestamp: new Date().toISOString(),
+        projectKey: d.projectKey,
+      });
+    }
+  } catch { /* non-critical */ }
 }

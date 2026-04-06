@@ -60,6 +60,18 @@ export async function writePromptFile(agentId: string, content: string): Promise
   await snapshotPromptVersion(agentId);
   await fs.mkdir(getPromptsDir(), { recursive: true });
   await fs.writeFile(getPromptFilePath(agentId), content, 'utf-8');
+
+  // Emit change event for inbox routing
+  try {
+    const { changeEmitter } = await import('./change-emitter');
+    changeEmitter.emit({
+      type: 'prompt_updated',
+      sourceId: agentId,
+      summary: `Agent 提示词已更新`,
+      timestamp: new Date().toISOString(),
+      agentId,
+    });
+  } catch { /* non-critical */ }
 }
 
 /**
