@@ -24,6 +24,7 @@ import { SkillResourceLoader } from './skill-loader';
 import { AgentDataInfoLoader } from './agent-data-info-loader';
 import { PromptBlockLoader } from './prompt-block-loader';
 import { LegacyContextLoader } from './legacy-context-loader';
+import { InboxDigestLoader } from './inbox-digest-loader';
 
 resourceRegistry.register(new DesignDocsIndexLoader());
 resourceRegistry.register(new ActiveTasksLoader());
@@ -40,3 +41,4 @@ resourceRegistry.register(new SkillResourceLoader());
 resourceRegistry.register(new AgentDataInfoLoader());
 resourceRegistry.register(new PromptBlockLoader());
 resourceRegistry.register(new LegacyContextLoader());
+resourceRegistry.register(new InboxDigestLoader());

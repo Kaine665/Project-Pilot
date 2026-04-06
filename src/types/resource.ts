@@ -25,7 +25,8 @@ export type ResourceType =
   | 'project-prompt'               // Project-level prompt injected when projectKey is set
   | 'skill'                        // Skill bound to agent (name + description summary)
   | 'agent-data-info'              // Agent private data store directory listing
-  | 'prompt-block';                 // Reusable prompt fragment (from prompts/blocks/)
+  | 'prompt-block'                  // Reusable prompt fragment (from prompts/blocks/)
+  | 'inbox-digest';                 // Agent inbox — recent changes since last session
 
 // ── ResourceRef ──
 
@@ -48,6 +49,7 @@ export interface ResourceRef {
    * - global-prompt: '_global'
    * - project-prompt: '_project'
    * - prompt-block: blockId (maps to prompts/blocks/{blockId}.md)
+   * - inbox-digest: '_inbox'
    */
   id: string;
   /** Sort priority — lower values appear earlier in prompt. Default: 50 */

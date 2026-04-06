@@ -1052,6 +1052,19 @@ class AgentChatManager {
     };
     await persistSessionToDisk(session, this.buildExecutionSummary(run));
 
+    // Emit change event for inbox routing
+    try {
+      const { changeEmitter } = await import('../change-emitter');
+      changeEmitter.emit({
+        type: 'session_completed',
+        sourceId: run.sessionId,
+        summary: `Agent「${run.agentId}」会话已完成`,
+        timestamp: new Date().toISOString(),
+        projectKey: run.projectKey,
+        agentId: run.agentId,
+      });
+    } catch { /* non-critical */ }
+
     // ExecutionEvent 归约落盘（纯增量，不影响 messages JSONL，fire-and-forget）
     this.persistExecutionEvents(run).catch(err => {
       console.error(`${LOG_PREFIX} persistExecutionEvents error:`, err);
@@ -1219,6 +1232,7 @@ async function buildResourcePrompt(
   }
 
   merged.push({ type: 'global-prompt', id: '_global', priority: 1 });
+  merged.push({ type: 'inbox-digest', id: '_inbox', priority: 4 });
 
   if (projectKey) {
     merged.push({ type: 'project-prompt', id: '_project', priority: 2 });

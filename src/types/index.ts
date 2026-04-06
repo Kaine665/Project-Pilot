@@ -483,6 +483,18 @@ export interface Agent {
    * 片段存储在 data/prompts/blocks/{blockId}.md
    */
   promptRefs?: string[];
+  /**
+   * 关注清单：Agent 关注哪些资源的变化。
+   * 变化事件会自动投递到 Agent 收件箱（agents/inboxes/{agentId}.jsonl）。
+   * 若为空，默认按项目作用域接收同项目内的变化通知。
+   */
+  watchRefs?: ResourceRef[];
+  /**
+   * 关注策略：
+   * - 'notify'（默认）：变化写入收件箱，下次会话时 Agent 可以看到
+   * - 'auto-wake'：变化发生后自动创建后台会话让 Agent 处理
+   */
+  watchPolicy?: 'notify' | 'auto-wake';
   /** Persistent agent runtime status */
   agentStatus?: AgentStatus;
   archived?: boolean;

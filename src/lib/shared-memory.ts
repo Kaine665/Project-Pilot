@@ -107,6 +107,19 @@ export async function writeMemory(opts: {
     return data;
   });
 
+  // Emit change event for inbox routing
+  try {
+    const { changeEmitter } = await import('./change-emitter');
+    changeEmitter.emit({
+      type: 'memory_written',
+      sourceId: opts.key,
+      summary: `共享记忆「${opts.key}」被${opts.author || '未知'}写入`,
+      timestamp: new Date().toISOString(),
+      projectKey: opts.projectKey,
+      agentId: undefined,
+    });
+  } catch { /* non-critical */ }
+
   return entry;
 }
 
