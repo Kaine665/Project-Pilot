@@ -21,6 +21,24 @@
     "schedules": "定时运行",
     "mcp": "MCP"
   },
+  "folderExplorer": {
+    "contextMenu": {
+      "referenceChat": "@引用到对话",
+      "preview": "预览",
+      "openInSystem": "在系统中打开",
+      "copyPath": "复制路径",
+      "newFile": "新建文件",
+      "newFolder": "新建文件夹",
+      "rename": "重命名",
+      "delete": "删除"
+    },
+    "deleteDialog": {
+      "confirm": "确定删除「{name}」？",
+      "dirContentsHint": "（将同时删除其下所有内容）",
+      "cancel": "取消",
+      "confirmDelete": "删除"
+    }
+  },
   "mcpPage": {
     "title": "MCP",
     "subtitle": "在 ProjectPilot 中通过 Model Context Protocol 接入第三方 MCP 服务，把外部工具与数据纳入你的工作流（与 Cursor、Claude Code 等使用的 MCP 生态一致）。",
@@ -634,10 +652,13 @@
       "expandSection": "展开",
       "collapseSection": "收起",
       "tablistAria": "工作区侧栏面板",
+      "activityBarAria": "工作区视图切换（VS Code 式活动栏）",
+      "detailTabsAria": "数据 / 提示词 / 能力 切换",
       "tabProject": "项目",
-      "tabAgentData": "数据",
-      "tabPromptStack": "提示栈",
-      "tabCapabilities": "能力"
+      "tabAgentData": "Agent 数据",
+      "tabPromptStack": "提示词",
+      "tabCapabilities": "能力",
+      "agentConfigGroup": "Agent 配置"
     },
     "picker": {
       "searchPlaceholder": "搜索 Agent...",

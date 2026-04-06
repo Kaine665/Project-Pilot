@@ -22,7 +22,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useRouter, usePathname } from '@/client/i18n/routing';
 import { cn } from '@/lib/utils';
 
-/** YouTube 迷你导览宽度（仅图标） */
+/** 迷你导览宽度（仅图标）。与 `w-10` 按钮同宽时：`px-4` → 左右各 16px，与 40px 图标合计 72px，避免 `px-2` 左贴右空。 */
 const WIDTH_MINI_PX = 72;
 /** 展开宽度（图标 + 文案），约为原 240 的 2/3，避免占用过宽 */
 const WIDTH_EXPANDED_PX = 160;
@@ -53,8 +53,8 @@ function SidebarNavRow({
       title={mini ? undefined : label}
       aria-label={label}
       className={cn(
-        'flex h-10 w-full min-w-0 items-center rounded-lg text-left text-sm font-medium transition-colors',
-        mini ? 'gap-0' : 'gap-2',
+        'flex h-10 items-center rounded-lg text-left text-sm font-medium transition-colors',
+        mini ? 'w-10 shrink-0 gap-0' : 'w-full min-w-0 gap-2',
         active
           ? 'bg-zinc-900 text-white shadow-sm dark:bg-zinc-100 dark:text-zinc-900'
           : 'text-zinc-600 hover:bg-white hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200',
@@ -172,7 +172,7 @@ export function WorkspaceSidebarRail({
       <TooltipProvider delayDuration={mini ? 300 : 500} skipDelayDuration={0}>
         <div className="flex h-full min-w-0 flex-1 flex-col py-3">
           {scrollNav(
-            <div className="flex flex-col gap-2 px-2">
+            <div className={cn('flex flex-col gap-2', mini ? 'px-4' : 'px-2')}>
               <SidebarNavRow
                 mini={mini}
                 icon={FolderKanban}
@@ -273,8 +273,8 @@ export function WorkspaceSidebarRail({
 
           <div
             className={cn(
-              'shrink-0 px-2 pt-2',
-              mini ? 'mt-auto' : 'border-t border-zinc-200 dark:border-zinc-800',
+              'shrink-0 pt-2',
+              mini ? 'mt-auto px-4' : 'border-t border-zinc-200 px-2 dark:border-zinc-800',
             )}
           >
             <SidebarNavRow

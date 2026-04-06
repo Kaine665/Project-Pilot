@@ -2557,7 +2557,7 @@ export default function AgentsPage() {
         <aside
           id="agents-workspace-rail-aside"
           className={cn(
-            'flex h-full min-h-0 w-[min(100%,288px)] flex-col border-l border-border bg-muted/10 sm:w-[292px]',
+            'flex h-full min-h-0 w-[min(100%,288px)] flex-col border-l border-border bg-muted/10 sm:w-[292px] lg:w-[340px]',
             'lg:relative lg:shrink-0',
             'max-lg:absolute max-lg:right-0 max-lg:top-0 max-lg:z-50 max-lg:w-[min(100vw,320px)] max-lg:max-w-[90vw] max-lg:shadow-xl',
             'max-lg:transition-transform max-lg:duration-200 max-lg:ease-out',

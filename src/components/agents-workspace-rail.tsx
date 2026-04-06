@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslations } from '@/client/i18n/use-translations';
 import type { LucideIcon } from 'lucide-react';
-import { Folder, FolderOpen, Layers, ListTodo } from 'lucide-react';
+import { Bot, Folder, FolderOpen, Layers, ListTodo } from 'lucide-react';
 import { FolderExplorerPanel } from '@/components/folder-explorer-panel';
 import { AgentSessionPromptStack, type PromptStackSeedItem } from '@/components/agent-session-prompt-stack';
+import { useMediaQuery } from '@/hooks/use-media-query';
 import { cn } from '@/lib/utils';
 import type { AgentCapabilities } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
@@ -32,6 +33,9 @@ export interface AgentsWorkspaceRailProps {
 const NUM_TABS = 4;
 const ACTIVE_TAB_KEY = 'pp.agentsRail.activeTab';
 
+/** 一级活动栏外宽 72px（与左侧迷你栏一致）；水平内边距 `px-2` 为原 `px-4` 的一半 */
+const ACTIVITY_BAR_WIDTH_CLASS = 'w-[72px]';
+
 function readStoredActiveTab(): number {
   try {
     const raw = localStorage.getItem(ACTIVE_TAB_KEY);
@@ -55,11 +59,19 @@ export function AgentsWorkspaceRail({
 }: AgentsWorkspaceRailProps) {
   const t = useTranslations('agentsWorkspace');
   const tCap = useTranslations('agentsWorkspace.capabilities');
+  const lgUp = useMediaQuery('(min-width: 1024px)');
 
   const [activeTab, setActiveTab] = useState(readStoredActiveTab);
+  const lastDetailTabRef = useRef<number>(() => {
+    const s = readStoredActiveTab();
+    return s >= 1 && s <= 3 ? s : 1;
+  });
+
+  const isDetailTab = activeTab >= 1 && activeTab <= 3;
 
   const setTab = useCallback((idx: number) => {
     setActiveTab(idx);
+    if (idx >= 1 && idx <= 3) lastDetailTabRef.current = idx;
     try {
       localStorage.setItem(ACTIVE_TAB_KEY, String(idx));
     } catch { /* ignore */ }
@@ -204,47 +216,146 @@ export function AgentsWorkspaceRail({
     }
   };
 
+  const detailTabIndices = [1, 2, 3] as const;
+
+  const handleActivityClick = useCallback((group: 'project' | 'agent') => {
+    if (group === 'project') {
+      setTab(0);
+    } else {
+      setTab(isDetailTab ? activeTab : lastDetailTabRef.current);
+    }
+  }, [activeTab, isDetailTab, setTab]);
+
   return (
-    <div className={cn('flex min-h-0 flex-1 flex-col overflow-hidden [overflow-anchor:none]', className)}>
-      <div
-        role="tablist"
-        aria-label={t('workspaceRail.tablistAria')}
-        className="flex h-9 shrink-0 items-stretch gap-0.5 overflow-x-auto border-b border-border/80 bg-muted/35 px-1.5 pt-1 [-ms-overflow-style:none] [scrollbar-width:none] dark:bg-muted/25 [&::-webkit-scrollbar]:hidden"
-      >
-        {tabLabels.map((label, i) => {
-          const selected = activeTab === i;
-          return (
-            <button
-              key={i}
-              type="button"
-              role="tab"
-              id={`agents-rail-tab-${i}`}
-              aria-selected={selected}
-              aria-controls={`agents-rail-panel-${i}`}
-              title={fullTitles[i]}
-              onClick={() => setTab(i)}
-              className={cn(
-                'flex min-h-8 max-w-[min(11rem,42vw)] shrink-0 items-center gap-1.5 rounded-t-md border border-transparent px-2.5 py-1 text-left text-[11px] font-medium transition-colors',
-                selected
-                  ? 'border-border border-b-background bg-background text-foreground shadow-sm dark:border-border dark:bg-card'
-                  : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
-              )}
-            >
-              <span className="text-muted-foreground/80">{tabIcons[i]}</span>
-              <span className="min-w-0 flex-1 truncate">{label}</span>
-            </button>
-          );
-        })}
+    <div className={cn('flex min-h-0 flex-1 flex-row overflow-hidden [overflow-anchor:none]', className)}>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {/* 窄屏：顶栏四个入口（项目 / 数据 / 提示词 / 能力），扁平 */}
+        <div
+          role="tablist"
+          aria-label={t('workspaceRail.tablistAria')}
+          className="flex h-9 shrink-0 items-stretch gap-0.5 overflow-x-auto border-b border-border/80 bg-muted/35 px-1.5 pt-1 [-ms-overflow-style:none] [scrollbar-width:none] dark:bg-muted/25 lg:hidden [&::-webkit-scrollbar]:hidden"
+        >
+          {tabLabels.map((label, i) => {
+            const selected = activeTab === i;
+            return (
+              <button
+                key={i}
+                type="button"
+                role="tab"
+                id={`agents-rail-tab-${i}`}
+                aria-selected={selected}
+                aria-controls="agents-rail-main-panel"
+                title={fullTitles[i]}
+                onClick={() => setTab(i)}
+                className={cn(
+                  'flex min-h-8 max-w-[min(11rem,42vw)] shrink-0 items-center gap-1.5 rounded-t-md border border-transparent px-2.5 py-1 text-left text-[11px] font-medium transition-colors',
+                  selected
+                    ? 'border-border border-b-background bg-background text-foreground shadow-sm dark:border-border dark:bg-card'
+                    : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
+                )}
+              >
+                <span className="text-muted-foreground/80">{tabIcons[i]}</span>
+                <span className="min-w-0 flex-1 truncate">{label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* 桌面：二级横排标签（Agent 数据 / 提示词 / 能力），仅一级选中「Agent 配置」时显示 */}
+        {isDetailTab && (
+          <div
+            role="tablist"
+            aria-label={t('workspaceRail.detailTabsAria')}
+            className="hidden h-8 shrink-0 items-stretch gap-0.5 border-b border-border/80 bg-muted/30 px-1.5 dark:bg-muted/20 lg:flex"
+          >
+            {detailTabIndices.map((idx) => {
+              const selected = activeTab === idx;
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  role="tab"
+                  id={`agents-rail-detail-${idx}`}
+                  aria-selected={selected}
+                  aria-controls="agents-rail-main-panel"
+                  title={fullTitles[idx]}
+                  onClick={() => setTab(idx)}
+                  className={cn(
+                    'flex min-h-7 min-w-0 flex-1 items-center justify-center gap-1 rounded-md border border-transparent px-2 text-[11px] font-medium transition-colors',
+                    selected
+                      ? 'border-border bg-background text-foreground shadow-sm dark:border-border dark:bg-card'
+                      : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
+                  )}
+                >
+                  <span className="text-muted-foreground/80">{tabIcons[idx]}</span>
+                  <span className="min-w-0 truncate">{tabLabels[idx]}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div
+          role="tabpanel"
+          id="agents-rail-main-panel"
+          aria-labelledby={
+            lgUp
+              ? (activeTab === 0 ? 'agents-rail-activity-project' : `agents-rail-detail-${activeTab}`)
+              : `agents-rail-tab-${activeTab}`
+          }
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+        >
+          {renderActivePanel()}
+        </div>
       </div>
 
-      <div
-        role="tabpanel"
-        id={`agents-rail-panel-${activeTab}`}
-        aria-labelledby={`agents-rail-tab-${activeTab}`}
-        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+      {/* 桌面：一级入口（项目工作区 / Agent 配置），尺寸对齐左侧 SidebarNavRow 迷你态 */}
+      <nav
+        aria-label={t('workspaceRail.activityBarAria')}
+        className={cn(
+          'hidden shrink-0 flex-col items-center gap-2 border-l border-border/80 bg-muted/25 px-2 py-3 dark:bg-muted/15 lg:flex',
+          ACTIVITY_BAR_WIDTH_CLASS,
+        )}
       >
-        {renderActivePanel()}
-      </div>
+        <button
+          type="button"
+          id="agents-rail-activity-project"
+          title={fullTitles[0]}
+          aria-label={fullTitles[0]}
+          aria-pressed={activeTab === 0}
+          aria-controls="agents-rail-main-panel"
+          onClick={() => handleActivityClick('project')}
+          className={cn(
+            'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors',
+            activeTab === 0
+              ? 'bg-background text-foreground shadow-sm ring-1 ring-border dark:bg-card'
+              : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
+          )}
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center" aria-hidden>
+            <FolderOpen className="h-5 w-5 shrink-0" />
+          </span>
+        </button>
+        <button
+          type="button"
+          id="agents-rail-activity-agent"
+          title={t('workspaceRail.agentConfigGroup')}
+          aria-label={t('workspaceRail.agentConfigGroup')}
+          aria-pressed={isDetailTab}
+          aria-controls="agents-rail-main-panel"
+          onClick={() => handleActivityClick('agent')}
+          className={cn(
+            'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors',
+            isDetailTab
+              ? 'bg-background text-foreground shadow-sm ring-1 ring-border dark:bg-card'
+              : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
+          )}
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center" aria-hidden>
+            <Bot className="h-5 w-5 shrink-0" />
+          </span>
+        </button>
+      </nav>
     </div>
   );
 }

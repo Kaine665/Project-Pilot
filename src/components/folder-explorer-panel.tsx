@@ -244,6 +244,7 @@ export function FolderExplorerPanel({
 }: FolderExplorerPanelProps) {
   const tAgentsWs = useTranslations('agentsWorkspace');
   const tChat = useTranslations('chat');
+  const tFs = useTranslations('folderExplorer');
   const isDataRootLocked = Boolean(
     embedded && lockToInitialDataPath && initialPath && initialResolveMode === 'data',
   );
@@ -752,12 +753,12 @@ export function FolderExplorerPanel({
                   <AtSign className="h-3 w-3" />
                 </button>
               )}
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(node.path); }}
-                className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
-                title="Copy path"
-              >
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(node.path); }}
+                  className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
+                  title={tFs('contextMenu.copyPath')}
+                >
                 <Copy className="h-3 w-3" />
               </button>
             </div>
@@ -820,42 +821,42 @@ export function FolderExplorerPanel({
     >
       {onInsertPath && (
         <ContextMenuItem
-          icon={AtSign} label="@引用到对话" shortcut=""
+          icon={AtSign} label={tFs('contextMenu.referenceChat')} shortcut=""
           onClick={() => handleContextMenuAction('reference', contextMenu.node)}
         />
       )}
       {!contextMenu.node.isDirectory && (
         <ContextMenuItem
-          icon={FileText} label="Preview" shortcut=""
+          icon={FileText} label={tFs('contextMenu.preview')} shortcut=""
           onClick={() => handleContextMenuAction('preview', contextMenu.node)}
         />
       )}
       <ContextMenuItem
-        icon={ExternalLink} label="Open in System" shortcut=""
+        icon={ExternalLink} label={tFs('contextMenu.openInSystem')} shortcut=""
         onClick={() => handleContextMenuAction('open-external', contextMenu.node)}
       />
       <ContextMenuItem
-        icon={Copy} label="Copy Path" shortcut=""
+        icon={Copy} label={tFs('contextMenu.copyPath')} shortcut=""
         onClick={() => handleContextMenuAction('copy-path', contextMenu.node)}
       />
       <div className="my-1 border-t border-zinc-100 dark:border-zinc-700" />
       <ContextMenuItem
-        icon={FilePlus} label="New File" shortcut=""
+        icon={FilePlus} label={tFs('contextMenu.newFile')} shortcut=""
         onClick={() => handleContextMenuAction('new-file', contextMenu.node)}
       />
       <ContextMenuItem
-        icon={FolderPlus} label="New Folder" shortcut=""
+        icon={FolderPlus} label={tFs('contextMenu.newFolder')} shortcut=""
         onClick={() => handleContextMenuAction('new-folder', contextMenu.node)}
       />
       {!isContextTargetRoot ? (
         <>
           <div className="my-1 border-t border-zinc-100 dark:border-zinc-700" />
           <ContextMenuItem
-            icon={Pencil} label="Rename" shortcut="F2"
+            icon={Pencil} label={tFs('contextMenu.rename')} shortcut="F2"
             onClick={() => handleContextMenuAction('rename', contextMenu.node)}
           />
           <ContextMenuItem
-            icon={Trash2} label="Delete" shortcut="Del" danger
+            icon={Trash2} label={tFs('contextMenu.delete')} shortcut="Del" danger
             onClick={() => handleContextMenuAction('delete', contextMenu.node)}
           />
         </>
@@ -871,8 +872,10 @@ export function FolderExplorerPanel({
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40" onClick={() => setDeleteConfirm(null)}>
       <div className="w-80 rounded-lg border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-zinc-800" onClick={(e) => e.stopPropagation()}>
         <p className="mb-3 text-sm text-zinc-700 dark:text-zinc-300">
-          Delete <span className="font-medium">{deleteConfirm.name}</span>?
-          {deleteConfirm.isDir && ' (and all contents)'}
+          {tFs('deleteDialog.confirm', { name: deleteConfirm.name })}
+          {deleteConfirm.isDir && (
+            <span className="text-zinc-500 dark:text-zinc-400"> {tFs('deleteDialog.dirContentsHint')}</span>
+          )}
         </p>
         <div className="flex justify-end gap-2">
           <button
@@ -880,14 +883,14 @@ export function FolderExplorerPanel({
             onClick={() => setDeleteConfirm(null)}
             className="rounded px-3 py-1.5 text-xs text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
           >
-            Cancel
+            {tFs('deleteDialog.cancel')}
           </button>
           <button
             type="button"
             onClick={handleDeleteConfirm}
             className="rounded bg-red-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600"
           >
-            Delete
+            {tFs('deleteDialog.confirmDelete')}
           </button>
         </div>
       </div>
