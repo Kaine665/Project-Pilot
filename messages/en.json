@@ -21,6 +21,24 @@
     "schedules": "Schedules",
     "mcp": "MCP"
   },
+  "folderExplorer": {
+    "contextMenu": {
+      "referenceChat": "Insert path into chat",
+      "preview": "Preview",
+      "openInSystem": "Open in System",
+      "copyPath": "Copy Path",
+      "newFile": "New File",
+      "newFolder": "New Folder",
+      "rename": "Rename",
+      "delete": "Delete"
+    },
+    "deleteDialog": {
+      "confirm": "Delete {name}?",
+      "dirContentsHint": "(and all contents)",
+      "cancel": "Cancel",
+      "confirmDelete": "Delete"
+    }
+  },
   "mcpPage": {
     "title": "MCP",
     "subtitle": "Use Model Context Protocol inside ProjectPilot to connect third-party MCP servers and bring external tools and data into your workflow (same MCP ecosystem as Cursor, Claude Code, and similar hosts).",
@@ -633,10 +651,13 @@
       "expandSection": "Expand",
       "collapseSection": "Collapse",
       "tablistAria": "Workspace side panel",
+      "activityBarAria": "Workspace view switcher (VS Code–style activity bar)",
+      "detailTabsAria": "Data / Prompts / Capabilities switcher",
       "tabProject": "Project",
-      "tabAgentData": "Data",
+      "tabAgentData": "Agent data",
       "tabPromptStack": "Prompts",
-      "tabCapabilities": "Caps"
+      "tabCapabilities": "Caps",
+      "agentConfigGroup": "Agent config"
     },
     "picker": {
       "searchPlaceholder": "Search agents...",
