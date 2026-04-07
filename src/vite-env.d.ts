@@ -15,5 +15,6 @@ interface Window {
     getPathForFile: (file: File) => string;
     openFile: (path: string) => Promise<unknown>;
     openExternalUrl: (url: string) => Promise<{ ok?: true; error?: string }>;
+    focusMainWindow?: () => Promise<void>;
   };
 }

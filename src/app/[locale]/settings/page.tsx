@@ -1100,6 +1100,10 @@ export default function SettingsPage() {
                 connectedBanner={googleConnectedBanner}
                 onDismissConnectedBanner={() => setGoogleConnectedBanner(false)}
                 onAfterPull={() => { void fetchSettings({ silent: true }); }}
+                onDesktopOAuthConnected={() => {
+                  setGoogleConnectedBanner(true);
+                  void fetchSettings({ silent: true });
+                }}
               />
             )}
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Cloud, Loader2, LogOut, Download, Upload } from 'lucide-react';
 import { apiUrl } from '@/lib/api-base';
@@ -17,6 +17,8 @@ interface Props {
   connectedBanner?: boolean;
   onDismissConnectedBanner?: () => void;
   onAfterPull?: () => void;
+  /** Electron：浏览器 OAuth 完成后轮询领到 Cookie 时回调（横幅、刷新设置等） */
+  onDesktopOAuthConnected?: () => void;
 }
 
 export function SettingsGoogleSyncSection({
@@ -27,12 +29,23 @@ export function SettingsGoogleSyncSection({
   connectedBanner,
   onDismissConnectedBanner,
   onAfterPull,
+  onDesktopOAuthConnected,
 }: Props) {
   const [statusLoading, setStatusLoading] = useState(true);
   const [signedIn, setSignedIn] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
   const [flash, setFlash] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [busy, setBusy] = useState<'pull' | 'push' | 'out' | null>(null);
+  const oauthPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const clearOauthPoll = useCallback(() => {
+    if (oauthPollRef.current) {
+      clearInterval(oauthPollRef.current);
+      oauthPollRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => clearOauthPoll(), [clearOauthPoll]);
 
   const refreshStatus = useCallback(async () => {
     setStatusLoading(true);
@@ -62,9 +75,13 @@ export function SettingsGoogleSyncSection({
     // and in-page redirect from :4000 → :4500 → Google can lose cookies.
     // Fetch the auth URL from backend, then open it externally.
     setFlash(null);
+    clearOauthPoll();
     try {
-      const res = await fetch(`${startHref}${startHref.includes('?') ? '&' : '?'}json=1`);
-      const j = (await res.json()) as { ok?: boolean; url?: string; error?: string };
+      const electronFlow =
+        typeof window !== 'undefined' && typeof window.electron?.openExternalUrl === 'function';
+      const q = electronFlow ? 'json=1&desktop=1' : 'json=1';
+      const res = await fetch(`${startHref}${startHref.includes('?') ? '&' : '?'}${q}`);
+      const j = (await res.json()) as { ok?: boolean; url?: string; pollId?: string; error?: string };
       if (!res.ok || !j.ok || !j.url) {
         setFlash({
           type: 'err',
@@ -73,18 +90,59 @@ export function SettingsGoogleSyncSection({
         return;
       }
 
-      if (typeof window !== 'undefined' && window.electron?.openExternalUrl) {
-        // Electron: use IPC to open in system browser
-        const opened = await window.electron.openExternalUrl(j.url);
+      if (electronFlow) {
+        const opened = await window.electron!.openExternalUrl(j.url);
         if (opened?.error) {
           setFlash({ type: 'err', text: opened.error });
           return;
         }
+        const pollId = j.pollId;
+        if (pollId) {
+          setFlash({ type: 'ok', text: t('googleSyncOpenBrowserHint') });
+          const pollStarted = Date.now();
+          const pollTtlMs = 5 * 60 * 1000;
+          oauthPollRef.current = setInterval(async () => {
+            try {
+              if (Date.now() - pollStarted > pollTtlMs) {
+                clearOauthPoll();
+                setFlash({ type: 'err', text: t('googleSyncError') });
+                return;
+              }
+              const pr = await fetch(
+                apiUrl(`/api/auth/google/electron-poll?pollId=${encodeURIComponent(pollId)}`),
+                { credentials: 'include' },
+              );
+              const pj = (await pr.json()) as { ok?: boolean; pending?: boolean; error?: string };
+              if (!pr.ok || pj.ok === false) {
+                clearOauthPoll();
+                setFlash({ type: 'err', text: t('googleSyncError') });
+                return;
+              }
+              if (pj.pending) return;
+              clearOauthPoll();
+              await refreshStatus();
+              setFlash({ type: 'ok', text: t('googleSyncSuccessConnected') });
+              void window.electron?.focusMainWindow?.();
+              void window.electronAPI?.showNotification?.({
+                title: t('googleSyncOAuthDoneTitle'),
+                body: t('googleSyncOAuthDoneBody'),
+                tag: 'pp-google-oauth',
+                focusAppOnClick: true,
+                requireInteraction: false,
+              });
+              onDesktopOAuthConnected?.();
+            } catch {
+              clearOauthPoll();
+              setFlash({ type: 'err', text: t('googleSyncError') });
+            }
+          }, 1000);
+        } else {
+          setFlash({ type: 'ok', text: t('googleSyncOpenBrowserHint') });
+        }
       } else {
-        // Web: open in new tab so current page state is preserved
         window.open(j.url, '_blank', 'noopener');
+        setFlash({ type: 'ok', text: t('googleSyncOpenBrowserHint') });
       }
-      setFlash({ type: 'ok', text: t('googleSyncOpenBrowserHint') });
     } catch {
       setFlash({ type: 'err', text: t('googleSyncError') });
     }

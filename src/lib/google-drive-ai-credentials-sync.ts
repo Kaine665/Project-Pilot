@@ -2,6 +2,7 @@
  * Google Drive appDataFolder：同步 AI 供应商 API Key 等可移植凭据（不含 OAuth token 文件路径）。
  */
 
+import { googleExternalFetch } from '@/lib/google-external-fetch';
 import type { ClaudeSettings, ProviderCredential, ProviderId } from '@/types';
 
 export const GOOGLE_DRIVE_AI_CREDENTIALS_FILENAME = 'project-pilot-ai-credentials.json';
@@ -113,13 +114,13 @@ export async function findCredentialsFileId(accessToken: string): Promise<string
     `name='${GOOGLE_DRIVE_AI_CREDENTIALS_FILENAME}' and 'appDataFolder' in parents and trashed=false`,
   );
   const url = `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id,name)`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const res = await googleExternalFetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   const data = await driveJson<{ files?: Array<{ id: string }> }>(res);
   return data.files?.[0]?.id ?? null;
 }
 
 export async function createCredentialsFile(accessToken: string): Promise<string> {
-  const res = await fetch('https://www.googleapis.com/drive/v3/files', {
+  const res = await googleExternalFetch('https://www.googleapis.com/drive/v3/files', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -136,7 +137,7 @@ export async function createCredentialsFile(accessToken: string): Promise<string
 
 export async function downloadCredentialsFile(accessToken: string, fileId: string): Promise<string> {
   const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const res = await googleExternalFetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) {
     const t = await res.text();
     throw new Error(t || `Download HTTP ${res.status}`);
@@ -150,7 +151,7 @@ export async function uploadCredentialsFile(
   body: string,
 ): Promise<void> {
   const url = `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(fileId)}?uploadType=media`;
-  const res = await fetch(url, {
+  const res = await googleExternalFetch(url, {
     method: 'PATCH',
     headers: {
       Authorization: `Bearer ${accessToken}`,
