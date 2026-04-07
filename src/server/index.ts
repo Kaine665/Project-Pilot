@@ -18,27 +18,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { errorHandler } from './middleware/error-handler';
-
-import agentsRoutes from './routes/agents';
-import settingsRoutes from './routes/settings';
-import todosRoutes from './routes/todos';
-import dataRoutes from './routes/data';
-import docsRoutes from './routes/docs';
-import dimensionsRoutes from './routes/dimensions';
-import usageRoutes from './routes/usage';
-import promptsRoutes from './routes/prompts';
-import skillsRoutes from './routes/skills';
-import fsRoutes from './routes/fs';
-import recycleBinRoutes from './routes/recycle-bin';
-import uploadRoutes from './routes/upload';
-import projectsRoutes from './routes/projects';
-import aiDiscussRoutes from './routes/ai-discuss';
-import agentChatRoutes from './routes/agent-chat';
-import schedulesRoutes from './routes/schedules';
-import eventTriggersRoutes from './routes/event-triggers';
-import communityRoutes from './routes/community';
-import agentInboxRoutes from './routes/agent-inbox';
-import googleAuthRoutes from './routes/google-auth';
+import { lazyApiRoute } from './lazy-route';
 
 import { ensureDataDirV2Migrated } from '@/lib/file-store';
 import { ensureGlobalAgentsMigratedToPresets } from '@/lib/migrations/migrate-global-agents-to-presets';
@@ -86,27 +66,51 @@ app.use('/api/*', errorHandler);
 // --- Health check ---
 app.get('/health', (c) => c.json({ ok: true, uptime: process.uptime() }));
 
-// --- API Routes ---
-app.route('/api/agents', agentsRoutes);
-app.route('/api/settings', settingsRoutes);
-app.route('/api/todos', todosRoutes);
-app.route('/api/data', dataRoutes);
-app.route('/api/docs', docsRoutes);
-app.route('/api/dimensions', dimensionsRoutes);
-app.route('/api/usage', usageRoutes);
-app.route('/api', promptsRoutes);
-app.route('/api/skills', skillsRoutes);
-app.route('/api/fs', fsRoutes);
-app.route('/api/recycle-bin', recycleBinRoutes);
-app.route('/api/upload', uploadRoutes);
-app.route('/api/projects', projectsRoutes);
-app.route('/api/ai-discuss', aiDiscussRoutes);
-app.route('/api/agent-chat', agentChatRoutes);
-app.route('/api/schedules', schedulesRoutes);
-app.route('/api/event-triggers', eventTriggersRoutes);
-app.route('/api/community', communityRoutes);
-app.route('/api/agent-inbox', agentInboxRoutes);
-app.route('/api/auth/google', googleAuthRoutes);
+// --- API routes (lazy-loaded on first hit — see lazy-route.ts) ---
+const api = {
+  agents: '/api/agents',
+  settings: '/api/settings',
+  todos: '/api/todos',
+  data: '/api/data',
+  docs: '/api/docs',
+  dimensions: '/api/dimensions',
+  usage: '/api/usage',
+  root: '/api',
+  skills: '/api/skills',
+  fs: '/api/fs',
+  recycleBin: '/api/recycle-bin',
+  upload: '/api/upload',
+  projects: '/api/projects',
+  aiDiscuss: '/api/ai-discuss',
+  agentChat: '/api/agent-chat',
+  schedules: '/api/schedules',
+  eventTriggers: '/api/event-triggers',
+  community: '/api/community',
+  agentInbox: '/api/agent-inbox',
+  googleAuth: '/api/auth/google',
+} as const;
+
+app.route(api.agents, lazyApiRoute(api.agents, () => import('./routes/agents')));
+app.route(api.settings, lazyApiRoute(api.settings, () => import('./routes/settings')));
+app.route(api.todos, lazyApiRoute(api.todos, () => import('./routes/todos')));
+app.route(api.data, lazyApiRoute(api.data, () => import('./routes/data')));
+app.route(api.docs, lazyApiRoute(api.docs, () => import('./routes/docs')));
+app.route(api.dimensions, lazyApiRoute(api.dimensions, () => import('./routes/dimensions')));
+app.route(api.usage, lazyApiRoute(api.usage, () => import('./routes/usage')));
+app.route(api.skills, lazyApiRoute(api.skills, () => import('./routes/skills')));
+app.route(api.fs, lazyApiRoute(api.fs, () => import('./routes/fs')));
+app.route(api.recycleBin, lazyApiRoute(api.recycleBin, () => import('./routes/recycle-bin')));
+app.route(api.upload, lazyApiRoute(api.upload, () => import('./routes/upload')));
+app.route(api.projects, lazyApiRoute(api.projects, () => import('./routes/projects')));
+app.route(api.aiDiscuss, lazyApiRoute(api.aiDiscuss, () => import('./routes/ai-discuss')));
+app.route(api.agentChat, lazyApiRoute(api.agentChat, () => import('./routes/agent-chat')));
+app.route(api.schedules, lazyApiRoute(api.schedules, () => import('./routes/schedules')));
+app.route(api.eventTriggers, lazyApiRoute(api.eventTriggers, () => import('./routes/event-triggers')));
+app.route(api.community, lazyApiRoute(api.community, () => import('./routes/community')));
+app.route(api.agentInbox, lazyApiRoute(api.agentInbox, () => import('./routes/agent-inbox')));
+app.route(api.googleAuth, lazyApiRoute(api.googleAuth, () => import('./routes/google-auth')));
+/** 须挂在所有其它 `/api/...` 子树之后，否则会吞掉 `/api/auth/google` 等路径并 404 */
+app.route(api.root, lazyApiRoute(api.root, () => import('./routes/prompts')));
 
 // --- Static file serving (production) ---
 const clientDistPath = path.resolve(__dirname, '../../dist/client');
