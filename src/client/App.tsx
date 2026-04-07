@@ -25,6 +25,7 @@ const SchedulesPage = lazy(() => import('@/app/[locale]/flows/schedules/page'));
 const TaskTriggersPage = lazy(() => import('@/app/[locale]/flows/task-triggers/page'));
 const DimensionsPage = lazy(() => import('@/app/[locale]/flows/dimensions/page'));
 const RecycleBinPage = lazy(() => import('@/app/[locale]/flows/recycle-bin/page'));
+const OAuthGoogleCallback = lazy(() => import('./routes/oauth-google-callback'));
 
 function Loading() {
   return (
@@ -87,6 +88,7 @@ export function App() {
           <ProjectProvider>
             <Routes>
               <Route path="/" element={<Navigate to="/workspace/projects" replace />} />
+              <Route path="/oauth/google/callback" element={<Suspense fallback={<Loading />}><OAuthGoogleCallback /></Suspense>} />
               <Route path="/en/*" element={<AppRoutes />} />
               <Route path="/*" element={<AppRoutes />} />
             </Routes>
