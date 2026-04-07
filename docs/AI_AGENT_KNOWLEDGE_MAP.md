@@ -104,5 +104,6 @@
 | 2026-04-05 | **社区市场 P0**：LobeHub 类「发现 → 安装」调研与 OKR 文档；`GET /api/community/catalog` + 种子目录；`/workspace/community` + 侧栏入口；一键写入运行预设 | `docs/community-marketplace-lobechat-okr.md`、`src/data/community-catalog-seed.json`、`server/routes/community.ts`、`server/index.ts`、`components/community/*`、`flows/community/page.tsx`、`App.tsx`、`workspace-sidebar-rail.tsx`、`messages/zh.json` & `en.json`、本文件 |
 | 2026-04-06 | **Google 账号与云同步**：用户**按类选择**云端管理范围；**推荐最小云子集**仅为 **AI 供应商凭据**（与 `unified-credential-store` 对齐），会话/项目/文档等默认不上云 | `docs/design/google-account-cloud-sync-scope.md`、`docs/design/README.md`、`MEMORY.md`、本文件 |
 | 2026-04-06 | **PR #39 纳入设计参考**：Google OAuth + 本机 `accounts/<sub>/` 数据根、`file-store` AsyncLocalStorage、设置页登录与 `apiFetch` credentials；与「凭据可选上云」正交，见 `google-account-cloud-sync-scope.md` §「参考实现：PR #39」 | `docs/design/google-account-cloud-sync-scope.md`、本文件 |
+| 2026-04-07 | **Hono API 懒挂载**：`src/server/lazy-route.ts` + `index.ts` 对 `/api/*` 子树首包 `import()`（`tsx` 开发态冷启动更快） | `src/server/lazy-route.ts`、`src/server/index.ts`、`MEMORY.md`、本文件 |
 
 （后续变更请继续追加表格行，勿删历史。）
