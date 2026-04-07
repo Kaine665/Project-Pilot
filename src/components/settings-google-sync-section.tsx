@@ -57,32 +57,37 @@ export function SettingsGoogleSyncSection({
     const rp = encodeURIComponent(oauthReturnPath);
     const startHref = apiUrl(`/api/auth/google/start?returnPath=${rp}`);
 
-    // Electron：整页跳到 Google 常被识别为嵌入式浏览器 → 空白页；改为系统浏览器打开授权链接。
-    if (typeof window !== 'undefined' && window.electron?.openExternalUrl) {
-      setFlash(null);
-      try {
-        const res = await fetch(`${startHref}${startHref.includes('?') ? '&' : '?'}json=1`);
-        const j = (await res.json()) as { ok?: boolean; url?: string; error?: string };
-        if (!res.ok || !j.ok || !j.url) {
-          setFlash({
-            type: 'err',
-            text: j.error || (res.status === 503 ? t('googleSyncNotConfigured') : t('googleSyncError')),
-          });
-          return;
-        }
+    // Always open Google OAuth in system browser (even in web mode).
+    // Electron WebView is rejected by Google (disallowed_useragent),
+    // and in-page redirect from :4000 → :4500 → Google can lose cookies.
+    // Fetch the auth URL from backend, then open it externally.
+    setFlash(null);
+    try {
+      const res = await fetch(`${startHref}${startHref.includes('?') ? '&' : '?'}json=1`);
+      const j = (await res.json()) as { ok?: boolean; url?: string; error?: string };
+      if (!res.ok || !j.ok || !j.url) {
+        setFlash({
+          type: 'err',
+          text: j.error || t('googleSyncError'),
+        });
+        return;
+      }
+
+      if (typeof window !== 'undefined' && window.electron?.openExternalUrl) {
+        // Electron: use IPC to open in system browser
         const opened = await window.electron.openExternalUrl(j.url);
         if (opened?.error) {
           setFlash({ type: 'err', text: opened.error });
           return;
         }
-        setFlash({ type: 'ok', text: t('googleSyncOpenBrowserHint') });
-      } catch {
-        setFlash({ type: 'err', text: t('googleSyncError') });
+      } else {
+        // Web: open in new tab so current page state is preserved
+        window.open(j.url, '_blank', 'noopener');
       }
-      return;
+      setFlash({ type: 'ok', text: t('googleSyncOpenBrowserHint') });
+    } catch {
+      setFlash({ type: 'err', text: t('googleSyncError') });
     }
-
-    window.location.href = startHref;
   };
 
   const doPull = async () => {
