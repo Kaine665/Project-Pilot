@@ -4,13 +4,19 @@
  * eliminating backend dependency on reaching Google servers.
  */
 
+import { apiUrl } from '@/lib/api-base';
+
 // Embedded OAuth credentials — Google considers this acceptable for installed/native apps.
 // These are NOT secrets in the traditional sense; Google uses redirect_uri + PKCE for security.
 const GOOGLE_CLIENT_ID = '469599503504-dmhuho50val4lgtb7kslhg524e29vq5d.apps.googleusercontent.com';
 const GOOGLE_CLIENT_SECRET = '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';
 
 const OAUTH_SCOPES = 'openid email profile https://www.googleapis.com/auth/drive.appdata';
-const REDIRECT_URI = `${window.location.origin}/oauth/google/callback`;
+
+/** Redirect URI — use origin at call time to support both Electron and web contexts */
+function getRedirectUri(): string {
+  return `${window.location.origin}/oauth/google/callback`;
+}
 
 const STORAGE_KEY_PENDING = 'pp_google_oauth_pending';
 const STORAGE_KEY_REFRESH = 'pp_google_refresh_token';
@@ -46,7 +52,7 @@ export function buildGoogleAuthUrl(params: {
 }): string {
   const qs = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
-    redirect_uri: REDIRECT_URI,
+    redirect_uri: getRedirectUri(),
     response_type: 'code',
     scope: OAUTH_SCOPES,
     state: params.state,
@@ -76,7 +82,7 @@ export async function exchangeCodeForTokens(
     code,
     client_id: GOOGLE_CLIENT_ID,
     client_secret: GOOGLE_CLIENT_SECRET,
-    redirect_uri: REDIRECT_URI,
+    redirect_uri: getRedirectUri(),
     grant_type: 'authorization_code',
     code_verifier: codeVerifier,
   });
@@ -131,22 +137,73 @@ export interface PendingOAuth {
   returnPath: string;
 }
 
-export function savePending(pending: PendingOAuth): void {
-  sessionStorage.setItem(STORAGE_KEY_PENDING, JSON.stringify(pending));
+/**
+ * Save PKCE pending state to sessionStorage AND backend disk.
+ * SessionStorage is used for same-browser callback (web mode).
+ * Backend disk is used for cross-browser callback (Electron → system browser).
+ * MUST be awaited before opening the auth URL to avoid race conditions.
+ */
+export async function savePending(pending: PendingOAuth): Promise<void> {
+  try {
+    sessionStorage.setItem(STORAGE_KEY_PENDING, JSON.stringify(pending));
+  } catch {
+    // sessionStorage may not be available
+  }
+  // Also persist to backend for Electron → system browser handoff.
+  // Must await — if auth redirect arrives before this completes, callback can't load PKCE state.
+  try {
+    await fetch(apiUrl('/api/auth/google/save-pending'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(pending),
+    });
+  } catch {
+    // Non-fatal in web mode (sessionStorage suffices), but critical for Electron
+  }
 }
 
+/**
+ * Load PKCE pending state. Tries sessionStorage first (fast, same browser),
+ * falls back to backend disk (cross-browser handoff from Electron).
+ */
 export function loadPending(): PendingOAuth | null {
-  const raw = sessionStorage.getItem(STORAGE_KEY_PENDING);
-  if (!raw) return null;
   try {
-    return JSON.parse(raw);
+    const raw = sessionStorage.getItem(STORAGE_KEY_PENDING);
+    if (raw) return JSON.parse(raw);
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+/**
+ * Async version of loadPending that also tries the backend as fallback.
+ * Used by the OAuth callback page which may be in a different browser than the initiator.
+ */
+export async function loadPendingAsync(): Promise<PendingOAuth | null> {
+  // Try sessionStorage first
+  const local = loadPending();
+  if (local) return local;
+
+  // Fallback: fetch from backend disk (Electron → system browser handoff)
+  try {
+    const res = await fetch(apiUrl('/api/auth/google/load-pending'), { credentials: 'include' });
+    if (!res.ok) return null;
+    const j = (await res.json()) as { ok?: boolean; codeVerifier?: string; state?: string; returnPath?: string };
+    if (!j.ok || !j.codeVerifier || !j.state) return null;
+    return { codeVerifier: j.codeVerifier, state: j.state, returnPath: j.returnPath ?? '' };
   } catch {
     return null;
   }
 }
 
 export function clearPending(): void {
-  sessionStorage.removeItem(STORAGE_KEY_PENDING);
+  try {
+    sessionStorage.removeItem(STORAGE_KEY_PENDING);
+  } catch {
+    // ignore
+  }
 }
 
 // ── Refresh token persistence (localStorage) ──

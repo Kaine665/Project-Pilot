@@ -11,7 +11,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import {
-  loadPending,
+  loadPendingAsync,
   clearPending,
   exchangeCodeForTokens,
   decodeIdTokenPayload,
@@ -43,8 +43,8 @@ export default function OAuthGoogleCallback() {
         throw new Error('Missing code or state in callback URL');
       }
 
-      // Load PKCE state from sessionStorage
-      const pending = loadPending();
+      // Load PKCE state from sessionStorage or backend disk (Electron handoff)
+      const pending = await loadPendingAsync();
       if (!pending) {
         throw new Error('No pending OAuth state found. Please try logging in again.');
       }

@@ -57,6 +57,58 @@ function verifySession(token: string): Record<string, unknown> | null {
   }
 }
 
+// ── PKCE pending state disk storage (for Electron → system browser handoff) ──
+
+const PENDING_FILENAME = '_oauth_pending.json';
+
+async function writePendingState(data: { codeVerifier: string; state: string; returnPath: string }): Promise<void> {
+  const dir = getGoogleOAuthDir();
+  await fs.mkdir(dir, { recursive: true });
+  const fp = path.join(dir, PENDING_FILENAME);
+  await fs.writeFile(fp, JSON.stringify({ ...data, createdAt: Date.now() }), 'utf-8');
+}
+
+async function readAndClearPendingState(): Promise<{ codeVerifier: string; state: string; returnPath: string } | null> {
+  const fp = path.join(getGoogleOAuthDir(), PENDING_FILENAME);
+  try {
+    const raw = await fs.readFile(fp, 'utf-8');
+    await fs.unlink(fp).catch(() => {});
+    const j = JSON.parse(raw) as { codeVerifier?: string; state?: string; returnPath?: string; createdAt?: number };
+    // Expire after 10 minutes
+    if (j.createdAt && Date.now() - j.createdAt > 10 * 60 * 1000) return null;
+    if (!j.codeVerifier || !j.state) return null;
+    return { codeVerifier: j.codeVerifier, state: j.state, returnPath: j.returnPath ?? '' };
+  } catch {
+    return null;
+  }
+}
+
+// ── Login completion signal (for Electron polling) ──
+
+const COMPLETION_FILENAME = '_oauth_completion.json';
+
+async function writeLoginCompletion(sub: string, email: string): Promise<void> {
+  const dir = getGoogleOAuthDir();
+  await fs.mkdir(dir, { recursive: true });
+  const fp = path.join(dir, COMPLETION_FILENAME);
+  await fs.writeFile(fp, JSON.stringify({ sub, email, completedAt: Date.now() }), 'utf-8');
+}
+
+async function readAndClearLoginCompletion(): Promise<{ sub: string; email: string } | null> {
+  const fp = path.join(getGoogleOAuthDir(), COMPLETION_FILENAME);
+  try {
+    const raw = await fs.readFile(fp, 'utf-8');
+    await fs.unlink(fp).catch(() => {});
+    const j = JSON.parse(raw) as { sub?: string; email?: string; completedAt?: number };
+    // Expire after 5 minutes
+    if (j.completedAt && Date.now() - j.completedAt > 5 * 60 * 1000) return null;
+    if (!j.sub) return null;
+    return { sub: j.sub, email: j.email ?? '' };
+  } catch {
+    return null;
+  }
+}
+
 // ── Refresh token disk storage ──
 
 function sanitizeSub(sub: string): string {
@@ -111,6 +163,9 @@ googleAuth.post('/complete', async (c) => {
   }
 
   await writeRefreshToken(sub, refresh_token);
+
+  // Write completion signal for Electron polling (separate cookie jar can't see this cookie)
+  await writeLoginCompletion(sub, email ?? '');
 
   const now = Math.floor(Date.now() / 1000);
   const token = signSession({
@@ -221,6 +276,70 @@ googleAuth.get('/export-refresh-token', async (c) => {
   if (!token) return c.json({ ok: false, error: 'No stored refresh token' }, 404);
 
   return c.json({ ok: true, refresh_token: token });
+});
+
+/**
+ * POST /save-pending — Store PKCE state on disk for cross-browser handoff (Electron → system browser).
+ */
+googleAuth.post('/save-pending', async (c) => {
+  let body: { codeVerifier?: string; state?: string; returnPath?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: 'Invalid JSON' }, 400);
+  }
+  if (!body.codeVerifier || !body.state) {
+    return c.json({ ok: false, error: 'Missing codeVerifier or state' }, 400);
+  }
+  await writePendingState({
+    codeVerifier: body.codeVerifier,
+    state: body.state,
+    returnPath: body.returnPath ?? '',
+  });
+  return c.json({ ok: true });
+});
+
+/**
+ * GET /load-pending — Retrieve and clear PKCE state from disk.
+ * Used by the OAuth callback page when sessionStorage is unavailable (system browser opened from Electron).
+ */
+googleAuth.get('/load-pending', async (c) => {
+  const pending = await readAndClearPendingState();
+  if (!pending) {
+    return c.json({ ok: false, error: 'No pending state' }, 404);
+  }
+  return c.json({ ok: true, ...pending });
+});
+
+/**
+ * GET /poll-login — Electron polls this to detect OAuth completion from the system browser.
+ * If a recent login completion exists, sets a session cookie for the caller and returns success.
+ * This solves the cookie-jar isolation between Electron and the system browser.
+ */
+googleAuth.get('/poll-login', async (c) => {
+  const completion = await readAndClearLoginCompletion();
+  if (!completion) {
+    return c.json({ signedIn: false });
+  }
+
+  // Set session cookie for Electron (the caller)
+  const now = Math.floor(Date.now() / 1000);
+  const token = signSession({
+    sub: completion.sub,
+    email: completion.email,
+    iat: now,
+    exp: now + SESSION_MAX_AGE_SEC,
+  });
+
+  setCookie(c, SESSION_COOKIE, token, {
+    path: '/',
+    httpOnly: true,
+    sameSite: 'Lax',
+    secure: false,
+    maxAge: SESSION_MAX_AGE_SEC,
+  });
+
+  return c.json({ signedIn: true, email: completion.email || null });
 });
 
 export default googleAuth;

@@ -263,6 +263,20 @@ function createMainWindow() {
     return { action: 'allow' };
   });
 
+  // Safety net: 若 window.location.href 被设为 Google OAuth URL（preload 未注入时的 fallback），
+  // 拦截主帧导航并改为系统浏览器打开，防止 Google 页面在 Electron 内打开。
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    try {
+      const host = new URL(url).hostname.toLowerCase();
+      if (host === 'accounts.google.com' || host === 'oauth2.googleapis.com') {
+        event.preventDefault();
+        void shell.openExternal(url);
+      }
+    } catch {
+      /* ignore invalid URL */
+    }
+  });
+
   if (isDev) {
     const devEntryUrl = () => `${windowLoadOrigin}${APP_ENTRY_PATH}`;
 
