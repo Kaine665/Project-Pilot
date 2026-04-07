@@ -5,6 +5,8 @@
  */
 
 import { apiUrl } from '@/lib/api-base';
+import { fetchWithRetry } from '@/lib/fetch-retry';
+import { parseLenientJson } from '@/lib/json-lenient';
 
 // Embedded OAuth credentials — Google considers this acceptable for installed/native apps.
 // These are NOT secrets in the traditional sense; Google uses redirect_uri + PKCE for security.
@@ -86,7 +88,7 @@ export async function exchangeCodeForTokens(
     grant_type: 'authorization_code',
     code_verifier: codeVerifier,
   });
-  const res = await fetch('https://oauth2.googleapis.com/token', {
+  const res = await fetchWithRetry('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
@@ -95,7 +97,8 @@ export async function exchangeCodeForTokens(
     const text = await res.text();
     throw new Error(`Token exchange failed: ${text}`);
   }
-  return res.json();
+  const raw = await res.text();
+  return parseLenientJson(raw) as TokenResponse;
 }
 
 export async function refreshAccessToken(refreshToken: string): Promise<string> {
@@ -105,7 +108,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<string> 
     client_secret: GOOGLE_CLIENT_SECRET,
     grant_type: 'refresh_token',
   });
-  const res = await fetch('https://oauth2.googleapis.com/token', {
+  const res = await fetchWithRetry('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
@@ -114,7 +117,9 @@ export async function refreshAccessToken(refreshToken: string): Promise<string> 
     const text = await res.text();
     throw new Error(`Token refresh failed: ${text}`);
   }
-  const j = (await res.json()) as { access_token: string };
+  const raw = await res.text();
+  const j = parseLenientJson(raw) as { access_token?: string };
+  if (!j.access_token) throw new Error('Token refresh: missing access_token in response');
   return j.access_token;
 }
 
@@ -142,8 +147,10 @@ export interface PendingOAuth {
  * SessionStorage is used for same-browser callback (web mode).
  * Backend disk is used for cross-browser callback (Electron → system browser).
  * MUST be awaited before opening the auth URL to avoid race conditions.
+ *
+ * @returns `serverSaved` — `true` 若后端已持久化；Electron 外开系统浏览器时必须为 true。
  */
-export async function savePending(pending: PendingOAuth): Promise<void> {
+export async function savePending(pending: PendingOAuth): Promise<{ serverSaved: boolean }> {
   try {
     sessionStorage.setItem(STORAGE_KEY_PENDING, JSON.stringify(pending));
   } catch {
@@ -152,14 +159,15 @@ export async function savePending(pending: PendingOAuth): Promise<void> {
   // Also persist to backend for Electron → system browser handoff.
   // Must await — if auth redirect arrives before this completes, callback can't load PKCE state.
   try {
-    await fetch(apiUrl('/api/auth/google/save-pending'), {
+    const res = await fetch(apiUrl('/api/auth/google/save-pending'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify(pending),
     });
+    return { serverSaved: res.ok };
   } catch {
-    // Non-fatal in web mode (sessionStorage suffices), but critical for Electron
+    return { serverSaved: false };
   }
 }
 

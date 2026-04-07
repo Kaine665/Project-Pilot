@@ -26,6 +26,7 @@ const TaskTriggersPage = lazy(() => import('@/app/[locale]/flows/task-triggers/p
 const DimensionsPage = lazy(() => import('@/app/[locale]/flows/dimensions/page'));
 const RecycleBinPage = lazy(() => import('@/app/[locale]/flows/recycle-bin/page'));
 const OAuthGoogleCallback = lazy(() => import('./routes/oauth-google-callback'));
+const OAuthGoogleBrowserSync = lazy(() => import('./routes/oauth-google-browser-sync'));
 
 function Loading() {
   return (
@@ -89,6 +90,7 @@ export function App() {
             <Routes>
               <Route path="/" element={<Navigate to="/workspace/projects" replace />} />
               <Route path="/oauth/google/callback" element={<Suspense fallback={<Loading />}><OAuthGoogleCallback /></Suspense>} />
+              <Route path="/oauth/google/browser-sync" element={<Suspense fallback={<Loading />}><OAuthGoogleBrowserSync /></Suspense>} />
               <Route path="/en/*" element={<AppRoutes />} />
               <Route path="/*" element={<AppRoutes />} />
             </Routes>
