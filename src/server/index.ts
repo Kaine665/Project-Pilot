@@ -2,6 +2,13 @@
  * Hono Backend — ProjectPilot unified server.
  * Replaces both Next.js API Routes and the standalone Sidecar process.
  */
+// Enable proxy for Node.js native fetch (undici-based)
+import { ProxyAgent, setGlobalDispatcher } from 'undici';
+const _proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.ALL_PROXY;
+if (_proxy) {
+  setGlobalDispatcher(new ProxyAgent(_proxy));
+}
+
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
