@@ -8,7 +8,7 @@
  * 3. Performs initial Drive sync
  * 4. Redirects to settings page
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import {
   loadPendingAsync,
@@ -17,15 +17,19 @@ import {
   decodeIdTokenPayload,
   saveRefreshToken,
 } from '@/lib/google-oauth-browser';
-import { pullFromDrive, pushToDrive } from '@/lib/google-drive-browser';
 import { apiUrl } from '@/lib/api-base';
+import { runGoogleDriveSyncInBrowser } from '@/lib/google-drive-sync-browser-flow';
 
 export default function OAuthGoogleCallback() {
   const [searchParams] = useSearchParams();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [errorMsg, setErrorMsg] = useState('');
+  /** StrictMode 会重复挂载 effect；/load-pending 读一次即删盘，重复请求会第二次 404。 */
+  const handledRef = useRef(false);
 
   useEffect(() => {
+    if (handledRef.current) return;
+    handledRef.current = true;
     void handleCallback();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -87,31 +91,10 @@ export default function OAuthGoogleCallback() {
         throw new Error(`Backend /complete failed: ${errBody}`);
       }
 
-      // Initial Drive sync (browser → Google Drive)
+      // Initial Drive sync（仅浏览器内调 Google，与桌面版桥接逻辑一致）
       try {
-        const driveBlob = await pullFromDrive(tokens.access_token);
-        if (driveBlob) {
-          // Merge remote credentials into local settings
-          await fetch(apiUrl('/api/auth/google/sync-merge'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ blob: driveBlob }),
-          });
-        } else {
-          // No remote file — push local to Drive
-          const blobRes = await fetch(apiUrl('/api/auth/google/sync-get-blob'), {
-            credentials: 'include',
-          });
-          if (blobRes.ok) {
-            const { blob } = await blobRes.json();
-            if (blob) {
-              await pushToDrive(tokens.access_token, blob);
-            }
-          }
-        }
+        await runGoogleDriveSyncInBrowser(tokens.refresh_token, false);
       } catch (syncErr) {
-        // Drive sync failure is non-fatal
         console.warn('[OAuth callback] Drive sync failed:', syncErr);
       }
 

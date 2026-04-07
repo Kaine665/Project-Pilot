@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Cloud, Loader2, LogOut, RefreshCw, Check } from 'lucide-react';
 import { apiUrl } from '@/lib/api-base';
+import { parseLenientJson } from '@/lib/json-lenient';
 import {
   generatePKCE,
   generateState,
@@ -47,16 +48,73 @@ export function SettingsGoogleSyncSection({
   const [busy, setBusy] = useState<'login' | 'sync' | 'out' | null>(null);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const autoSyncDone = useRef(false);
+  /** 父组件常传内联 `onAfterPull`，进 useCallback 会导致 refreshStatus/effect 每条渲染链都变 → 无限拉 status */
+  const onAfterPullRef = useRef(onAfterPull);
+  onAfterPullRef.current = onAfterPull;
+  const tRef = useRef(t);
+  tRef.current = t;
 
-  /** Detect Electron environment */
-  const isElectron = typeof window !== 'undefined' && (
-    typeof window.electron?.openExternalUrl === 'function' ||
-    navigator.userAgent.includes('Electron')
-  );
+  /** Detect Electron environment（ref 供 useCallback 内读取，避免依赖变化） */
+  const isElectronRef = useRef(false);
+  isElectronRef.current =
+    typeof window !== 'undefined' &&
+    (typeof window.electron?.openExternalUrl === 'function' ||
+      navigator.userAgent.includes('Electron'));
+  const isElectron = isElectronRef.current;
 
-  // ── Auto-sync: pull remote → merge → push local ──
+  // ── Auto-sync: Web 在内嵌页直连 Google；Electron 仅手动同步时打开系统浏览器桥接 ──
 
   const doAutoSync = useCallback(async (silent = true) => {
+    const tr = tRef.current;
+    if (isElectronRef.current) {
+      if (silent) return;
+      setBusy('sync');
+      try {
+        const startRes = await fetch(apiUrl('/api/auth/google/browser-sync-start'), {
+          method: 'POST',
+          credentials: 'include',
+        });
+        const startJ = parseLenientJson(await startRes.text()) as {
+          ok?: boolean;
+          url?: string;
+          error?: string;
+        };
+        if (!startRes.ok || !startJ.ok || !startJ.url) {
+          throw new Error(startJ.error || `sync-start failed (${startRes.status})`);
+        }
+        if (typeof window.electron?.openExternalUrl === 'function') {
+          const opened = await window.electron.openExternalUrl(startJ.url);
+          if (opened?.error) throw new Error(opened.error);
+        } else {
+          // 无 preload IPC 时仍可用：main 的 setWindowOpenHandler 会把本机 /oauth/google/ 弹窗交给系统浏览器
+          window.open(startJ.url, '_blank', 'noopener,noreferrer');
+        }
+        setFlash({ type: 'ok', text: tr('googleSyncBrowserSyncOpened') });
+
+        const deadline = Date.now() + 3 * 60 * 1000;
+        let sawDone = false;
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 1000));
+          const pr = await fetch(apiUrl('/api/auth/google/poll-browser-sync'), { credentials: 'include' });
+          const pj = parseLenientJson(await pr.text()) as { done?: boolean };
+          if (pj.done) {
+            sawDone = true;
+            break;
+          }
+        }
+        if (!sawDone) throw new Error(tr('googleSyncBrowserSyncTimeout'));
+
+        setLastSynced(new Date());
+        onAfterPullRef.current?.();
+        setFlash({ type: 'ok', text: tr('googleSyncSynced') });
+      } catch (err) {
+        setFlash({ type: 'err', text: err instanceof Error ? err.message : tr('googleSyncError') });
+      } finally {
+        setBusy(null);
+      }
+      return;
+    }
+
     const rt = getRefreshToken();
     if (!rt) return;
 
@@ -64,7 +122,6 @@ export function SettingsGoogleSyncSection({
     try {
       const accessToken = await refreshAccessToken(rt);
 
-      // 1. Pull from Drive and merge into local
       const remoteBlob = await pullFromDrive(accessToken);
       if (remoteBlob) {
         await fetch(apiUrl('/api/auth/google/sync-merge'), {
@@ -73,28 +130,27 @@ export function SettingsGoogleSyncSection({
           credentials: 'include',
           body: JSON.stringify({ blob: remoteBlob }),
         });
-        onAfterPull?.();
+        onAfterPullRef.current?.();
       }
 
-      // 2. Push local (now merged) to Drive
       const blobRes = await fetch(apiUrl('/api/auth/google/sync-get-blob'), {
         credentials: 'include',
       });
       if (blobRes.ok) {
-        const { blob } = await blobRes.json();
+        const { blob } = parseLenientJson(await blobRes.text()) as { blob?: unknown };
         if (blob) await pushToDrive(accessToken, blob);
       }
 
       setLastSynced(new Date());
-      if (!silent) setFlash({ type: 'ok', text: t('googleSyncSynced') });
+      if (!silent) setFlash({ type: 'ok', text: tr('googleSyncSynced') });
     } catch (err) {
       if (!silent) {
-        setFlash({ type: 'err', text: err instanceof Error ? err.message : t('googleSyncError') });
+        setFlash({ type: 'err', text: err instanceof Error ? err.message : tr('googleSyncError') });
       }
     } finally {
       if (!silent) setBusy(null);
     }
-  }, [t, onAfterPull]);
+  }, []);
 
   // ── Check login status ──
 
@@ -102,7 +158,7 @@ export function SettingsGoogleSyncSection({
     setStatusLoading(true);
     try {
       const res = await fetch(apiUrl('/api/auth/google/status'), { credentials: 'include' });
-      const j = (await res.json()) as { signedIn?: boolean; email?: string | null };
+      const j = parseLenientJson(await res.text()) as { signedIn?: boolean; email?: string | null };
       setSignedIn(!!j.signedIn);
       setEmail(j.email ?? null);
 
@@ -113,7 +169,10 @@ export function SettingsGoogleSyncSection({
             credentials: 'include',
           });
           if (exportRes.ok) {
-            const exportJ = (await exportRes.json()) as { ok?: boolean; refresh_token?: string };
+            const exportJ = parseLenientJson(await exportRes.text()) as {
+              ok?: boolean;
+              refresh_token?: string;
+            };
             if (exportJ.refresh_token) {
               saveRefreshToken(exportJ.refresh_token);
             }
@@ -123,10 +182,12 @@ export function SettingsGoogleSyncSection({
         }
       }
 
-      // Auto-sync on page load (once) if signed in
+      // Auto-sync on page load (once) if signed in — Electron 不在此静默打开系统浏览器
       if (j.signedIn && !autoSyncDone.current) {
         autoSyncDone.current = true;
-        void doAutoSync(true);
+        if (!isElectronRef.current) {
+          void doAutoSync(true);
+        }
       }
     } catch {
       setSignedIn(false);
@@ -149,7 +210,15 @@ export function SettingsGoogleSyncSection({
       const { codeVerifier, codeChallenge } = await generatePKCE();
       const state = generateState();
 
-      await savePending({ codeVerifier, state, returnPath: oauthReturnPath });
+      const { serverSaved } = await savePending({ codeVerifier, state, returnPath: oauthReturnPath });
+      if (isElectron && !serverSaved) {
+        setFlash({
+          type: 'err',
+          text: t('googleSyncErrorSavePending'),
+        });
+        setBusy(null);
+        return;
+      }
 
       const authUrl = buildGoogleAuthUrl({ state, codeChallenge });
 
@@ -177,7 +246,7 @@ export function SettingsGoogleSyncSection({
           }
           try {
             const sr = await fetch(apiUrl('/api/auth/google/poll-login'), { credentials: 'include' });
-            const sj = (await sr.json()) as { signedIn?: boolean; email?: string | null };
+            const sj = parseLenientJson(await sr.text()) as { signedIn?: boolean; email?: string | null };
             if (!sj.signedIn) return;
             clearInterval(interval);
             setSignedIn(true);
@@ -188,13 +257,12 @@ export function SettingsGoogleSyncSection({
             try {
               const rtRes = await fetch(apiUrl('/api/auth/google/export-refresh-token'), { credentials: 'include' });
               if (rtRes.ok) {
-                const rtJ = (await rtRes.json()) as { refresh_token?: string };
+                const rtJ = parseLenientJson(await rtRes.text()) as { refresh_token?: string };
                 if (rtJ.refresh_token) saveRefreshToken(rtJ.refresh_token);
               }
             } catch { /* non-fatal */ }
 
             setFlash({ type: 'ok', text: t('googleSyncSuccessConnected') });
-            void doAutoSync(true);
             void window.electron?.focusMainWindow?.();
           } catch { /* keep polling */ }
         }, 2000);
@@ -214,10 +282,13 @@ export function SettingsGoogleSyncSection({
     setBusy('out');
     setFlash(null);
     try {
-      // Push latest keys to Drive before logging out
-      try {
-        await doAutoSync(true);
-      } catch { /* best effort */ }
+      if (!isElectronRef.current) {
+        try {
+          await doAutoSync(true);
+        } catch {
+          /* best effort */
+        }
+      }
 
       await fetch(apiUrl('/api/auth/google/logout'), { method: 'POST', credentials: 'include' });
       clearRefreshToken();

@@ -3,6 +3,9 @@
  * Uses plain browser fetch (which has working VPN) instead of backend fetch.
  */
 
+import { fetchWithRetry } from '@/lib/fetch-retry';
+import { parseLenientJson } from '@/lib/json-lenient';
+
 const CREDENTIALS_FILENAME = 'project-pilot-ai-credentials.json';
 
 async function driveJson<T>(res: Response): Promise<T> {
@@ -10,7 +13,7 @@ async function driveJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
     throw new Error(text || `Drive HTTP ${res.status}`);
   }
-  return JSON.parse(text) as T;
+  return parseLenientJson(text) as T;
 }
 
 export async function findCredentialsFileId(accessToken: string): Promise<string | null> {
@@ -18,13 +21,13 @@ export async function findCredentialsFileId(accessToken: string): Promise<string
     `name='${CREDENTIALS_FILENAME}' and 'appDataFolder' in parents and trashed=false`,
   );
   const url = `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id,name)`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const res = await fetchWithRetry(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   const data = await driveJson<{ files?: Array<{ id: string }> }>(res);
   return data.files?.[0]?.id ?? null;
 }
 
 async function createCredentialsFile(accessToken: string): Promise<string> {
-  const res = await fetch('https://www.googleapis.com/drive/v3/files', {
+  const res = await fetchWithRetry('https://www.googleapis.com/drive/v3/files', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -41,7 +44,7 @@ async function createCredentialsFile(accessToken: string): Promise<string> {
 
 async function downloadCredentialsFile(accessToken: string, fileId: string): Promise<string> {
   const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const res = await fetchWithRetry(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) {
     const t = await res.text();
     throw new Error(t || `Download HTTP ${res.status}`);
@@ -55,7 +58,7 @@ async function uploadCredentialsFile(
   body: string,
 ): Promise<void> {
   const url = `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(fileId)}?uploadType=media`;
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     method: 'PATCH',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -79,7 +82,7 @@ export interface DriveCredentialsBlob {
 
 function parseDriveBlob(raw: string): DriveCredentialsBlob | null {
   try {
-    const j = JSON.parse(raw) as DriveCredentialsBlob;
+    const j = parseLenientJson(raw) as DriveCredentialsBlob;
     if (j?.version !== 1) return null;
     return j;
   } catch {

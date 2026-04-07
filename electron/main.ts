@@ -4,7 +4,6 @@ import { ChildProcess, execSync } from 'child_process';
 import path from 'path';
 import { findAvailablePort } from './port-finder';
 import { startBackendServer } from './server';
-import { checkCliHealth } from './cli-check';
 
 const isDev = !!process.env.ELECTRON_DEV;
 const APP_ENTRY_PATH = '/workspace/projects';
@@ -248,12 +247,19 @@ function createMainWindow() {
   });
   mainWindow.removeMenu();
 
-  // 与 PR #48 的 openExternalUrl 主路径互补：若 preload 未注入而回退到 window.open，
-  // Electron 会新开 BrowserWindow；拦截 Google OAuth 域名并强制系统浏览器打开。
+  // 与 PR #48 的 openExternalUrl 主路径互补：若回退到 window.open，Electron 会新开 BrowserWindow。
+  // Google 域名 + 本机 /oauth/google/*（回调、Drive 桥接）一律用系统浏览器，便于走系统代理/VPN。
   mainWindow.webContents.setWindowOpenHandler((details) => {
     try {
-      const host = new URL(details.url).hostname.toLowerCase();
+      const url = new URL(details.url);
+      const host = url.hostname.toLowerCase();
       if (host === 'accounts.google.com' || host === 'oauth2.googleapis.com') {
+        void shell.openExternal(details.url);
+        return { action: 'deny' };
+      }
+      const loopback =
+        host === '127.0.0.1' || host === 'localhost' || host === '[::1]';
+      if (loopback && url.pathname.includes('/oauth/google/')) {
         void shell.openExternal(details.url);
         return { action: 'deny' };
       }
@@ -358,7 +364,9 @@ app.whenReady().then(async () => {
     }
 
     setTimeout(() => {
-      checkCliHealth(serverPort).catch(() => {});
+      void import('./cli-check')
+        .then((m) => m.checkCliHealth(serverPort))
+        .catch(() => {});
     }, 3000);
 
   } catch (err) {
