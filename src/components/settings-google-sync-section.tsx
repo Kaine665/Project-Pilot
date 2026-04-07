@@ -103,11 +103,11 @@ export function SettingsGoogleSyncSection({
 
       setFlash({ type: 'ok', text: t('googleSyncOpenBrowserHint') });
 
-      // Poll /status until login is detected (works for both Electron and web).
-      // The callback now shows a "done" page instead of redirecting to frontend,
-      // so the original page needs to detect the login itself.
+      // Start polling to detect login completion.
       const pollStarted = Date.now();
       const pollTtlMs = 5 * 60 * 1000;
+      const pollId = j.pollId; // only set when desktop=1 (Electron flow)
+
       oauthPollRef.current = setInterval(async () => {
         try {
           if (Date.now() - pollStarted > pollTtlMs) {
@@ -115,17 +115,39 @@ export function SettingsGoogleSyncSection({
             setFlash({ type: 'err', text: t('googleSyncError') });
             return;
           }
-          const sr = await fetch(apiUrl('/api/auth/google/status'), { credentials: 'include' });
-          const sj = (await sr.json()) as { signedIn?: boolean; email?: string | null };
-          if (!sj.signedIn) return; // still waiting
-          clearOauthPoll();
-          setSignedIn(true);
-          setEmail(sj.email ?? null);
-          setStatusLoading(false);
-          setFlash({ type: 'ok', text: t('googleSyncSuccessConnected') });
-          // Electron: bring window to front
-          void window.electron?.focusMainWindow?.();
-          onDesktopOAuthConnected?.();
+
+          if (electronFlow && pollId) {
+            // Electron: Cookie lives in system browser, not here.
+            // Poll /electron-poll to claim the token; backend will Set-Cookie on this response.
+            const pr = await fetch(
+              apiUrl(`/api/auth/google/electron-poll?pollId=${encodeURIComponent(pollId)}`),
+              { credentials: 'include' },
+            );
+            const pj = (await pr.json()) as { ok?: boolean; pending?: boolean; error?: string };
+            if (pj.pending) return; // still waiting
+            if (!pr.ok || pj.ok === false) {
+              clearOauthPoll();
+              setFlash({ type: 'err', text: t('googleSyncError') });
+              return;
+            }
+            // Token claimed, cookie set — refresh UI
+            clearOauthPoll();
+            await refreshStatus();
+            setFlash({ type: 'ok', text: t('googleSyncSuccessConnected') });
+            void window.electron?.focusMainWindow?.();
+            onDesktopOAuthConnected?.();
+          } else {
+            // Web: Cookie was set on the callback (same browser), just check /status
+            const sr = await fetch(apiUrl('/api/auth/google/status'), { credentials: 'include' });
+            const sj = (await sr.json()) as { signedIn?: boolean; email?: string | null };
+            if (!sj.signedIn) return; // still waiting
+            clearOauthPoll();
+            setSignedIn(true);
+            setEmail(sj.email ?? null);
+            setStatusLoading(false);
+            setFlash({ type: 'ok', text: t('googleSyncSuccessConnected') });
+            onDesktopOAuthConnected?.();
+          }
         } catch {
           // Network hiccup — keep polling, don't bail
         }
