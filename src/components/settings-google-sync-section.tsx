@@ -1,9 +1,20 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Cloud, Loader2, LogOut, Download, Upload } from 'lucide-react';
 import { apiUrl } from '@/lib/api-base';
+import {
+  generatePKCE,
+  generateState,
+  buildGoogleAuthUrl,
+  savePending,
+  getRefreshToken,
+  saveRefreshToken,
+  clearRefreshToken,
+  refreshAccessToken,
+} from '@/lib/google-oauth-browser';
+import { pullFromDrive, pushToDrive } from '@/lib/google-drive-browser';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TranslationFn = (key: string, params?: any) => string;
@@ -17,7 +28,6 @@ interface Props {
   connectedBanner?: boolean;
   onDismissConnectedBanner?: () => void;
   onAfterPull?: () => void;
-  /** Electron：浏览器 OAuth 完成后轮询领到 Cookie 时回调（横幅、刷新设置等） */
   onDesktopOAuthConnected?: () => void;
 }
 
@@ -29,23 +39,12 @@ export function SettingsGoogleSyncSection({
   connectedBanner,
   onDismissConnectedBanner,
   onAfterPull,
-  onDesktopOAuthConnected,
 }: Props) {
   const [statusLoading, setStatusLoading] = useState(true);
   const [signedIn, setSignedIn] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
   const [flash, setFlash] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [busy, setBusy] = useState<'pull' | 'push' | 'out' | null>(null);
-  const oauthPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const clearOauthPoll = useCallback(() => {
-    if (oauthPollRef.current) {
-      clearInterval(oauthPollRef.current);
-      oauthPollRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => () => clearOauthPoll(), [clearOauthPoll]);
 
   const refreshStatus = useCallback(async () => {
     setStatusLoading(true);
@@ -54,6 +53,24 @@ export function SettingsGoogleSyncSection({
       const j = (await res.json()) as { signedIn?: boolean; email?: string | null };
       setSignedIn(!!j.signedIn);
       setEmail(j.email ?? null);
+
+      // Migration: if signed in via session cookie but no refresh token in localStorage,
+      // fetch it from backend disk storage.
+      if (j.signedIn && !getRefreshToken()) {
+        try {
+          const exportRes = await fetch(apiUrl('/api/auth/google/export-refresh-token'), {
+            credentials: 'include',
+          });
+          if (exportRes.ok) {
+            const exportJ = (await exportRes.json()) as { ok?: boolean; refresh_token?: string };
+            if (exportJ.refresh_token) {
+              saveRefreshToken(exportJ.refresh_token);
+            }
+          }
+        } catch {
+          // Non-fatal
+        }
+      }
     } catch {
       setSignedIn(false);
       setEmail(null);
@@ -67,84 +84,51 @@ export function SettingsGoogleSyncSection({
   }, [refreshStatus]);
 
   const startLogin = async () => {
-    const rp = encodeURIComponent(oauthReturnPath);
-    const startHref = apiUrl(`/api/auth/google/start?returnPath=${rp}`);
-
-    // Always open Google OAuth in system browser (even in web mode).
-    // Electron WebView is rejected by Google (disallowed_useragent),
-    // and in-page redirect from :4000 → :4500 → Google can lose cookies.
-    // Fetch the auth URL from backend, then open it externally.
     setFlash(null);
-    clearOauthPoll();
     try {
-      const electronFlow =
-        typeof window !== 'undefined' && typeof window.electron?.openExternalUrl === 'function';
-      const q = electronFlow ? 'json=1&desktop=1' : 'json=1';
-      const res = await fetch(`${startHref}${startHref.includes('?') ? '&' : '?'}${q}`);
-      const j = (await res.json()) as { ok?: boolean; url?: string; pollId?: string; error?: string };
-      if (!res.ok || !j.ok || !j.url) {
-        setFlash({
-          type: 'err',
-          text: j.error || t('googleSyncError'),
-        });
-        return;
-      }
+      const { codeVerifier, codeChallenge } = await generatePKCE();
+      const state = generateState();
 
-      if (electronFlow) {
-        const opened = await window.electron!.openExternalUrl(j.url);
+      savePending({ codeVerifier, state, returnPath: oauthReturnPath });
+
+      const authUrl = buildGoogleAuthUrl({ state, codeChallenge });
+
+      // Open in system browser (Electron) or new tab (web)
+      if (typeof window !== 'undefined' && typeof window.electron?.openExternalUrl === 'function') {
+        const opened = await window.electron.openExternalUrl(authUrl);
         if (opened?.error) {
           setFlash({ type: 'err', text: opened.error });
           return;
         }
-        const pollId = j.pollId;
-        if (pollId) {
-          setFlash({ type: 'ok', text: t('googleSyncOpenBrowserHint') });
-          const pollStarted = Date.now();
-          const pollTtlMs = 5 * 60 * 1000;
-          oauthPollRef.current = setInterval(async () => {
-            try {
-              if (Date.now() - pollStarted > pollTtlMs) {
-                clearOauthPoll();
-                setFlash({ type: 'err', text: t('googleSyncError') });
-                return;
-              }
-              const pr = await fetch(
-                apiUrl(`/api/auth/google/electron-poll?pollId=${encodeURIComponent(pollId)}`),
-                { credentials: 'include' },
-              );
-              const pj = (await pr.json()) as { ok?: boolean; pending?: boolean; error?: string };
-              if (!pr.ok || pj.ok === false) {
-                clearOauthPoll();
-                setFlash({ type: 'err', text: t('googleSyncError') });
-                return;
-              }
-              if (pj.pending) return;
-              clearOauthPoll();
-              await refreshStatus();
-              setFlash({ type: 'ok', text: t('googleSyncSuccessConnected') });
-              void window.electron?.focusMainWindow?.();
-              void window.electronAPI?.showNotification?.({
-                title: t('googleSyncOAuthDoneTitle'),
-                body: t('googleSyncOAuthDoneBody'),
-                tag: 'pp-google-oauth',
-                focusAppOnClick: true,
-                requireInteraction: false,
-              });
-              onDesktopOAuthConnected?.();
-            } catch {
-              clearOauthPoll();
-              setFlash({ type: 'err', text: t('googleSyncError') });
-            }
-          }, 1000);
-        } else {
-          setFlash({ type: 'ok', text: t('googleSyncOpenBrowserHint') });
-        }
-      } else {
-        window.open(j.url, '_blank', 'noopener');
         setFlash({ type: 'ok', text: t('googleSyncOpenBrowserHint') });
+
+        // Electron: callback lands in system browser, not here.
+        // Poll /status until the callback page completes and sets the session cookie.
+        const pollStart = Date.now();
+        const interval = setInterval(async () => {
+          if (Date.now() - pollStart > 5 * 60 * 1000) {
+            clearInterval(interval);
+            setFlash({ type: 'err', text: t('googleSyncError') });
+            return;
+          }
+          try {
+            const sr = await fetch(apiUrl('/api/auth/google/status'), { credentials: 'include' });
+            const sj = (await sr.json()) as { signedIn?: boolean; email?: string | null };
+            if (!sj.signedIn) return;
+            clearInterval(interval);
+            setSignedIn(true);
+            setEmail(sj.email ?? null);
+            setStatusLoading(false);
+            setFlash({ type: 'ok', text: t('googleSyncSuccessConnected') });
+            void window.electron?.focusMainWindow?.();
+          } catch { /* keep polling */ }
+        }, 2000);
+      } else {
+        // Web: redirect in same tab. The callback page will redirect back here.
+        window.location.href = authUrl;
       }
-    } catch {
-      setFlash({ type: 'err', text: t('googleSyncError') });
+    } catch (err) {
+      setFlash({ type: 'err', text: err instanceof Error ? err.message : t('googleSyncError') });
     }
   };
 
@@ -152,23 +136,31 @@ export function SettingsGoogleSyncSection({
     setBusy('pull');
     setFlash(null);
     try {
-      const res = await fetch(apiUrl('/api/auth/google/sync-pull'), {
-        method: 'POST',
-        credentials: 'include',
-      });
-      const j = (await res.json()) as { ok?: boolean; error?: string; merged?: boolean; message?: string };
-      if (!res.ok) {
-        setFlash({ type: 'err', text: j.error || t('googleSyncError') });
+      const rt = getRefreshToken();
+      if (!rt) {
+        setFlash({ type: 'err', text: 'No refresh token. Please re-login.' });
         return;
       }
-      if (j.merged) {
-        setFlash({ type: 'ok', text: t('googleSyncSuccessPull') });
-        onAfterPull?.();
-      } else {
+      const accessToken = await refreshAccessToken(rt);
+      const blob = await pullFromDrive(accessToken);
+      if (!blob) {
         setFlash({ type: 'ok', text: t('googleSyncNoRemote') });
+        return;
       }
-    } catch {
-      setFlash({ type: 'err', text: t('googleSyncError') });
+      const mergeRes = await fetch(apiUrl('/api/auth/google/sync-merge'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ blob }),
+      });
+      if (!mergeRes.ok) {
+        setFlash({ type: 'err', text: t('googleSyncError') });
+        return;
+      }
+      setFlash({ type: 'ok', text: t('googleSyncSuccessPull') });
+      onAfterPull?.();
+    } catch (err) {
+      setFlash({ type: 'err', text: err instanceof Error ? err.message : t('googleSyncError') });
     } finally {
       setBusy(null);
     }
@@ -178,18 +170,26 @@ export function SettingsGoogleSyncSection({
     setBusy('push');
     setFlash(null);
     try {
-      const res = await fetch(apiUrl('/api/auth/google/sync-push'), {
-        method: 'POST',
-        credentials: 'include',
-      });
-      const j = (await res.json()) as { ok?: boolean; error?: string };
-      if (!res.ok) {
-        setFlash({ type: 'err', text: j.error || t('googleSyncError') });
+      const rt = getRefreshToken();
+      if (!rt) {
+        setFlash({ type: 'err', text: 'No refresh token. Please re-login.' });
         return;
       }
+      // Get local blob from backend
+      const blobRes = await fetch(apiUrl('/api/auth/google/sync-get-blob'), {
+        credentials: 'include',
+      });
+      if (!blobRes.ok) {
+        setFlash({ type: 'err', text: t('googleSyncError') });
+        return;
+      }
+      const { blob } = await blobRes.json();
+
+      const accessToken = await refreshAccessToken(rt);
+      await pushToDrive(accessToken, blob);
       setFlash({ type: 'ok', text: t('googleSyncSuccessPush') });
-    } catch {
-      setFlash({ type: 'err', text: t('googleSyncError') });
+    } catch (err) {
+      setFlash({ type: 'err', text: err instanceof Error ? err.message : t('googleSyncError') });
     } finally {
       setBusy(null);
     }
@@ -200,6 +200,7 @@ export function SettingsGoogleSyncSection({
     setFlash(null);
     try {
       await fetch(apiUrl('/api/auth/google/logout'), { method: 'POST', credentials: 'include' });
+      clearRefreshToken();
       setSignedIn(false);
       setEmail(null);
       setFlash({ type: 'ok', text: t('googleSyncLoggedOut') });
