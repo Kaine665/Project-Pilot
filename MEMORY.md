@@ -45,6 +45,7 @@
 ## 数据存储
 
 - 数据布局：本机 `~/.project-pilot/README.md` + **`数据文件夹现状.md`**；仓库内与代码对齐的索引 **[`docs/data-storage.md`](docs/data-storage.md)**（`file-store` 默认 **`~/.project-pilot`**，不再默认 `~/.project-pilot/data/`）。对齐 2026-04-03
+- **（产品方向）Google 账号 / 云端同步**：若做登录与云同步，应 **按数据类别让用户勾选**；**推荐唯一默认值得开的云能力**是 **各 AI 供应商 API Key / `providerCredentials`**（见 **[`docs/design/google-account-cloud-sync-scope.md`](docs/design/google-account-cloud-sync-scope.md)**），会话、项目、文档、Agent 注册表等默认仍仅本机。**本机多账号目录隔离** 的代码参考 **GitHub PR #39**（OAuth + `accounts/<sub>/` + `file-store` 请求域），与「可选上云」正交
 - **Agents 工作区 UI**：`config/agents-workspace-ui.json` 按项目保存已打开会话标签、当前面板与 **`lastFocusByAgent`**；`GET/PUT /api/data/agents-workspace-ui` 会校验 **projectKey**（格式 + 未归档项目存在）、**agentId** 在注册表、**sessionId** 在会话索引且 **agentId / projectKey** 与桶一致，并去重；实现见 `lib/agents-workspace-ui-sanitize.ts`
 - 可通过 `PROJECT_PILOT_DATA_DIR` 环境变量自定义
 - JSON 文件读写有 50MB 大小限制

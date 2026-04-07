@@ -31,6 +31,7 @@ import schedulesRoutes from './routes/schedules';
 import eventTriggersRoutes from './routes/event-triggers';
 import communityRoutes from './routes/community';
 import agentInboxRoutes from './routes/agent-inbox';
+import googleAuthRoutes from './routes/google-auth';
 
 import { ensureDataDirV2Migrated } from '@/lib/file-store';
 import { ensureGlobalAgentsMigratedToPresets } from '@/lib/migrations/migrate-global-agents-to-presets';
@@ -40,9 +41,39 @@ import { initInboxRouting } from '@/lib/inbox-manager';
 
 const app = new Hono();
 
+function loadCorsAllowedOrigins(): Set<string> {
+  const fromEnv =
+    process.env.PP_ALLOWED_ORIGINS?.split(',')
+      .map((s) => s.trim())
+      .filter(Boolean) ?? [];
+  const defaults = [
+    'http://127.0.0.1:4000',
+    'http://localhost:4000',
+    'http://127.0.0.1:5173',
+    'http://localhost:5173',
+  ];
+  const fe = process.env.PP_FRONTEND_ORIGIN?.trim().replace(/\/$/, '');
+  const set = new Set<string>([...defaults, ...fromEnv]);
+  if (fe) set.add(fe);
+  return set;
+}
+
+const corsAllowedOrigins = loadCorsAllowedOrigins();
+
 // --- Middleware ---
 app.use('*', logger());
-app.use('/api/*', cors({ origin: '*' }));
+app.use(
+  '/api/*',
+  cors({
+    origin: (origin) => {
+      if (!origin) return '*';
+      return corsAllowedOrigins.has(origin) ? origin : null;
+    },
+    credentials: true,
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization'],
+  }),
+);
 app.use('/api/*', errorHandler);
 
 // --- Health check ---
@@ -68,6 +99,7 @@ app.route('/api/schedules', schedulesRoutes);
 app.route('/api/event-triggers', eventTriggersRoutes);
 app.route('/api/community', communityRoutes);
 app.route('/api/agent-inbox', agentInboxRoutes);
+app.route('/api/auth/google', googleAuthRoutes);
 
 // --- Static file serving (production) ---
 const clientDistPath = path.resolve(__dirname, '../../dist/client');

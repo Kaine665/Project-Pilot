@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslations, useLocale } from '@/client/i18n/use-translations';
 import { useRouter, usePathname } from '@/client/i18n/routing';
-import { Loader2, Brain, Wrench, Palette, Database, Eye, Settings, ShieldAlert, Sparkles, Satellite } from 'lucide-react';
+import { useSearchParams, useLocation } from 'react-router';
+import { Loader2, Brain, Wrench, Palette, Database, Eye, Settings, ShieldAlert, Sparkles, Satellite, Cloud } from 'lucide-react';
 import { getProviderPreset, PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import { providerSupportsOAuthUi } from '@/lib/ai-auth-ui';
 import { useTheme } from '@/components/theme-provider';
@@ -18,6 +19,7 @@ import {
   SettingsSafetySection,
   SettingsTitleGenerationSection,
 } from '@/components/settings-sections';
+import { SettingsGoogleSyncSection } from '@/components/settings-google-sync-section';
 import {
   DEFAULT_OPENAI_REASONING_EFFORT,
   isOpenAIReasoningEffort,
@@ -77,6 +79,15 @@ export default function SettingsPage() {
   const locale = useLocale();
   const router = useRouter();
   const pathname = usePathname();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { pathname: locationPathname } = useLocation();
+  const searchParamsStr = searchParams.toString();
+  const googleOAuthReturnPath = useMemo(() => {
+    const sp = new URLSearchParams(searchParamsStr);
+    sp.set('section', 'googleSync');
+    const q = sp.toString();
+    return q ? `${locationPathname}?${q}` : `${locationPathname}?section=googleSync`;
+  }, [locationPathname, searchParamsStr]);
   const { theme, setTheme } = useTheme();
 
   // Form state — per-provider maps
@@ -127,6 +138,7 @@ export default function SettingsPage() {
 
   // UI state
   const [activeSection, setActiveSection] = useState('ai');
+  const [googleConnectedBanner, setGoogleConnectedBanner] = useState(false);
   const [loading, setLoading] = useState(true);
   /** 首次从服务端拉取完成后延迟打开，避免用初始 state 误触发一次写入 */
   const [readyForAutosave, setReadyForAutosave] = useState(false);
@@ -219,9 +231,10 @@ export default function SettingsPage() {
   }, [provider, customProviders, providerModelLibrary, model, openaiModels]);
 
   // Load settings on mount
-  const fetchSettings = useCallback(async () => {
+  const fetchSettings = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent === true;
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const res = await fetch(apiUrl('/api/settings'));
       if (res.ok) {
         const data = await res.json();
@@ -365,6 +378,12 @@ export default function SettingsPage() {
   useEffect(() => {
     if (activeSection === 'data') fetchDataInfo();
   }, [activeSection, fetchDataInfo]);
+
+  useEffect(() => {
+    if (googleConnectedBanner) {
+      void fetchSettings({ silent: true });
+    }
+  }, [googleConnectedBanner, fetchSettings]);
 
   const refreshAggregateModels = useCallback(async () => {
     setAggregateLiveStatus('loading');
@@ -626,9 +645,24 @@ export default function SettingsPage() {
     { id: 'developer', icon: Satellite, label: t('developerTools') },
     { id: 'titleGeneration', icon: Sparkles, label: t('titleGeneration') },
     { id: 'appearance', icon: Palette, label: t('appearance') },
+    { id: 'googleSync', icon: Cloud, label: t('googleSyncNav') },
     { id: 'data', icon: Database, label: t('dataManagement') },
     { id: 'privacy', icon: Eye, label: t('privacy') },
   ], [t]);
+
+  useEffect(() => {
+    const sec = searchParams.get('section');
+    if (sec === 'googleSync') {
+      setActiveSection('googleSync');
+    }
+    if (searchParams.get('google') === 'ok') {
+      setGoogleConnectedBanner(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete('google');
+      next.delete('section');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const handleProviderChange = (newProvider: ProviderId) => {
     // Save current model to per-provider map before switching
@@ -1054,6 +1088,18 @@ export default function SettingsPage() {
                 t={t} tActions={tActions} btnActive={btnActive} btnInactive={btnInactive}
                 theme={theme} locale={locale}
                 onThemeChange={setTheme} onLocaleChange={switchLocale}
+              />
+            )}
+
+            {activeSection === 'googleSync' && (
+              <SettingsGoogleSyncSection
+                t={t}
+                btnActive={btnActive}
+                btnInactive={btnInactive}
+                oauthReturnPath={googleOAuthReturnPath}
+                connectedBanner={googleConnectedBanner}
+                onDismissConnectedBanner={() => setGoogleConnectedBanner(false)}
+                onAfterPull={() => { void fetchSettings({ silent: true }); }}
               />
             )}
 

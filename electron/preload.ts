@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld('electron', {
   /** 将渲染进程 <input type="file"> 选中的 File 转为绝对路径（Electron ≥22，用于 webkitdirectory 选文件夹） */
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   openFile: (path: string) => ipcRenderer.invoke('open-file', path),
+  /** 系统浏览器打开链接（OAuth 等） */
+  openExternalUrl: (url: string) =>
+    ipcRenderer.invoke('open-external-url', url) as Promise<{ ok?: true; error?: string }>,
 });
 
 contextBridge.exposeInMainWorld('electronAPI', {
