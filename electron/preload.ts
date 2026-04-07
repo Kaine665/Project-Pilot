@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('electron', {
   /** 系统浏览器打开链接（OAuth 等） */
   openExternalUrl: (url: string) =>
     ipcRenderer.invoke('open-external-url', url) as Promise<{ ok?: true; error?: string }>,
+  /** OAuth 完成后把焦点拉回主窗口 */
+  focusMainWindow: () => ipcRenderer.invoke('focus-main-window') as Promise<void>,
 });
 
 contextBridge.exposeInMainWorld('electronAPI', {
