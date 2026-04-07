@@ -67,6 +67,23 @@ ipcMain.handle('open-folder-dialog', async (event) => {
   return result.filePaths[0];
 });
 
+// ── IPC: 在系统默认浏览器中打开 URL（Google OAuth 等，避免内嵌 WebView 被策略拦截）──
+ipcMain.handle('open-external-url', async (_event, targetUrl: string) => {
+  if (!targetUrl || typeof targetUrl !== 'string') {
+    return { error: 'Invalid url' };
+  }
+  const u = targetUrl.trim();
+  if (!/^https?:\/\//i.test(u)) {
+    return { error: 'Only http(s) URLs are allowed' };
+  }
+  try {
+    await shell.openExternal(u);
+    return { ok: true as const };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+});
+
 // ── IPC: 用系统默认应用打开文件 ──
 ipcMain.handle('open-file', async (_event, filePath: string) => {
   if (!filePath || typeof filePath !== 'string') return { error: 'Invalid path' };

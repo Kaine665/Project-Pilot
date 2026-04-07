@@ -110,6 +110,11 @@ export function getDataDir(): string {
   return DATA_DIR;
 }
 
+/** Google OAuth refresh token 等（按 Google `sub` 分文件），见 docs/data-storage.md */
+export function getGoogleOAuthDir(): string {
+  return path.join(DATA_DIR, '.google-oauth');
+}
+
 /** 旧版扁平 projects.json（仅迁移读取） */
 export function getProjectsPath(): string {
   return path.join(DATA_DIR, 'projects.json');

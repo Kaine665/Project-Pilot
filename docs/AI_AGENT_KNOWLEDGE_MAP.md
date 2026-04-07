@@ -34,6 +34,7 @@
 | 统一文档（设计 + 知识） | [`context-system.md`](./context-system.md) |
 | Git 分支策略与 GitHub 权限（维护者） | [`github-branch-policy.md`](./github-branch-policy.md) |
 | 社区市场（LobeHub 对标 OKR + 契约） | [`community-marketplace-lobechat-okr.md`](./community-marketplace-lobechat-okr.md) |
+| Google 账号与云端同步范围（产品方向；代码参考 **PR #39**） | [`design/google-account-cloud-sync-scope.md`](./design/google-account-cloud-sync-scope.md) |
 | 产品说明与快速开始 | [`../README.md`](../README.md) |
 
 ## 变更时同步检查清单
@@ -101,5 +102,7 @@
 | 2026-04-05 | **删除 SimpleAnthropicRunner**：527438b 引入的裸 Messages Runner 意外成为 MiniMax/DeepSeek/Kimi 等的默认路径（无 tool_use），导致第三方供应商工具调用全部失效。恢复为全量走 ClaudeAgentRunner | `agent-runner.ts`、`chat-notification-banners.tsx`、`docs/agent-chat-architecture.md`、`MEMORY.md`、本文件 |
 | 2026-04-05 | **Agent 运行预设**：`config/agent-presets.json` + `ProjectEntry.defaultPresetId`；API `GET/POST/PATCH/DELETE /api/data/agent-presets`；独立页 `/workspace/presets`（侧栏图标）；项目设置链至预设页；新建 Agent 可合并项目默认预设 | `types/index.ts`、`file-store.ts`、`agent-presets-store.ts`、`routes/data.ts`、`agent-form.tsx`、`components/agent-presets/*`、`project-settings.tsx`、`flows/agents/page.tsx`、`flows/presets/page.tsx`、`workspace-shell.tsx`、`App.tsx`、`messages/zh.json` & `en.json`、`data-storage.md`、`builtin-prompts.ts`、本文件 |
 | 2026-04-05 | **社区市场 P0**：LobeHub 类「发现 → 安装」调研与 OKR 文档；`GET /api/community/catalog` + 种子目录；`/workspace/community` + 侧栏入口；一键写入运行预设 | `docs/community-marketplace-lobechat-okr.md`、`src/data/community-catalog-seed.json`、`server/routes/community.ts`、`server/index.ts`、`components/community/*`、`flows/community/page.tsx`、`App.tsx`、`workspace-sidebar-rail.tsx`、`messages/zh.json` & `en.json`、本文件 |
+| 2026-04-06 | **Google 账号与云同步**：用户**按类选择**云端管理范围；**推荐最小云子集**仅为 **AI 供应商凭据**（与 `unified-credential-store` 对齐），会话/项目/文档等默认不上云 | `docs/design/google-account-cloud-sync-scope.md`、`docs/design/README.md`、`MEMORY.md`、本文件 |
+| 2026-04-06 | **PR #39 纳入设计参考**：Google OAuth + 本机 `accounts/<sub>/` 数据根、`file-store` AsyncLocalStorage、设置页登录与 `apiFetch` credentials；与「凭据可选上云」正交，见 `google-account-cloud-sync-scope.md` §「参考实现：PR #39」 | `docs/design/google-account-cloud-sync-scope.md`、本文件 |
 
 （后续变更请继续追加表格行，勿删历史。）
