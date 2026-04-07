@@ -466,13 +466,9 @@ googleAuth.get('/callback', async (c) => {
       maxAge: SESSION_MAX_AGE_SEC,
     });
 
-    const base =
-      process.env.PP_FRONTEND_ORIGIN?.trim().replace(/\/$/, '') || 'http://127.0.0.1:4000';
-    const pathWithQuery = pending.returnPath.startsWith('/') ? pending.returnPath : `/${pending.returnPath}`;
-    const sep = pathWithQuery.includes('?') ? '&' : '?';
-    const suffix = `${sep}google=ok`;
-    const target = `${base}${pathWithQuery}${suffix}`;
-    return c.redirect(target, 302);
+    // 不再跳转到前端页面；显示"登录成功，可关闭此页"。
+    // 原页面（Electron 或浏览器标签）通过轮询 /status 自动感知登录。
+    return c.redirect('/api/auth/google/browser-done', 302);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     const cause =
@@ -506,6 +502,20 @@ googleAuth.get('/desktop-done', (c) => {
       setTimeout(go, 1200);
     })();
   </script>
+</body></html>`;
+  return c.html(html);
+});
+
+googleAuth.get('/browser-done', (c) => {
+  const html = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Google — ProjectPilot</title></head>
+<body style="font-family:system-ui,sans-serif;max-width:36rem;margin:3rem auto;padding:0 1rem;line-height:1.5;text-align:center">
+  <p style="font-size:2rem;margin-top:3rem">✅</p>
+  <p><strong>Google 登录成功</strong></p>
+  <p style="color:#666">请回到 ProjectPilot 窗口，登录状态会自动刷新。</p>
+  <p style="color:#999;font-size:0.85rem;margin-top:2rem">此页面可以关闭。</p>
+  <script>setTimeout(function(){ try { window.close(); } catch(e) {} }, 2000);</script>
 </body></html>`;
   return c.html(html);
 });

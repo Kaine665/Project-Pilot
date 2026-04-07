@@ -90,59 +90,46 @@ export function SettingsGoogleSyncSection({
         return;
       }
 
+      // Open in system browser (Electron) or new tab (web)
       if (electronFlow) {
         const opened = await window.electron!.openExternalUrl(j.url);
         if (opened?.error) {
           setFlash({ type: 'err', text: opened.error });
           return;
         }
-        const pollId = j.pollId;
-        if (pollId) {
-          setFlash({ type: 'ok', text: t('googleSyncOpenBrowserHint') });
-          const pollStarted = Date.now();
-          const pollTtlMs = 5 * 60 * 1000;
-          oauthPollRef.current = setInterval(async () => {
-            try {
-              if (Date.now() - pollStarted > pollTtlMs) {
-                clearOauthPoll();
-                setFlash({ type: 'err', text: t('googleSyncError') });
-                return;
-              }
-              const pr = await fetch(
-                apiUrl(`/api/auth/google/electron-poll?pollId=${encodeURIComponent(pollId)}`),
-                { credentials: 'include' },
-              );
-              const pj = (await pr.json()) as { ok?: boolean; pending?: boolean; error?: string };
-              if (!pr.ok || pj.ok === false) {
-                clearOauthPoll();
-                setFlash({ type: 'err', text: t('googleSyncError') });
-                return;
-              }
-              if (pj.pending) return;
-              clearOauthPoll();
-              await refreshStatus();
-              setFlash({ type: 'ok', text: t('googleSyncSuccessConnected') });
-              void window.electron?.focusMainWindow?.();
-              void window.electronAPI?.showNotification?.({
-                title: t('googleSyncOAuthDoneTitle'),
-                body: t('googleSyncOAuthDoneBody'),
-                tag: 'pp-google-oauth',
-                focusAppOnClick: true,
-                requireInteraction: false,
-              });
-              onDesktopOAuthConnected?.();
-            } catch {
-              clearOauthPoll();
-              setFlash({ type: 'err', text: t('googleSyncError') });
-            }
-          }, 1000);
-        } else {
-          setFlash({ type: 'ok', text: t('googleSyncOpenBrowserHint') });
-        }
       } else {
         window.open(j.url, '_blank', 'noopener');
-        setFlash({ type: 'ok', text: t('googleSyncOpenBrowserHint') });
       }
+
+      setFlash({ type: 'ok', text: t('googleSyncOpenBrowserHint') });
+
+      // Poll /status until login is detected (works for both Electron and web).
+      // The callback now shows a "done" page instead of redirecting to frontend,
+      // so the original page needs to detect the login itself.
+      const pollStarted = Date.now();
+      const pollTtlMs = 5 * 60 * 1000;
+      oauthPollRef.current = setInterval(async () => {
+        try {
+          if (Date.now() - pollStarted > pollTtlMs) {
+            clearOauthPoll();
+            setFlash({ type: 'err', text: t('googleSyncError') });
+            return;
+          }
+          const sr = await fetch(apiUrl('/api/auth/google/status'), { credentials: 'include' });
+          const sj = (await sr.json()) as { signedIn?: boolean; email?: string | null };
+          if (!sj.signedIn) return; // still waiting
+          clearOauthPoll();
+          setSignedIn(true);
+          setEmail(sj.email ?? null);
+          setStatusLoading(false);
+          setFlash({ type: 'ok', text: t('googleSyncSuccessConnected') });
+          // Electron: bring window to front
+          void window.electron?.focusMainWindow?.();
+          onDesktopOAuthConnected?.();
+        } catch {
+          // Network hiccup — keep polling, don't bail
+        }
+      }, 1500);
     } catch {
       setFlash({ type: 'err', text: t('googleSyncError') });
     }
