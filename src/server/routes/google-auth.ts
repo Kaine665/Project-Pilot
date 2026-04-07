@@ -42,10 +42,16 @@ function cleanupPending(): void {
   }
 }
 
-function getGoogleClientConfig(): { clientId: string; clientSecret: string } | null {
-  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
-  if (!clientId || !clientSecret) return null;
+// Built-in Google OAuth credentials for ProjectPilot.
+// End users don't need to configure these. Self-hosted deployments can
+// override via env vars if they want to use their own Google Cloud project.
+const BUILTIN_GOOGLE_CLIENT_ID =
+  '469599503504-dmhuho50val4lgtb7kslhg524e29vq5d.apps.googleusercontent.com';
+const BUILTIN_GOOGLE_CLIENT_SECRET = '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';
+
+function getGoogleClientConfig(): { clientId: string; clientSecret: string } {
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim() || BUILTIN_GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim() || BUILTIN_GOOGLE_CLIENT_SECRET;
   return { clientId, clientSecret };
 }
 
@@ -217,9 +223,6 @@ const googleAuth = new Hono();
 
 googleAuth.get('/start', (c) => {
   const cfg = getGoogleClientConfig();
-  if (!cfg) {
-    return c.json({ ok: false, error: 'Google OAuth is not configured (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET).' }, 503);
-  }
   cleanupPending();
   const returnPath = sanitizeReturnPath(c.req.query('returnPath'), '/workspace/settings?section=googleSync');
   const codeVerifier = crypto.randomBytes(32).toString('base64url');
@@ -248,9 +251,6 @@ googleAuth.get('/start', (c) => {
 
 googleAuth.get('/callback', async (c) => {
   const cfg = getGoogleClientConfig();
-  if (!cfg) {
-    return c.text('Google OAuth not configured', 503);
-  }
   const code = c.req.query('code');
   const state = c.req.query('state');
   const err = c.req.query('error');
@@ -341,9 +341,6 @@ googleAuth.get('/status', (c) => {
 
 googleAuth.post('/sync-pull', async (c) => {
   const cfg = getGoogleClientConfig();
-  if (!cfg) {
-    return c.json({ ok: false, error: 'not_configured' }, 503);
-  }
   const raw = getCookie(c, SESSION_COOKIE);
   const sess = raw ? verifySession(raw) : null;
   if (!sess) {
@@ -367,9 +364,6 @@ googleAuth.post('/sync-pull', async (c) => {
 
 googleAuth.post('/sync-push', async (c) => {
   const cfg = getGoogleClientConfig();
-  if (!cfg) {
-    return c.json({ ok: false, error: 'not_configured' }, 503);
-  }
   const raw = getCookie(c, SESSION_COOKIE);
   const sess = raw ? verifySession(raw) : null;
   if (!sess) {
