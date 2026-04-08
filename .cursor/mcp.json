@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "project-pilot": {
+      "command": "npx",
+      "args": ["tsx", "mcp-server/index.ts"]
+    }
+  }
+}
