@@ -573,6 +573,102 @@ export async function setArchived(sessionId: string, archived: boolean): Promise
   return found;
 }
 
+export async function setSessionPinned(sessionId: string, pinned: boolean): Promise<boolean> {
+  let found = false;
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (data) => {
+      const session = data.sessions.find((s) => s.id === sessionId);
+      if (session) {
+        session.pinned = pinned || undefined;
+        session.updatedAt = new Date().toISOString();
+        found = true;
+      }
+      return data;
+    },
+  );
+  invalidateIndexCache();
+  return found;
+}
+
+export async function renameSessionTitle(sessionId: string, title: string): Promise<boolean> {
+  const trimmed = title.trim();
+  if (!trimmed || trimmed.length > 500) return false;
+  let found = false;
+  const now = new Date().toISOString();
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (data) => {
+      const session = data.sessions.find((s) => s.id === sessionId);
+      if (session) {
+        session.title = trimmed;
+        session.updatedAt = now;
+        found = true;
+      }
+      return data;
+    },
+  );
+  invalidateIndexCache();
+  return found;
+}
+
+export async function bumpSessionUnread(sessionId: string): Promise<boolean> {
+  let found = false;
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (data) => {
+      const session = data.sessions.find((s) => s.id === sessionId);
+      if (session) {
+        session.unreadCount = Math.max(1, session.unreadCount ?? 0);
+        session.updatedAt = new Date().toISOString();
+        found = true;
+      }
+      return data;
+    },
+  );
+  invalidateIndexCache();
+  return found;
+}
+
+/** 完整复制消息的新会话（侧栏「分叉」） */
+export async function forkChatSession(sourceSessionId: string): Promise<string | null> {
+  const source = await loadSession(sourceSessionId);
+  if (!source) return null;
+
+  const newId = generateSessionId();
+  await writeAllMessages(newId, source.messages);
+  const now = new Date().toISOString();
+  const baseTitle = repairStoredTextIfNeeded(source.title) ?? source.title;
+  const newMeta: SessionMeta = {
+    id: newId,
+    agentId: source.agentId,
+    projectKey: source.projectKey,
+    title: `${baseTitle} (fork)`,
+    createdAt: now,
+    updatedAt: now,
+    config: source.config,
+    unreadCount: 0,
+    messageCount: source.messages.length,
+    sourceType: source.sourceType,
+    sourceId: source.sourceId,
+    todoId: source.todoId,
+  };
+
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (data) => {
+      data.sessions.push(newMeta);
+      return data;
+    },
+  );
+  invalidateIndexCache();
+  return newId;
+}
+
 export async function updateConfigOnDisk(sessionId: string, config: SessionConfig): Promise<boolean> {
   let found = false;
   await modifyJsonFile<AgentChatSessionsData>(
@@ -662,6 +758,8 @@ export async function updateUserMessageContentOnDisk(
   messageIndex: number,
   content: string,
   frontendMessageCount?: number,
+  /** 为 true 时丢弃该用户消息之后的所有消息（编辑后重发场景） */
+  truncateAfter?: boolean,
 ): Promise<'ok' | 'not_found' | 'out_of_range' | 'not_user' | 'empty'> {
   const data = await getIndexData();
   if (!data.sessions.some((session) => session.id === sessionId)) {
@@ -684,6 +782,10 @@ export async function updateUserMessageContentOnDisk(
   target.content = nextContent;
   if (target.contentBlocks?.some((block) => block.type === 'text')) {
     target.contentBlocks = [{ type: 'text', text: nextContent }];
+  }
+
+  if (truncateAfter) {
+    messages.splice(effectiveIndex + 1);
   }
 
   await writeAllMessages(sessionId, messages);

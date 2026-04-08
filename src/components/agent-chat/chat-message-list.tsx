@@ -31,7 +31,6 @@ export interface ChatMessageListProps {
   onCompressOpen: () => void;
   onCompressDismiss: () => void;
   enableUserMessageEdit?: boolean;
-  showUserMessageBranch?: boolean;
   onActionPreview?: (tag: ParsedActionTag) => void;
   onActionReject?: (tag: ParsedActionTag) => void;
   onActionRestore?: (tag: ParsedActionTag) => void;
@@ -57,8 +56,7 @@ export function ChatMessageList({
   onFileClick,
   onCompressOpen,
   onCompressDismiss,
-  enableUserMessageEdit = false,
-  showUserMessageBranch = true,
+  enableUserMessageEdit = true,
   onActionPreview,
   onActionReject,
   onActionRestore,
@@ -105,7 +103,7 @@ export function ChatMessageList({
             onSaveAsKnowledge={onSaveAsKnowledge}
             onDelete={onDelete}
             onRegenerate={onRegenerate}
-            onBranch={msg.role === 'user' && !showUserMessageBranch ? undefined : onBranch}
+            onBranch={msg.role === 'user' ? undefined : onBranch}
             onEdit={msg.role === 'user' && enableUserMessageEdit ? onEdit : undefined}
             isLastAssistant={msg.id === lastAssistantId}
             onRetry={onRetry}

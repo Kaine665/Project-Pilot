@@ -80,6 +80,13 @@ const electronExe = resolveElectronExecutable();
 
 const cfg = loadDevServerConfig(root);
 
+/** Cursor 等环境可能注入 ELECTRON_RUN_AS_NODE=1，子进程会以 Node 模式跑、无 `app`。 */
+function envForElectronChild() {
+  const env = { ...process.env, ELECTRON_DEV: "1" };
+  delete env.ELECTRON_RUN_AS_NODE;
+  return env;
+}
+
 /** 保证 preload/main 与 electron/*.ts 同步，否则改 preload 后未编译会一直加载旧的 dist（选文件夹等 IPC 会失效）。 */
 function compileElectronMain() {
   try {
@@ -122,8 +129,7 @@ async function startDevStackWithElectron() {
     env: devChildEnv,
   });
 
-  const tsxBin = path.join(root, "node_modules", ".bin", "tsx");
-  const server = spawn(tsxBin, ["./src/server/index.ts"], {
+  const server = spawn("bun", [path.join(root, "src", "server", "index.ts")], {
     cwd: root,
     stdio: "inherit",
     env: devChildEnv,
@@ -197,10 +203,7 @@ async function startDevStackWithElectron() {
   const electron = spawn(electronExe, ["."], {
     cwd: root,
     stdio: "inherit",
-    env: {
-      ...process.env,
-      ELECTRON_DEV: "1",
-    },
+    env: envForElectronChild(),
   });
   children.push(electron);
 
@@ -233,7 +236,7 @@ if (reuseExisting) {
   const child = spawn(electronExe, ["."], {
     cwd: root,
     stdio: "inherit",
-    env: { ...process.env, ELECTRON_DEV: "1" },
+    env: envForElectronChild(),
   });
   const forwardSignal = (signal) => {
     if (!child.killed) child.kill(signal);

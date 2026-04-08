@@ -13,6 +13,7 @@ export interface AllSessionItem {
   /** Agent registry updatedAt，用于自定义头像 URL 缓存刷新 */
   agentUpdatedAt?: string;
   unreadCount?: number;
+  pinned?: boolean;
   archived?: boolean;
   projectKey?: string;
   isRunning?: boolean;

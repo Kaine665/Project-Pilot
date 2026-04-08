@@ -623,6 +623,7 @@
     "regenerate": "重新生成",
     "retry": "重试",
     "sendFailed": "发送失败",
+    "editResendNoSession": "无法从编辑重发：尚未创建会话。",
     "confirmDelete": "确认删除",
     "viewPlan": "查看计划",
     "planning": "AI 正在规划...",
@@ -690,6 +691,9 @@
       "sessionsSection": "会话",
       "rowConversationEyebrow": "对话",
       "configureAgent": "配置",
+      "more": "更多",
+      "toggleSidebar": "切换侧栏",
+      "resizeAgentListAria": "拖动调整 Agent 列表宽度",
       "exportPackage": "导出配置包",
       "newConversation": "新开会话",
       "newConversationShort": "新开",
@@ -730,7 +734,16 @@
       "yesterday": "昨天",
       "emptyFiltered": "没有匹配的会话",
       "emptyWithAgent": "还没有和 {agentName} 的连续会话",
-      "emptyHint": "点击右上角的 + 按钮开始新的 Agent 对话。"
+      "emptyHint": "点击右上角的 + 按钮开始新的 Agent 对话。",
+      "contextMenu": {
+        "pin": "置顶",
+        "unpin": "取消置顶",
+        "rename": "重命名",
+        "markAsUnread": "标为未读",
+        "forkChat": "分叉会话",
+        "archive": "归档",
+        "unarchive": "取消归档"
+      }
     },
     "agent": {
       "createButton": "新建 Agent",

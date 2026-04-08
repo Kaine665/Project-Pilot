@@ -622,6 +622,7 @@
     "regenerate": "Regenerate",
     "retry": "Retry",
     "sendFailed": "Send failed",
+    "editResendNoSession": "Cannot resend from edit: no session yet.",
     "confirmDelete": "Confirm Delete",
     "viewPlan": "View Plan",
     "planning": "AI is planning...",
@@ -689,6 +690,9 @@
       "sessionsSection": "Sessions",
       "rowConversationEyebrow": "Conversation",
       "configureAgent": "Configure",
+      "more": "More",
+      "toggleSidebar": "Toggle sidebar",
+      "resizeAgentListAria": "Drag to resize the agent list width",
       "exportPackage": "Export package",
       "newConversation": "New chat",
       "newConversationShort": "New",
@@ -729,7 +733,16 @@
       "yesterday": "Yesterday",
       "emptyFiltered": "No matching sessions",
       "emptyWithAgent": "No ongoing sessions with {agentName} yet",
-      "emptyHint": "Click the + button in the top right to start a new agent chat."
+      "emptyHint": "Click the + button in the top right to start a new agent chat.",
+      "contextMenu": {
+        "pin": "Pin",
+        "unpin": "Unpin",
+        "rename": "Rename",
+        "markAsUnread": "Mark as unread",
+        "forkChat": "Fork chat",
+        "archive": "Archive",
+        "unarchive": "Unarchive"
+      }
     },
     "agent": {
       "createButton": "New agent",

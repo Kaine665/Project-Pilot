@@ -25,3 +25,74 @@ export function agentsWorkspaceStorageKey(projectKey: string | null | undefined)
   if (projectKey === null || projectKey === undefined || projectKey === '') return '_global';
   return projectKey;
 }
+
+/** 桌面端 Agents 页右侧 `AgentsWorkspaceRail` 显隐（整页级，不按项目 / Agent） */
+export const AGENTS_PAGE_WORKSPACE_RAIL_VISIBLE_KEY = 'pp.agentsPage.workspaceRailVisible.v1';
+/** 偏好有效时长：超过则忽略缓存并恢复默认（收起） */
+export const AGENTS_PAGE_WORKSPACE_RAIL_VISIBLE_TTL_MS = 3 * 60 * 60 * 1000;
+
+type AgentsPageRailVisibleBlob = { visible: boolean; savedAt: number };
+
+export function readAgentsPageWorkspaceRailVisible(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const raw = localStorage.getItem(AGENTS_PAGE_WORKSPACE_RAIL_VISIBLE_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as Partial<AgentsPageRailVisibleBlob>;
+    if (typeof parsed.savedAt !== 'number' || typeof parsed.visible !== 'boolean') return false;
+    if (Date.now() - parsed.savedAt > AGENTS_PAGE_WORKSPACE_RAIL_VISIBLE_TTL_MS) {
+      localStorage.removeItem(AGENTS_PAGE_WORKSPACE_RAIL_VISIBLE_KEY);
+      return false;
+    }
+    return parsed.visible;
+  } catch {
+    return false;
+  }
+}
+
+export function writeAgentsPageWorkspaceRailVisible(visible: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const blob: AgentsPageRailVisibleBlob = { visible, savedAt: Date.now() };
+    localStorage.setItem(AGENTS_PAGE_WORKSPACE_RAIL_VISIBLE_KEY, JSON.stringify(blob));
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+/** 左侧 Agent 列表列宽（md+ 内联布局；与抽屉宽度无关） */
+export const AGENTS_PAGE_AGENT_LIST_WIDTH_KEY = 'pp.agentsPage.agentListWidth.v1';
+/** 与历史 UI 一致 */
+export const AGENTS_PAGE_AGENT_LIST_WIDTH_DEFAULT = 292;
+/** 再窄则头像 + 名称/徽章/时间易重叠；约 15rem */
+export const AGENTS_PAGE_AGENT_LIST_WIDTH_MIN = 240;
+export const AGENTS_PAGE_AGENT_LIST_WIDTH_MAX = 520;
+
+export function readAgentsPageAgentListWidth(): number {
+  if (typeof window === 'undefined') return AGENTS_PAGE_AGENT_LIST_WIDTH_DEFAULT;
+  try {
+    const raw = localStorage.getItem(AGENTS_PAGE_AGENT_LIST_WIDTH_KEY);
+    if (!raw) return AGENTS_PAGE_AGENT_LIST_WIDTH_DEFAULT;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return AGENTS_PAGE_AGENT_LIST_WIDTH_DEFAULT;
+    return Math.min(
+      AGENTS_PAGE_AGENT_LIST_WIDTH_MAX,
+      Math.max(AGENTS_PAGE_AGENT_LIST_WIDTH_MIN, Math.round(n)),
+    );
+  } catch {
+    return AGENTS_PAGE_AGENT_LIST_WIDTH_DEFAULT;
+  }
+}
+
+export function writeAgentsPageAgentListWidth(px: number): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const clamped = Math.min(
+      AGENTS_PAGE_AGENT_LIST_WIDTH_MAX,
+      Math.max(AGENTS_PAGE_AGENT_LIST_WIDTH_MIN, Math.round(px)),
+    );
+    localStorage.setItem(AGENTS_PAGE_AGENT_LIST_WIDTH_KEY, String(clamped));
+  } catch {
+    /* ignore */
+  }
+}

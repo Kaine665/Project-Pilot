@@ -192,7 +192,9 @@ export function AgentChatPanel({
   const sessionIdRef = useRef<string | null>(initialSessionId ?? null);
   const sessionTitleRef = useRef<string>(defaultSessionTitle);
   const initTokenRef = useRef(0);
-  const doSendRef = useRef<(text: string, images?: string[]) => void>(() => {});
+  const doSendRef = useRef<
+    (text: string, images?: string[], opts?: { reuseLastUserTurn?: boolean }) => void | Promise<void>
+  >(() => {});
   const isStreamingRef = useRef(false);
   const messagesRef = useRef<ChatMessage[]>([]);
   const pendingAnswerRef = useRef<{ answer: string; targetSessionId: string } | null>(null);
@@ -1060,8 +1062,13 @@ export function AgentChatPanel({
   }, []);
 
   // Send message
-  const doSend = useCallback(async (text: string, images?: string[]) => {
-    if (!text.trim() && (!images || images.length === 0)) return;
+  const doSend = useCallback(async (
+    text: string,
+    images?: string[],
+    opts?: { reuseLastUserTurn?: boolean },
+  ) => {
+    const reuseLastUserTurn = opts?.reuseLastUserTurn === true;
+    if (!reuseLastUserTurn && !text.trim() && (!images || images.length === 0)) return;
     if (isStreaming) return;
     if (hasProject && !projectKey) return;
     if (chatModelOptions.length > 0 && (!chatProvider || !chatModel)) return;
@@ -1070,7 +1077,7 @@ export function AgentChatPanel({
 
     // Slash command: /run [goal]
     // 手动开启 Run，不进入模型上下文（不发送给 AI）。
-    if (trimmedText.startsWith('/run')) {
+    if (!reuseLastUserTurn && trimmedText.startsWith('/run')) {
       const currentSessionId = sessionIdRef.current ?? sessionId ?? initialSessionId ?? null;
       if (!currentSessionId) {
         chatDispatch({
@@ -1121,30 +1128,32 @@ export function AgentChatPanel({
 
     initTokenRef.current += 1;
 
-    const imagesToSend = images ?? [];
+    const imagesToSend = reuseLastUserTurn ? [] : (images ?? []);
     const imageAttachments = imagesToSend.map(imageAttachmentFromDataUrl);
 
-    const runTaskMeta = pendingRunTaskMetaRef.current;
-    pendingRunTaskMetaRef.current = null;
+    const runTaskMeta = reuseLastUserTurn ? undefined : pendingRunTaskMetaRef.current;
+    if (!reuseLastUserTurn) pendingRunTaskMetaRef.current = null;
 
-    const userMsg: ChatMessage = {
-      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      role: 'user',
-      content: effectiveInput,
-      timestamp: new Date().toISOString(),
-      images: imagesToSend.length > 0 ? imagesToSend : undefined,
-      ...(runTaskMeta ? { meta: runTaskMeta } : {}),
-    };
+    if (!reuseLastUserTurn) {
+      const userMsg: ChatMessage = {
+        id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        role: 'user',
+        content: effectiveInput,
+        timestamp: new Date().toISOString(),
+        images: imagesToSend.length > 0 ? imagesToSend : undefined,
+        ...(runTaskMeta ? { meta: runTaskMeta } : {}),
+      };
 
-    chatDispatch({ type: 'UPDATE_MESSAGES', updater: (prev) => {
-      const last = prev[prev.length - 1];
-      const next =
-        last?.role === 'user' && last.content === userMsg.content
-          ? [...prev.slice(0, -1), userMsg]
-          : [...prev, userMsg];
-      messagesRef.current = next;
-      return next;
-    } });
+      chatDispatch({ type: 'UPDATE_MESSAGES', updater: (prev) => {
+        const last = prev[prev.length - 1];
+        const next =
+          last?.role === 'user' && last.content === userMsg.content
+            ? [...prev.slice(0, -1), userMsg]
+            : [...prev, userMsg];
+        messagesRef.current = next;
+        return next;
+      } });
+    }
     setAutoScroll(true);
     chatDispatch({ type: 'SEND_START' });
     setStreamWaitPhase('connecting');
@@ -1155,6 +1164,13 @@ export function AgentChatPanel({
 
     let targetSessionId = sessionIdRef.current ?? sessionId ?? initialSessionId ?? null;
     if (!targetSessionId) {
+      if (reuseLastUserTurn) {
+        chatDispatch({
+          type: 'STREAM_ERROR',
+          message: t('chat.editResendNoSession'),
+        });
+        return;
+      }
       targetSessionId = `agent-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const quickTitle = effectiveInput.slice(0, 10) || (hasProject ? t('chat.newSession') : 'New Session');
       setSessionIdSync(targetSessionId);
@@ -1211,8 +1227,8 @@ export function AgentChatPanel({
             modelOverride: chatModel || undefined,
             effortOverride: chatProvider === 'openai' ? chatEffort : undefined,
             fastModeOverride: chatProvider === 'openai' ? chatFastMode : undefined,
-            images: imageAttachments.length > 0 ? imageAttachments : undefined,
-            initialTitle: text.trim().slice(0, 10) || undefined,
+            images: reuseLastUserTurn || imageAttachments.length === 0 ? undefined : imageAttachments,
+            initialTitle: reuseLastUserTurn ? undefined : (text.trim().slice(0, 10) || undefined),
             config: (() => {
               const configWithModel = {
                 ...sessionConfig,
@@ -1230,6 +1246,7 @@ export function AgentChatPanel({
               return hasAny ? configWithModel : undefined;
             })(),
             ...(runTaskMeta ? { userMessageMeta: runTaskMeta } : {}),
+            ...(reuseLastUserTurn ? { reuseLastUserTurn: true } : {}),
           }),
         });
       } finally {
@@ -1513,25 +1530,32 @@ export function AgentChatPanel({
       return false;
     }
 
-    const applyLocalUpdate = () => {
+    const applyTruncatedLocal = () => {
       chatDispatch({
         type: 'UPDATE_MESSAGES',
-        updater: (prev) => prev.map((message) => {
-          if (message.id !== messageId) return message;
-          return {
-            ...message,
-            content: normalizedContent,
-            contentBlocks: message.contentBlocks?.some((block) => block.type === 'text')
-              ? [{ type: 'text', text: normalizedContent }]
-              : message.contentBlocks,
-          };
-        }),
+        updater: (prev): ChatMessage[] => {
+          const head: ChatMessage[] = prev.slice(0, messageIndex + 1).map((message) => {
+            if (message.id !== messageId) return message;
+            return {
+              ...message,
+              content: normalizedContent,
+              contentBlocks: message.contentBlocks?.some((block) => block.type === 'text')
+                ? [{ type: 'text' as const, text: normalizedContent }]
+                : message.contentBlocks,
+            };
+          });
+          messagesRef.current = head;
+          return head;
+        },
       });
     };
 
     const currentSessionId = sessionIdRef.current;
     if (!currentSessionId) {
-      applyLocalUpdate();
+      applyTruncatedLocal();
+      queueMicrotask(() => {
+        void doSendRef.current(normalizedContent);
+      });
       return true;
     }
 
@@ -1544,10 +1568,14 @@ export function AgentChatPanel({
           messageIndex,
           frontendMessageCount: currentMessages.length,
           content: normalizedContent,
+          truncateAfter: true,
         }),
       });
       if (!response.ok) return false;
-      applyLocalUpdate();
+      applyTruncatedLocal();
+      queueMicrotask(() => {
+        void doSendRef.current(normalizedContent, undefined, { reuseLastUserTurn: true });
+      });
       return true;
     } catch {
       return false;
@@ -1791,8 +1819,7 @@ export function AgentChatPanel({
     onFileClick: handleFileClick,
     onCompressOpen: () => setCompressDialogOpen(true),
     onCompressDismiss: () => setCompressDismissed(true),
-    enableUserMessageEdit: !hasProject,
-    showUserMessageBranch: hasProject,
+    enableUserMessageEdit: true,
     onActionPreview: handleActionPreview,
     onActionReject: handleActionReject,
     onActionRestore: handleActionRestore,

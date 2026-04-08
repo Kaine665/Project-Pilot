@@ -243,6 +243,8 @@ class AgentChatManager {
     sourceId?: string,
     todoId?: string,
     userMessageMeta?: import('@/types/agent-chat').ChatMessageDiskMeta,
+    /** 不在磁盘消息末尾再追加用户气泡；以上一条用户消息为当前轮（编辑后重发） */
+    reuseLastUserTurn?: boolean,
   ): Promise<string> {
     const agent = await loadAgent(agentId);
     void _depth;
@@ -255,15 +257,23 @@ class AgentChatManager {
       throw new Error('This session is already running');
     }
 
+    const reuseTurn = reuseLastUserTurn === true;
     const existingMessages = existingRun?.messages ?? diskSession?.messages ?? [];
     const messages = [...existingMessages];
     const dataUrls = images?.map(img => `data:${img.mediaType};base64,${img.data}`);
-    messages.push({
-      role: 'user',
-      content: message,
-      images: dataUrls?.length ? dataUrls : undefined,
-      ...(userMessageMeta ? { meta: userMessageMeta } : {}),
-    });
+
+    if (reuseTurn) {
+      if (messages.length === 0 || messages[messages.length - 1]?.role !== 'user') {
+        throw new Error('reuseLastUserTurn requires the session to end with a user message');
+      }
+    } else {
+      messages.push({
+        role: 'user',
+        content: message,
+        images: dataUrls?.length ? dataUrls : undefined,
+        ...(userMessageMeta ? { meta: userMessageMeta } : {}),
+      });
+    }
 
     const sessionConfig = initialConfig ?? existingRun?.config ?? diskSession?.config;
     const existingProjectKey = existingRun?.projectKey ?? diskSession?.projectKey;
@@ -339,20 +349,51 @@ class AgentChatManager {
 
     // 当 resume 不可用但存在历史消息时，将历史对话注入 prompt
     // 这样即使 SDK 会话是全新的，AI 也能知道之前聊过什么
-    const conversationHistory = (!resumeSessionId && existingMessages.length > 0)
-      ? formatConversationHistory(existingMessages, existingCheckpoint ?? undefined)
+    const historyMessagesForPrompt = reuseTurn
+      ? (messages.length > 1 ? messages.slice(0, -1) : [])
+      : existingMessages;
+    const conversationHistory = (!resumeSessionId && historyMessagesForPrompt.length > 0)
+      ? formatConversationHistory(historyMessagesForPrompt, existingCheckpoint ?? undefined)
       : undefined;
 
-    if (conversationHistory && !resumeSessionId && existingMessages.length > 0) {
-      console.log(`${LOG_PREFIX} [${sessionId}] Resume unavailable, injecting ${existingMessages.length} messages as conversation history`);
+    if (conversationHistory && !resumeSessionId && historyMessagesForPrompt.length > 0) {
+      console.log(
+        `${LOG_PREFIX} [${sessionId}] Resume unavailable, injecting ${historyMessagesForPrompt.length} messages as conversation history`,
+      );
+    }
+
+    const lastUserForPrompt = reuseTurn && messages.length > 0 ? messages[messages.length - 1] : null;
+    let promptMessage = message;
+    if (
+      reuseTurn
+      && !String(promptMessage ?? '').trim()
+      && lastUserForPrompt?.role === 'user'
+      && lastUserForPrompt.images
+      && lastUserForPrompt.images.length > 0
+    ) {
+      promptMessage = `[用户消息包含 ${lastUserForPrompt.images.length} 张图片，无附加文字]`;
     }
 
     const tBuildPrompt = Date.now();
     let promptContent: string;
     if (flowContext) {
-      promptContent = await buildAgentChatPromptWithFlowContext(agent, message, flowContext, persistedConfig, sessionId, conversationHistory ?? undefined);
+      promptContent = await buildAgentChatPromptWithFlowContext(
+        agent,
+        promptMessage,
+        flowContext,
+        persistedConfig,
+        sessionId,
+        conversationHistory ?? undefined,
+      );
     } else {
-      promptContent = await buildAgentChatPrompt(agent, message, persistedConfig, sessionId, sessionProjectKey, conversationHistory ?? undefined);
+      promptContent = await buildAgentChatPrompt(
+        agent,
+        promptMessage,
+        persistedConfig,
+        sessionId,
+        sessionProjectKey,
+        conversationHistory ?? undefined,
+      );
     }
     console.log(
       `${LOG_PREFIX} [${sessionId}] buildPrompt done in ${Date.now() - tBuildPrompt}ms (chars=${promptContent.length})`,

@@ -1,17 +1,17 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef, memo, type MouseEvent } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, type MouseEvent } from 'react';
 import { useTranslations } from '@/client/i18n/use-translations';
 import {
   Plus, Trash2, X, Minimize2,
   PanelLeft, PanelRight,
-  MessageSquare, Archive, ArchiveRestore,
+  MessageSquare,
   Settings,
   Download, Upload, Search, Folder, FolderOpen,
-  Bot, Command, Terminal, Globe,
+  Bot, Command, Terminal, Globe, Ellipsis,
   Files, GitBranch, Eye, Database, ListTodo, HardDrive,
   FileText, FileJson,
-  Clock, History,
+  Clock, Pencil, Pin, PinOff, GitFork, Archive, ArchiveRestore,
 } from 'lucide-react';
 import { lazy, Suspense } from 'react';
 import type { Agent, AgentCapabilities, AgentPreset, OpenAIReasoningEffort } from '@/types';
@@ -51,7 +51,15 @@ import type {
   AgentsWorkspacePerAgentFocusPersist,
   AgentsWorkspaceProjectPersist,
 } from '@/lib/agents-workspace-ui-shared';
-import { agentsWorkspaceStorageKey } from '@/lib/agents-workspace-ui-shared';
+import {
+  agentsWorkspaceStorageKey,
+  AGENTS_PAGE_AGENT_LIST_WIDTH_MIN,
+  AGENTS_PAGE_AGENT_LIST_WIDTH_MAX,
+  readAgentsPageAgentListWidth,
+  readAgentsPageWorkspaceRailVisible,
+  writeAgentsPageAgentListWidth,
+  writeAgentsPageWorkspaceRailVisible,
+} from '@/lib/agents-workspace-ui-shared';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { cn } from '@/lib/utils';
 
@@ -62,14 +70,6 @@ function workspaceUiLocalStorageKey(projectKey: string | null): string {
 
 
 // ── Helpers ──
-
-function formatSessionElapsed(startedAt: string | undefined, nowTs: number): string {
-  if (!startedAt) return '0s';
-  const diffSeconds = Math.max(0, Math.floor((nowTs - new Date(startedAt).getTime()) / 1000));
-  if (diffSeconds < 60) return `${diffSeconds}s`;
-  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m`;
-  return `${Math.floor(diffSeconds / 3600)}h`;
-}
 
 function formatSessionTimestamp(timestamp: string | undefined, nowTs: number, yesterdayLabel = 'Yesterday'): string {
   if (!timestamp) return '--';
@@ -97,6 +97,17 @@ function displayText(value: string | undefined, fallback = '--'): string {
   return repairTextIfNeeded(value) ?? value ?? fallback;
 }
 
+/** 同一 Agent 下至多保留一条草稿（sessionId === null），避免重复「新会话」或历史 blob 堆叠多条。 */
+function dedupeDraftTabsByAgent<T extends { agentId: string; sessionId: string | null }>(tabs: T[]): T[] {
+  const seenDraftAgent = new Set<string>();
+  return tabs.filter((t) => {
+    if (t.sessionId !== null) return true;
+    if (seenDraftAgent.has(t.agentId)) return false;
+    seenDraftAgent.add(t.agentId);
+    return true;
+  });
+}
+
 /** Provider / model line for workspace header；无配置时不占行。 */
 function formatAgentRuntimeCaption(agent: Agent): string {
   const provider = agent.defaultProvider?.trim() ?? '';
@@ -106,103 +117,6 @@ function formatAgentRuntimeCaption(agent: Agent): string {
   if (!provider && model) return model;
   return `${provider} · ${model}`;
 }
-
-// ── Session card (memo-ized to avoid re-render on listClockNow ticks) ──
-
-interface SessionCardProps {
-  session: AllSessionItem;
-  isActive: boolean;
-  listClockNow: number | undefined; // only passed when session.isRunning
-  onClick: (session: AllSessionItem) => void;
-  onArchiveToggle: (session: AllSessionItem, e: React.MouseEvent) => void;
-  newSessionTitle: string;
-  archivedLabel: string;
-  archiveTitle: string;
-  unarchiveTitle: string;
-  yesterdayLabel: string;
-}
-
-const SessionCard = memo(function SessionCard({
-  session: s,
-  isActive,
-  listClockNow,
-  onClick,
-  onArchiveToggle,
-  newSessionTitle,
-  archivedLabel,
-  archiveTitle,
-  unarchiveTitle,
-  yesterdayLabel,
-}: SessionCardProps) {
-  const nowTs = listClockNow ?? 0;
-
-  return (
-    <div
-      onClick={() => onClick(s)}
-      className={cn(
-        'group/session relative flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2 transition-colors',
-        isActive
-          ? 'bg-accent/80 ring-1 ring-border shadow-sm'
-          : 'hover:bg-muted/60',
-        s.archived && 'opacity-45',
-      )}
-    >
-      <div
-        className={cn(
-          'h-10 w-10 shrink-0 overflow-hidden rounded-xl ring-1 ring-inset',
-          isActive
-            ? 'bg-primary/10 text-primary ring-primary/15'
-            : 'bg-muted/80 text-muted-foreground ring-border/60',
-        )}
-      >
-        <AgentAvatar
-          slug={s.agentSlug}
-          iconKey={s.agentIcon}
-          agentId={s.agentId}
-          customAvatar={s.agentCustomAvatar}
-          updatedAt={s.agentUpdatedAt}
-          className="h-full w-full object-cover"
-        />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="mb-0.5 flex items-center justify-between">
-          <span
-            className={cn(
-              'truncate text-[13px]',
-              isActive ? 'font-semibold text-foreground' : s.archived ? 'font-medium text-muted-foreground/70' : 'font-medium text-foreground/90',
-            )}
-          >
-            {displayText(s.agentName, s.agentId)}
-          </span>
-          <span className="shrink-0 text-[10px] font-medium text-muted-foreground">
-            {s.isRunning && listClockNow !== undefined
-              ? formatSessionElapsed(s.runningStartedAt, listClockNow)
-              : formatSessionTimestamp(s.updatedAt, nowTs, yesterdayLabel)}
-          </span>
-        </div>
-        <div className={cn('truncate text-[11px]', s.archived ? 'text-muted-foreground/50' : 'text-muted-foreground')}>
-          {s.archived
-            ? archivedLabel
-            : displayText(s.title, newSessionTitle)}
-        </div>
-      </div>
-      {!isActive && !!s.unreadCount && s.unreadCount > 0 && !s.archived && (
-        <span className="flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full bg-foreground px-1 text-[9px] font-bold text-background">
-          {s.unreadCount > 99 ? '99+' : s.unreadCount}
-        </span>
-      )}
-      <button
-        type="button"
-        onClick={(e) => onArchiveToggle(s, e)}
-        className="shrink-0 rounded-lg p-1.5 text-muted-foreground opacity-0 transition-all hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover/session:opacity-100"
-        title={s.archived ? unarchiveTitle : archiveTitle}
-        aria-label={s.archived ? unarchiveTitle : archiveTitle}
-      >
-        {s.archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
-      </button>
-    </div>
-  );
-});
 
 // ── Main page ──
 
@@ -285,42 +199,101 @@ export default function AgentsPage() {
   const [newAgentModal, setNewAgentModal] = useState<'closed' | 'import' | 'presetPick' | 'create'>('closed');
 
   const [sessionQuery, setSessionQuery] = useState('');
-  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [expandedAgentHistoryIds, setExpandedAgentHistoryIds] = useState<Set<string>>(() => new Set());
+  const [sessionContextMenu, setSessionContextMenu] = useState<
+    | { kind: 'session'; x: number; y: number; session: AllSessionItem }
+    | { kind: 'draft'; x: number; y: number; key: number; agentId: string }
+    | null
+  >(null);
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  /** 置顶成功瞬间高亮对应行，随后清除 */
+  const [pinFlashSessionId, setPinFlashSessionId] = useState<string | null>(null);
+  const pinFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [mobileAgentsListOpen, setMobileAgentsListOpen] = useState(false);
   const [mobileWorkspaceRailOpen, setMobileWorkspaceRailOpen] = useState(false);
+  /** 桌面（lg+）右侧 AgentsWorkspaceRail 显隐；默认收起，localStorage 整页缓存 3 小时内有效 */
+  const [workspaceRailVisible, setWorkspaceRailVisible] = useState(() =>
+    readAgentsPageWorkspaceRailVisible(),
+  );
+  const toggleWorkspaceRailVisible = useCallback(() => {
+    setWorkspaceRailVisible((v) => {
+      const next = !v;
+      writeAgentsPageWorkspaceRailVisible(next);
+      return next;
+    });
+  }, []);
+
+  /** >= md：左侧列表与主区并排，可拖改列宽；<md 为抽屉，宽度类名单独控制 */
   const mdUpAgents = useMediaQuery('(min-width: 768px)');
-  const lgUpAgents = useMediaQuery('(min-width: 1024px)');
-  const conversationStripRef = useRef<HTMLElement | null>(null);
+  const [agentListWidthPx, setAgentListWidthPx] = useState(() => readAgentsPageAgentListWidth());
+  const agentListWidthRef = useRef(agentListWidthPx);
+  agentListWidthRef.current = agentListWidthPx;
+  const agentListResizeDragRef = useRef<{ startX: number; startW: number } | null>(null);
+
+  const onAgentListResizePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!mdUpAgents) return;
+      e.preventDefault();
+      agentListResizeDragRef.current = { startX: e.clientX, startW: agentListWidthRef.current };
+      e.currentTarget.setPointerCapture(e.pointerId);
+    },
+    [mdUpAgents],
+  );
+
+  const onAgentListResizePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = agentListResizeDragRef.current;
+    if (!drag) return;
+    const roomForMain = 320;
+    const maxW = Math.min(
+      AGENTS_PAGE_AGENT_LIST_WIDTH_MAX,
+      Math.max(AGENTS_PAGE_AGENT_LIST_WIDTH_MIN, window.innerWidth - roomForMain),
+    );
+    const next = Math.min(
+      maxW,
+      Math.max(
+        AGENTS_PAGE_AGENT_LIST_WIDTH_MIN,
+        drag.startW + (e.clientX - drag.startX),
+      ),
+    );
+    setAgentListWidthPx(next);
+  }, []);
+
+  const onAgentListResizePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (agentListResizeDragRef.current) {
+      agentListResizeDragRef.current = null;
+      writeAgentsPageAgentListWidth(agentListWidthRef.current);
+    }
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
+  }, []);
 
   useEffect(() => {
-    if (mdUpAgents) setMobileAgentsListOpen(false);
+    if (!mdUpAgents) return;
+    const clampToViewport = () => {
+      const maxW = Math.min(
+        AGENTS_PAGE_AGENT_LIST_WIDTH_MAX,
+        Math.max(AGENTS_PAGE_AGENT_LIST_WIDTH_MIN, window.innerWidth - 320),
+      );
+      setAgentListWidthPx((w) => Math.min(w, maxW));
+    };
+    clampToViewport();
+    window.addEventListener('resize', clampToViewport);
+    return () => window.removeEventListener('resize', clampToViewport);
   }, [mdUpAgents]);
+
+  const lgUpAgents = useMediaQuery('(min-width: 1024px)');
+
+  useEffect(() => {
+    if (lgUpAgents) setMobileAgentsListOpen(false);
+  }, [lgUpAgents]);
 
   useEffect(() => {
     if (lgUpAgents) setMobileWorkspaceRailOpen(false);
   }, [lgUpAgents]);
-
-  useEffect(() => {
-    if (!historyExpanded) return;
-    const onPointerDown = (e: PointerEvent) => {
-      const root = conversationStripRef.current;
-      if (!root) return;
-      const t = e.target;
-      if (t instanceof Node && root.contains(t)) return;
-      setHistoryExpanded(false);
-    };
-    document.addEventListener('pointerdown', onPointerDown, true);
-    return () => document.removeEventListener('pointerdown', onPointerDown, true);
-  }, [historyExpanded]);
-
-  useEffect(() => {
-    if (!historyExpanded) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setHistoryExpanded(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [historyExpanded]);
 
   useEffect(() => {
     if (!newAgentMenuOpen) return;
@@ -511,7 +484,7 @@ export default function AgentsPage() {
     const applyBlob = (blob: AgentsWorkspaceProjectPersist): boolean => {
       const agentList = agentsRef.current;
       const agentIdSet = new Set(agentList.map(a => a.id));
-      const filteredTabs = blob.tabs.filter(t => agentIdSet.has(t.agentId));
+      const filteredTabs = dedupeDraftTabsByAgent(blob.tabs.filter(t => agentIdSet.has(t.agentId)));
       if (filteredTabs.length === 0) return false;
 
       let k = nextKeyRef.current;
@@ -578,7 +551,14 @@ export default function AgentsPage() {
           if (applyBlob(blob)) {
             workspaceUiHydratedRef.current = true;
             try {
-              localStorage.setItem(workspaceUiLocalStorageKey(pk), JSON.stringify(blob));
+              const agentIdSetPersist = new Set(agentsRef.current.map((a) => a.id));
+              const tabsOut = dedupeDraftTabsByAgent(
+                blob.tabs.filter((t) => agentIdSetPersist.has(t.agentId)),
+              );
+              localStorage.setItem(
+                workspaceUiLocalStorageKey(pk),
+                JSON.stringify({ ...blob, tabs: tabsOut }),
+              );
             } catch { /* ignore */ }
             return;
           }
@@ -588,14 +568,18 @@ export default function AgentsPage() {
           const raw = localStorage.getItem(workspaceUiLocalStorageKey(pk));
           if (raw) {
             const local = JSON.parse(raw) as AgentsWorkspaceProjectPersist;
-            if (local?.tabs?.length && applyBlob(local)) {
+            const agentIdSetPersist = new Set(agentsRef.current.map((a) => a.id));
+            const tabsOut = dedupeDraftTabsByAgent(
+              (local.tabs ?? []).filter((t) => agentIdSetPersist.has(t.agentId)),
+            );
+            if (tabsOut.length && applyBlob({ ...local, tabs: tabsOut })) {
               workspaceUiHydratedRef.current = true;
               void fetch('/api/data/agents-workspace-ui', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   projectKey: pk,
-                  tabs: local.tabs,
+                  tabs: tabsOut,
                   active: local.active,
                   lastFocusByAgent: local.lastFocusByAgent,
                 }),
@@ -612,7 +596,11 @@ export default function AgentsPage() {
           const raw = localStorage.getItem(workspaceUiLocalStorageKey(pk));
           if (raw) {
             const local = JSON.parse(raw) as AgentsWorkspaceProjectPersist;
-            if (local?.tabs?.length) applyBlob(local);
+            const agentIdSetPersist = new Set(agentsRef.current.map((a) => a.id));
+            const tabsOut = dedupeDraftTabsByAgent(
+              (local.tabs ?? []).filter((t) => agentIdSetPersist.has(t.agentId)),
+            );
+            if (tabsOut.length) applyBlob({ ...local, tabs: tabsOut });
           }
         } catch { /* ignore */ }
         workspaceUiHydratedRef.current = true;
@@ -670,7 +658,16 @@ export default function AgentsPage() {
       for (const a of agentsRef.current) {
         agentMap.set(a.id, a);
       }
-      const sessions: AllSessionItem[] = (sessData.sessions ?? []).map((s: { id: string; title: string; updatedAt: string; agentId: string; unreadCount?: number; archived?: boolean; projectKey?: string }) => {
+      const sessions: AllSessionItem[] = (sessData.sessions ?? []).map((s: {
+        id: string;
+        title: string;
+        updatedAt: string;
+        agentId: string;
+        unreadCount?: number;
+        archived?: boolean;
+        pinned?: boolean;
+        projectKey?: string;
+      }) => {
         const agent = agentMap.get(s.agentId);
         return {
           id: s.id,
@@ -683,6 +680,7 @@ export default function AgentsPage() {
           agentCustomAvatar: agent?.customAvatar,
           agentUpdatedAt: agent?.updatedAt,
           unreadCount: s.unreadCount,
+          pinned: s.pinned,
           archived: s.archived,
           projectKey: s.projectKey,
         };
@@ -754,15 +752,41 @@ export default function AgentsPage() {
     return () => clearTimeout(t);
   }, [openedSessions, activePanel, effectiveProjectKey]);
 
-  // ── Clock for running-session elapsed display ──
-  const hasRunningSession = useMemo(() => allSessions.some(s => s.isRunning), [allSessions]);
-  const [listClockNow, setListClockNow] = useState<number | undefined>(undefined);
+  /** 去掉同一 Agent 下多余草稿（含会话中遗留），并修正当前焦点与 URL */
   useEffect(() => {
-    if (!hasRunningSession) return;
-    setListClockNow(Date.now());
-    const timer = setInterval(() => setListClockNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [hasRunningSession]);
+    const prev = openedSessions;
+    const next = dedupeDraftTabsByAgent(prev);
+    if (next.length === prev.length) return;
+
+    setOpenedSessions(next);
+    setSessionContextMenu((m) => {
+      if (m?.kind !== 'draft') return m;
+      return next.some((o) => o.key === m.key) ? m : null;
+    });
+
+    const ap = activePanel;
+    if (ap?.type === 'session' && !next.some((o) => o.key === ap.key)) {
+      const victim = prev.find((o) => o.key === ap.key);
+      const agentId = victim?.agentId;
+      const draftReplacement =
+        agentId != null ? next.find((o) => o.agentId === agentId && o.sessionId === null) : undefined;
+      if (draftReplacement) {
+        setActivePanel({ type: 'session', key: draftReplacement.key });
+        syncUrlParams({ agent: agentId!, session: null });
+        return;
+      }
+      const otherForAgent = agentId != null ? next.find((o) => o.agentId === agentId) : undefined;
+      if (otherForAgent) {
+        setActivePanel({ type: 'session', key: otherForAgent.key });
+        syncUrlParams({ agent: otherForAgent.agentId, session: otherForAgent.sessionId });
+        return;
+      }
+      if (agentId) {
+        setActivePanel({ type: 'agent', agentId, mode: 'chat' });
+        syncUrlParams({ agent: agentId, session: null });
+      }
+    }
+  }, [openedSessions, activePanel]);
 
   // ── 每个 Agent 最近一条未归档会话（侧栏排序 + 预览行，不依赖 allSessions 全局顺序）──
   const agentLatestNonArchivedSession = useMemo(() => {
@@ -860,69 +884,283 @@ export default function AgentsPage() {
       .slice(0, 5);
   }, [agentLatestNonArchivedSession]);
 
-  // ── Handlers: Conversations tab ──
+  // ── Handlers: Agents tab ──
+
+  const toggleAgentHistoryExpanded = useCallback((agentId: string) => {
+    setExpandedAgentHistoryIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(agentId)) next.delete(agentId);
+      else next.add(agentId);
+      return next;
+    });
+  }, []);
+
+  const handleNewSession = useCallback((agent: Agent) => {
+    setMobileAgentsListOpen(false);
+    setNewAgentMenuOpen(false);
+    setNewAgentModal('closed');
+    setCreating(false);
+    setSelectedAgentId(agent.id);
+    setForm(agentToForm(agent));
+    setExpandedPrompt(false);
+    const existingDraft = openedSessionsRef.current.find(
+      (o) => o.agentId === agent.id && o.sessionId === null,
+    );
+    if (existingDraft) {
+      setActivePanel({ type: 'session', key: existingDraft.key });
+      syncUrlParams({ agent: agent.id, session: null });
+      return;
+    }
+    const key = nextKeyRef.current++;
+    setOpenedSessions((prev) => [...prev, { sessionId: null, agentId: agent.id, key }]);
+    setActivePanel({ type: 'session', key });
+    syncUrlParams({ agent: agent.id, session: null });
+  }, []);
 
   const handleSessionClick = useCallback((session: AllSessionItem) => {
     setMobileAgentsListOpen(false);
-    setHistoryExpanded(false);
+    setNewAgentMenuOpen(false);
+    setNewAgentModal('closed');
     persistWorkspaceFocusFromRefs();
-    // Mark as read (fire-and-forget + clear local state immediately)
     if (session.unreadCount) {
-      setAllSessions(prev => prev.map(s => s.id === session.id ? { ...s, unreadCount: 0 } : s));
+      setAllSessions((prev) =>
+        prev.map((s) => (s.id === session.id ? { ...s, unreadCount: 0 } : s)),
+      );
       fetch(`/api/agent-chat/sessions/${session.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'markAsRead' }),
       }).catch(() => {});
     }
-
-    // Read latest via ref to avoid calling setState/syncUrlParams inside an updater
+    const ag = agentsRef.current.find((a) => a.id === session.agentId);
+    if (ag) {
+      setCreating(false);
+      setSelectedAgentId(ag.id);
+      setForm(agentToForm(ag));
+      setExpandedPrompt(false);
+    }
     const existing = openedSessionsRef.current.find(
-      o => o.sessionId === session.id && o.agentId === session.agentId,
+      (o) => o.sessionId === session.id && o.agentId === session.agentId,
     );
-
     if (existing) {
       setActivePanel({ type: 'session', key: existing.key });
     } else {
       const key = nextKeyRef.current++;
-      setOpenedSessions(prev => [...prev, { sessionId: session.id, agentId: session.agentId, key }]);
+      setOpenedSessions((prev) => [...prev, { sessionId: session.id, agentId: session.agentId, key }]);
       setActivePanel({ type: 'session', key });
     }
     syncUrlParams({ agent: session.agentId, session: session.id });
   }, [persistWorkspaceFocusFromRefs]);
 
-  const handleNewSession = (agent: Agent) => {
-    setMobileAgentsListOpen(false);
-    setHistoryExpanded(false);
-    const key = nextKeyRef.current++;
-    setOpenedSessions(prev => [...prev, { sessionId: null, agentId: agent.id, key }]);
-    setActivePanel({ type: 'session', key });
-    setShowAgentDropdown(false);
-    syncUrlParams({ agent: agent.id, session: null });
-  };
+  const openPersistedSessionContextMenu = useCallback((clientX: number, clientY: number, session: AllSessionItem) => {
+    setSessionContextMenu({ kind: 'session', x: clientX, y: clientY, session });
+  }, []);
 
-  const handleArchiveToggle = useCallback((session: AllSessionItem, e: React.MouseEvent) => {
+  const handleSessionContextMenu = useCallback((e: MouseEvent<HTMLButtonElement>, session: AllSessionItem) => {
+    e.preventDefault();
     e.stopPropagation();
-    const newArchived = !session.archived;
-    // Optimistic update
-    setAllSessions(prev => prev.map(s => s.id === session.id ? { ...s, archived: newArchived } : s));
-    fetch(`/api/agent-chat/sessions/${session.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: newArchived ? 'archive' : 'unarchive' }),
-    }).then(res => {
-      if (!res.ok) {
-        console.error(`Archive toggle failed: ${res.status}`);
-        // Rollback on failure
-        setAllSessions(prev => prev.map(s => s.id === session.id ? { ...s, archived: !newArchived } : s));
-      }
-    }).catch(() => {
-      // Rollback on network error
-      setAllSessions(prev => prev.map(s => s.id === session.id ? { ...s, archived: !newArchived } : s));
+    openPersistedSessionContextMenu(e.clientX, e.clientY, session);
+  }, [openPersistedSessionContextMenu]);
+
+  /** 部分环境对 button 上 `contextmenu` 不稳定，右键 `mousedown` 作后备 */
+  const handleSessionRowMouseDown = useCallback(
+    (e: MouseEvent<HTMLButtonElement>, session: AllSessionItem) => {
+      if (e.button !== 2) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openPersistedSessionContextMenu(e.clientX, e.clientY, session);
+    },
+    [openPersistedSessionContextMenu],
+  );
+
+  const openDraftContextMenu = useCallback((clientX: number, clientY: number, draft: OpenedSession) => {
+    setSessionContextMenu({
+      kind: 'draft',
+      x: clientX,
+      y: clientY,
+      key: draft.key,
+      agentId: draft.agentId,
     });
   }, []);
 
-  // ── Handlers: Agents tab ──
+  const handleDraftContextMenu = useCallback((e: MouseEvent<HTMLButtonElement>, draft: OpenedSession) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openDraftContextMenu(e.clientX, e.clientY, draft);
+  }, [openDraftContextMenu]);
+
+  const handleDraftRowMouseDown = useCallback(
+    (e: MouseEvent<HTMLButtonElement>, draft: OpenedSession) => {
+      if (e.button !== 2) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openDraftContextMenu(e.clientX, e.clientY, draft);
+    },
+    [openDraftContextMenu],
+  );
+
+  const closeSessionContextMenu = useCallback(() => {
+    setSessionContextMenu(null);
+  }, []);
+
+  const handleRemoveDraftFromOpenedList = useCallback(
+    (draftKey: number, agentId: string) => {
+      closeSessionContextMenu();
+      const opened = openedSessionsRef.current;
+      const filtered = opened.filter((o) => o.key !== draftKey);
+      const wasActive =
+        activePanelRef.current?.type === 'session' && activePanelRef.current.key === draftKey;
+
+      setOpenedSessions(filtered);
+
+      if (wasActive) {
+        const nextForAgent = filtered.find((o) => o.agentId === agentId);
+        if (nextForAgent) {
+          setActivePanel({ type: 'session', key: nextForAgent.key });
+          syncUrlParams({
+            agent: agentId,
+            session: nextForAgent.sessionId,
+          });
+        } else {
+          setActivePanel({ type: 'agent', agentId, mode: 'chat' });
+          syncUrlParams({ agent: agentId, session: null });
+        }
+      }
+    },
+    [closeSessionContextMenu],
+  );
+
+  const handleSessionPin = useCallback(async (session: AllSessionItem) => {
+    const newPinned = !session.pinned;
+    setAllSessions((prev) => prev.map((s) => (s.id === session.id ? { ...s, pinned: newPinned } : s)));
+    closeSessionContextMenu();
+    const res = await fetch(`/api/agent-chat/sessions/${session.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: newPinned ? 'pin' : 'unpin' }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      setAllSessions((prev) => prev.map((s) => (s.id === session.id ? { ...s, pinned: !newPinned } : s)));
+      return;
+    }
+    if (pinFlashTimerRef.current) {
+      clearTimeout(pinFlashTimerRef.current);
+      pinFlashTimerRef.current = null;
+    }
+    if (newPinned) {
+      setPinFlashSessionId(session.id);
+      pinFlashTimerRef.current = setTimeout(() => {
+        setPinFlashSessionId((cur) => (cur === session.id ? null : cur));
+        pinFlashTimerRef.current = null;
+      }, 1400);
+    } else {
+      setPinFlashSessionId((cur) => (cur === session.id ? null : cur));
+    }
+  }, [closeSessionContextMenu]);
+
+  useEffect(() => {
+    return () => {
+      if (pinFlashTimerRef.current) clearTimeout(pinFlashTimerRef.current);
+    };
+  }, []);
+
+  const handleSessionRenameStart = useCallback((session: AllSessionItem) => {
+    setRenamingSessionId(session.id);
+    setRenameValue(session.title);
+    closeSessionContextMenu();
+  }, [closeSessionContextMenu]);
+
+  const handleSessionRenameSubmit = useCallback(async (sessionId: string) => {
+    const trimmed = renameValue.trim();
+    if (!trimmed) {
+      setRenamingSessionId(null);
+      return;
+    }
+    setAllSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, title: trimmed } : s)));
+    setRenamingSessionId(null);
+    await fetch(`/api/agent-chat/sessions/${sessionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'rename', title: trimmed }),
+    }).catch(() => {});
+  }, [renameValue]);
+
+  const handleSessionMarkAsUnread = useCallback(async (session: AllSessionItem) => {
+    setAllSessions((prev) =>
+      prev.map((s) =>
+        s.id === session.id ? { ...s, unreadCount: Math.max(1, s.unreadCount ?? 0) } : s,
+      ),
+    );
+    closeSessionContextMenu();
+    await fetch(`/api/agent-chat/sessions/${session.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'markAsUnread' }),
+    }).catch(() => {});
+  }, [closeSessionContextMenu]);
+
+  const handleSessionFork = useCallback(async (session: AllSessionItem) => {
+    closeSessionContextMenu();
+    const res = await fetch(`/api/agent-chat/sessions/${session.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'fork' }),
+    }).catch(() => null);
+    if (res?.ok) {
+      const data = (await res.json().catch(() => ({}))) as { forkedId?: string };
+      if (data.forkedId) {
+        const forkedId = data.forkedId;
+        const now = new Date().toISOString();
+        const forked: AllSessionItem = {
+          ...session,
+          id: forkedId,
+          title: `${session.title} (fork)`,
+          updatedAt: now,
+          unreadCount: 0,
+          archived: undefined,
+          pinned: undefined,
+          isRunning: undefined,
+        };
+        setAllSessions((prev) => [forked, ...prev]);
+        const key = nextKeyRef.current++;
+        setOpenedSessions((prev) => [...prev, { sessionId: forkedId, agentId: session.agentId, key }]);
+        setActivePanel({ type: 'session', key });
+        syncUrlParams({ agent: session.agentId, session: forkedId });
+      }
+    }
+  }, [closeSessionContextMenu]);
+
+  const handleSessionArchiveFromMenu = useCallback(async (session: AllSessionItem) => {
+    const newArchived = !session.archived;
+    setAllSessions((prev) => prev.map((s) => (s.id === session.id ? { ...s, archived: newArchived } : s)));
+    closeSessionContextMenu();
+    const res = await fetch(`/api/agent-chat/sessions/${session.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: newArchived ? 'archive' : 'unarchive' }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      setAllSessions((prev) => prev.map((s) => (s.id === session.id ? { ...s, archived: !newArchived } : s)));
+    }
+  }, [closeSessionContextMenu]);
+
+  useEffect(() => {
+    if (!sessionContextMenu) return;
+    const onPointerDown = (e: PointerEvent) => {
+      // 避免右键按下阶段误关菜单，导致随后 `contextmenu` 无法稳定打开自定义菜单
+      if (e.button !== 0) return;
+      closeSessionContextMenu();
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeSessionContextMenu();
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [sessionContextMenu, closeSessionContextMenu]);
 
   const handleAgentClick = (agent: Agent) => {
     setMobileAgentsListOpen(false);
@@ -931,13 +1169,8 @@ export default function AgentsPage() {
     const opened = openedSessionsRef.current;
     const fromAid = getWorkspaceContextAgentIdFromRefs();
 
-    // 同一 Agent：从会话缩回概览（与旧版侧栏一致）；已在概览/设置则不再重复切换
     if (!creating && fromAid === agent.id) {
-      if (activePanelRef.current?.type === 'session') {
-        setActivePanel({ type: 'agent', agentId: agent.id, mode: 'chat' });
-        syncUrlParams({ agent: agent.id, session: null });
-        lastWorkspaceFocusByAgentRef.current[agent.id] = { kind: 'agent', mode: 'chat' };
-      }
+      toggleAgentHistoryExpanded(agent.id);
       return;
     }
 
@@ -947,16 +1180,26 @@ export default function AgentsPage() {
     setSelectedAgentId(agent.id);
     setForm(agentToForm(agent));
     setExpandedPrompt(false);
-    setHistoryExpanded(false);
+    setExpandedAgentHistoryIds((prev) => {
+      const next = new Set(prev);
+      next.add(agent.id);
+      return next;
+    });
 
     const saved = lastWorkspaceFocusByAgentRef.current[agent.id];
-    if (saved?.kind === 'session') {
-      const tab = opened.find((o) => o.agentId === agent.id && o.sessionId === saved.sessionId);
+    const restoredSessionId = saved?.kind === 'session' ? saved.sessionId : null;
+    if (restoredSessionId) {
+      const tab = opened.find((o) => o.agentId === agent.id && o.sessionId === restoredSessionId);
       if (tab) {
         setActivePanel({ type: 'session', key: tab.key });
         syncUrlParams({ agent: agent.id, session: tab.sessionId });
         return;
       }
+      const key = nextKeyRef.current++;
+      setOpenedSessions((prev) => [...prev, { sessionId: restoredSessionId, agentId: agent.id, key }]);
+      setActivePanel({ type: 'session', key });
+      syncUrlParams({ agent: agent.id, session: restoredSessionId });
+      return;
     }
     if (saved?.kind === 'agent') {
       setActivePanel({ type: 'agent', agentId: agent.id, mode: saved.mode });
@@ -967,42 +1210,6 @@ export default function AgentsPage() {
     setActivePanel({ type: 'agent', agentId: agent.id, mode: 'chat' });
     syncUrlParams({ agent: agent.id, session: null });
   };
-
-  /** 从顶部标签栏移除已打开实例（不删服务端会话，仍可从侧栏/历史进入） */
-  const handleCloseWorkspaceSessionTab = useCallback((opened: OpenedSession, e: MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setHistoryExpanded(false);
-    const agentId = opened.agentId;
-    const tabsBefore = openedSessionsRef.current.filter((o) => o.agentId === agentId);
-    const idx = tabsBefore.findIndex((o) => o.key === opened.key);
-    const remainingAfter = tabsBefore.filter((o) => o.key !== opened.key);
-    const wasActive = activePanel?.type === 'session' && activePanel.key === opened.key;
-
-    setOpenedSessions((prev) => prev.filter((o) => o.key !== opened.key));
-
-    if (!wasActive) return;
-
-    const nextTab = remainingAfter[idx] ?? remainingAfter[idx - 1] ?? remainingAfter[0];
-    if (nextTab) {
-      setActivePanel({ type: 'session', key: nextTab.key });
-      syncUrlParams({ agent: nextTab.agentId, session: nextTab.sessionId });
-      return;
-    }
-    const ag = agents.find((a) => a.id === agentId);
-    if (ag) {
-      setCreating(false);
-      setSelectedAgentId(ag.id);
-      setForm(agentToForm(ag));
-      setExpandedPrompt(false);
-      setActivePanel({ type: 'agent', agentId: ag.id, mode: 'chat' });
-      syncUrlParams({ agent: ag.id, session: null });
-    } else {
-      setActivePanel({ type: 'agent', agentId, mode: 'chat' });
-      setSelectedAgentId(agentId);
-      syncUrlParams({ agent: agentId, session: null });
-    }
-  }, [activePanel, agents]);
 
   const handleAgentSettingsClick = (agent: Agent) => {
     setNewAgentMenuOpen(false);
@@ -1602,22 +1809,6 @@ export default function AgentsPage() {
     ? formatAgentRuntimeCaption(activeWorkspaceAgent)
     : '';
 
-  const currentAgentSessions = useMemo(() => {
-    if (!activeWorkspaceAgent) return [];
-    return allSessions.filter(s => s.agentId === activeWorkspaceAgent.id && !s.archived);
-  }, [allSessions, activeWorkspaceAgent]);
-  const currentAgentHistorySessions = useMemo(() => currentAgentSessions.filter(s => !s.isRunning), [currentAgentSessions]);
-  const openedSessionTabsForAgent = useMemo(() => {
-    if (!activeWorkspaceAgent) return [];
-    return openedSessions.filter((o) => o.agentId === activeWorkspaceAgent.id);
-  }, [openedSessions, activeWorkspaceAgent]);
-
-  const handleWorkspaceSessionTabClick = useCallback((opened: OpenedSession) => {
-    setHistoryExpanded(false);
-    setActivePanel({ type: 'session', key: opened.key });
-    syncUrlParams({ agent: opened.agentId, session: opened.sessionId });
-  }, []);
-
   const handleWorkspacePanelSessionChange = useCallback((
     agent: Agent,
     panelKey: number | null,
@@ -1708,28 +1899,26 @@ export default function AgentsPage() {
     }
   }, [effectiveProjectKey, fetchAllSessions]);
 
-  const mobileChromeTitle = creating
-    ? tAgents('newAgent')
-    : displayText(selectedAgent?.name ?? activeWorkspaceAgent?.name, tAgents('title'));
-
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 overflow-hidden bg-background text-foreground">
       {mobileAgentsListOpen && (
         <button
           type="button"
-          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
           aria-label={t('workspace.closeOverlayAria')}
           onClick={() => setMobileAgentsListOpen(false)}
         />
       )}
       <aside
         className={cn(
-          'relative z-50 flex w-[292px] shrink-0 flex-col border-r border-border bg-muted/20',
+          'relative z-50 flex shrink-0 flex-col border-r border-border bg-muted/20',
+          mdUpAgents ? '' : 'w-[292px]',
           'md:z-auto',
           'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:h-full max-md:w-[min(100%,300px)] max-md:max-w-[90vw] max-md:shadow-xl',
           'max-md:transition-transform max-md:duration-200 max-md:ease-out',
           mobileAgentsListOpen ? 'max-md:translate-x-0' : 'max-md:pointer-events-none max-md:-translate-x-full',
         )}
+        style={mdUpAgents ? { width: agentListWidthPx } : undefined}
       >
         <div className="border-b border-border/80 bg-card/40 px-4 pb-3 pt-4 backdrop-blur-sm">
           <div className="mb-3 flex items-start justify-between gap-2">
@@ -1832,92 +2021,286 @@ export default function AgentsPage() {
                   <div className="flex flex-col gap-1">
                     {group.agents.map((agent) => {
                       const isActive = activeWorkspaceAgent?.id === agent.id;
-                      const agentSessions = allSessions.filter(s => s.agentId === agent.id && !s.archived);
+                      const agentSessions = allSessions.filter((s) => s.agentId === agent.id && !s.archived);
+                      const historySessions = agentSessions;
                       const lastSession = agentLatestNonArchivedSession.get(agent.id);
                       const totalUnread = agentSessions.reduce((sum, s) => sum + (s.unreadCount || 0), 0);
-                      const hasRunning = agentSessions.some(s => s.isRunning);
+                      const hasRunning = agentSessions.some((s) => s.isRunning);
+                      const isHistoryExpanded = expandedAgentHistoryIds.has(agent.id);
+                      const draftSessions = openedSessions.filter((o) => o.agentId === agent.id && o.sessionId === null);
                       return (
-                        <div
-                          key={agent.id}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => handleAgentClick(agent)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              handleAgentClick(agent);
-                            }
-                          }}
-                          className={cn(
-                            'group/agent flex cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2.5 transition-colors',
-                            isActive
-                              ? 'bg-card shadow-sm ring-1 ring-border'
-                              : 'hover:bg-muted/70',
-                          )}
-                        >
+                        <div key={agent.id} className="flex flex-col gap-0.5">
                           <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => handleAgentClick(agent)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                handleAgentClick(agent);
+                              }
+                            }}
                             className={cn(
-                              'h-10 w-10 shrink-0 overflow-hidden rounded-xl ring-1 ring-inset',
+                              'group/agent flex cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2.5 transition-colors',
                               isActive
-                                ? 'bg-primary/10 text-primary ring-primary/15'
-                                : 'bg-muted/80 text-muted-foreground ring-border/60',
+                                ? 'bg-card shadow-sm ring-1 ring-border'
+                                : 'hover:bg-muted/70',
                             )}
                           >
-                            <AgentAvatar
-                              slug={agent.slug}
-                              iconKey={agent.icon}
-                              agentId={agent.id}
-                              customAvatar={agent.customAvatar}
-                              updatedAt={agent.updatedAt}
-                              className="h-full w-full object-cover"
-                            />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="mb-0.5 flex items-center justify-between gap-2">
-                              <div className="flex min-w-0 items-center gap-1.5">
-                                <span
-                                  className={cn(
-                                    'truncate text-sm',
-                                    isActive ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
-                                  )}
-                                >
-                                  {agent.name}
-                                </span>
-                                {agent.builtIn && (
-                                  <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                                    {t('agent.builtInBadge')}
+                            <div
+                              className={cn(
+                                'h-10 w-10 shrink-0 overflow-hidden rounded-xl ring-1 ring-inset',
+                                isActive
+                                  ? 'bg-primary/10 text-primary ring-primary/15'
+                                  : 'bg-muted/80 text-muted-foreground ring-border/60',
+                              )}
+                            >
+                              <AgentAvatar
+                                slug={agent.slug}
+                                iconKey={agent.icon}
+                                agentId={agent.id}
+                                customAvatar={agent.customAvatar}
+                                updatedAt={agent.updatedAt}
+                                className="h-full w-full object-cover"
+                              />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="mb-0.5 flex items-center justify-between gap-2">
+                                <div className="flex min-w-0 items-center gap-1.5">
+                                  <span
+                                    className={cn(
+                                      'truncate text-sm',
+                                      isActive ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
+                                    )}
+                                  >
+                                    {agent.name}
+                                  </span>
+                                </div>
+                                {lastSession && (
+                                  <span className="shrink-0 text-[10px] font-medium tabular-nums text-muted-foreground">
+                                    {formatSessionTimestamp(lastSession.updatedAt, Date.now(), t('session.yesterday'))}
                                   </span>
                                 )}
                               </div>
-                              {lastSession && (
-                                <span className="shrink-0 text-[10px] font-medium tabular-nums text-muted-foreground">
-                                  {formatSessionTimestamp(lastSession.updatedAt, Date.now(), t('session.yesterday'))}
+                              <div
+                                className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
+                                title={agent.description || agent.id}
+                              >
+                                {hasRunning && (
+                                  <span
+                                    className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500 animate-pulse"
+                                    aria-hidden
+                                  />
+                                )}
+                                <span className="truncate">
+                                  {lastSession
+                                    ? displayText(lastSession.title, agent.description || agent.id)
+                                    : (agent.description || agent.id)}
                                 </span>
-                              )}
+                              </div>
                             </div>
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                              {hasRunning && (
-                                <span
-                                  className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500 animate-pulse"
-                                  aria-hidden
-                                />
-                              )}
-                              <span className="truncate">
-                                {lastSession
-                                  ? displayText(lastSession.title, agent.description || agent.id)
-                                  : (agent.description || agent.id)}
+                            {totalUnread > 0 && !isActive && (
+                              <span className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
+                                {totalUnread > 99 ? '99+' : totalUnread}
                               </span>
-                            </div>
+                            )}
+                            {agentSessions.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleAgentHistoryExpanded(agent.id);
+                                }}
+                                className="shrink-0 rounded-md bg-muted/80 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/agent:opacity-100 hover:bg-muted"
+                                title={isHistoryExpanded ? tActions('collapse') : tActions('expand')}
+                              >
+                                {isHistoryExpanded ? '−' : '+'} {agentSessions.length}
+                              </button>
+                            )}
                           </div>
-                          {totalUnread > 0 && !isActive && (
-                            <span className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
-                              {totalUnread > 99 ? '99+' : totalUnread}
-                            </span>
+
+                          {isHistoryExpanded && historySessions.length === 0 && (
+                            <div className="ml-0.5 flex flex-col gap-0.5 rounded-lg bg-muted/20 p-1.5 pl-2">
+                              <button
+                                type="button"
+                                onClick={() => handleNewSession(agent)}
+                                className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                              >
+                                <Plus className="h-3 w-3 shrink-0" aria-hidden />
+                                <span>{t('session.new')}</span>
+                              </button>
+                              {draftSessions.map((draft) => {
+                                const isDraftActive = activePanel?.type === 'session' && activePanel.key === draft.key;
+                                return (
+                                  <button
+                                    key={`draft-${draft.key}`}
+                                    type="button"
+                                    onClick={() => {
+                                      setActivePanel({ type: 'session', key: draft.key });
+                                      syncUrlParams({ agent: agent.id, session: null });
+                                    }}
+                                    onContextMenu={(e) => handleDraftContextMenu(e, draft)}
+                                    onMouseDown={(e) => handleDraftRowMouseDown(e, draft)}
+                                    className={cn(
+                                      'flex min-h-8 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
+                                      isDraftActive
+                                        ? 'bg-primary/10 font-medium text-foreground'
+                                        : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                                    )}
+                                  >
+                                    <MessageSquare className="h-3 w-3 shrink-0 text-primary/60" aria-hidden />
+                                    <span className="min-w-0 flex-1 truncate italic">{t('workspace.draftSessionLabel')}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           )}
-                          {agentSessions.length > 0 && (
-                            <span className="shrink-0 rounded-md bg-muted/80 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/agent:opacity-100">
-                              {agentSessions.length}
-                            </span>
+                          {isHistoryExpanded && historySessions.length > 0 && (
+                            <div className="ml-0.5 flex max-h-48 flex-col gap-0.5 overflow-y-auto rounded-lg bg-muted/20 p-1.5 pl-2">
+                              <button
+                                type="button"
+                                onClick={() => handleNewSession(agent)}
+                                className="flex min-h-7 items-center gap-2 rounded-md px-2 py-1 text-left text-xs text-muted-foreground/60 transition-colors hover:bg-muted/50 hover:text-foreground"
+                              >
+                                <Plus className="h-3 w-3 shrink-0" aria-hidden />
+                                <span>{t('session.new')}</span>
+                              </button>
+                              {draftSessions.map((draft) => {
+                                const isDraftActive = activePanel?.type === 'session' && activePanel.key === draft.key;
+                                return (
+                                  <button
+                                    key={`draft-${draft.key}`}
+                                    type="button"
+                                    onClick={() => {
+                                      setActivePanel({ type: 'session', key: draft.key });
+                                      syncUrlParams({ agent: agent.id, session: null });
+                                    }}
+                                    onContextMenu={(e) => handleDraftContextMenu(e, draft)}
+                                    onMouseDown={(e) => handleDraftRowMouseDown(e, draft)}
+                                    className={cn(
+                                      'flex min-h-8 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
+                                      isDraftActive
+                                        ? 'bg-primary/10 font-medium text-foreground'
+                                        : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                                    )}
+                                  >
+                                    <MessageSquare className="h-3 w-3 shrink-0 text-primary/60" aria-hidden />
+                                    <span className="min-w-0 flex-1 truncate italic">{t('workspace.draftSessionLabel')}</span>
+                                  </button>
+                                );
+                              })}
+                              {[...historySessions]
+                                .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0))
+                                .map((session) =>
+                                  renamingSessionId === session.id ? (
+                                    <form
+                                      key={session.id}
+                                      className="flex min-h-8 items-center gap-2 rounded-md px-2 py-1"
+                                      onSubmit={(e) => {
+                                        e.preventDefault();
+                                        void handleSessionRenameSubmit(session.id);
+                                      }}
+                                      onContextMenu={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        openPersistedSessionContextMenu(e.clientX, e.clientY, session);
+                                      }}
+                                      onMouseDown={(e) => {
+                                        if (e.button !== 2) return;
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        openPersistedSessionContextMenu(e.clientX, e.clientY, session);
+                                      }}
+                                    >
+                                      <Pencil className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
+                                      <input
+                                        autoFocus
+                                        value={renameValue}
+                                        onChange={(e) => setRenameValue(e.target.value)}
+                                        onBlur={() => void handleSessionRenameSubmit(session.id)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Escape') setRenamingSessionId(null);
+                                        }}
+                                        className="min-w-0 flex-1 rounded border border-border bg-background px-1.5 py-0.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
+                                      />
+                                    </form>
+                                  ) : (
+                                    <div
+                                      key={session.id}
+                                      role="presentation"
+                                      className={cn(
+                                        'flex min-h-8 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-all duration-300',
+                                        session.pinned &&
+                                          'border-l-2 border-l-primary bg-primary/[0.06]',
+                                        activeSessionId === session.id
+                                          ? 'bg-primary/10 font-medium text-foreground'
+                                          : session.pinned
+                                            ? 'text-foreground/90 hover:bg-primary/[0.09]'
+                                            : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                                        pinFlashSessionId === session.id &&
+                                          'ring-2 ring-primary/45 ring-offset-1 ring-offset-background animate-pulse',
+                                      )}
+                                      onContextMenu={(e) => {
+                                        if ((e.target as HTMLElement).closest('[data-session-archive-hit]')) return;
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        openPersistedSessionContextMenu(e.clientX, e.clientY, session);
+                                      }}
+                                      onMouseDown={(e) => {
+                                        if (e.button !== 2) return;
+                                        if ((e.target as HTMLElement).closest('[data-session-archive-hit]')) return;
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        openPersistedSessionContextMenu(e.clientX, e.clientY, session);
+                                      }}
+                                    >
+                                      <button
+                                        type="button"
+                                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                                        onClick={() => handleSessionClick(session)}
+                                        onContextMenu={(e) => handleSessionContextMenu(e, session)}
+                                        onMouseDown={(e) => handleSessionRowMouseDown(e, session)}
+                                        title={displayText(session.title, t('workspace.sessionFallbackTitle'))}
+                                      >
+                                        {session.pinned ? (
+                                          <Pin className="h-3 w-3 shrink-0 text-primary" aria-hidden />
+                                        ) : (
+                                          <Clock className="h-3 w-3 shrink-0" aria-hidden />
+                                        )}
+                                        <span className="min-w-0 flex-1 truncate">
+                                          {displayText(session.title, t('workspace.sessionFallbackTitle'))}
+                                        </span>
+                                        {(session.unreadCount ?? 0) > 0 && (
+                                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
+                                        )}
+                                      </button>
+                                      <span className="flex shrink-0 items-center gap-1">
+                                        <span className="text-[9px] text-muted-foreground/70 tabular-nums">
+                                          {formatSessionTimestamp(
+                                            session.updatedAt,
+                                            Date.now(),
+                                            t('session.yesterday'),
+                                          )}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          data-session-archive-hit
+                                          className="rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-muted/80 hover:text-foreground"
+                                          title={t('session.contextMenu.archive')}
+                                          aria-label={t('session.contextMenu.archive')}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            e.preventDefault();
+                                            void handleSessionArchiveFromMenu(session);
+                                          }}
+                                        >
+                                          <Archive className="h-3 w-3 shrink-0" aria-hidden />
+                                        </button>
+                                      </span>
+                                    </div>
+                                  ),
+                                )}
+                            </div>
                           )}
                         </div>
                       );
@@ -1929,46 +2312,120 @@ export default function AgentsPage() {
           )}
         </div>
 
+        {mdUpAgents ? (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={t('workspace.resizeAgentListAria')}
+            onPointerDown={onAgentListResizePointerDown}
+            onPointerMove={onAgentListResizePointerMove}
+            onPointerUp={onAgentListResizePointerUp}
+            onPointerCancel={onAgentListResizePointerUp}
+            className="group absolute inset-y-0 right-0 z-30 w-2 shrink-0 cursor-col-resize touch-none select-none hover:bg-accent/25"
+          >
+            <span
+              className="pointer-events-none absolute inset-y-0 right-1 w-px bg-transparent group-hover:bg-border"
+              aria-hidden
+            />
+          </div>
+        ) : null}
       </aside>
+
+      {sessionContextMenu ? (
+        <>
+          <div
+            className="fixed inset-0 z-[200]"
+            aria-hidden
+            onClick={closeSessionContextMenu}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              // 勿在此处 close：同一记右键会先 mousedown 打开菜单、再 contextmenu 命中本层 z-200 遮罩，若关闭会表现为「右键无菜单」
+            }}
+          />
+          <div
+            role="menu"
+            className="fixed z-[210] min-w-[200px] rounded-lg border border-border bg-popover py-1 text-sm text-popover-foreground shadow-lg"
+            style={{ left: sessionContextMenu.x, top: sessionContextMenu.y }}
+          >
+            {sessionContextMenu.kind === 'session' ? (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/80"
+                  onClick={() => void handleSessionPin(sessionContextMenu.session)}
+                >
+                  {sessionContextMenu.session.pinned ? (
+                    <PinOff className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  ) : (
+                    <Pin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  )}
+                  {sessionContextMenu.session.pinned
+                    ? t('session.contextMenu.unpin')
+                    : t('session.contextMenu.pin')}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/80"
+                  onClick={() => handleSessionRenameStart(sessionContextMenu.session)}
+                >
+                  <Pencil className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  {t('session.contextMenu.rename')}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/80"
+                  onClick={() => void handleSessionMarkAsUnread(sessionContextMenu.session)}
+                >
+                  <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  {t('session.contextMenu.markAsUnread')}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/80"
+                  onClick={() => void handleSessionFork(sessionContextMenu.session)}
+                >
+                  <GitFork className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  {t('session.contextMenu.forkChat')}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/80"
+                  onClick={() => void handleSessionArchiveFromMenu(sessionContextMenu.session)}
+                >
+                  {sessionContextMenu.session.archived ? (
+                    <ArchiveRestore className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  ) : (
+                    <Archive className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  )}
+                  {sessionContextMenu.session.archived
+                    ? t('session.contextMenu.unarchive')
+                    : t('session.contextMenu.archive')}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/80"
+                title={t('workspace.sessionTabCloseTitle')}
+                onClick={() =>
+                  handleRemoveDraftFromOpenedList(sessionContextMenu.key, sessionContextMenu.agentId)}
+              >
+                <X className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                {t('workspace.sessionTabCloseLabel')}
+              </button>
+            )}
+          </div>
+        </>
+      ) : null}
 
       <div className="relative flex min-h-0 min-w-0 flex-1">
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
-        {/* 占位：顶栏改为 fixed 后避免主内容顶到导航下 */}
-        <div className="h-14 shrink-0 lg:hidden" aria-hidden />
-        {/*
-          fixed + z-[60]：右侧抽屉遮罩为 z-40 全屏，若顶栏仅在文档流中会被挡住，表现为「侧栏按钮丢失」。
-          md:left-[292px]：与左侧 Agent 列表同宽，避免盖住桌面窄窗下的左栏。
-        */}
-        <div
-          role="toolbar"
-          aria-label={t('workspace.mobileAgentsToolbarAria')}
-          className={cn(
-            'fixed right-0 top-16 z-[60] flex h-14 items-center gap-2 border-b border-border bg-card/95 px-3 shadow-sm backdrop-blur-sm lg:hidden',
-            'left-0 md:left-[292px]',
-          )}
-        >
-          <button
-            type="button"
-            onClick={() => setMobileAgentsListOpen(true)}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground shadow-sm transition-colors hover:bg-muted/80 md:hidden"
-            aria-label={t('workspace.openAgentListAria')}
-          >
-            <PanelLeft className="h-5 w-5" aria-hidden />
-          </button>
-          <div className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-            {mobileChromeTitle}
-          </div>
-          <button
-            type="button"
-            onClick={() => setMobileWorkspaceRailOpen((o) => !o)}
-            aria-expanded={mobileWorkspaceRailOpen}
-            aria-controls="agents-workspace-rail-aside"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground shadow-sm transition-colors hover:bg-muted/80"
-            aria-label={t('workspace.openWorkspaceRailAria')}
-          >
-            <PanelRight className="h-5 w-5" aria-hidden />
-          </button>
-        </div>
         {activePanel?.type === 'agent' && selectedAgent && agentViewMode === 'settings' ? (
           expandedPrompt ? (
             <div className="flex flex-1 flex-col p-4 gap-3 overflow-hidden">
@@ -2024,6 +2481,45 @@ export default function AgentsPage() {
                 <div className="flex shrink-0 items-center gap-1">
                   <button
                     type="button"
+                    onClick={() => setMobileAgentsListOpen(true)}
+                    className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
+                    aria-label={t('workspace.openAgentListAria')}
+                  >
+                    <PanelLeft className="h-4 w-4" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMobileWorkspaceRailOpen((o) => !o)}
+                    aria-expanded={mobileWorkspaceRailOpen}
+                    aria-controls="agents-workspace-rail-aside"
+                    className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
+                    aria-label={t('workspace.openWorkspaceRailAria')}
+                  >
+                    <PanelRight className="h-4 w-4" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    className="hidden rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:inline-flex"
+                    title={t('workspace.more')}
+                    aria-label={t('workspace.more')}
+                  >
+                    <Ellipsis className="h-4 w-4" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={toggleWorkspaceRailVisible}
+                    className={cn(
+                      'hidden rounded-lg p-2 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:inline-flex',
+                      workspaceRailVisible ? 'text-foreground' : 'text-muted-foreground',
+                    )}
+                    title={t('workspace.toggleSidebar')}
+                    aria-label={t('workspace.toggleSidebar')}
+                    aria-pressed={workspaceRailVisible}
+                  >
+                    <PanelRight className="h-4 w-4" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => handleExport(selectedAgent)}
                     className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     title="导出 .ppagent"
@@ -2075,27 +2571,23 @@ export default function AgentsPage() {
           <div className="flex flex-1 flex-col overflow-hidden bg-linear-to-b from-background via-background to-muted/20">
             {activeWorkspaceAgent ? (
               <>
-                {/* ── Top: row 1 = Agent & config, row 2 = conversation ── */}
-                {/* relative z-30：下拉（历史）绝对定位溢出到下方时，必须整块叠在聊天区之上，否则兄弟节点会抢走点击 */}
-                <div className="relative z-30 shrink-0 border-b border-border bg-card/30 px-4 py-3 backdrop-blur-sm sm:px-5">
+                {/* ── Top: Agent identity & configuration ── */}
+                <div className="relative shrink-0 border-b border-border bg-card/30 px-4 py-3 backdrop-blur-sm sm:px-5">
                   <div className="mx-auto flex max-w-6xl flex-col gap-3">
-                    {/* Row 1 — identity & configuration (not conversation) */}
                     <section
                       aria-label={activeWorkspaceAgent.name}
-                      className="flex flex-col gap-3 rounded-xl border border-border/60 bg-background/80 p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+                      className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
                     >
-                      <div className="flex min-w-0 flex-1 items-start gap-3">
-                        <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-muted ring-1 ring-border">
-                          <AgentAvatar
-                            slug={activeWorkspaceAgent.slug}
-                            iconKey={activeWorkspaceAgent.icon}
-                            agentId={activeWorkspaceAgent.id}
-                            customAvatar={activeWorkspaceAgent.customAvatar}
-                            updatedAt={activeWorkspaceAgent.updatedAt}
-                            className="h-full w-full object-cover"
-                          />
-                        </div>
-                        <div className="min-w-0">
+                      <div className="flex min-w-0 flex-1 items-start gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setMobileAgentsListOpen(true)}
+                          className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground shadow-sm transition-colors hover:bg-muted/80 lg:hidden"
+                          aria-label={t('workspace.openAgentListAria')}
+                        >
+                          <PanelLeft className="h-4 w-4" aria-hidden />
+                        </button>
+                        <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                             <span className="truncate text-base font-semibold tracking-tight text-foreground">
                               {activeWorkspaceAgent.name}
@@ -2116,171 +2608,43 @@ export default function AgentsPage() {
                       <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border/60 pt-3 sm:border-t-0 sm:pt-0">
                         <button
                           type="button"
+                          onClick={() => setMobileWorkspaceRailOpen((o) => !o)}
+                          aria-expanded={mobileWorkspaceRailOpen}
+                          aria-controls="agents-workspace-rail-aside"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background text-foreground shadow-sm transition-colors hover:bg-muted/80 lg:hidden"
+                          aria-label={t('workspace.openWorkspaceRailAria')}
+                        >
+                          <PanelRight className="h-4 w-4" aria-hidden />
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleAgentSettingsClick(activeWorkspaceAgent)}
                           className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-accent"
                         >
                           <Settings className="h-3.5 w-3.5" />
                           {t('workspace.configureAgent')}
                         </button>
-                      </div>
-                    </section>
-
-                    {/* Row 2 — 多会话标签行 + 新开 / 历史（其余布局不变） */}
-                    <section
-                      ref={conversationStripRef}
-                      aria-label={t('workspace.rowConversationEyebrow')}
-                      className="relative rounded-lg border border-border/60 bg-background/80 shadow-sm"
-                    >
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-0">
-                        <div className="flex min-h-10 min-w-0 flex-1 flex-col justify-end sm:min-h-9">
-                          <div
-                            role="tablist"
-                            className="flex min-w-0 items-end gap-0.5 overflow-x-auto border-b border-border/70 px-2 pt-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                          >
-                            {openedSessionTabsForAgent.map((opened) => {
-                              const sess = opened.sessionId
-                                ? currentAgentSessions.find((s) => s.id === opened.sessionId)
-                                : null;
-                              const label = opened.sessionId === null
-                                ? t('workspace.draftShort')
-                                : displayText(sess?.title, t('workspace.unnamedSession'));
-                              const isActive =
-                                activePanel?.type === 'session' && activePanel.key === opened.key;
-                              const running = !!sess?.isRunning;
-                              return (
-                                <div
-                                  key={opened.key}
-                                  className={cn(
-                                    'group/tab relative flex max-w-[min(220px,48vw)] shrink-0 rounded-t-md border',
-                                    isActive
-                                      ? 'z-10 -mb-px border-border border-b-background bg-background text-foreground'
-                                      : 'border-transparent border-b-0 bg-muted/45 text-muted-foreground hover:bg-muted/80 hover:text-foreground',
-                                  )}
-                                >
-                                  <button
-                                    type="button"
-                                    role="tab"
-                                    aria-selected={isActive}
-                                    title={t('workspace.sessionTabSwitch', { title: label })}
-                                    onClick={() => handleWorkspaceSessionTabClick(opened)}
-                                    className="flex min-w-0 flex-1 items-center gap-2 py-2 pl-3 pr-8 text-left text-sm transition-colors"
-                                  >
-                                    {running ? (
-                                      <span className="relative flex h-2 w-2 shrink-0">
-                                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                                        <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-                                      </span>
-                                    ) : (
-                                      <MessageSquare
-                                        className={cn(
-                                          'h-3.5 w-3.5 shrink-0',
-                                          isActive ? 'text-primary' : 'text-muted-foreground',
-                                        )}
-                                        aria-hidden
-                                      />
-                                    )}
-                                    <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    aria-label={t('workspace.sessionTabCloseLabel')}
-                                    title={t('workspace.sessionTabCloseTitle')}
-                                    onClick={(e) => handleCloseWorkspaceSessionTab(opened, e)}
-                                    className="absolute right-1 top-1 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive focus-visible:opacity-100 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100"
-                                  >
-                                    <X className="h-3.5 w-3.5" aria-hidden />
-                                  </button>
-                                </div>
-                              );
-                            })}
-                            {openedSessionTabsForAgent.length === 0 ? (
-                              <span className="px-2 py-2 text-xs text-muted-foreground">
-                                {t('workspace.sessionTabsEmptyHint')}
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
-
-                        <div className="flex shrink-0 flex-wrap items-center gap-2 border-border/70 px-2 py-2 sm:flex-nowrap sm:border-b sm:border-l sm:px-3 sm:py-0">
-                          <button
-                            type="button"
-                            onClick={() => handleNewSession(activeWorkspaceAgent)}
-                            className="inline-flex min-h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted sm:min-h-9 sm:flex-initial sm:rounded-md sm:px-3"
-                            title={t('workspace.newConversation')}
-                          >
-                            <Plus className="h-4 w-4 shrink-0" aria-hidden />
-                            <span className="truncate sm:hidden">{t('workspace.newConversationShort')}</span>
-                            <span className="hidden truncate sm:inline">{t('workspace.newConversation')}</span>
-                          </button>
-                          {currentAgentHistorySessions.length > 0 ? (
-                            <div className="relative shrink-0 sm:flex-initial">
-                              <button
-                                type="button"
-                                onClick={() => setHistoryExpanded((prev) => !prev)}
-                                aria-expanded={historyExpanded}
-                                aria-haspopup="menu"
-                                aria-label={t('workspace.historyWithCountAria', { count: currentAgentHistorySessions.length })}
-                                title={
-                                  historyExpanded
-                                    ? t('workspace.collapseHistory')
-                                    : t('workspace.historyChatsWithCount', { count: currentAgentHistorySessions.length })
-                                }
-                                className={cn(
-                                  'inline-flex min-h-10 min-w-[44px] w-full items-center justify-center gap-2 rounded-lg border border-border px-3 text-sm font-medium transition-colors sm:min-h-9 sm:w-auto sm:rounded-md',
-                                  historyExpanded ? 'border-primary/30 bg-primary/10 text-foreground' : 'bg-background text-muted-foreground hover:bg-muted hover:text-foreground',
-                                )}
-                              >
-                                <History className="h-4 w-4 shrink-0" aria-hidden />
-                                <span className="sm:hidden">
-                                  {t('workspace.historyShort')}
-                                  <span className="tabular-nums"> ({currentAgentHistorySessions.length})</span>
-                                </span>
-                                <span className="hidden items-center gap-2 sm:inline-flex">
-                                  <span>{t('workspace.historySessionsLabel')}</span>
-                                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
-                                    {currentAgentHistorySessions.length > 99 ? '99+' : currentAgentHistorySessions.length}
-                                  </span>
-                                </span>
-                              </button>
-                              {historyExpanded ? (
-                                <div
-                                  role="menu"
-                                  className="absolute right-0 top-full z-100 mt-1.5 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-md"
-                                >
-                                  <ul className="max-h-[min(320px,50vh)] space-y-0 overflow-y-auto p-1" role="none">
-                                    {currentAgentHistorySessions.map((session) => (
-                                      <li key={session.id} role="none">
-                                        <button
-                                          type="button"
-                                          role="menuitem"
-                                          onClick={() => handleSessionClick(session)}
-                                          className={cn(
-                                            'flex min-h-10 w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors',
-                                            activeWorkspaceSessionId === session.id
-                                              ? 'bg-primary/10'
-                                              : 'hover:bg-muted/70',
-                                          )}
-                                        >
-                                          <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                                          <span className="min-w-0 flex-1 truncate">
-                                            {displayText(session.title, t('workspace.unnamedSession'))}
-                                          </span>
-                                          <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
-                                            {formatSessionTimestamp(
-                                              session.updatedAt,
-                                              listClockNow ?? Date.now(),
-                                              t('session.yesterday'),
-                                            )}
-                                          </span>
-                                        </button>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              ) : null}
-                            </div>
-                          ) : null}
-                        </div>
+                        <button
+                          type="button"
+                          className="hidden h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:inline-flex"
+                          title={t('workspace.more')}
+                          aria-label={t('workspace.more')}
+                        >
+                          <Ellipsis className="h-4 w-4" aria-hidden />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={toggleWorkspaceRailVisible}
+                          className={cn(
+                            'hidden h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-accent hover:text-foreground lg:inline-flex',
+                            workspaceRailVisible ? 'text-foreground' : 'text-muted-foreground',
+                          )}
+                          title={t('workspace.toggleSidebar')}
+                          aria-label={t('workspace.toggleSidebar')}
+                          aria-pressed={workspaceRailVisible}
+                        >
+                          <PanelRight className="h-4 w-4" aria-hidden />
+                        </button>
                       </div>
                     </section>
                   </div>
@@ -2345,13 +2709,13 @@ export default function AgentsPage() {
                 Agent 设置
               </button>
               <button
-                onClick={handleStartCreate}
+                onClick={openNewAgentManual}
                 className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[12px] font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
               >
                 新建 Agent
               </button>
               <button
-                onClick={handleImport}
+                onClick={openNewAgentImportModal}
                 className="rounded-md p-2 text-zinc-400 transition-colors hover:bg-white hover:text-zinc-700 dark:hover:bg-zinc-900 dark:hover:text-zinc-200"
                 title="导入 Agent"
               >
@@ -2551,6 +2915,7 @@ export default function AgentsPage() {
           className={cn(
             'flex h-full min-h-0 w-[min(100%,288px)] flex-col border-l border-border bg-muted/10 sm:w-[292px] lg:w-[340px]',
             'lg:relative lg:shrink-0',
+            !workspaceRailVisible && 'lg:hidden',
             'max-lg:absolute max-lg:right-0 max-lg:top-0 max-lg:z-50 max-lg:w-[min(100vw,320px)] max-lg:max-w-[90vw] max-lg:shadow-xl',
             'max-lg:transition-transform max-lg:duration-200 max-lg:ease-out',
             mobileWorkspaceRailOpen

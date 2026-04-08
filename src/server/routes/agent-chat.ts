@@ -32,6 +32,10 @@ import {
   updateUserMessageContentOnDisk,
   branchSession,
   buildPromptPreview,
+  setSessionPinned,
+  renameSessionTitle,
+  bumpSessionUnread,
+  forkChatSession,
 } from '@/lib/agent-chat-manager';
 import { normalizeOpenAIFastMode } from '@/lib/openai-fast-mode';
 import { OPENAI_REASONING_EFFORTS, normalizeOpenAIReasoningEffort } from '@/lib/openai-reasoning-effort';
@@ -100,6 +104,7 @@ app.post('/', async (c) => {
     providerOverride, modelOverride, effortOverride, fastModeOverride,
     images, initialTitle, config, parentSessionId, depth, background,
     sourceType, sourceId, todoId, userMessageMeta: rawUserMessageMeta,
+    reuseLastUserTurn,
   } = body as {
     agentId: string;
     message: string;
@@ -119,6 +124,7 @@ app.post('/', async (c) => {
     sourceId?: string;
     todoId?: string;
     userMessageMeta?: unknown;
+    reuseLastUserTurn?: boolean;
   };
 
   let userMessageMeta: import('@/types/agent-chat').ChatMessageDiskMeta | undefined;
@@ -146,7 +152,14 @@ app.post('/', async (c) => {
   }
 
   const hasImages = Array.isArray(images) && images.length > 0;
-  if (message.length === 0 && !hasImages) {
+  const reuseTurn = reuseLastUserTurn === true;
+  if (reuseTurn && !requestedSessionId) {
+    return c.json({ error: 'sessionId is required when reuseLastUserTurn is true' }, 400);
+  }
+  if (reuseTurn && hasImages) {
+    return c.json({ error: 'reuseLastUserTurn cannot include new images in this request' }, 400);
+  }
+  if (!reuseTurn && message.length === 0 && !hasImages) {
     return c.json({ error: 'message or at least one image is required' }, 400);
   }
 
@@ -161,6 +174,20 @@ app.post('/', async (c) => {
 
   if (requestedSessionId && !isValidSessionId(requestedSessionId)) {
     return c.json({ error: 'Invalid sessionId format' }, 400);
+  }
+
+  if (reuseTurn && requestedSessionId) {
+    const sess = await loadSession(requestedSessionId);
+    const lm = sess?.messages?.[sess.messages.length - 1];
+    const lastOk =
+      lm?.role === 'user'
+      && (String(lm.content ?? '').trim().length > 0 || (lm.images && lm.images.length > 0));
+    if (!lastOk) {
+      return c.json(
+        { error: 'Session must end with a user message that has text or images' },
+        400,
+      );
+    }
   }
 
   if (projectKey && !isValidProjectKey(projectKey)) {
@@ -252,7 +279,8 @@ app.post('/', async (c) => {
       (sourceType || 'manual') as 'manual' | 'schedule' | 'todo' | 'event',
       sourceId,
       todoId,
-      userMessageMeta,
+      reuseTurn ? undefined : userMessageMeta,
+      reuseTurn,
     );
 
     console.log(
@@ -685,6 +713,46 @@ app.patch('/sessions/:id', async (c) => {
     }
   }
 
+  if (body.action === 'pin' || body.action === 'unpin') {
+    const found = await setSessionPinned(id, body.action === 'pin');
+    if (!found) {
+      return c.json({ error: 'Session not found' }, 404);
+    }
+    return c.json({ ok: true });
+  }
+
+  if (body.action === 'rename') {
+    if (typeof body.title !== 'string') {
+      return c.json({ error: 'title must be a string' }, 400);
+    }
+    const ok = await renameSessionTitle(id, body.title);
+    if (!ok) {
+      return c.json({ error: 'Session not found or invalid title' }, 404);
+    }
+    return c.json({ ok: true });
+  }
+
+  if (body.action === 'markAsUnread') {
+    const found = await bumpSessionUnread(id);
+    if (!found) {
+      return c.json({ error: 'Session not found' }, 404);
+    }
+    return c.json({ ok: true });
+  }
+
+  if (body.action === 'fork') {
+    try {
+      const forkedId = await forkChatSession(id);
+      if (!forkedId) {
+        return c.json({ error: 'Session not found' }, 404);
+      }
+      return c.json({ ok: true, forkedId });
+    } catch (err) {
+      console.error('[API] forkChatSession failed:', err);
+      return c.json({ error: 'Internal error' }, 500);
+    }
+  }
+
   if (body.action === 'updateConfig') {
     const config = body.config ?? {};
     try {
@@ -742,6 +810,7 @@ app.patch('/sessions/:id', async (c) => {
       body.messageIndex,
       body.content,
       typeof body.frontendMessageCount === 'number' ? body.frontendMessageCount : undefined,
+      body.truncateAfter === true,
     );
 
     if (result === 'not_found') {

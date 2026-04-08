@@ -113,6 +113,9 @@ export interface AgentChatSession {
   sourceId?: string;
   todoId?: string;
 
+  /** 侧栏历史列表内置顶 */
+  pinned?: boolean;
+
   /** 会话已归档（已完成的任务，侧边栏显示为灰色） */
   archived?: boolean;
 

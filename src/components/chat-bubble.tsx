@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookMarked,
   Bot,
@@ -20,6 +20,7 @@ import { ToolCallCard } from '@/components/tool-call-card';
 import { ToolExecutionWindow } from '@/components/tool-execution-window';
 import type { ParsedActionTag } from '@/lib/action-tag-parser';
 import { isRepetitiveTool } from '@/lib/tool-utils';
+import { cn } from '@/lib/utils';
 import type { ChatMessage, ChatToolCall, ContentBlock } from '@/types';
 
 /** 旧版「已手动开启 Run：…」助手提示，解析后改卡片展示 */
@@ -38,19 +39,44 @@ const ThinkingFoldable = memo(function ThinkingFoldable({
 }: {
   text: string;
   label: string;
+  /** 思考块仍在流式输出（当前助手气泡最后一块 thinking） */
   showPulse: boolean;
 }) {
-  const [open, setOpen] = useState(true);
+  /** 流式结束后用户手动展开；流式中由 showPulse 强制展开 */
+  const [settledOpen, setSettledOpen] = useState(false);
+  const prevPulseRef = useRef(showPulse);
+
+  useEffect(() => {
+    if (prevPulseRef.current && !showPulse) {
+      setSettledOpen(false);
+    }
+    prevPulseRef.current = showPulse;
+  }, [showPulse]);
+
+  const open = showPulse || settledOpen;
+
   return (
     <details
       className="my-2 rounded-lg border border-violet-200/80 bg-violet-50/50 text-sm dark:border-violet-900/50 dark:bg-violet-950/25"
       open={open}
-      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+      onToggle={(e) => {
+        const el = e.target as HTMLDetailsElement;
+        if (showPulse) {
+          if (!el.open) el.open = true;
+          return;
+        }
+        setSettledOpen(el.open);
+      }}
     >
       <summary className="cursor-pointer select-none px-3 py-1.5 text-violet-800 dark:text-violet-200">
         {label}
       </summary>
-      <div className="whitespace-pre-wrap border-t border-violet-100 px-3 py-2 font-mono text-xs leading-relaxed text-zinc-600 wrap-break-word dark:border-violet-900/40 dark:text-zinc-400">
+      <div
+        className={cn(
+          'whitespace-pre-wrap border-t border-violet-100 px-3 py-2 font-mono text-xs leading-relaxed text-zinc-600 wrap-break-word dark:border-violet-900/40 dark:text-zinc-400',
+          showPulse && 'max-h-[10lh] overflow-y-auto overflow-x-hidden overscroll-contain',
+        )}
+      >
         {text}
         {showPulse && (
           <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-current opacity-60" />
@@ -579,7 +605,7 @@ export const ChatBubble = memo(function ChatBubble({
                   </button>
                 )}
 
-                {onBranch && (
+                {onBranch && !isUser && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -593,7 +619,7 @@ export const ChatBubble = memo(function ChatBubble({
                   </button>
                 )}
 
-                {onEdit && (
+                {onEdit && isUser && (
                   <button
                     onClick={handleStartEdit}
                     disabled={isStreaming}

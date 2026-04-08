@@ -30,4 +30,8 @@ export {
   deleteSessionFromDisk,
   branchSession,
   loadAgent,
+  setSessionPinned,
+  renameSessionTitle,
+  bumpSessionUnread,
+  forkChatSession,
 } from './chat-managers/agent-chat-session-store';
