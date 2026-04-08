@@ -24,6 +24,9 @@ import { shouldApplyOpenAIFastMode } from '@/lib/openai-fast-mode';
 import { DEFAULT_OPENAI_REASONING_EFFORT, normalizeOpenAIReasoningEffort } from '@/lib/openai-reasoning-effort';
 import { getAppWorkingDir } from '@/lib/app-paths';
 import { buildSdkQueryOptions, buildCodexExecEnv, getEffectiveAuthMode, getProviderScopedModel, getSettings } from '@/lib/settings-manager';
+import type { AgentTodoMcpContext } from '@/lib/agent-todo-mcp-server';
+import type { AgentRegistryMcpContext } from '@/lib/agent-registry-mcp-server';
+import type { AgentDocumentsMcpContext } from '@/lib/agent-documents-mcp-server';
 import type { AgentEvent, AgentCapabilities, ProviderId } from '@/types';
 
 /** 运行时统一输入：正文为 UTF-8 字符串；多模态由 StreamOptions.images 传入 */
@@ -66,6 +69,12 @@ export interface AgentRunnerCreateOptions {
   fastModeOverride?: boolean;
   resumeSessionId?: string;
   cwd?: string;
+  /** 开启 todoRead 时传入，用于注册进程内待办 MCP（仅 Claude Agent SDK 路径） */
+  todoMcpContext?: AgentTodoMcpContext;
+  /** 开启 registryMcp 时传入（共享记忆 / 并行看板 / Agent 注册表 MCP） */
+  registryMcpContext?: AgentRegistryMcpContext;
+  /** 开启 documentsMcp 时传入（设计文档 / 知识文档 MCP） */
+  documentsMcpContext?: AgentDocumentsMcpContext;
 }
 
 // ── Registry ─────────────────────────────────────────────────────────────────
@@ -164,6 +173,9 @@ async function createClaudeAgentRunner(opts: AgentRunnerCreateOptions, cwd: stri
     effortOverride: opts.effortOverride,
     resumeSessionId: opts.resumeSessionId,
     cwd,
+    todoMcpContext: opts.todoMcpContext,
+    registryMcpContext: opts.registryMcpContext,
+    documentsMcpContext: opts.documentsMcpContext,
   });
 
   // Diagnostic: log key SDK options

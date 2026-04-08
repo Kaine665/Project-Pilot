@@ -16,33 +16,24 @@ const STATUS_LABELS: Record<string, string> = {
   done: '已完成',
 };
 
-const API_GUIDE = `### Todo API
+const MCP_GUIDE = `### 待办操作（优先使用 MCP 工具）
 
-基础 URL: \`http://localhost:4000/api/todos\`
+本会话已注册 MCP 服务器 **projectpilot-todos**（结构化工具调用，勿用 Bash/curl 访问 HTTP）。
 
-| 操作 | 方法 | 路径 | 请求体 |
-|------|------|------|--------|
-| 列表 | GET | /api/todos | — |
-| 新建 | POST | /api/todos | \`{ title, description?, priority?, projectKey? }\` |
-| 更新 | PATCH | /api/todos/:id | \`{ title?, description?, status?, priority?, projectKey? }\` |
-| 删除 | DELETE | /api/todos/:id | — |
+| 工具 | 用途 |
+|------|------|
+| \`list_todos\` | 列出当前会话可见待办（可选 \`includeDone\`） |
+| \`create_todo\` | 新建（\`title\` 必填；\`description\`、\`priority\`、\`status\`、\`agentId\`、\`projectKey\` 可选） |
+| \`update_todo\` | 更新（\`id\` 必填 + 要改的字段） |
+| \`delete_todo\` | 删除（\`id\`） |
 
-字段说明：
-- **status**: \`pending\` / \`in_progress\` / \`done\`
-- **priority**: \`high\` / \`medium\` / \`low\`
-- **id** 格式: \`todo-{timestamp}\`（创建时自动生成）
+**status**: \`pending\` / \`in_progress\` / \`done\`  
+**priority**: \`high\` / \`medium\` / \`low\`  
+**id** 格式: \`todo-{timestamp}\`
 
-使用示例（Bash）:
-\`\`\`bash
-# 标记为进行中
-curl -s -X PATCH http://localhost:4000/api/todos/todo-123 -H "Content-Type: application/json" -d '{"status":"in_progress"}'
+开始处理某条待办时请 \`update_todo\` 将 \`status\` 设为 \`in_progress\`；完成后设为 \`done\`。
 
-# 标记为完成
-curl -s -X PATCH http://localhost:4000/api/todos/todo-123 -H "Content-Type: application/json" -d '{"status":"done"}'
-
-# 新建待办
-curl -s -X POST http://localhost:4000/api/todos -H "Content-Type: application/json" -d '{"title":"…","priority":"high"}'
-\`\`\``;
+（REST \`/api/todos\` 仍供应用前端使用；Agent 侧请只用上述 MCP 工具。）`;
 
 export class TodoListLoader implements ResourceLoader {
   readonly type = 'todo-list' as const;
@@ -66,7 +57,7 @@ export class TodoListLoader implements ResourceLoader {
     if (todos.length === 0) {
       return {
         ref,
-        content: API_GUIDE + '\n\n当前没有未完成的待办事项。',
+        content: MCP_GUIDE + '\n\n当前没有未完成的待办事项。',
         sectionTitle: 'AI 待办系统',
         ok: true,
       };
@@ -82,20 +73,9 @@ export class TodoListLoader implements ResourceLoader {
 
     const todoList = `### 当前待办（共 ${todos.length} 项）\n\n${lines.join('\n\n')}`;
 
-    const STATUS_GUIDE = `### 任务状态管理
-
-当你完成了某个待办任务后，请主动更新其状态：
-\`\`\`bash
-curl -s -X PATCH http://localhost:4000/api/todos/<todo-id> -H "Content-Type: application/json" -d '{"status":"done"}'
-\`\`\`
-如果你开始处理某个待办，先将其标记为进行中：
-\`\`\`bash
-curl -s -X PATCH http://localhost:4000/api/todos/<todo-id> -H "Content-Type: application/json" -d '{"status":"in_progress"}'
-\`\`\``;
-
     return {
       ref,
-      content: API_GUIDE + '\n\n' + todoList + '\n\n' + STATUS_GUIDE,
+      content: MCP_GUIDE + '\n\n' + todoList,
       sectionTitle: 'AI 待办系统',
       ok: true,
     };

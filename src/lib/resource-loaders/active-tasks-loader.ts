@@ -29,7 +29,13 @@ export class ActiveTasksLoader implements ResourceLoader {
       return `| ${t.title} | ${t.agentType} | ${project} | ${scope} | ${branch} | ${elapsed} |`;
     };
 
-    const md = `以下任务正在并行进行中，请注意避免冲突。如果你的任务涉及相同的文件或模块，请谨慎操作。\n\n${tableHeader}\n${tasks.map(toRow).join('\n')}\n`;
+    const md = `以下任务正在并行进行中，请注意避免冲突。如果你的任务涉及相同的文件或模块，请谨慎操作。
+
+**登记/完成/心跳**：若已开启 **注册表 MCP**（\`registryMcp\`），请用 **projectpilot-registry** 的 \`at_register\`、\`at_complete\`、\`at_fail\`、\`at_heartbeat\` 等工具；否则需在 PP 应用代码根用 \`npx tsx src/lib/active-tasks.ts …\`。
+
+${tableHeader}
+${tasks.map(toRow).join('\n')}
+`;
 
     return {
       ref,

@@ -69,6 +69,7 @@ export class AvailableAgentsLoader implements ResourceLoader {
 - Claude Agent SDK **没有**名为 \`Agent\`、\`InvokeAgent\` 等「一键切换 Agent」的原生工具；若尝试调用会失败。
 - 委派方式：使用 **Bash** 工具，\`cd\` 到下方 **PP 应用代码根**（与当前会话 \`cwd\` 常为业务项目根目录**不是**同一目录），再运行 \`npx tsx src/lib/call-agent.ts ...\`。
 - 若当前 Agent **未开启 Bash**（\`capabilities.bash = false\`），无法执行上述命令，应请用户在界面中**新建会话并切换**到目标 Agent。
+- 若已开启 **注册表 MCP**（\`registryMcp\`），可用 **projectpilot-registry** 的 \`reg_list_agents\` / \`reg_get_agent\` 拉取注册表；**仅可**用 \`reg_update_my_agent\` 修改**当前** Agent 自身配置，不能改其他 Agent。
 
 **PP 应用代码根（用于 call-agent）**：\`${shAppRoot}\`
 

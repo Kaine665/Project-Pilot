@@ -147,6 +147,8 @@ async function callClaudeLightweight(prompt: string): Promise<string> {
         todoRead: false,
         exposePromptPath: false,
         dataStore: false,
+        registryMcp: false,
+        documentsMcp: false,
       },
       cwd: getAppWorkingDir(),
     });
