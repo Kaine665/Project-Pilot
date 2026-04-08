@@ -2122,14 +2122,6 @@ export default function AgentsPage() {
                           <Settings className="h-3.5 w-3.5" />
                           {t('workspace.configureAgent')}
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => handleExport(activeWorkspaceAgent)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-accent"
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                          {t('workspace.exportPackage')}
-                        </button>
                       </div>
                     </section>
 
