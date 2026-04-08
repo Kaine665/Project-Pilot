@@ -145,6 +145,24 @@ export default function AgentsPage() {
   const openedSessionsRef = useRef<OpenedSession[]>(openedSessions);
   openedSessionsRef.current = openedSessions;
   const nextKeyRef = useRef(1);
+
+  // 清理每个 Agent 多余的 draft（只保留最新的一个）
+  useEffect(() => {
+    setOpenedSessions(prev => {
+      const seen = new Set<string>();
+      const cleaned: OpenedSession[] = [];
+      // 反向遍历，保留最新的 draft
+      for (let i = prev.length - 1; i >= 0; i--) {
+        const o = prev[i];
+        if (o.sessionId === null) {
+          if (seen.has(o.agentId)) continue; // 跳过多余的 draft
+          seen.add(o.agentId);
+        }
+        cleaned.unshift(o);
+      }
+      return cleaned.length === prev.length ? prev : cleaned;
+    });
+  }, []);
   const workspaceUiHydratedRef = useRef(false);
   const hydrateSeqRef = useRef(0);
 
@@ -682,6 +700,7 @@ export default function AgentsPage() {
           unreadCount: s.unreadCount,
           pinned: s.pinned,
           archived: s.archived,
+          pinned: s.pinned,
           projectKey: s.projectKey,
         };
       });
@@ -2650,7 +2669,7 @@ export default function AgentsPage() {
                   </div>
                 </div>
 
-                {/* ── Bottom: Chat area (fixed height) ── */}
+                {/* ── Chat area ── */}
                 <div
                   className="relative z-0 min-h-0 flex-1"
                   style={{ minHeight: 'min(420px, 50svh)' }}

@@ -11,7 +11,7 @@ import {
 } from '@/lib/notification/notification-sound-presets';
 import { normalizeOpenAIFastMode } from '@/lib/openai-fast-mode';
 import { OPENAI_REASONING_EFFORTS } from '@/lib/openai-reasoning-effort';
-import { checkClaudeCliHealth, execClaude } from '@/lib/claude-cli';
+import { checkClaudeCliHealth, execClaude, resolveClaudeCliInvocation } from '@/lib/claude-cli';
 import { checkAuthFromCredentials, extractAuthCode, exchangeCodeForTokens, saveTokens } from '@/lib/oauth-flow';
 import { parseAuthState, parseAuthStatusText, type AuthState } from '@/lib/oauth-status';
 import {
@@ -567,6 +567,23 @@ app.get('/health', async (c) => {
         ? undefined
         : `未配置 ${provider} 的 API Key。请在设置页面填写 API 密钥或完成 OAuth 认证。`,
     },
+  });
+});
+
+// ─── GET /desktop-cli-debug — Claude CLI env / invocation diagnostics ──
+
+app.get('/desktop-cli-debug', async (c) => {
+  const invocation = resolveClaudeCliInvocation();
+  const health = checkClaudeCliHealth();
+
+  return c.json({
+    env: {
+      PATH: process.env.PATH ?? '',
+      CLAUDE_CLI_PATH: process.env.CLAUDE_CLI_PATH ?? '',
+      NODE_PATH: process.env.NODE_PATH ?? '',
+    },
+    invocation,
+    health,
   });
 });
 

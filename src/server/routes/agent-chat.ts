@@ -27,7 +27,11 @@ import {
   deleteSessionFromDisk,
   loadDeferredInputBuffer,
   markAsRead,
+  markAsUnread,
   setArchived,
+  setPinned,
+  renameSession,
+  forkSession,
   updateDeferredInputBufferOnDisk,
   updateUserMessageContentOnDisk,
   branchSession,
@@ -698,6 +702,33 @@ app.patch('/sessions/:id', async (c) => {
       return c.json({ error: 'Session not found' }, 404);
     }
     return c.json({ ok: true });
+  }
+
+  if (body.action === 'markAsUnread') {
+    const found = await markAsUnread(id);
+    if (!found) return c.json({ error: 'Session not found' }, 404);
+    return c.json({ ok: true });
+  }
+
+  if (body.action === 'pin' || body.action === 'unpin') {
+    const found = await setPinned(id, body.action === 'pin');
+    if (!found) return c.json({ error: 'Session not found' }, 404);
+    return c.json({ ok: true });
+  }
+
+  if (body.action === 'rename') {
+    if (typeof body.title !== 'string' || !body.title.trim()) {
+      return c.json({ error: 'title is required' }, 400);
+    }
+    const found = await renameSession(id, body.title.trim());
+    if (!found) return c.json({ error: 'Session not found' }, 404);
+    return c.json({ ok: true });
+  }
+
+  if (body.action === 'fork') {
+    const result = await forkSession(id);
+    if (!result) return c.json({ error: 'Session not found' }, 404);
+    return c.json({ ok: true, forkedId: result.forkedId });
   }
 
   if (body.action === 'archive' || body.action === 'unarchive') {

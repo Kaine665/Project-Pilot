@@ -15,6 +15,7 @@ export interface AllSessionItem {
   unreadCount?: number;
   pinned?: boolean;
   archived?: boolean;
+  pinned?: boolean;
   projectKey?: string;
   isRunning?: boolean;
   runningStartedAt?: string;
