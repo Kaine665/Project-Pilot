@@ -91,6 +91,7 @@ export PROJECT_PILOT_DATA_DIR=/path/to/custom-root
 | `config/mcp-market.json` | 社区商店安装的 MCP 服务（`mcpServers`），与任务工作区 `.mcp.json` 合并后传给 Claude `--mcp-config` | `getMcpMarketPath`（`mcp-market-store.ts`） |
 | `config/dimensions.json` | 维度 | `getDimensionsPath` |
 | `config/worktree-ports.json` | Worktree 端口 | `getWorktreePortsPath` |
+| `.google-oauth/<google-sub>.json` | Google 登录 refresh token（按账号分文件） | `getGoogleOAuthDir` |
 | `projects/index.json` | 项目索引 | `getProjectsIndexPath` |
 | `agents/registry.json` | Agent 注册表 | `getAgentsPath` |
 | `agents/active-tasks.json` | 并行执行看板 | `getActiveTasksPath` |

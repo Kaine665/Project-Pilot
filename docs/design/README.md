@@ -12,3 +12,4 @@
 |------|------|
 | [agents-workspace.md](./agents-workspace.md) | Agents 工作区信息架构与体验原则 |
 | [superdesign-agents-workspace-chat.md](./superdesign-agents-workspace-chat.md) | Superdesign 整页聊天布局稿（含会话条焦点） |
+| [google-account-cloud-sync-scope.md](./google-account-cloud-sync-scope.md) | Google 账号：云端同步**按类可选**（推荐最小云范围 **仅 AI 凭据**）；**实现参考 [PR #39](https://github.com/Kaine665/Project-Pilot/pull/39)**（本机 `accounts/<sub>/` 隔离） |

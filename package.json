@@ -97,6 +97,7 @@
     "remark-gfm": "^4.0.1",
     "socket.io-client": "^4.8.3",
     "tailwind-merge": "^3.4.0",
+    "undici": "^8.0.2",
     "zod": "^4.3.6"
   },
   "devDependencies": {

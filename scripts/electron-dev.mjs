@@ -83,10 +83,11 @@ const cfg = loadDevServerConfig(root);
 /** 保证 preload/main 与 electron/*.ts 同步，否则改 preload 后未编译会一直加载旧的 dist（选文件夹等 IPC 会失效）。 */
 function compileElectronMain() {
   try {
-    execSync("npm run electron:compile", {
+    const tscBin = path.join(root, "node_modules", ".bin", "tsc");
+    execSync(`"${tscBin}" -p electron/tsconfig.json`, {
       cwd: root,
       stdio: "inherit",
-      shell: process.platform === "win32",
+      shell: true,
       env: process.env,
     });
   } catch {
@@ -121,7 +122,8 @@ async function startDevStackWithElectron() {
     env: devChildEnv,
   });
 
-  const server = spawn("bun", ["./src/server/index.ts"], {
+  const tsxBin = path.join(root, "node_modules", ".bin", "tsx");
+  const server = spawn(tsxBin, ["./src/server/index.ts"], {
     cwd: root,
     stdio: "inherit",
     env: devChildEnv,

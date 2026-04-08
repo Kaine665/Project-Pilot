@@ -64,7 +64,11 @@ openclaw/
 # 项目文档：`docs/` 纳入版本控制；请勿在此添加忽略整个 `docs/` 目录的规则。
 
 # 第三方技能完整仓库应放在 ~/.project-pilot/skills/_vendor/ ，勿提交仓库内拷贝
-tmp/imported-skills/
+# 本地临时目录（截图、试验脚本、导入缓存等）
+/tmp/
+
+# 本地连接测试 JSON（可能含明文 API 密钥，绝不可提交）
+.tmp-test-conn.json
 
 # 本地 API 密钥测试文件（含明文密钥，绝不可提交）
 .api-test-keys.mjs

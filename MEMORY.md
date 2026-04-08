@@ -45,11 +45,12 @@
 ## 数据存储
 
 - 数据布局：本机 `~/.project-pilot/README.md` + **`数据文件夹现状.md`**；仓库内与代码对齐的索引 **[`docs/data-storage.md`](docs/data-storage.md)**（`file-store` 默认 **`~/.project-pilot`**，不再默认 `~/.project-pilot/data/`）。对齐 2026-04-03
+- **（产品方向）Google 账号 / 云端同步**：若做登录与云同步，应 **按数据类别让用户勾选**；**推荐唯一默认值得开的云能力**是 **各 AI 供应商 API Key / `providerCredentials`**（见 **[`docs/design/google-account-cloud-sync-scope.md`](docs/design/google-account-cloud-sync-scope.md)**），会话、项目、文档、Agent 注册表等默认仍仅本机。**本机多账号目录隔离** 的代码参考 **GitHub PR #39**（OAuth + `accounts/<sub>/` + `file-store` 请求域），与「可选上云」正交
 - **Agents 工作区 UI**：`config/agents-workspace-ui.json` 按项目保存已打开会话标签、当前面板与 **`lastFocusByAgent`**；`GET/PUT /api/data/agents-workspace-ui` 会校验 **projectKey**（格式 + 未归档项目存在）、**agentId** 在注册表、**sessionId** 在会话索引且 **agentId / projectKey** 与桶一致，并去重；实现见 `lib/agents-workspace-ui-sanitize.ts`
 - 可通过 `PROJECT_PILOT_DATA_DIR` 环境变量自定义
 - JSON 文件读写有 50MB 大小限制
 - `writeJsonFile()` 自动创建父目录
-- **Hono 启动**：`src/server/index.ts` 在 `ensureDataDirV2Migrated` 之后会 **`schedulerManager.init()`** 与 **`eventTriggerManager.init()`**，进程重启后恢复 **cron 定时**与 **GitHub PR 轮询**（路线图 C1）
+- **Hono 启动**：`src/server/index.ts` 在 `ensureDataDirV2Migrated` 之后会 **`schedulerManager.init()`** 与 **`eventTriggerManager.init()`**，进程重启后恢复 **cron 定时**与 **GitHub PR 轮询**（路线图 C1）。**`/api/*` 业务路由**经 `lazy-route.ts` 在**首次命中**时 `import()` 对应模块（缩短 `tsx` 开发态冷启动；生产 `bun build --outfile` 单包仍会一次性加载）
 - **并行执行看板**：`agents/active-tasks.json`（多 Agent 运行时登记）；与 **Todo**（`todos/`）不同，见 `docs/领域与数据.md` §6
 - **会话（领域）= 连续上下文**：实现类型 **`AgentChatSession`** / 索引行 **`SessionMeta`**（`sessions/index.json` + `sessions/messages/*.jsonl`）；**`LegacyTaskWorkerSession`** 为历史形状，勿与当前会话混用。权威对照表见 **`docs/领域与数据.md` §0**
 - **Execution Event 落盘**：每个 Turn 结束后从内存归约出 `ExecutionEvent`（完整事件，非 delta），追加到 `sessions/events/<sessionId>.jsonl`。Run 元数据存 `sessions/runs/<sessionId>.json`。API：`GET /api/agent-chat/sessions/:id/events`、`/runs`、`POST /runs`、`PATCH /runs/:runId`。详见 `types/execution.ts`、`lib/execution-event-store.ts`、`docs/领域与数据.md` §3
