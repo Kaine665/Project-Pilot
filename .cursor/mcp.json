@@ -1,8 +1,15 @@
 {
   "mcpServers": {
     "project-pilot": {
-      "command": "npx",
-      "args": ["tsx", "mcp-server/index.ts"]
+      "command": "node",
+      "args": [
+        "node_modules/tsx/dist/cli.mjs",
+        "mcp-server/index.ts"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "TSX_TSCONFIG_PATH": "tsconfig.json"
+      }
     }
   }
 }

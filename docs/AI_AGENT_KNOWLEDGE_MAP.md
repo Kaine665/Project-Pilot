@@ -15,6 +15,7 @@
 | **Claude Code** | `develop-static/CLAUDE.md` | Claude | 架构、文档驱动开发、命令 | `MEMORY.md`、本文、`data-storage.md` |
 | **短记忆** | `develop-static/MEMORY.md` | Claude Code 等 | 高密度结论 | `data-storage.md`、本文 |
 | **Cursor 规则** | `.cursor/rules/*.mdc` | Cursor Agent | 沙箱、终端等 | 若涉及数据路径则对齐 `data-storage.md` |
+| **Cursor MCP（PP stdio）** | 仓库根 `.cursor/mcp.json` + `docs/cursor-mcp-project-pilot.md` | Cursor Agent | 外部 MCP 连接 PP 数据；路径与 `TSX_TSCONFIG_PATH`（根目录 vs `develop-static/` 嵌套） | `mcp-server/index.ts`、本文 |
 | **内置 Agent 提示词** | `develop-static/src/data/defaults/builtin-prompts.ts` | 产品内 Butler / Self-Dev 等 | 用户数据路径、能力描述 | **`docs/data-storage.md`（路径事实必须一致）** |
 | **人类 docs 总入口** | `develop-static/docs/README.md` | 人类 + AI | `docs/` 分层与权威关系 | `data-storage.md` |
 | **Git 分支与 GitHub 保护** | `develop-static/docs/github-branch-policy.md` | 维护者 + 贡献者 | `main` / `next` / `feature/*` / `hotfix/*`；Rulesets 清单 | `CONTRIBUTING.md` |
@@ -107,5 +108,6 @@
 | 2026-04-07 | **Hono API 懒挂载**：`src/server/lazy-route.ts` + `index.ts` 对 `/api/*` 子树首包 `import()`（`tsx` 开发态冷启动更快） | `src/server/lazy-route.ts`、`src/server/index.ts`、`MEMORY.md`、本文件 |
 | 2026-04-07 | **社区市场 UI 对标 LobeHub canary**：左侧商店导航（发现/助手/Skills/MCP/模型/服务商）、顶栏搜索（URL `q`）、助手页分类侧栏+排序+卡片网格、`/workspace/community/agent/:identifier` 详情 + `GET /api/community/item/:id`；非助手 Tab 占位；种子条目扩展 `category/author/updatedAt` 等元数据 | `components/community-store/*`、`flows/community/layout.tsx` 与子路由、`App.tsx` 嵌套 `community/*`、`community-catalog-seed.json`、`routes/community.ts`、`messages/zh.json` & `en.json`、`docs/community-marketplace-lobechat-okr.md`、本文件 |
 | 2026-04-07 | **社区商店 Skills + MCP 实装**：`community-skills-seed.json` + `GET/POST /api/community/skills/*`（安装调用 `writeSkillFile`）；`community-mcp-seed.json` + `GET/POST /api/community/mcp/*` 与 `config/mcp-market.json`；`BaseChatManager` 合并市场 MCP 与 `.mcp.json`；发现页与 `/workspace/community/skill|mcp` 列表/详情/安装 | `mcp-market-store.ts`、`base-chat-manager.ts`、`routes/community.ts`、`community-skill-*`、`community-mcp-*`、`data-storage.md`、本文件 |
+| 2026-04-08 | **Cursor 外部 MCP**：`.cursor/mcp.json` 改为 `node` + `tsx/dist/cli.mjs` + `TSX_TSCONFIG_PATH`；文档 `docs/cursor-mcp-project-pilot.md`（根目录布局与 `develop-static/` 嵌套、禁止 `npm run` 污染 stdout） | `.cursor/mcp.json`、`docs/cursor-mcp-project-pilot.md`、`docs/README.md`、`mcp-server/index.ts` 头注释、`MEMORY.md`、本文件 |
 
 （后续变更请继续追加表格行，勿删历史。）
