@@ -14,7 +14,8 @@
         "subAgent": false,
         "skipReview": true,
         "todoRead": false,
-        "exposePromptPath": true
+        "exposePromptPath": true,
+        "documentsMcp": true
       },
       "triggerHints": [
         "需要查询 ProjectPilot 数据目录结构或文件格式",
@@ -38,7 +39,8 @@
         "subAgent": true,
         "skipReview": true,
         "todoRead": false,
-        "exposePromptPath": true
+        "exposePromptPath": true,
+        "documentsMcp": true
       },
       "createdAt": "2026-02-25T00:00:00.000Z",
       "updatedAt": "2026-02-25T00:00:00.000Z"

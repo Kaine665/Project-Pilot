@@ -395,7 +395,6 @@ export async function deleteStreamingDraft(sessionId: string): Promise<void> {
  */
 function stripActionTags(text: string): string {
   return text
-    .replace(/<save-doc[^>]*>[\s\S]*?<\/save-doc>/g, '')
     .replace(/<suspend-task[^>]*>[\s\S]*?<\/suspend-task>/g, '')
     .replace(/<complete-suspended-task[^/]*\/>\s*/g, '')
     .trim();

@@ -14,6 +14,7 @@ import { TodoListCard } from '@/components/todo-list-card';
 import { SubagentCard } from '@/components/subagent-card';
 import type { ChatToolCall } from '@/types';
 import { getToolIcon, getToolDisplayName } from '@/lib/tool-utils';
+import { AGENT_DOCUMENTS_DOC_CREATE_TOOL_NAME } from '@/lib/agent-documents-mcp-server';
 
 const statusIcons: Record<ChatToolCall['status'], React.ReactNode> = {
   running: <Loader2 className="h-3 w-3 animate-spin text-blue-500" />,
@@ -190,8 +191,16 @@ export const ToolCallCard = memo(function ToolCallCard({ toolCall }: ToolCallCar
 
   const hasContent = !!(parsed.preview || parsed.fullContent);
 
+  const scrollAnchorAttrs =
+    toolCall.toolName === AGENT_DOCUMENTS_DOC_CREATE_TOOL_NAME
+      ? { 'data-action-type': 'docs-saved' as const }
+      : {};
+
   return (
-    <div className="my-1.5 overflow-hidden rounded-lg border border-zinc-200 bg-white text-xs dark:border-zinc-700 dark:bg-zinc-900/50">
+    <div
+      className="my-1.5 overflow-hidden rounded-lg border border-zinc-200 bg-white text-xs dark:border-zinc-700 dark:bg-zinc-900/50"
+      {...scrollAnchorAttrs}
+    >
       {/* Cursor 风格：文件路径/命令作为标签栏 */}
       {(parsed.filePath || parsed.headerLabel) && (
         <div className="flex items-center gap-1.5 border-b border-zinc-200 bg-zinc-50/80 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800/60">

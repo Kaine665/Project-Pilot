@@ -16,7 +16,6 @@ import { ACTION_COLORS } from '@/lib/action-tag-parser';
 // ── Icon mapping ──
 
 const ACTION_ICONS: Record<ActionTagType, React.ComponentType<{ className?: string }>> = {
-  'save-doc': FileText,
   'save-checkpoint': Save,
   'await-sub-agents': Users,
   'session-title': FileText,

@@ -2,7 +2,7 @@
  * DesignDocsIndexLoader — renders the design-docs index table.
  *
  * Lists all DocEntries as a markdown table, grouped by projectKey.
- * AI can `cat` any file path to read the full document content.
+ * 正文请用 **projectpilot-documents** MCP（\`doc_get\`）或 Read 工具读路径；勿依赖过时的说明。
  *
  * ref.id is always '_all'.
  */
@@ -45,7 +45,7 @@ export class DesignDocsIndexLoader implements ResourceLoader {
 
     const projectKeys = Object.keys(activeProjects).sort();
 
-    let md = '以下是项目设计文档索引。需要时可通过 bash 的 cat 命令读取具体文件内容。\n';
+    let md = '以下是项目设计文档索引。需要正文时请用 MCP **projectpilot-documents** 的 \`doc_get\`（若已启用 documentsMcp），或使用 Read 工具读取表中的文件路径。\n';
 
     for (const key of projectKeys) {
       const entries = activeProjects[key];

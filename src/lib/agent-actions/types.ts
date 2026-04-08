@@ -30,7 +30,7 @@ export interface ActionContext {
 // ── AgentAction interface ──
 
 export interface AgentAction<T = unknown> {
-  /** Unique action identifier, e.g. 'save-knowledge', 'save-doc', 'session-title' */
+  /** Unique action identifier, e.g. 'session-title', 'session-checkpoint' */
   readonly id: string;
 
   /**

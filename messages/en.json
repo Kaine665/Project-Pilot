@@ -644,6 +644,8 @@
       "modalPresetTitle": "New agent from preset",
       "modalPresetDescription": "Pick a run preset as the starting configuration. You can edit everything after creation.",
       "modalPresetEmpty": "No presets yet.",
+      "modalPresetSearchPlaceholder": "Search preset name or description…",
+      "modalPresetNoMatch": "No presets match your search. Try different keywords.",
       "modalPresetManage": "Manage presets",
       "modalCreateTitle": "New agent"
     },
@@ -766,7 +768,9 @@
       "web": { "label": "Web", "hint": "Web" },
       "files": { "label": "Files", "hint": "FS" },
       "subAgent": { "label": "Sub Agents", "hint": "Task tool; delegate PP agents via Bash+call-agent (in prompt)" },
-      "todo": { "label": "Todos", "hint": "Todo" },
+      "todo": { "label": "Todos", "hint": "Todo MCP: structured CRUD" },
+      "registry": { "label": "Registry MCP", "hint": "Shared memory, active tasks, agent list & self-config only" },
+      "documents": { "label": "Documents MCP", "hint": "Design & knowledge docs (projectpilot-documents)" },
       "data": { "label": "Storage", "hint": "Data" },
       "promptPath": { "label": "Prompt Path", "hint": "Path" },
       "skipReview": { "label": "Skip Review", "hint": "Skip" }

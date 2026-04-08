@@ -11,7 +11,7 @@ import type { ParsedActionTag } from '@/lib/action-tag-parser';
  * 使用 react-markdown 渲染完整的 GitHub Flavored Markdown
  * 特殊处理：
  * - ```json:plan 代码块会被渲染为友好的计划展示
- * - AI action tags（如 <save-doc>）会被渲染为 ActionCard 组件
+ * - AI action tags（如 <save-checkpoint>）会被渲染为 ActionCard 组件
  */
 
 // Extract plain text from React children (for copy button)
@@ -104,7 +104,7 @@ export const FormattedText = memo(function FormattedText({
   onActionRestore,
 }: FormattedTextProps) {
   // ── Action tags detection — render as ActionCard components ──
-  if (hasActionTags(text) || (isStreaming && /<(?:save-doc|save-checkpoint|await-sub-agents)\s/.test(text))) {
+  if (hasActionTags(text) || (isStreaming && /<(?:save-checkpoint|await-sub-agents)\s/.test(text))) {
     const segments = parseActionTags(text, isStreaming);
 
     // If we found action segments, render mixed content

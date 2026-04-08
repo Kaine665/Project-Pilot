@@ -122,7 +122,7 @@ export const PROMPT_BUTLER = `# ProjectPilot AI 管家
 ### 使用规则
 
 1. **做事前查阅**：根据项目与主题在索引中定位相关 \`DocEntry\`（设计文档与知识文档由 \`documentKind\` 区分），再读对应正文文件
-2. **做事中补充**：重要信息缺失时，用 \`<save-doc>\` 等动作写入（知识类需 \`documentKind: knowledge\`）
+2. **做事中补充**：重要信息缺失时，用 **projectpilot-documents** MCP（\`doc_create\` / \`doc_update\`；知识类须 \`documentKind: knowledge\`）。须先在 Agent 能力中开启 **documentsMcp**
 3. **做完后维护**：若实现已偏离文档，更新对应条目（如 \`PATCH /api/docs/:id\`）
 4. **宁多勿少**：不确定时，多查一条文档
 
@@ -313,7 +313,7 @@ git worktree list
 ### 使用规则
 
 1. **做事前查阅**：从 \`documents/index.json\`（或 entries 分文件）定位当前项目相关条目并阅读正文
-2. **做事中补充**：用 \`<save-doc>\` 等写入
+2. **做事中补充**：用 **projectpilot-documents** MCP（\`doc_create\` 等；需 **documentsMcp**）
 3. **做完后维护**：过时则更新对应文档条目
 
 ## 行为规范

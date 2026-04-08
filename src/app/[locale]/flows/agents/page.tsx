@@ -9,7 +9,7 @@ import {
   Settings,
   Download, Upload, Search, Folder, FolderOpen,
   Bot, Command, Terminal, Globe,
-  Files, GitBranch, Eye, Database, ListTodo, HardDrive,
+  Files, GitBranch, Eye, Database, ListTodo, HardDrive, Library, BookOpen,
   FileText, FileJson,
   Clock, History,
 } from 'lucide-react';
@@ -283,6 +283,8 @@ export default function AgentsPage() {
   const [newAgentMenuOpen, setNewAgentMenuOpen] = useState(false);
   const newAgentMenuRef = useRef<HTMLDivElement>(null);
   const [newAgentModal, setNewAgentModal] = useState<'closed' | 'import' | 'presetPick' | 'create'>('closed');
+  const [newAgentPresetSearch, setNewAgentPresetSearch] = useState('');
+  const newAgentPresetSearchRef = useRef<HTMLInputElement>(null);
 
   const [sessionQuery, setSessionQuery] = useState('');
   const [historyExpanded, setHistoryExpanded] = useState(false);
@@ -399,6 +401,25 @@ export default function AgentsPage() {
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
   useEffect(() => { void fetchAgentPresets(); }, [fetchAgentPresets]);
+
+  useEffect(() => {
+    if (newAgentModal !== 'presetPick') return;
+    setNewAgentPresetSearch('');
+    const id = requestAnimationFrame(() => {
+      newAgentPresetSearchRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [newAgentModal]);
+
+  const filteredAgentPresetsForNew = useMemo(() => {
+    const q = newAgentPresetSearch.trim();
+    if (!q) return agentPresets;
+    return agentPresets.filter((p) => {
+      const name = p.name ?? '';
+      const desc = p.description ?? '';
+      return name.includes(q) || desc.includes(q);
+    });
+  }, [agentPresets, newAgentPresetSearch]);
 
   const [urlProjectKey, setUrlProjectKey] = useState<string | null>(null);
   useEffect(() => {
@@ -1587,6 +1608,8 @@ export default function AgentsPage() {
     { label: t('capabilities.files.label'), hint: t('capabilities.files.hint'), icon: Files, capabilityKey: 'fileAccess' as const },
     { label: t('capabilities.subAgent.label'), hint: t('capabilities.subAgent.hint'), icon: GitBranch, capabilityKey: 'subAgent' as const },
     { label: t('capabilities.todo.label'), hint: t('capabilities.todo.hint'), icon: ListTodo, capabilityKey: 'todoRead' as const },
+    { label: t('capabilities.registry.label'), hint: t('capabilities.registry.hint'), icon: Library, capabilityKey: 'registryMcp' as const },
+    { label: t('capabilities.documents.label'), hint: t('capabilities.documents.hint'), icon: BookOpen, capabilityKey: 'documentsMcp' as const },
     { label: t('capabilities.data.label'), hint: t('capabilities.data.hint'), icon: HardDrive, capabilityKey: 'dataStore' as const },
     { label: t('capabilities.promptPath.label'), hint: t('capabilities.promptPath.hint'), icon: Eye, capabilityKey: 'exposePromptPath' as const },
     { label: t('capabilities.skipReview.label'), hint: t('capabilities.skipReview.hint'), icon: Database, capabilityKey: 'skipReview' as const },
@@ -2661,6 +2684,26 @@ export default function AgentsPage() {
             <p className="border-b border-border/60 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
               {t('agent.modalPresetDescription')}
             </p>
+            {agentPresets.length > 0 ? (
+              <div className="border-b border-border/60 px-3 py-2">
+                <div className="relative">
+                  <Search
+                    className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+                    aria-hidden
+                  />
+                  <input
+                    ref={newAgentPresetSearchRef}
+                    type="search"
+                    value={newAgentPresetSearch}
+                    onChange={(e) => setNewAgentPresetSearch(e.target.value)}
+                    placeholder={t('agent.modalPresetSearchPlaceholder')}
+                    autoComplete="off"
+                    className="w-full rounded-md border border-border bg-background py-1.5 pl-8 pr-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label={t('agent.modalPresetSearchPlaceholder')}
+                  />
+                </div>
+              </div>
+            ) : null}
             <div className="min-h-0 flex-1 overflow-y-auto p-2">
               {agentPresets.length === 0 ? (
                 <div className="px-2 py-8 text-center text-sm text-muted-foreground">
@@ -2673,9 +2716,13 @@ export default function AgentsPage() {
                     {t('agent.modalPresetManage')}
                   </Link>
                 </div>
+              ) : filteredAgentPresetsForNew.length === 0 ? (
+                <div className="px-2 py-8 text-center text-sm text-muted-foreground">
+                  {t('agent.modalPresetNoMatch')}
+                </div>
               ) : (
                 <ul className="space-y-0.5" role="listbox">
-                  {agentPresets.map((preset) => (
+                  {filteredAgentPresetsForNew.map((preset) => (
                     <li key={preset.id} role="none">
                       <button
                         type="button"

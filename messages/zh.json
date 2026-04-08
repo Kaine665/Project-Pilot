@@ -645,6 +645,8 @@
       "modalPresetTitle": "使用预设新建",
       "modalPresetDescription": "选择一个运行预设作为新 Agent 的初始配置，创建后仍可修改。",
       "modalPresetEmpty": "暂无运行预设。",
+      "modalPresetSearchPlaceholder": "搜索预设名称或描述…",
+      "modalPresetNoMatch": "没有匹配的预设，请尝试其他关键词。",
       "modalPresetManage": "管理预设",
       "modalCreateTitle": "新建 Agent"
     },
@@ -767,7 +769,9 @@
       "web": { "label": "网页", "hint": "Web" },
       "files": { "label": "文件", "hint": "FS" },
       "subAgent": { "label": "子代理", "hint": "Task 工具；委派其他 PP Agent 用 Bash+call-agent（提示词自带）" },
-      "todo": { "label": "待办", "hint": "Todo" },
+      "todo": { "label": "待办", "hint": "Todo MCP：结构化读写待办" },
+      "registry": { "label": "注册表 MCP", "hint": "共享记忆、并行看板、Agent 列表与仅改自身的配置" },
+      "documents": { "label": "文档 MCP", "hint": "设计/知识文档（projectpilot-documents）" },
       "data": { "label": "存储", "hint": "Data" },
       "promptPath": { "label": "Prompt 路径", "hint": "Path" },
       "skipReview": { "label": "跳过评审", "hint": "Skip" }
