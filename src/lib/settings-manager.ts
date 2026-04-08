@@ -10,6 +10,24 @@ import { getDataDir, getSettingsPath, readJsonFile, writeJsonFile } from '@/lib/
 import { getKimiCandidateBaseUrls, getProviderPreset } from '@/lib/provider-registry';
 import type { AgentCapabilities, AppSettings, ClaudeAuthMode, ClaudeSettings, CustomProviderConfig, ProviderCredential, ProviderId, ResolvedAiCredential } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES, DEFAULT_APP_SETTINGS } from '@/types';
+import {
+  AGENT_TODO_MCP_SERVER_KEY,
+  createAgentTodoMcpServer,
+  getAgentTodoMcpAllowedToolIds,
+  type AgentTodoMcpContext,
+} from '@/lib/agent-todo-mcp-server';
+import {
+  AGENT_REGISTRY_MCP_SERVER_KEY,
+  createAgentRegistryMcpServer,
+  getAgentRegistryMcpAllowedToolIds,
+  type AgentRegistryMcpContext,
+} from '@/lib/agent-registry-mcp-server';
+import {
+  AGENT_DOCUMENTS_MCP_SERVER_KEY,
+  createAgentDocumentsMcpServer,
+  getAgentDocumentsMcpAllowedToolIds,
+  type AgentDocumentsMcpContext,
+} from '@/lib/agent-documents-mcp-server';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -508,11 +526,21 @@ export async function buildAgentPermissionArgs(
 
 import type { Options as SdkQueryOptions, PermissionMode as SdkPermissionMode } from '@anthropic-ai/claude-agent-sdk';
 
+/** 与 buildSdkQueryOptions 中注册的进程内 MCP 对应；受限工具模式下需显式列入 allowedTools */
+export type SdkExtraMcpFlags = {
+  todo?: boolean;
+  registry?: boolean;
+  documents?: boolean;
+};
+
 /**
  * 根据 Agent 能力配置构造 SDK allowedTools 列表。
  * 全部开启返回 undefined（不限制），部分开启返回工具名数组。
  */
-export function buildSdkAllowedTools(capabilities: AgentCapabilities | undefined): string[] | undefined {
+export function buildSdkAllowedTools(
+  capabilities: AgentCapabilities | undefined,
+  mcpFlags?: SdkExtraMcpFlags,
+): string[] | undefined {
   const caps = capabilities ?? DEFAULT_AGENT_CAPABILITIES;
   const toolCapKeys = ['bash', 'fileAccess', 'web', 'subAgent'] as const;
   if (toolCapKeys.every(k => caps[k])) return undefined;
@@ -525,6 +553,15 @@ export function buildSdkAllowedTools(capabilities: AgentCapabilities | undefined
   }
   if (caps.subAgent && !caps.fileAccess) {
     allowed.push(...SUBAGENT_READONLY_TOOLS);
+  }
+  if (mcpFlags?.todo) {
+    allowed.push(...getAgentTodoMcpAllowedToolIds());
+  }
+  if (mcpFlags?.registry) {
+    allowed.push(...getAgentRegistryMcpAllowedToolIds());
+  }
+  if (mcpFlags?.documents) {
+    allowed.push(...getAgentDocumentsMcpAllowedToolIds());
   }
   return allowed;
 }
@@ -577,6 +614,12 @@ export async function buildSdkQueryOptions(opts: {
   resumeSessionId?: string;
   cwd?: string;
   maxTurns?: number;
+  /** 与 capabilities.todoRead 同时为真时注册进程内待办 MCP 工具 */
+  todoMcpContext?: AgentTodoMcpContext;
+  /** 与 capabilities.registryMcp 同时为真时注册 projectpilot-registry */
+  registryMcpContext?: AgentRegistryMcpContext;
+  /** 与 capabilities.documentsMcp 同时为真时注册 projectpilot-documents */
+  documentsMcpContext?: AgentDocumentsMcpContext;
 }): Promise<SdkQueryOptions> {
   const settings = await getSettings();
   const claude = settings.claude;
@@ -588,8 +631,34 @@ export async function buildSdkQueryOptions(opts: {
   // Model
   const model = opts.modelOverride ?? getProviderScopedModel(claude, provider);
 
-  // Allowed tools
-  const allowedTools = buildSdkAllowedTools(opts.capabilities);
+  const capsMerged = opts.capabilities ?? DEFAULT_AGENT_CAPABILITIES;
+  const enableTodoMcp = !!capsMerged.todoRead && !!opts.todoMcpContext?.agentId;
+  const enableRegistryMcp = !!capsMerged.registryMcp && !!opts.registryMcpContext?.agentId;
+  const enableDocumentsMcp = !!capsMerged.documentsMcp && !!opts.documentsMcpContext?.agentId;
+
+  // Allowed tools（受限模式下需显式列出 MCP 工具名）
+  const allowedTools = buildSdkAllowedTools(opts.capabilities, {
+    todo: enableTodoMcp,
+    registry: enableRegistryMcp,
+    documents: enableDocumentsMcp,
+  });
+
+  const todoMcpServer = enableTodoMcp && opts.todoMcpContext
+    ? createAgentTodoMcpServer(opts.todoMcpContext)
+    : null;
+
+  const registryMcpServer = enableRegistryMcp && opts.registryMcpContext
+    ? createAgentRegistryMcpServer(opts.registryMcpContext)
+    : null;
+
+  const documentsMcpServer = enableDocumentsMcp && opts.documentsMcpContext
+    ? createAgentDocumentsMcpServer(opts.documentsMcpContext)
+    : null;
+
+  const mcpServers: NonNullable<SdkQueryOptions['mcpServers']> = {};
+  if (todoMcpServer) mcpServers[AGENT_TODO_MCP_SERVER_KEY] = todoMcpServer;
+  if (registryMcpServer) mcpServers[AGENT_REGISTRY_MCP_SERVER_KEY] = registryMcpServer;
+  if (documentsMcpServer) mcpServers[AGENT_DOCUMENTS_MCP_SERVER_KEY] = documentsMcpServer;
 
   // Permission mode
   const { permissionMode, allowDangerouslySkipPermissions } = await buildSdkPermissionMode(opts.capabilities);
@@ -622,6 +691,7 @@ export async function buildSdkQueryOptions(opts: {
     permissionMode,
     ...(allowDangerouslySkipPermissions ? { allowDangerouslySkipPermissions: true } : {}),
     ...(allowedTools ? { allowedTools } : {}),
+    ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
     ...(maxTurns && maxTurns > 0 ? { maxTurns } : {}),
     ...(opts.resumeSessionId ? { resume: opts.resumeSessionId } : {}),
     ...(opts.systemPrompt ? {

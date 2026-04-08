@@ -447,6 +447,15 @@ class AgentChatManager {
           fastModeOverride: resolvedOpenAIFastMode,
           resumeSessionId,
           cwd,
+          todoMcpContext: effectiveCaps.todoRead
+            ? { projectKey: sessionProjectKey, agentId }
+            : undefined,
+          registryMcpContext: effectiveCaps.registryMcp
+            ? { agentId, projectKey: sessionProjectKey, sessionId }
+            : undefined,
+          documentsMcpContext: effectiveCaps.documentsMcp
+            ? { agentId, projectKey: sessionProjectKey }
+            : undefined,
         });
       })();
 
@@ -571,6 +580,15 @@ class AgentChatManager {
         model: agent.defaultModel,
         resumeSessionId: isResume ? (existingRun?.claudeSessionId ?? diskSession?.claudeSessionId) : undefined,
         cwd,
+        todoMcpContext: agent.capabilities?.todoRead
+          ? { projectKey: guestProjectKey, agentId }
+          : undefined,
+        registryMcpContext: agent.capabilities?.registryMcp
+          ? { agentId, projectKey: guestProjectKey, sessionId: guestSessionId }
+          : undefined,
+        documentsMcpContext: agent.capabilities?.documentsMcp
+          ? { agentId, projectKey: guestProjectKey }
+          : undefined,
       });
       run.runner = runner;
 

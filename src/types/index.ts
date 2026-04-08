@@ -413,6 +413,16 @@ export interface AgentCapabilities {
   exposePromptPath: boolean;
   /** Grant agent read/write access to its private workspace (agents/workspaces/{agentId}/) */
   dataStore: boolean;
+  /**
+   * 进程内 MCP：共享记忆、并行看板、Agent 注册表（读全体 / 仅改自身配置）。
+   * 与 todoRead（待办 MCP）独立，可按需分别开启。
+   */
+  registryMcp: boolean;
+  /**
+   * 进程内 MCP：设计文档与知识文档的 list/get/create/update/delete（projectpilot-documents）。
+   * 与待办、注册表 MCP 独立。
+   */
+  documentsMcp: boolean;
 }
 
 export const DEFAULT_AGENT_CAPABILITIES: AgentCapabilities = {
@@ -424,6 +434,9 @@ export const DEFAULT_AGENT_CAPABILITIES: AgentCapabilities = {
   todoRead: false,
   exposePromptPath: true,
   dataStore: false,
+  registryMcp: false,
+  /** 文档域统一走进程内 projectpilot-documents；新 Agent 默认开启 */
+  documentsMcp: true,
 };
 
 export interface Agent {
