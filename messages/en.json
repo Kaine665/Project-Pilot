@@ -576,6 +576,8 @@
       "sessionsSection": "Sessions",
       "rowConversationEyebrow": "Conversation",
       "configureAgent": "Configure",
+      "more": "More",
+      "toggleSidebar": "Toggle sidebar",
       "exportPackage": "Export package",
       "newConversation": "New chat",
       "newConversationShort": "New",
@@ -616,7 +618,17 @@
       "yesterday": "Yesterday",
       "emptyFiltered": "No matching sessions",
       "emptyWithAgent": "No ongoing sessions with {agentName} yet",
-      "emptyHint": "Click the + button in the top right to start a new agent chat."
+      "emptyHint": "Click the + button in the top right to start a new agent chat.",
+      "contextMenu": {
+        "pin": "Pin",
+        "unpin": "Unpin",
+        "rename": "Rename",
+        "renamePrompt": "Enter a new session name",
+        "markAsUnread": "Mark as unread",
+        "forkChat": "Fork chat",
+        "archive": "Archive",
+        "unarchive": "Unarchive"
+      }
     },
     "agent": {
       "createButton": "New agent",

@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useMemo, useRef, memo, type MouseEven
 import { useTranslations } from '@/client/i18n/use-translations';
 import {
   Plus, Trash2, X, Minimize2,
-  PanelLeft, PanelRight,
   MessageSquare, Archive, ArchiveRestore,
   Settings,
   Download, Upload, Search, Folder, FolderOpen,
@@ -12,6 +11,8 @@ import {
   Files, GitBranch, Eye, Database, ListTodo, HardDrive,
   FileText, FileJson,
   Clock, History,
+  Pin, PinOff, Pencil, EyeOff, GitFork,
+  Ellipsis, PanelRight,
 } from 'lucide-react';
 import { lazy, Suspense } from 'react';
 import type { Agent, AgentCapabilities, AgentPreset, OpenAIReasoningEffort } from '@/types';
@@ -231,6 +232,24 @@ export default function AgentsPage() {
   const openedSessionsRef = useRef<OpenedSession[]>(openedSessions);
   openedSessionsRef.current = openedSessions;
   const nextKeyRef = useRef(1);
+
+  // 清理每个 Agent 多余的 draft（只保留最新的一个）
+  useEffect(() => {
+    setOpenedSessions(prev => {
+      const seen = new Set<string>();
+      const cleaned: OpenedSession[] = [];
+      // 反向遍历，保留最新的 draft
+      for (let i = prev.length - 1; i >= 0; i--) {
+        const o = prev[i];
+        if (o.sessionId === null) {
+          if (seen.has(o.agentId)) continue; // 跳过多余的 draft
+          seen.add(o.agentId);
+        }
+        cleaned.unshift(o);
+      }
+      return cleaned.length === prev.length ? prev : cleaned;
+    });
+  }, []);
   const workspaceUiHydratedRef = useRef(false);
   const hydrateSeqRef = useRef(0);
 
@@ -286,8 +305,15 @@ export default function AgentsPage() {
 
   const [sessionQuery, setSessionQuery] = useState('');
   const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [expandedAgentHistoryIds, setExpandedAgentHistoryIds] = useState<Set<string>>(new Set());
+  const [sessionContextMenu, setSessionContextMenu] = useState<{
+    x: number; y: number; session: AllSessionItem;
+  } | null>(null);
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
   const [mobileAgentsListOpen, setMobileAgentsListOpen] = useState(false);
   const [mobileWorkspaceRailOpen, setMobileWorkspaceRailOpen] = useState(false);
+  const [workspaceRailVisible, setWorkspaceRailVisible] = useState(true);
   const mdUpAgents = useMediaQuery('(min-width: 768px)');
   const lgUpAgents = useMediaQuery('(min-width: 1024px)');
   const conversationStripRef = useRef<HTMLElement | null>(null);
@@ -670,7 +696,7 @@ export default function AgentsPage() {
       for (const a of agentsRef.current) {
         agentMap.set(a.id, a);
       }
-      const sessions: AllSessionItem[] = (sessData.sessions ?? []).map((s: { id: string; title: string; updatedAt: string; agentId: string; unreadCount?: number; archived?: boolean; projectKey?: string }) => {
+      const sessions: AllSessionItem[] = (sessData.sessions ?? []).map((s: { id: string; title: string; updatedAt: string; agentId: string; unreadCount?: number; archived?: boolean; pinned?: boolean; projectKey?: string }) => {
         const agent = agentMap.get(s.agentId);
         return {
           id: s.id,
@@ -684,6 +710,7 @@ export default function AgentsPage() {
           agentUpdatedAt: agent?.updatedAt,
           unreadCount: s.unreadCount,
           archived: s.archived,
+          pinned: s.pinned,
           projectKey: s.projectKey,
         };
       });
@@ -860,6 +887,130 @@ export default function AgentsPage() {
       .slice(0, 5);
   }, [agentLatestNonArchivedSession]);
 
+  // ── Handlers: Sidebar Agent History ──
+
+  const toggleAgentHistoryExpanded = useCallback((agentId: string) => {
+    setExpandedAgentHistoryIds(prev => {
+      const next = new Set(prev);
+      if (next.has(agentId)) {
+        next.delete(agentId);
+      } else {
+        next.add(agentId);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSessionContextMenu = useCallback((e: React.MouseEvent, session: AllSessionItem) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSessionContextMenu({ x: e.clientX, y: e.clientY, session });
+  }, []);
+
+  const closeSessionContextMenu = useCallback(() => {
+    setSessionContextMenu(null);
+  }, []);
+
+  const handleSessionPin = useCallback(async (session: AllSessionItem) => {
+    const newPinned = !session.pinned;
+    setAllSessions(prev => prev.map(s => s.id === session.id ? { ...s, pinned: newPinned } : s));
+    closeSessionContextMenu();
+    const res = await fetch(`/api/agent-chat/sessions/${session.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: newPinned ? 'pin' : 'unpin' }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      setAllSessions(prev => prev.map(s => s.id === session.id ? { ...s, pinned: !newPinned } : s));
+    }
+  }, [closeSessionContextMenu]);
+
+  const handleSessionRenameStart = useCallback((session: AllSessionItem) => {
+    setRenamingSessionId(session.id);
+    setRenameValue(session.title);
+    closeSessionContextMenu();
+  }, [closeSessionContextMenu]);
+
+  const handleSessionRenameSubmit = useCallback(async (sessionId: string) => {
+    const trimmed = renameValue.trim();
+    if (!trimmed) { setRenamingSessionId(null); return; }
+    setAllSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title: trimmed } : s));
+    setRenamingSessionId(null);
+    await fetch(`/api/agent-chat/sessions/${sessionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'rename', title: trimmed }),
+    }).catch(() => {});
+  }, [renameValue]);
+
+  const handleSessionMarkAsUnread = useCallback(async (session: AllSessionItem) => {
+    setAllSessions(prev => prev.map(s => s.id === session.id ? { ...s, unreadCount: Math.max(1, s.unreadCount ?? 0) } : s));
+    closeSessionContextMenu();
+    await fetch(`/api/agent-chat/sessions/${session.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'markAsUnread' }),
+    }).catch(() => {});
+  }, [closeSessionContextMenu]);
+
+  const handleSessionFork = useCallback(async (session: AllSessionItem) => {
+    closeSessionContextMenu();
+    const res = await fetch(`/api/agent-chat/sessions/${session.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'fork' }),
+    }).catch(() => null);
+    if (res?.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (data.forkedId) {
+        const now = new Date().toISOString();
+        const forked: AllSessionItem = {
+          ...session,
+          id: data.forkedId,
+          title: `${session.title} (fork)`,
+          updatedAt: now,
+          unreadCount: 0,
+          archived: undefined,
+          pinned: undefined,
+          isRunning: undefined,
+        };
+        setAllSessions(prev => [forked, ...prev]);
+        // Open forked session directly
+        const key = nextKeyRef.current++;
+        setOpenedSessions(prev => [...prev, { sessionId: data.forkedId, agentId: session.agentId, key }]);
+        setActivePanel({ type: 'session', key });
+        syncUrlParams({ agent: session.agentId, session: data.forkedId });
+      }
+    }
+  }, [closeSessionContextMenu]);
+
+  const handleSessionArchiveFromMenu = useCallback(async (session: AllSessionItem) => {
+    const newArchived = !session.archived;
+    setAllSessions(prev => prev.map(s => s.id === session.id ? { ...s, archived: newArchived } : s));
+    closeSessionContextMenu();
+    const res = await fetch(`/api/agent-chat/sessions/${session.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: newArchived ? 'archive' : 'unarchive' }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      setAllSessions(prev => prev.map(s => s.id === session.id ? { ...s, archived: !newArchived } : s));
+    }
+  }, [closeSessionContextMenu]);
+
+  // Close context menu on outside click / Escape
+  useEffect(() => {
+    if (!sessionContextMenu) return;
+    const onPointerDown = () => closeSessionContextMenu();
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') closeSessionContextMenu(); };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [sessionContextMenu, closeSessionContextMenu]);
+
   // ── Handlers: Conversations tab ──
 
   const handleSessionClick = useCallback((session: AllSessionItem) => {
@@ -875,6 +1026,11 @@ export default function AgentsPage() {
         body: JSON.stringify({ action: 'markAsRead' }),
       }).catch(() => {});
     }
+
+    // 切换到已有会话时，清理同 Agent 的空 draft
+    setOpenedSessions(prev => prev.filter(
+      o => !(o.agentId === session.agentId && o.sessionId === null),
+    ));
 
     // Read latest via ref to avoid calling setState/syncUrlParams inside an updater
     const existing = openedSessionsRef.current.find(
@@ -894,6 +1050,15 @@ export default function AgentsPage() {
   const handleNewSession = (agent: Agent) => {
     setMobileAgentsListOpen(false);
     setHistoryExpanded(false);
+    // 复用已有 draft，每个 Agent 最多一个
+    const existingDraft = openedSessionsRef.current.find(
+      o => o.agentId === agent.id && o.sessionId === null,
+    );
+    if (existingDraft) {
+      setActivePanel({ type: 'session', key: existingDraft.key });
+      syncUrlParams({ agent: agent.id, session: null });
+      return;
+    }
     const key = nextKeyRef.current++;
     setOpenedSessions(prev => [...prev, { sessionId: null, agentId: agent.id, key }]);
     setActivePanel({ type: 'session', key });
@@ -931,13 +1096,9 @@ export default function AgentsPage() {
     const opened = openedSessionsRef.current;
     const fromAid = getWorkspaceContextAgentIdFromRefs();
 
-    // 同一 Agent：从会话缩回概览（与旧版侧栏一致）；已在概览/设置则不再重复切换
+    // 同一 Agent：仅切换展开/收起历史会话列表，不改变当前面板
     if (!creating && fromAid === agent.id) {
-      if (activePanelRef.current?.type === 'session') {
-        setActivePanel({ type: 'agent', agentId: agent.id, mode: 'chat' });
-        syncUrlParams({ agent: agent.id, session: null });
-        lastWorkspaceFocusByAgentRef.current[agent.id] = { kind: 'agent', mode: 'chat' };
-      }
+      toggleAgentHistoryExpanded(agent.id);
       return;
     }
 
@@ -948,15 +1109,27 @@ export default function AgentsPage() {
     setForm(agentToForm(agent));
     setExpandedPrompt(false);
     setHistoryExpanded(false);
+    // 切换到新 Agent 时自动展开其历史会话
+    setExpandedAgentHistoryIds(prev => {
+      const next = new Set(prev);
+      next.add(agent.id);
+      return next;
+    });
 
     const saved = lastWorkspaceFocusByAgentRef.current[agent.id];
-    if (saved?.kind === 'session') {
+    if (saved?.kind === 'session' && saved.sessionId) {
       const tab = opened.find((o) => o.agentId === agent.id && o.sessionId === saved.sessionId);
       if (tab) {
         setActivePanel({ type: 'session', key: tab.key });
         syncUrlParams({ agent: agent.id, session: tab.sessionId });
         return;
       }
+      // Tab 不在 openedSessions 中（可能被清理），重新创建
+      const key = nextKeyRef.current++;
+      setOpenedSessions(prev => [...prev, { sessionId: saved.sessionId!, agentId: agent.id, key }]);
+      setActivePanel({ type: 'session', key });
+      syncUrlParams({ agent: agent.id, session: saved.sessionId });
+      return;
     }
     if (saved?.kind === 'agent') {
       setActivePanel({ type: 'agent', agentId: agent.id, mode: saved.mode });
@@ -1708,9 +1881,6 @@ export default function AgentsPage() {
     }
   }, [effectiveProjectKey, fetchAllSessions]);
 
-  const mobileChromeTitle = creating
-    ? tAgents('newAgent')
-    : displayText(selectedAgent?.name ?? activeWorkspaceAgent?.name, tAgents('title'));
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 overflow-hidden bg-background text-foreground">
@@ -1833,28 +2003,31 @@ export default function AgentsPage() {
                     {group.agents.map((agent) => {
                       const isActive = activeWorkspaceAgent?.id === agent.id;
                       const agentSessions = allSessions.filter(s => s.agentId === agent.id && !s.archived);
+                      const historySessions = agentSessions;
                       const lastSession = agentLatestNonArchivedSession.get(agent.id);
                       const totalUnread = agentSessions.reduce((sum, s) => sum + (s.unreadCount || 0), 0);
                       const hasRunning = agentSessions.some(s => s.isRunning);
+                      const isHistoryExpanded = expandedAgentHistoryIds.has(agent.id);
+                      const draftSessions = openedSessions.filter(o => o.agentId === agent.id && o.sessionId === null);
                       return (
-                        <div
-                          key={agent.id}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => handleAgentClick(agent)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              handleAgentClick(agent);
-                            }
-                          }}
-                          className={cn(
-                            'group/agent flex cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2.5 transition-colors',
-                            isActive
-                              ? 'bg-card shadow-sm ring-1 ring-border'
-                              : 'hover:bg-muted/70',
-                          )}
-                        >
+                        <div key={agent.id} className="flex flex-col gap-0.5">
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => handleAgentClick(agent)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                handleAgentClick(agent);
+                              }
+                            }}
+                            className={cn(
+                              'group/agent flex cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2.5 transition-colors',
+                              isActive
+                                ? 'bg-card shadow-sm ring-1 ring-border'
+                                : 'hover:bg-muted/70',
+                            )}
+                          >
                           <div
                             className={cn(
                               'h-10 w-10 shrink-0 overflow-hidden rounded-xl ring-1 ring-inset',
@@ -1895,7 +2068,10 @@ export default function AgentsPage() {
                                 </span>
                               )}
                             </div>
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <div
+                              className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
+                              title={agent.description || agent.id}
+                            >
                               {hasRunning && (
                                 <span
                                   className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500 animate-pulse"
@@ -1915,9 +2091,134 @@ export default function AgentsPage() {
                             </span>
                           )}
                           {agentSessions.length > 0 && (
-                            <span className="shrink-0 rounded-md bg-muted/80 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/agent:opacity-100">
-                              {agentSessions.length}
-                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleAgentHistoryExpanded(agent.id);
+                              }}
+                              className="shrink-0 rounded-md bg-muted/80 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/agent:opacity-100 hover:bg-muted"
+                              title={isHistoryExpanded ? '收起历史会话' : '展开历史会话'}
+                            >
+                              {isHistoryExpanded ? '−' : '+'} {agentSessions.length}
+                            </button>
+                          )}
+                          </div>
+
+                          {/* 历史会话列表 */}
+                          {isHistoryExpanded && historySessions.length === 0 && (
+                            <div className="ml-0.5 flex flex-col gap-0.5 rounded-lg bg-muted/20 p-1.5 pl-2">
+                              <button
+                                type="button"
+                                onClick={() => handleNewSession(agent)}
+                                className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                              >
+                                <Plus className="h-3 w-3 shrink-0" aria-hidden />
+                                <span>{t('session.new')}</span>
+                              </button>
+                              {draftSessions.map((draft) => {
+                                const isDraftActive = activePanel?.type === 'session' && activePanel.key === draft.key;
+                                return (
+                                  <button
+                                    key={`draft-${draft.key}`}
+                                    type="button"
+                                    onClick={() => { setActivePanel({ type: 'session', key: draft.key }); syncUrlParams({ agent: agent.id, session: null }); }}
+                                    className={cn(
+                                      'flex min-h-8 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
+                                      isDraftActive
+                                        ? 'bg-primary/10 text-foreground font-medium'
+                                        : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                                    )}
+                                  >
+                                    <MessageSquare className="h-3 w-3 shrink-0 text-primary/60" aria-hidden />
+                                    <span className="min-w-0 flex-1 truncate italic">{t('workspace.draftSessionLabel')}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {isHistoryExpanded && historySessions.length > 0 && (
+                            <div className="ml-0.5 flex flex-col gap-0.5 rounded-lg bg-muted/20 p-1.5 pl-2 max-h-48 overflow-y-auto">
+                              <button
+                                type="button"
+                                onClick={() => handleNewSession(agent)}
+                                className="flex min-h-7 items-center gap-2 rounded-md px-2 py-1 text-left text-xs text-muted-foreground/60 transition-colors hover:bg-muted/50 hover:text-foreground"
+                              >
+                                <Plus className="h-3 w-3 shrink-0" aria-hidden />
+                                <span>{t('session.new')}</span>
+                              </button>
+                              {draftSessions.map((draft) => {
+                                const isDraftActive = activePanel?.type === 'session' && activePanel.key === draft.key;
+                                return (
+                                  <button
+                                    key={`draft-${draft.key}`}
+                                    type="button"
+                                    onClick={() => { setActivePanel({ type: 'session', key: draft.key }); syncUrlParams({ agent: agent.id, session: null }); }}
+                                    className={cn(
+                                      'flex min-h-8 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
+                                      isDraftActive
+                                        ? 'bg-primary/10 text-foreground font-medium'
+                                        : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                                    )}
+                                  >
+                                    <MessageSquare className="h-3 w-3 shrink-0 text-primary/60" aria-hidden />
+                                    <span className="min-w-0 flex-1 truncate italic">{t('workspace.draftSessionLabel')}</span>
+                                  </button>
+                                );
+                              })}
+                              {[...historySessions].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)).map((session) => (
+                                renamingSessionId === session.id ? (
+                                  <form
+                                    key={session.id}
+                                    className="flex min-h-8 items-center gap-2 rounded-md px-2 py-1"
+                                    onSubmit={(e) => { e.preventDefault(); handleSessionRenameSubmit(session.id); }}
+                                  >
+                                    <Pencil className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
+                                    <input
+                                      autoFocus
+                                      value={renameValue}
+                                      onChange={(e) => setRenameValue(e.target.value)}
+                                      onBlur={() => handleSessionRenameSubmit(session.id)}
+                                      onKeyDown={(e) => { if (e.key === 'Escape') setRenamingSessionId(null); }}
+                                      className="min-w-0 flex-1 rounded border border-border bg-background px-1.5 py-0.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
+                                    />
+                                  </form>
+                                ) : (
+                                  <button
+                                    key={session.id}
+                                    type="button"
+                                    onClick={() => handleSessionClick(session)}
+                                    onContextMenu={(e) => handleSessionContextMenu(e, session)}
+                                    className={cn(
+                                      'flex min-h-8 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors',
+                                      activeWorkspaceSessionId === session.id
+                                        ? 'bg-primary/10 text-foreground font-medium'
+                                        : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                                    )}
+                                    title={displayText(session.title, t('workspace.sessionFallbackTitle'))}
+                                  >
+                                    {session.pinned ? (
+                                      <Pin className="h-3 w-3 shrink-0 text-primary" aria-hidden />
+                                    ) : (
+                                      <Clock className="h-3 w-3 shrink-0" aria-hidden />
+                                    )}
+                                    <span className="min-w-0 flex-1 truncate">
+                                      {displayText(session.title, t('workspace.sessionFallbackTitle'))}
+                                    </span>
+                                    {(session.unreadCount ?? 0) > 0 && (
+                                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
+                                    )}
+                                    <span className="shrink-0 text-[9px] text-muted-foreground/70 tabular-nums">
+                                      {formatSessionTimestamp(
+                                        session.updatedAt,
+                                        Date.now(),
+                                        t('session.yesterday'),
+                                      )}
+                                    </span>
+                                  </button>
+                                )
+                              ))}
+                            </div>
                           )}
                         </div>
                       );
@@ -1931,44 +2232,64 @@ export default function AgentsPage() {
 
       </aside>
 
-      <div className="relative flex min-h-0 min-w-0 flex-1">
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
-        {/* 占位：顶栏改为 fixed 后避免主内容顶到导航下 */}
-        <div className="h-14 shrink-0 lg:hidden" aria-hidden />
-        {/*
-          fixed + z-[60]：右侧抽屉遮罩为 z-40 全屏，若顶栏仅在文档流中会被挡住，表现为「侧栏按钮丢失」。
-          md:left-[292px]：与左侧 Agent 列表同宽，避免盖住桌面窄窗下的左栏。
-        */}
+      {/* ── Session context menu ── */}
+      {sessionContextMenu && (
         <div
-          role="toolbar"
-          aria-label={t('workspace.mobileAgentsToolbarAria')}
-          className={cn(
-            'fixed right-0 top-16 z-[60] flex h-14 items-center gap-2 border-b border-border bg-card/95 px-3 shadow-sm backdrop-blur-sm lg:hidden',
-            'left-0 md:left-[292px]',
-          )}
+          role="menu"
+          className="fixed z-[200] w-44 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg"
+          style={{ left: sessionContextMenu.x, top: sessionContextMenu.y }}
+          onPointerDown={(e) => e.stopPropagation()}
         >
           <button
-            type="button"
-            onClick={() => setMobileAgentsListOpen(true)}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground shadow-sm transition-colors hover:bg-muted/80 md:hidden"
-            aria-label={t('workspace.openAgentListAria')}
+            type="button" role="menuitem"
+            onClick={() => handleSessionPin(sessionContextMenu.session)}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-muted transition-colors"
           >
-            <PanelLeft className="h-5 w-5" aria-hidden />
+            {sessionContextMenu.session.pinned
+              ? <><PinOff className="h-3.5 w-3.5 shrink-0" /><span className="flex-1 text-left">{t('session.contextMenu.unpin')}</span></>
+              : <><Pin className="h-3.5 w-3.5 shrink-0" /><span className="flex-1 text-left">{t('session.contextMenu.pin')}</span></>
+            }
           </button>
-          <div className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-            {mobileChromeTitle}
-          </div>
           <button
-            type="button"
-            onClick={() => setMobileWorkspaceRailOpen((o) => !o)}
-            aria-expanded={mobileWorkspaceRailOpen}
-            aria-controls="agents-workspace-rail-aside"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground shadow-sm transition-colors hover:bg-muted/80"
-            aria-label={t('workspace.openWorkspaceRailAria')}
+            type="button" role="menuitem"
+            onClick={() => handleSessionRenameStart(sessionContextMenu.session)}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-muted transition-colors"
           >
-            <PanelRight className="h-5 w-5" aria-hidden />
+            <Pencil className="h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1 text-left">{t('session.contextMenu.rename')}</span>
+          </button>
+          <button
+            type="button" role="menuitem"
+            onClick={() => handleSessionMarkAsUnread(sessionContextMenu.session)}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-muted transition-colors"
+          >
+            <EyeOff className="h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1 text-left">{t('session.contextMenu.markAsUnread')}</span>
+          </button>
+          <button
+            type="button" role="menuitem"
+            onClick={() => handleSessionFork(sessionContextMenu.session)}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-muted transition-colors"
+          >
+            <GitFork className="h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1 text-left">{t('session.contextMenu.forkChat')}</span>
+          </button>
+          <div className="mx-2 border-t border-border" />
+          <button
+            type="button" role="menuitem"
+            onClick={() => handleSessionArchiveFromMenu(sessionContextMenu.session)}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-muted transition-colors"
+          >
+            {sessionContextMenu.session.archived
+              ? <><ArchiveRestore className="h-3.5 w-3.5 shrink-0" /><span className="flex-1 text-left">{t('session.contextMenu.unarchive')}</span></>
+              : <><Archive className="h-3.5 w-3.5 shrink-0" /><span className="flex-1 text-left">{t('session.contextMenu.archive')}</span></>
+            }
           </button>
         </div>
+      )}
+
+      <div className="relative flex min-h-0 min-w-0 flex-1">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
         {activePanel?.type === 'agent' && selectedAgent && agentViewMode === 'settings' ? (
           expandedPrompt ? (
             <div className="flex flex-1 flex-col p-4 gap-3 overflow-hidden">
@@ -2075,226 +2396,55 @@ export default function AgentsPage() {
           <div className="flex flex-1 flex-col overflow-hidden bg-linear-to-b from-background via-background to-muted/20">
             {activeWorkspaceAgent ? (
               <>
-                {/* ── Top: row 1 = Agent & config, row 2 = conversation ── */}
-                {/* relative z-30：下拉（历史）绝对定位溢出到下方时，必须整块叠在聊天区之上，否则兄弟节点会抢走点击 */}
-                <div className="relative z-30 shrink-0 border-b border-border bg-card/30 px-4 py-3 backdrop-blur-sm sm:px-5">
-                  <div className="mx-auto flex max-w-6xl flex-col gap-3">
-                    {/* Row 1 — identity & configuration (not conversation) */}
-                    <section
-                      aria-label={activeWorkspaceAgent.name}
-                      className="flex flex-col gap-3 rounded-xl border border-border/60 bg-background/80 p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:gap-4"
-                    >
-                      <div className="flex min-w-0 flex-1 items-start gap-3">
-                        <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-muted ring-1 ring-border">
-                          <AgentAvatar
-                            slug={activeWorkspaceAgent.slug}
-                            iconKey={activeWorkspaceAgent.icon}
-                            agentId={activeWorkspaceAgent.id}
-                            customAvatar={activeWorkspaceAgent.customAvatar}
-                            updatedAt={activeWorkspaceAgent.updatedAt}
-                            className="h-full w-full object-cover"
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                            <span className="truncate text-base font-semibold tracking-tight text-foreground">
-                              {activeWorkspaceAgent.name}
-                            </span>
-                            {activeWorkspaceAgent.builtIn ? (
-                              <span className="shrink-0 rounded-md border border-border bg-muted/50 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                                {t('agent.builtInBadge')}
-                              </span>
-                            ) : null}
-                          </div>
-                          {activeWorkspaceRuntimeCaption ? (
-                            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                              {activeWorkspaceRuntimeCaption}
-                            </p>
-                          ) : null}
-                        </div>
-                      </div>
-                      <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border/60 pt-3 sm:border-t-0 sm:pt-0">
-                        <button
-                          type="button"
-                          onClick={() => handleAgentSettingsClick(activeWorkspaceAgent)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-accent"
-                        >
-                          <Settings className="h-3.5 w-3.5" />
-                          {t('workspace.configureAgent')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleExport(activeWorkspaceAgent)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-accent"
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                          {t('workspace.exportPackage')}
-                        </button>
-                      </div>
-                    </section>
-
-                    {/* Row 2 — 多会话标签行 + 新开 / 历史（其余布局不变） */}
-                    <section
-                      ref={conversationStripRef}
-                      aria-label={t('workspace.rowConversationEyebrow')}
-                      className="relative rounded-lg border border-border/60 bg-background/80 shadow-sm"
-                    >
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-0">
-                        <div className="flex min-h-10 min-w-0 flex-1 flex-col justify-end sm:min-h-9">
-                          <div
-                            role="tablist"
-                            className="flex min-w-0 items-end gap-0.5 overflow-x-auto border-b border-border/70 px-2 pt-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                          >
-                            {openedSessionTabsForAgent.map((opened) => {
-                              const sess = opened.sessionId
-                                ? currentAgentSessions.find((s) => s.id === opened.sessionId)
-                                : null;
-                              const label = opened.sessionId === null
-                                ? t('workspace.draftShort')
-                                : displayText(sess?.title, t('workspace.unnamedSession'));
-                              const isActive =
-                                activePanel?.type === 'session' && activePanel.key === opened.key;
-                              const running = !!sess?.isRunning;
-                              return (
-                                <div
-                                  key={opened.key}
-                                  className={cn(
-                                    'group/tab relative flex max-w-[min(220px,48vw)] shrink-0 rounded-t-md border',
-                                    isActive
-                                      ? 'z-10 -mb-px border-border border-b-background bg-background text-foreground'
-                                      : 'border-transparent border-b-0 bg-muted/45 text-muted-foreground hover:bg-muted/80 hover:text-foreground',
-                                  )}
-                                >
-                                  <button
-                                    type="button"
-                                    role="tab"
-                                    aria-selected={isActive}
-                                    title={t('workspace.sessionTabSwitch', { title: label })}
-                                    onClick={() => handleWorkspaceSessionTabClick(opened)}
-                                    className="flex min-w-0 flex-1 items-center gap-2 py-2 pl-3 pr-8 text-left text-sm transition-colors"
-                                  >
-                                    {running ? (
-                                      <span className="relative flex h-2 w-2 shrink-0">
-                                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                                        <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-                                      </span>
-                                    ) : (
-                                      <MessageSquare
-                                        className={cn(
-                                          'h-3.5 w-3.5 shrink-0',
-                                          isActive ? 'text-primary' : 'text-muted-foreground',
-                                        )}
-                                        aria-hidden
-                                      />
-                                    )}
-                                    <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    aria-label={t('workspace.sessionTabCloseLabel')}
-                                    title={t('workspace.sessionTabCloseTitle')}
-                                    onClick={(e) => handleCloseWorkspaceSessionTab(opened, e)}
-                                    className="absolute right-1 top-1 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive focus-visible:opacity-100 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100"
-                                  >
-                                    <X className="h-3.5 w-3.5" aria-hidden />
-                                  </button>
-                                </div>
-                              );
-                            })}
-                            {openedSessionTabsForAgent.length === 0 ? (
-                              <span className="px-2 py-2 text-xs text-muted-foreground">
-                                {t('workspace.sessionTabsEmptyHint')}
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
-
-                        <div className="flex shrink-0 flex-wrap items-center gap-2 border-border/70 px-2 py-2 sm:flex-nowrap sm:border-b sm:border-l sm:px-3 sm:py-0">
-                          <button
-                            type="button"
-                            onClick={() => handleNewSession(activeWorkspaceAgent)}
-                            className="inline-flex min-h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted sm:min-h-9 sm:flex-initial sm:rounded-md sm:px-3"
-                            title={t('workspace.newConversation')}
-                          >
-                            <Plus className="h-4 w-4 shrink-0" aria-hidden />
-                            <span className="truncate sm:hidden">{t('workspace.newConversationShort')}</span>
-                            <span className="hidden truncate sm:inline">{t('workspace.newConversation')}</span>
-                          </button>
-                          {currentAgentHistorySessions.length > 0 ? (
-                            <div className="relative shrink-0 sm:flex-initial">
-                              <button
-                                type="button"
-                                onClick={() => setHistoryExpanded((prev) => !prev)}
-                                aria-expanded={historyExpanded}
-                                aria-haspopup="menu"
-                                aria-label={t('workspace.historyWithCountAria', { count: currentAgentHistorySessions.length })}
-                                title={
-                                  historyExpanded
-                                    ? t('workspace.collapseHistory')
-                                    : t('workspace.historyChatsWithCount', { count: currentAgentHistorySessions.length })
-                                }
-                                className={cn(
-                                  'inline-flex min-h-10 min-w-[44px] w-full items-center justify-center gap-2 rounded-lg border border-border px-3 text-sm font-medium transition-colors sm:min-h-9 sm:w-auto sm:rounded-md',
-                                  historyExpanded ? 'border-primary/30 bg-primary/10 text-foreground' : 'bg-background text-muted-foreground hover:bg-muted hover:text-foreground',
-                                )}
-                              >
-                                <History className="h-4 w-4 shrink-0" aria-hidden />
-                                <span className="sm:hidden">
-                                  {t('workspace.historyShort')}
-                                  <span className="tabular-nums"> ({currentAgentHistorySessions.length})</span>
-                                </span>
-                                <span className="hidden items-center gap-2 sm:inline-flex">
-                                  <span>{t('workspace.historySessionsLabel')}</span>
-                                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
-                                    {currentAgentHistorySessions.length > 99 ? '99+' : currentAgentHistorySessions.length}
-                                  </span>
-                                </span>
-                              </button>
-                              {historyExpanded ? (
-                                <div
-                                  role="menu"
-                                  className="absolute right-0 top-full z-100 mt-1.5 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-md"
-                                >
-                                  <ul className="max-h-[min(320px,50vh)] space-y-0 overflow-y-auto p-1" role="none">
-                                    {currentAgentHistorySessions.map((session) => (
-                                      <li key={session.id} role="none">
-                                        <button
-                                          type="button"
-                                          role="menuitem"
-                                          onClick={() => handleSessionClick(session)}
-                                          className={cn(
-                                            'flex min-h-10 w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors',
-                                            activeWorkspaceSessionId === session.id
-                                              ? 'bg-primary/10'
-                                              : 'hover:bg-muted/70',
-                                          )}
-                                        >
-                                          <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                                          <span className="min-w-0 flex-1 truncate">
-                                            {displayText(session.title, t('workspace.unnamedSession'))}
-                                          </span>
-                                          <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
-                                            {formatSessionTimestamp(
-                                              session.updatedAt,
-                                              listClockNow ?? Date.now(),
-                                              t('session.yesterday'),
-                                            )}
-                                          </span>
-                                        </button>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              ) : null}
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    </section>
+                <div className="shrink-0 border-b border-border bg-card/30 px-4 py-2.5 backdrop-blur-sm sm:px-5">
+                  <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
+                    <div className="flex min-w-0 flex-1 items-baseline gap-x-2 gap-y-1">
+                      <span className="truncate text-base font-semibold tracking-tight text-foreground">
+                        {activeWorkspaceAgent.name}
+                      </span>
+                      {activeWorkspaceAgent.builtIn ? (
+                        <span className="shrink-0 rounded-md border border-border bg-muted/50 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          {t('agent.builtInBadge')}
+                        </span>
+                      ) : null}
+                      {activeWorkspaceRuntimeCaption ? (
+                        <span className="hidden text-xs text-muted-foreground sm:inline">
+                          {activeWorkspaceRuntimeCaption}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleAgentSettingsClick(activeWorkspaceAgent)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+                      >
+                        <Settings className="h-3.5 w-3.5" />
+                        {t('workspace.configureAgent')}
+                      </button>
+                      <button
+                        type="button"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                        title={t('workspace.more')}
+                      >
+                        <Ellipsis className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setWorkspaceRailVisible(v => !v)}
+                        className={cn(
+                          'inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-accent hover:text-foreground',
+                          workspaceRailVisible ? 'text-foreground' : 'text-muted-foreground',
+                        )}
+                        title={t('workspace.toggleSidebar')}
+                      >
+                        <PanelRight className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
 
-                {/* ── Bottom: Chat area (fixed height) ── */}
+                {/* ── Chat area ── */}
                 <div
                   className="relative z-0 min-h-0 flex-1"
                   style={{ minHeight: 'min(420px, 50svh)' }}
@@ -2353,13 +2503,15 @@ export default function AgentsPage() {
                 Agent 设置
               </button>
               <button
-                onClick={handleStartCreate}
+                type="button"
+                onClick={() => {}}
                 className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[12px] font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
               >
                 新建 Agent
               </button>
               <button
-                onClick={handleImport}
+                type="button"
+                onClick={() => {}}
                 className="rounded-md p-2 text-zinc-400 transition-colors hover:bg-white hover:text-zinc-700 dark:hover:bg-zinc-900 dark:hover:text-zinc-200"
                 title="导入 Agent"
               >
@@ -2559,6 +2711,7 @@ export default function AgentsPage() {
           className={cn(
             'flex h-full min-h-0 w-[min(100%,288px)] flex-col border-l border-border bg-muted/10 sm:w-[292px] lg:w-[340px]',
             'lg:relative lg:shrink-0',
+            !workspaceRailVisible && 'lg:hidden',
             'max-lg:absolute max-lg:right-0 max-lg:top-0 max-lg:z-50 max-lg:w-[min(100vw,320px)] max-lg:max-w-[90vw] max-lg:shadow-xl',
             'max-lg:transition-transform max-lg:duration-200 max-lg:ease-out',
             mobileWorkspaceRailOpen

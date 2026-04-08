@@ -116,6 +116,9 @@ export interface AgentChatSession {
   /** 会话已归档（已完成的任务，侧边栏显示为灰色） */
   archived?: boolean;
 
+  /** 会话置顶 */
+  pinned?: boolean;
+
   /** 会话级别的可选配置（追加上下文、补充提示词） */
   config?: SessionConfig;
 

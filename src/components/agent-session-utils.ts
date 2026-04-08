@@ -14,6 +14,7 @@ export interface AllSessionItem {
   agentUpdatedAt?: string;
   unreadCount?: number;
   archived?: boolean;
+  pinned?: boolean;
   projectKey?: string;
   isRunning?: boolean;
   runningStartedAt?: string;

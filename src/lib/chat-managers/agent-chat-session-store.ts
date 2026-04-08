@@ -573,6 +573,97 @@ export async function setArchived(sessionId: string, archived: boolean): Promise
   return found;
 }
 
+export async function setPinned(sessionId: string, pinned: boolean): Promise<boolean> {
+  let found = false;
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (data) => {
+      const session = data.sessions.find(s => s.id === sessionId);
+      if (session) {
+        session.pinned = pinned || undefined;
+        found = true;
+      }
+      return data;
+    },
+  );
+  invalidateIndexCache();
+  return found;
+}
+
+export async function renameSession(sessionId: string, title: string): Promise<boolean> {
+  let found = false;
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (data) => {
+      const session = data.sessions.find(s => s.id === sessionId);
+      if (session) {
+        session.title = title;
+        session.updatedAt = new Date().toISOString();
+        found = true;
+      }
+      return data;
+    },
+  );
+  invalidateIndexCache();
+  return found;
+}
+
+export async function markAsUnread(sessionId: string): Promise<boolean> {
+  let found = false;
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (data) => {
+      const session = data.sessions.find(s => s.id === sessionId);
+      if (session) {
+        session.unreadCount = Math.max(1, session.unreadCount ?? 0);
+        found = true;
+      }
+      return data;
+    },
+  );
+  invalidateIndexCache();
+  return found;
+}
+
+export async function forkSession(sessionId: string): Promise<{ forkedId: string } | null> {
+  const original = await loadSession(sessionId);
+  if (!original) return null;
+
+  const forkedId = generateSessionId();
+  const now = new Date().toISOString();
+  const forked: AgentChatSession = {
+    ...original,
+    id: forkedId,
+    title: `${original.title} (fork)`,
+    createdAt: now,
+    updatedAt: now,
+    claudeSessionId: undefined,
+    unreadCount: 0,
+    archived: undefined,
+    pinned: undefined,
+    checkpoint: undefined,
+    parentSessionId: undefined,
+    importedTurnIndices: undefined,
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { messages, ...forkedMeta } = forked;
+  await writeAllMessages(forkedId, messages);
+  await modifyJsonFile<AgentChatSessionsData>(
+    getAgentChatSessionsPath(),
+    DEFAULT_SESSIONS_DATA,
+    (data) => {
+      data.sessions.unshift({ ...forkedMeta, messageCount: messages.length } as SessionMeta);
+      return data;
+    },
+  );
+  invalidateIndexCache();
+  return { forkedId };
+}
+
 export async function updateConfigOnDisk(sessionId: string, config: SessionConfig): Promise<boolean> {
   let found = false;
   await modifyJsonFile<AgentChatSessionsData>(
