@@ -11,6 +11,7 @@
 ## 对话区
 
 - 主对话：`AgentChatPanel` 自 `src/components/agent-chat-panel` 懒加载；可传 `workspaceMode`、`projectKey` 等（由页面组装）。
+- 主消息列表滚动容器在 `AgentChatPanelView`（`scrollRef` 所在 div）上使用 `[overflow-anchor:none]`（与 `agents-workspace-rail` 侧栏一致），减轻流式追加内容时浏览器滚动锚定把视口「粘」在旧节点（例如推理折叠内容）上的问题；自动滚底在 `AgentChatPanel` 内用连续 `requestAnimationFrame` 紧跟布局后再写 `scrollTop`。
 
 ## 对照 `refactor/google-oauth-browser-only`（系统核对摘要）
 

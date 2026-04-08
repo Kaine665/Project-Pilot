@@ -75,7 +75,7 @@ export function AgentChatPanelView({
             <div
               ref={scrollRef}
               onScroll={onChatScroll}
-              className={`h-full space-y-3 overflow-y-auto ${plainScrollClassName ?? 'p-4'} ${hasPendingQueue ? 'pb-44' : ''}`}
+              className={`h-full space-y-3 overflow-y-auto overscroll-contain [overflow-anchor:none] ${plainScrollClassName ?? 'p-4'} ${hasPendingQueue ? 'pb-44' : ''}`}
             >
               {showPlainEmptyState ? plainEmptyState : plainMessageList}
             </div>
@@ -114,7 +114,7 @@ export function AgentChatPanelView({
           <div
             ref={scrollRef}
             onScroll={onChatScroll}
-            className={`h-full space-y-3 overflow-y-auto ${projectScrollClassName ?? 'p-3'} ${hasPendingQueue ? 'pb-44' : ''}`}
+            className={`h-full space-y-3 overflow-y-auto overscroll-contain [overflow-anchor:none] ${projectScrollClassName ?? 'p-3'} ${hasPendingQueue ? 'pb-44' : ''}`}
           >
             {projectTaskBanner}
             {showProjectEmptyState ? projectEmptyState : projectMessageList}

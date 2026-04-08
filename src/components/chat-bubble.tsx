@@ -73,7 +73,7 @@ const ThinkingFoldable = memo(function ThinkingFoldable({
       </summary>
       <div
         className={cn(
-          'whitespace-pre-wrap border-t border-violet-100 px-3 py-2 font-mono text-xs leading-relaxed text-zinc-600 wrap-break-word dark:border-violet-900/40 dark:text-zinc-400',
+          'whitespace-pre-wrap border-t border-violet-100 px-3 py-2 font-mono text-xs leading-relaxed text-zinc-600 wrap-break-word dark:border-violet-900/40 dark:text-zinc-400 [overflow-anchor:none]',
           showPulse && 'max-h-[10lh] overflow-y-auto overflow-x-hidden overscroll-contain',
         )}
       >

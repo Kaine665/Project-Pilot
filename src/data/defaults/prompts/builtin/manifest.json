@@ -1,0 +1,4 @@
+{
+  "version": 2,
+  "description": "内置提示词种子包版本。任意种子 .md 变更时须递增 version，以便用户数据目录 prompts/builtin 自动升级（会先备份旧文件）。"
+}

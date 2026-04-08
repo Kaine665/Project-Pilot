@@ -1,20 +1,22 @@
 /**
  * Builtin Defaults — 读取仓库内置的默认 Agent 定义和 Prompt。
  *
- * v1: 通过 fs.readFile 读取 src/data/defaults/ 下的文件
- * v2: 静态 import，编译时嵌入，零运行时 IO
- *     - JSON → TypeScript 原生 import
- *     - .md → 通过 builtin-prompts.ts 导出的字符串常量
- *
- * 为什么改为静态 import？
- * 1. Electron 打包后 process.cwd() 不指向源码目录
- * 2. Next.js standalone 构建不自动包含 fs.readFile 动态读取的文件
- * 3. 静态 import 在所有环境（dev、standalone、Electron exe）下都可靠
+ * - JSON（agents）：静态 import，编译时嵌入
+ * - 内置提示词：种子在 `src/data/defaults/prompts/builtin/`（含 `manifest.json` version），启动时按版本同步到
+ *   `{DATA_DIR}/prompts/builtin/`（升级前备份到 `.backups/`）；运行时只读数据目录（生产包见 `dist/server/builtin-prompt-seeds/`）
  */
 
+import { readFile } from 'fs/promises';
 import type { Agent } from '@/types';
 import builtinAgentsData from '@/data/defaults/agents.json';
-import { BUILTIN_PROMPTS, PROMPT_GLOBAL } from '@/data/defaults/builtin-prompts';
+import {
+  BUILTIN_AGENT_PROMPT_IDS,
+  ensureBuiltinAgentPromptOnDisk,
+  ensureBuiltinGlobalPromptOnDisk,
+} from '@/lib/builtin-prompt-materialize';
+import { getBuiltinAgentPromptPath, getBuiltinGlobalPromptPath } from '@/lib/file-store';
+
+const MAX_BUILTIN_READ = 10 * 1024 * 1024;
 
 /**
  * 读取仓库内置的 builtin agent 定义列表。
@@ -32,22 +34,50 @@ export function readBuiltinAgentsSync(): Agent[] {
 }
 
 /**
- * 读取仓库内置的 builtin agent prompt。
- * 从编译时嵌入的 BUILTIN_PROMPTS map 查找。
- * 找不到时返回 undefined。
+ * 读取数据目录中的内置 Agent 默认提示词（`prompts/builtin/agents/<id>.md`）。
+ * 文件缺失时会从安装种子复制后再读。
  */
 export async function readBuiltinPrompt(agentId: string): Promise<string | undefined> {
-  return BUILTIN_PROMPTS[agentId];
+  if (!(BUILTIN_AGENT_PROMPT_IDS as readonly string[]).includes(agentId)) {
+    return undefined;
+  }
+  await ensureBuiltinAgentPromptOnDisk(agentId);
+  const filePath = getBuiltinAgentPromptPath(agentId);
+  try {
+    const buf = await readFile(filePath);
+    if (buf.length > MAX_BUILTIN_READ) {
+      throw new Error(`Builtin prompt file too large: ${filePath}`);
+    }
+    return buf.toString('utf-8');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
+      return undefined;
+    }
+    throw e;
+  }
 }
 
 /**
- * 读取仓库内置的全局 prompt 模板。
+ * 读取数据目录中的内置全局提示词模板（`prompts/builtin/global.md`）。
  */
 export async function readBuiltinGlobalPrompt(): Promise<string | undefined> {
-  return PROMPT_GLOBAL;
+  await ensureBuiltinGlobalPromptOnDisk();
+  const filePath = getBuiltinGlobalPromptPath();
+  try {
+    const buf = await readFile(filePath);
+    if (buf.length > MAX_BUILTIN_READ) {
+      throw new Error(`Builtin global prompt too large: ${filePath}`);
+    }
+    return buf.toString('utf-8');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
+      return undefined;
+    }
+    throw e;
+  }
 }
 
-/** 清除缓存（保留接口兼容，但静态 import 不需要缓存） */
+/** 清除缓存（保留接口兼容；现每次从磁盘读取，无进程内缓存） */
 export function invalidateBuiltinCache(): void {
-  // no-op: 静态 import 不使用缓存
+  // no-op
 }

@@ -4,7 +4,7 @@
  * Resolution order:
  *   1. Segmented mode: {DATA_DIR}/prompts/global.d/ (if _index.json exists)
  *   2. Single file: {DATA_DIR}/prompts/global.md
- *   3. Builtin defaults: src/data/defaults/prompts/_global.md
+ *   3. Builtin defaults: {DATA_DIR}/prompts/builtin/global.md（首次从安装种子复制，见 builtin-prompt-materialize）
  *
  * All missing → ok: false (silent skip).
  */

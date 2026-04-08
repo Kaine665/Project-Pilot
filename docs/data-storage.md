@@ -103,10 +103,16 @@ export PROJECT_PILOT_DATA_DIR=/path/to/custom-root
 | `sessions/adjuncts.json` | 会话附属状态 | `getAgentChatSessionAdjunctsPath` |
 | `documents/index.json` | 文档索引 | `getDocumentsIndexPath` |
 | `todos.json` + `todos/entries/` | 待办 | `getTodosPath`, `getTodosEntriesDir` |
-| `prompts/global.md` | 全局提示词 | `getGlobalPromptPath` |
-| `prompts/agents/<id>.md` | Agent 提示词 | `getPromptFilePath` |
+| `prompts/global.md` | 全局提示词（用户覆盖） | `getGlobalPromptPath` |
+| `prompts/builtin/global.md` | 全局提示词内置默认副本（随种子版本升级覆盖，见下） | `getBuiltinGlobalPromptPath` |
+| `prompts/builtin/agents/<id>.md` | 内置 Agent 默认提示词副本（同上） | `getBuiltinAgentPromptPath` |
+| `prompts/builtin/.applied-builtin-prompts.json` | 已应用的内置种子 `version`（与仓库 `manifest.json` 对照） | `getBuiltinPromptAppliedManifestPath` |
+| `prompts/builtin/.backups/pre-upgrade-to-v*/*` | 覆盖前自动备份的旧 `global.md` / `agents/` | `getBuiltinPromptBackupsDir` |
+| `prompts/agents/<id>.md` | Agent 提示词（用户正式版，优先于 builtin） | `getPromptFilePath` |
 
 完整列表以 `file-store.ts` 为准。
+
+**内置提示词版本**：仓库种子目录 `src/data/defaults/prompts/builtin/manifest.json` 中的 `version` 大于数据目录 `.applied-builtin-prompts.json` 时，服务启动会将种子中的 `global.md` 与 `agents/*.md` **整包覆盖**写入 `prompts/builtin/`（覆盖前把旧文件拷到 `prompts/builtin/.backups/pre-upgrade-to-v{N}-时间戳/`）。若数据目录版本更高（例如降级安装旧应用），则**不覆盖**仅补缺文件。长期定制请优先使用 `prompts/agents/<id>.md`（正式版，优先级高于 builtin）。
 
 ## 备份与排查
 

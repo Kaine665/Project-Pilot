@@ -1027,11 +1027,14 @@ export function AgentChatPanel({
     if (!autoScroll) return;
     if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
     scrollRafRef.current = requestAnimationFrame(() => {
-      scrollRafRef.current = 0;
-      if (scrollRef.current) {
-        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-      }
-      updateActiveMessageId();
+      scrollRafRef.current = requestAnimationFrame(() => {
+        scrollRafRef.current = 0;
+        const el = scrollRef.current;
+        if (el) {
+          el.scrollTop = el.scrollHeight;
+        }
+        updateActiveMessageId();
+      });
     });
   }, [messages, streamingBlocks, autoScroll, updateActiveMessageId]);
 

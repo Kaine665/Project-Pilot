@@ -21,6 +21,7 @@ import { errorHandler } from './middleware/error-handler';
 import { lazyApiRoute } from './lazy-route';
 
 import { ensureDataDirV2Migrated } from '@/lib/file-store';
+import { materializeAllBuiltinPromptSeeds } from '@/lib/builtin-prompt-materialize';
 import { ensureGlobalAgentsMigratedToPresets } from '@/lib/migrations/migrate-global-agents-to-presets';
 import { schedulerManager } from '@/lib/scheduler-manager';
 import { eventTriggerManager } from '@/lib/event-trigger-manager';
@@ -137,6 +138,11 @@ const port = parseInt(
 
 async function startServer(): Promise<void> {
   await ensureDataDirV2Migrated();
+  try {
+    await materializeAllBuiltinPromptSeeds();
+  } catch (e) {
+    console.warn('[server] materializeAllBuiltinPromptSeeds:', e);
+  }
   await ensureGlobalAgentsMigratedToPresets();
   initInboxRouting();
   await schedulerManager.init();

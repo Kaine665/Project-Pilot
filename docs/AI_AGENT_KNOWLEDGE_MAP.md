@@ -16,7 +16,7 @@
 | **短记忆** | `develop-static/MEMORY.md` | Claude Code 等 | 高密度结论 | `data-storage.md`、本文 |
 | **Cursor 规则** | `.cursor/rules/*.mdc` | Cursor Agent | 沙箱、终端等 | 若涉及数据路径则对齐 `data-storage.md` |
 | **Cursor MCP（PP stdio）** | 仓库根 `.cursor/mcp.json` + `docs/cursor-mcp-project-pilot.md` | Cursor Agent | 外部 MCP 连接 PP 数据；路径与 `TSX_TSCONFIG_PATH`（根目录 vs `develop-static/` 嵌套） | `mcp-server/index.ts`、本文 |
-| **内置 Agent 提示词** | `develop-static/src/data/defaults/builtin-prompts.ts` | 产品内 Butler / Self-Dev 等 | 用户数据路径、能力描述 | **`docs/data-storage.md`（路径事实必须一致）** |
+| **内置 Agent 提示词** | 仓库种子 `src/data/defaults/prompts/builtin/`（`manifest.json` 递增触发覆盖）；运行时 `{DATA_DIR}/prompts/builtin/` + `.applied-builtin-prompts.json`（`builtin-prompt-materialize.ts`） | 产品内 Butler / Self-Dev 等 | 用户数据路径、能力描述 | **`docs/data-storage.md`（路径事实必须一致）** |
 | **人类 docs 总入口** | `develop-static/docs/README.md` | 人类 + AI | `docs/` 分层与权威关系 | `data-storage.md` |
 | **Git 分支与 GitHub 保护** | `develop-static/docs/github-branch-policy.md` | 维护者 + 贡献者 | `main` / `next` / `feature/*` / `hotfix/*`；Rulesets 清单 | `CONTRIBUTING.md` |
 | **数据路径（代码对齐）** | `develop-static/docs/data-storage.md` | 所有 | 与 `get*Path` 一致的树与表 | `src/lib/file-store.ts` |
@@ -46,7 +46,7 @@
 - [ ] `develop-static/docs/data-storage.md`
 - [ ] `develop-static/MEMORY.md`（「数据存储」节）
 - [ ] `develop-static/CLAUDE.md`（「数据层」相关段落）
-- [ ] `develop-static/src/data/defaults/builtin-prompts.ts`（凡出现 `~/.project-pilot`、域名的段落）
+- [ ] `src/data/defaults/prompts/builtin/**/*.md` 与 **`manifest.json` version**（凡出现 `~/.project-pilot`、域名的段落）
 - [ ] 本机 `~/.project-pilot/README.md` / `数据文件夹现状.md`（若影响用户可见规范）
 - [ ] `develop-static/scripts/data-layout-migration.md` 或 `run-layout-migrations.ts` 头注释（若影响离线行为）
 

@@ -71,8 +71,8 @@
 - **Agent Runner 路由**（`agent-runner.ts`）：`openai` → CodexAgentRunner（Codex SDK）；**其余全部** → ClaudeAgentRunner（Claude Agent SDK）。**不可引入无工具的裸 Messages Runner**——第三方供应商（MiniMax/DeepSeek/Kimi 等）必须走 ClaudeAgentRunner 才能获得 tool_use 支持
 - Prompt 构建通过 **Resource 系统**：`defaultResources` / `resourceRefs` → `ResourceRegistry.loadAll()` → 按 priority 排序加载
 - Resource 类型（节选）：`design-docs-index`、`global-prompt`、`project-prompt`、`inline-text`、`todo-list`、`flow-context`、`reference-turns`、`skill` 等；**无** `context-index` / `context` 运行时加载
-- Butler 是默认 agent；内置提示字符串见 `src/data/defaults/builtin-prompts.ts`
-- **全局约束**（`global-prompt`）：默认模板 `PROMPT_GLOBAL` 含「Agent 数据工作区（磁盘约定）」等；用户可在 `prompts/global.md` 或设置里编辑。`agent-data-info` 仅在 **dataStore** 时列出 `agents/workspaces/<id>/` 下文件
+- Butler 是默认 agent；内置提示词种子在仓库 `src/data/defaults/prompts/builtin/`（含 `manifest.json` 版本号），运行时落在 `~/.project-pilot/prompts/builtin/`；种子版本升高时自动备份并覆盖 builtin 下 md，`.applied-builtin-prompts.json` 记录已应用版本
+- **全局约束**（`global-prompt`）：默认模板经 `prompts/builtin/global.md` 提供；用户可在 `prompts/global.md` 或设置里覆盖。`agent-data-info` 仅在 **dataStore** 时列出 `agents/workspaces/<id>/` 下文件
 - **未读消息**：`AgentChatSession.unreadCount` 字段，`persistSession()` 递增，`markAsRead()` 清零
 - **设计文档 / 知识文档**：统一写入 `documents/`，通过 `<save-doc>` / `PATCH /api/docs/:id` 等；旧「知识草稿弹窗」已移除
 - **Guest Agent**：`parentSessionId` + `importedTurnIndices` 实现对话旁听

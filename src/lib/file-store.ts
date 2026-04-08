@@ -889,6 +889,33 @@ export function getGlobalPromptPath(): string {
   return path.join(DATA_DIR, 'prompts', 'global.md');
 }
 
+/** 内置提示词落盘根目录（首次从应用种子复制，可编辑；见 `builtin-prompt-materialize.ts`） */
+export function getBuiltinPromptsRootDir(): string {
+  return path.join(DATA_DIR, 'prompts', 'builtin');
+}
+
+export function getBuiltinAgentPromptPath(agentId: string): string {
+  const safe = agentId.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 100) {
+    throw new Error(`Invalid agent id: ${agentId}`);
+  }
+  return path.join(DATA_DIR, 'prompts', 'builtin', 'agents', `${safe}.md`);
+}
+
+export function getBuiltinGlobalPromptPath(): string {
+  return path.join(DATA_DIR, 'prompts', 'builtin', 'global.md');
+}
+
+/** 记录已应用的内置提示词种子版本（与种子目录 manifest.json 对照） */
+export function getBuiltinPromptAppliedManifestPath(): string {
+  return path.join(DATA_DIR, 'prompts', 'builtin', '.applied-builtin-prompts.json');
+}
+
+/** 内置提示词升级前备份目录（`pre-upgrade-to-v{N}-…`） */
+export function getBuiltinPromptBackupsDir(): string {
+  return path.join(DATA_DIR, 'prompts', 'builtin', '.backups');
+}
+
 export function getProjectPromptsDir(): string {
   return path.join(DATA_DIR, 'prompts', 'projects');
 }

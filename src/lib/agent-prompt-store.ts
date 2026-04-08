@@ -99,7 +99,7 @@ export async function deletePromptFile(agentId: string): Promise<void> {
 
 /**
  * 解析 agent 的最终 systemPrompt。
- * 优先级：用户数据目录 prompts/{agentId}.md > 仓库 defaults > 内联 systemPrompt。
+ * 优先级：用户正式版 `prompts/agents/{agentId}.md` > 数据目录 `prompts/builtin/agents/{agentId}.md`（按种子 manifest 版本同步）> 内联 systemPrompt。
  */
 export async function resolveSystemPrompt(
   agentId: string,
