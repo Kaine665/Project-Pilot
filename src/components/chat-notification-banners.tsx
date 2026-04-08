@@ -76,7 +76,7 @@ export const ChatNotificationBanners = memo(function ChatNotificationBanners({
       {showAuxiliary && docsSaved.length > 0 && (
         <div className={`${className} flex items-center justify-between gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs dark:border-blue-800/50 dark:bg-blue-900/15`}>
           <button
-            onClick={() => onScrollToAction?.('save-doc')}
+            onClick={() => onScrollToAction?.('docs-saved')}
             disabled={!onScrollToAction}
             className={`flex min-w-0 items-center gap-1.5 text-blue-700 dark:text-blue-400 ${onScrollToAction ? 'cursor-pointer hover:underline' : ''}`}
           >

@@ -19,6 +19,7 @@ import { repairTextIfNeeded } from '@/lib/text-repair';
 import { providerSupportsLocalAgentTools } from '@/lib/agent-provider-capabilities';
 import { hasToolCallWithId } from '@/lib/agent-tool-call-dedupe';
 import { notifyFilesystemMutatedDebounced, toolMayMutateWorkspaceFiles } from '@/lib/fs-mutation-events';
+import { AGENT_DOCUMENTS_DOC_CREATE_TOOL_NAME } from '@/lib/agent-documents-mcp-server';
 import type { Agent, ProviderId, OpenAIReasoningEffort } from '@/types';
 import type { DeferredInputBufferItem, DeferredInputBufferState, SessionConfig } from '@/types/agent-chat';
 import type { ChatMessage, ChatToolCall, ContentBlock } from '@/types';
@@ -50,6 +51,22 @@ import { buildCacheKey } from './agent-session-cache';
 import { usePanelCacheSnapshot } from './use-panel-cache-snapshot';
 import { useSessionRuns } from './use-session-runs';
 import { useSessionBootstrap } from './use-session-bootstrap';
+
+function tryParseDocCreateMcpOutput(
+  output: string | undefined,
+): { docId: string; title: string; projectKey: string } | null {
+  if (!output?.trim()) return null;
+  try {
+    const data = JSON.parse(output) as {
+      ok?: boolean;
+      entry?: { id?: string; title?: string; projectKey?: string };
+    };
+    if (data?.ok !== true || !data.entry?.id || !data.entry.title || !data.entry.projectKey) return null;
+    return { docId: data.entry.id, title: data.entry.title, projectKey: data.entry.projectKey };
+  } catch {
+    return null;
+  }
+}
 
 export function AgentChatPanel({
   agent,
@@ -807,6 +824,16 @@ export function AgentChatPanel({
                   if (out.length > 50) {
                     setPlanContent(out);
                     setIsPlanOpen(true);
+                  }
+                }
+
+                if (
+                  event.status === 'completed'
+                  && tc.toolName === AGENT_DOCUMENTS_DOC_CREATE_TOOL_NAME
+                ) {
+                  const docInfo = tryParseDocCreateMcpOutput(event.output);
+                  if (docInfo) {
+                    setDocsSaved(prev => [...prev, docInfo]);
                   }
                 }
               }

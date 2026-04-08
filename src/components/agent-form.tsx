@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Bot, X, Maximize2,
-  Terminal, FileText, Globe, Users, ShieldOff, ListTodo, Eye, Check,
+  Terminal, FileText, Globe, Users, ShieldOff, ListTodo, Eye, Check, Library,
   Database, Brain, Code, Zap, Search, Shield, Wrench, BookOpen, HardDrive,
   type LucideIcon,
 } from 'lucide-react';
@@ -112,7 +112,9 @@ export const CAPABILITY_ITEMS: Array<{
   { key: 'web',        label: 'Web 搜索/抓取',  description: 'WebFetch、WebSearch',          icon: Globe },
   { key: 'subAgent',   label: '子 Agent',       description: 'Task 工具（Claude 内置子代理）。委派其他 PP Agent 用 Bash + call-agent，全体 Agent 提示词中均有说明', icon: Users },
   { key: 'skipReview',      label: '无需审核',       description: '自动批准所有工具调用',                icon: ShieldOff, danger: true },
-  { key: 'todoRead',        label: '读取待办',       description: '将 pending 待办注入提示词',           icon: ListTodo },
+  { key: 'todoRead',        label: '读取待办',       description: '注入待办上下文并提供 MCP 工具（list/create/update/delete）', icon: ListTodo },
+  { key: 'registryMcp',     label: '注册表 MCP',    description: '共享记忆、并行看板、Agent 列表与自助更新（projectpilot-registry）', icon: Library },
+  { key: 'documentsMcp',  label: '文档 MCP',      description: '设计/知识文档 list/get/create/update/delete（projectpilot-documents）', icon: BookOpen },
   { key: 'exposePromptPath', label: '暴露提示词路径', description: '将 prompt 文件路径注入提示词，AI 可自行读写', icon: Eye },
   { key: 'dataStore',        label: '数据存储',       description: '为 Agent 分配私有数据目录，可自由读写文件',  icon: HardDrive },
 ];

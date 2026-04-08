@@ -11,7 +11,6 @@ import type { ParsedActionTag, ActionTagType } from '@/lib/action-tag-parser';
 import { ACTION_COLORS } from '@/lib/action-tag-parser';
 
 const PANEL_ICONS: Partial<Record<ActionTagType, React.ComponentType<{ className?: string }>>> = {
-  'save-doc': FileText,
   'save-checkpoint': Save,
 };
 
@@ -83,10 +82,6 @@ export const ActionContentPanel = memo(function ActionContentPanel({
 
 function renderAttrs(tag: ParsedActionTag): React.ReactNode | null {
   const pills: Array<{ label: string; value: string }> = [];
-
-  if (tag.type === 'save-doc') {
-    if (tag.attrs.project) pills.push({ label: '项目', value: tag.attrs.project });
-  }
 
   if (pills.length === 0) return null;
 

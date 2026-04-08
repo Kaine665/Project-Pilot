@@ -8,7 +8,6 @@
 // ── Action tag types ──
 
 export type ActionTagType =
-  | 'save-doc'
   | 'save-checkpoint'
   | 'await-sub-agents'
   | 'session-title';
@@ -45,21 +44,6 @@ interface TagDef {
 }
 
 const TAG_DEFS: TagDef[] = [
-  {
-    type: 'save-doc',
-    regex: /<save-doc\s+project="([^"]+)"\s+title="([^"]+)"\s+description="([^"]+)">([\s\S]*?)<\/save-doc>/g,
-    extract: (m, start) => ({
-      type: 'save-doc',
-      raw: m[0],
-      start,
-      end: start + m[0].length,
-      attrs: { project: m[1], title: m[2], description: m[3] },
-      body: m[4]?.trim() ?? '',
-      title: m[2],
-      subtitle: m[3],
-      hasPreviewContent: true,
-    }),
-  },
   {
     type: 'save-checkpoint',
     regex: /<save-checkpoint>([\s\S]*?)<\/save-checkpoint>/g,
@@ -129,7 +113,6 @@ interface StreamingTag {
 export function detectStreamingTag(text: string): StreamingTag | null {
   // Match opening tags that are NOT closed
   const openingPatterns: Array<{ type: ActionTagType; regex: RegExp }> = [
-    { type: 'save-doc', regex: /<save-doc\s+project="[^"]*"\s+title="[^"]*"\s+description="[^"]*">(?![\s\S]*<\/save-doc>)/g },
     { type: 'save-checkpoint', regex: /<save-checkpoint>(?![\s\S]*<\/save-checkpoint>)/g },
     { type: 'await-sub-agents', regex: /<await-sub-agents\s+session-ids="[^"]*"\s*>(?![\s\S]*<\/await-sub-agents>)/g },
   ];
@@ -271,16 +254,6 @@ export interface ActionColorConfig {
 }
 
 export const ACTION_COLORS: Record<ActionTagType, ActionColorConfig> = {
-  'save-doc': {
-    border: 'border-l-blue-500',
-    bg: 'bg-blue-50/80 dark:bg-blue-950/20',
-    bgHover: 'hover:bg-blue-50 dark:hover:bg-blue-950/30',
-    iconColor: 'text-blue-500',
-    badgeText: 'text-blue-600 dark:text-blue-400',
-    badgeBg: 'bg-blue-100 dark:bg-blue-900/30',
-    label: '设计文档',
-    acceptedLabel: '已保存',
-  },
   'save-checkpoint': {
     border: 'border-l-purple-500',
     bg: 'bg-purple-50/80 dark:bg-purple-950/20',
