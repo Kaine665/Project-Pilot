@@ -118,7 +118,7 @@ export PROJECT_PILOT_DATA_DIR=/path/to/custom-root
 
 当 Agent 或会话通过 `ResourceRef`（`type: skill`）绑定 skill 时，`SkillResourceLoader` 会把 **frontmatter 外的正文** 注入系统提示词的组装结果；正文前会附带 `### Skill: {name}` 与 `description` 行，便于与目录中 `SKILL.md` 的结构对应。若 frontmatter 含 `disable-model-invocation: true`（OpenClaw 可选键），则**不向模型注入**该 skill（与 OpenClaw「仅用户侧可调」语义一致）。
 
-磁盘布局与历史目录约定见 [`src/lib/skill-store.ts`](../src/lib/skill-store.ts) 文件头注释（`_global` / `_projects` / `_agents`、根下平铺遗留路径等）。
+磁盘布局与历史目录约定见 [`src/lib/skill-store.ts`](../src/lib/skill-store.ts) 文件头注释（`_global` / `_projects` / `_agents`、根下平铺遗留路径等）。**提示词树**（`GET` 组装各 scope 的 prompt blocks，见 [`src/server/routes/prompts.ts`](../src/server/routes/prompts.ts)）中 Skill 条目的 token 估算与预览与上述注入逻辑一致（`disable-model-invocation` 时估算为 0、预览提示不注入）。
 
 **内置提示词版本**：仓库种子目录 `src/data/defaults/prompts/builtin/manifest.json` 中的 `version` 大于数据目录 `.applied-builtin-prompts.json` 时，服务启动会将种子中的 `global.md` 与 `agents/*.md` **整包覆盖**写入 `prompts/builtin/`（覆盖前把旧文件拷到 `prompts/builtin/.backups/pre-upgrade-to-v{N}-时间戳/`）。若数据目录版本更高（例如降级安装旧应用），则**不覆盖**仅补缺文件。长期定制请优先使用 `prompts/agents/<id>.md`（正式版，优先级高于 builtin）。
 
