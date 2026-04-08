@@ -1,7 +1,7 @@
 'use client';
 
-import { CommunityPageClient } from '@/components/community/community-page-client';
+import { CommunityHomePage } from '@/components/community-store/community-home-page';
 
-export default function CommunityPage() {
-  return <CommunityPageClient />;
+export default function CommunityHome() {
+  return <CommunityHomePage />;
 }

@@ -21,6 +21,129 @@
     "schedules": "定时运行",
     "mcp": "MCP"
   },
+  "community": {
+    "title": "社区市场",
+    "subtitle": "浏览可复用模板并一键加入「运行预设」，新建 Agent 时可套用。架构对齐 LobeHub 类「发现 → 安装」闭环（详见 docs/community-marketplace-lobechat-okr.md）。",
+    "storeBadge": "商店",
+    "tab": {
+      "home": "发现",
+      "assistant": "助手",
+      "skill": "技能",
+      "mcp": "MCP",
+      "model": "模型",
+      "provider": "服务商"
+    },
+    "search": {
+      "placeholder": "搜索标题、描述或标签…"
+    },
+    "sort": {
+      "recommended": "推荐",
+      "updatedAt": "最近更新",
+      "title": "名称"
+    },
+    "category": {
+      "title": "分类",
+      "all": "全部",
+      "programming": "编程",
+      "copywriting": "文案与文档",
+      "discover": "发现与研究",
+      "general": "通用"
+    },
+    "filterSource": {
+      "title": "来源",
+      "all": "全部",
+      "pp": "ProjectPilot（内置/开发）",
+      "remote": "远程目录",
+      "external": "含参考链接"
+    },
+    "home": {
+      "bannerTitle": "发现适合你的 Agent、Skills 与 MCP",
+      "bannerBody": "布局对齐 LobeHub 社区：发现页聚合助手预设、Skills 与 MCP。助手一键写入运行预设；Skills 安装为本地 SKILL.md；MCP 写入数据目录 config/mcp-market.json，并与项目 .mcp.json 合并后供 Claude CLI 使用。",
+      "bannerCta": "浏览全部助手",
+      "featuredAssistants": "精选助手",
+      "more": "查看更多",
+      "featuredSkills": "精选技能",
+      "moreSkills": "浏览全部技能",
+      "featuredMcp": "精选 MCP",
+      "moreMcp": "浏览全部 MCP",
+      "mcpStripHint": "MCP 安装后写入本机数据目录的 mcp-market.json；与当前任务工作区下的 .mcp.json 合并（项目覆盖同名键）。"
+    },
+    "meta": {
+      "plugins": "插件 {n}",
+      "knowledge": "知识 {n}",
+      "tokens": "Token {n}"
+    },
+    "empty": "没有匹配的条目，试试其它分类、来源或关键词。",
+    "addToPresets": "添加到我的预设",
+    "presetNameSuffix": "（社区）",
+    "installOk": "已添加「{name}」。可在预设页查看或编辑。",
+    "installFail": "添加失败，请稍后重试。",
+    "presetsHint": "安装后的预设可在",
+    "presetsLink": "Agent 预设",
+    "catalogMeta": "目录：{source} · v{version}",
+    "catalogOrigin": {
+      "local": "来源：内置种子",
+      "remote": "来源：已合并远程目录 JSON",
+      "registry": "来源：MCP Registry + 内置种子",
+      "devBulk": "来源：内置种子 + 开发扩展模板（仅 NODE_ENV=development）"
+    },
+    "loadError": "目录加载失败",
+    "detail": {
+      "back": "返回列表",
+      "notFound": "未找到该条目",
+      "sourceLink": "打开来源页面",
+      "systemRole": "系统角色（System Prompt）",
+      "capabilities": "能力开关",
+      "tags": "标签"
+    },
+    "cap": {
+      "bash": "Bash",
+      "fileAccess": "文件访问",
+      "web": "网络",
+      "subAgent": "子 Agent",
+      "dataStore": "数据存储",
+      "on": "开",
+      "off": "关"
+    },
+    "skill": {
+      "installGlobal": "安装到全局 Skills",
+      "installProject": "安装到当前项目",
+      "openSkillsPage": "打开 Skills 管理",
+    "preview": "内容预览",
+    "sourceSection": "来源说明",
+    "openExternalSource": "在浏览器中打开参考链接",
+    "sourceFallbackPp": "**ProjectPilot 提供**（本条未写 `sourceNote`）：来自内置种子、开发扩展模板，或远程合并中**未被覆盖**的本地项；安装后写入本机数据目录。",
+    "sourceFallbackUnknown": "**来源未知**（本条未写 `sourceNote`）：来自远程合并目录，或同 id 条目**已被远程 JSON 覆盖**。请先核验上游可信度再安装；可信时请让对方补充 `sourceNote` / `sourceUrl`。",
+    "needProject": "请先在工作区选择项目",
+      "needProjectHint": "未选择项目时无法安装到项目级 Skills。",
+      "installOk": "已安装「{name}」。可在 Skills 页查看或编辑。",
+      "installFail": "安装失败，请稍后重试。"
+    },
+    "mcp": {
+      "listHint": "安装后写入数据目录 config/mcp-market.json，与项目根 .mcp.json 在启动 Claude 时合并。",
+      "installedBadge": "已添加",
+      "addToMcpMarket": "添加到本机 MCP 清单",
+      "openMcpWorkspace": "工作区 MCP 说明",
+      "configPreview": "将合并的服务配置",
+      "mergeHint": "市场清单与项目 .mcp.json 合并；同名服务以项目配置为准。",
+      "needProject": "该 MCP 需要已注册项目的磁盘路径。",
+      "willUseProject": "将使用当前所选项目「{key}」的路径替换配置中的占位符。",
+      "selectProjectFirst": "请先在项目管理中选择当前项目，再安装需要本地路径的 MCP。",
+      "installOk": "已添加 MCP 服务「{key}」。",
+      "installFail": "添加失败，请稍后重试。"
+    },
+    "placeholder": {
+      "backAssistants": "返回助手列表",
+      "model": {
+        "title": "模型发现（即将接入）",
+        "body": "此页对应 LobeHub 的模型目录。ProjectPilot 的模型与供应商配置在「设置」中管理。"
+      },
+      "provider": {
+        "title": "服务商（即将接入）",
+        "body": "此页对应 LobeHub 的服务商列表。自定义供应商请在「设置 → 模型与供应商」中添加。"
+      }
+    }
+  },
   "folderExplorer": {
     "contextMenu": {
       "referenceChat": "@引用到对话",
@@ -393,21 +516,6 @@
     "fieldContextStrategy": "上下文注入策略",
     "strategyAdditive": "叠加项目上下文（默认）",
     "strategyExclusive": "仅使用预设内绑定上下文"
-  },
-  "community": {
-    "title": "社区市场",
-    "subtitle": "浏览可复用模板并一键加入「运行预设」，新建 Agent 时可套用。架构对齐 LobeHub 类「发现 → 安装」闭环（详见 docs/community-marketplace-lobechat-okr.md）。",
-    "presetsHint": "已添加的条目会出现在",
-    "presetsLink": "运行预设",
-    "catalogMeta": "目录来源：{source} · schema v{version}",
-    "searchPlaceholder": "搜索标题、描述或标签…",
-    "tagAll": "全部",
-    "empty": "没有匹配的条目",
-    "loadError": "目录加载失败",
-    "addToPresets": "添加到我的预设",
-    "presetNameSuffix": "（社区）",
-    "installOk": "已添加预设「{name}」",
-    "installFail": "添加失败，请稍后重试"
   },
   "plans": {
     "title": "执行计划",
@@ -1023,6 +1131,9 @@
     "googleSyncDismiss": "知道了",
     "googleSyncLoggedOut": "已断开 Google 连接。",
     "googleSyncError": "操作失败，请检查网络。",
+    "googleSyncErrorSavePending": "无法保存登录状态（后端未写入）。请确认本机 API 已启动后重试。",
+    "googleSyncBrowserSyncOpened": "已在系统浏览器打开同步页，请在该页完成 Google 请求；完成后此处会自动显示结果。",
+    "googleSyncBrowserSyncTimeout": "等待同步超时。若浏览器页已成功，可再点一次「立即同步」；否则检查网络/代理后重试。",
     "googleSyncOpenBrowserHint": "已在系统浏览器中打开 Google 登录页，完成后本窗口会自动刷新。",
     "googleSyncOAuthDoneTitle": "Google 登录完成",
     "googleSyncOAuthDoneBody": "已回到 ProjectPilot，凭据已自动同步。",

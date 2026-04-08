@@ -1,8 +1,7 @@
 /**
  * Google OAuth — backend endpoints for session management and credential sync.
  *
- * All Google API communication (token exchange, Drive) now happens in the browser.
- * Backend only handles: session cookie, refresh token storage, credential merge.
+ * Google API（token、Drive）在系统浏览器中调用；Electron 内嵌页通过 ticket 打开浏览器完成同步并轮询完成信号。
  */
 
 import { Hono } from 'hono';
@@ -106,6 +105,52 @@ async function readAndClearLoginCompletion(): Promise<{ sub: string; email: stri
     return { sub: j.sub, email: j.email ?? '' };
   } catch {
     return null;
+  }
+}
+
+// ── Electron → 系统浏览器：Drive 同步桥接（ticket + 完成信号）──
+
+const BROWSER_SYNC_TICKET_FILE = '_browser_sync_ticket.json';
+const BROWSER_SYNC_DONE_FILE = '_browser_sync_done.json';
+
+async function writeBrowserSyncTicket(ticket: string, sub: string, email: string): Promise<void> {
+  const dir = getGoogleOAuthDir();
+  await fs.mkdir(dir, { recursive: true });
+  const fp = path.join(dir, BROWSER_SYNC_TICKET_FILE);
+  await fs.writeFile(fp, JSON.stringify({ ticket, sub, email, createdAt: Date.now() }), 'utf-8');
+}
+
+async function readAndClearBrowserSyncTicket(expectedTicket: string): Promise<{ sub: string; email: string } | null> {
+  const fp = path.join(getGoogleOAuthDir(), BROWSER_SYNC_TICKET_FILE);
+  try {
+    const raw = await fs.readFile(fp, 'utf-8');
+    await fs.unlink(fp).catch(() => {});
+    const j = JSON.parse(raw) as { ticket?: string; sub?: string; email?: string; createdAt?: number };
+    if (j.createdAt && Date.now() - j.createdAt > 5 * 60 * 1000) return null;
+    if (!j.sub || j.ticket !== expectedTicket) return null;
+    return { sub: j.sub, email: j.email ?? '' };
+  } catch {
+    return null;
+  }
+}
+
+async function writeBrowserSyncDone(): Promise<void> {
+  const dir = getGoogleOAuthDir();
+  await fs.mkdir(dir, { recursive: true });
+  const fp = path.join(dir, BROWSER_SYNC_DONE_FILE);
+  await fs.writeFile(fp, JSON.stringify({ doneAt: Date.now() }), 'utf-8');
+}
+
+async function readAndClearBrowserSyncDone(): Promise<boolean> {
+  const fp = path.join(getGoogleOAuthDir(), BROWSER_SYNC_DONE_FILE);
+  try {
+    const raw = await fs.readFile(fp, 'utf-8');
+    await fs.unlink(fp).catch(() => {});
+    const j = JSON.parse(raw) as { doneAt?: number };
+    if (j.doneAt && Date.now() - j.doneAt > 5 * 60 * 1000) return false;
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -340,6 +385,80 @@ googleAuth.get('/poll-login', async (c) => {
   });
 
   return c.json({ signedIn: true, email: completion.email || null });
+});
+
+/**
+ * POST /browser-sync-start — Electron 已登录时签发一次性 ticket，打开系统浏览器访问桥接页。
+ */
+googleAuth.post('/browser-sync-start', async (c) => {
+  const raw = getCookie(c, SESSION_COOKIE);
+  const payload = raw ? verifySession(raw) : null;
+  if (!payload?.sub) {
+    return c.json({ ok: false, error: 'Not authenticated' }, 401);
+  }
+  const ticket = crypto.randomBytes(32).toString('base64url');
+  await writeBrowserSyncTicket(ticket, payload.sub as string, (payload.email as string) || '');
+  const origin =
+    process.env.PP_FRONTEND_ORIGIN?.trim().replace(/\/$/, '') || 'http://127.0.0.1:4000';
+  const url = `${origin}/oauth/google/browser-sync?ticket=${encodeURIComponent(ticket)}`;
+  return c.json({ ok: true, url });
+});
+
+/**
+ * POST /browser-sync-claim — 浏览器凭 ticket 换取 refresh_token + 设置会话 Cookie，随后在浏览器内调 Google。
+ */
+googleAuth.post('/browser-sync-claim', async (c) => {
+  let body: { ticket?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: 'Invalid JSON' }, 400);
+  }
+  const ticket = body.ticket?.trim();
+  if (!ticket) return c.json({ ok: false, error: 'Missing ticket' }, 400);
+
+  const rec = await readAndClearBrowserSyncTicket(ticket);
+  if (!rec) return c.json({ ok: false, error: 'Invalid or expired ticket' }, 400);
+
+  const refresh_token = await readRefreshToken(rec.sub);
+  if (!refresh_token) return c.json({ ok: false, error: 'No refresh token' }, 400);
+
+  const now = Math.floor(Date.now() / 1000);
+  const sess = signSession({
+    sub: rec.sub,
+    email: rec.email,
+    iat: now,
+    exp: now + SESSION_MAX_AGE_SEC,
+  });
+  setCookie(c, SESSION_COOKIE, sess, {
+    path: '/',
+    httpOnly: true,
+    sameSite: 'Lax',
+    secure: false,
+    maxAge: SESSION_MAX_AGE_SEC,
+  });
+
+  return c.json({ ok: true, refresh_token });
+});
+
+/**
+ * POST /browser-sync-done — 浏览器内同步完成后写入信号，供 Electron GET /poll-browser-sync 消费。
+ */
+googleAuth.post('/browser-sync-done', async (c) => {
+  const raw = getCookie(c, SESSION_COOKIE);
+  if (!raw || !verifySession(raw)) {
+    return c.json({ ok: false, error: 'Not authenticated' }, 401);
+  }
+  await writeBrowserSyncDone();
+  return c.json({ ok: true });
+});
+
+/**
+ * GET /poll-browser-sync — Electron 轮询：系统浏览器内 Drive 同步是否已结束。
+ */
+googleAuth.get('/poll-browser-sync', async (c) => {
+  const done = await readAndClearBrowserSyncDone();
+  return c.json({ done });
 });
 
 export default googleAuth;

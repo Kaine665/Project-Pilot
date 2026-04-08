@@ -50,7 +50,7 @@
 - 可通过 `PROJECT_PILOT_DATA_DIR` 环境变量自定义
 - JSON 文件读写有 50MB 大小限制
 - `writeJsonFile()` 自动创建父目录
-- **Hono 启动**：`src/server/index.ts` 在 `ensureDataDirV2Migrated` 之后会 **`schedulerManager.init()`** 与 **`eventTriggerManager.init()`**，进程重启后恢复 **cron 定时**与 **GitHub PR 轮询**（路线图 C1）
+- **Hono 启动**：`src/server/index.ts` 在 `ensureDataDirV2Migrated` 之后会 **`schedulerManager.init()`** 与 **`eventTriggerManager.init()`**，进程重启后恢复 **cron 定时**与 **GitHub PR 轮询**（路线图 C1）。**`/api/*` 业务路由**经 `lazy-route.ts` 在**首次命中**时 `import()` 对应模块（缩短 `tsx` 开发态冷启动；生产 `bun build --outfile` 单包仍会一次性加载）
 - **并行执行看板**：`agents/active-tasks.json`（多 Agent 运行时登记）；与 **Todo**（`todos/`）不同，见 `docs/领域与数据.md` §6
 - **会话（领域）= 连续上下文**：实现类型 **`AgentChatSession`** / 索引行 **`SessionMeta`**（`sessions/index.json` + `sessions/messages/*.jsonl`）；**`LegacyTaskWorkerSession`** 为历史形状，勿与当前会话混用。权威对照表见 **`docs/领域与数据.md` §0**
 - **Execution Event 落盘**：每个 Turn 结束后从内存归约出 `ExecutionEvent`（完整事件，非 delta），追加到 `sessions/events/<sessionId>.jsonl`。Run 元数据存 `sessions/runs/<sessionId>.json`。API：`GET /api/agent-chat/sessions/:id/events`、`/runs`、`POST /runs`、`PATCH /runs/:runId`。详见 `types/execution.ts`、`lib/execution-event-store.ts`、`docs/领域与数据.md` §3

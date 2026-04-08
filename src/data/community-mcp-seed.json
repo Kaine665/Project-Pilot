@@ -1,0 +1,126 @@
+{
+  "version": 2,
+  "source": "project-pilot-mcp-seed+modelcontextprotocol/servers",
+  "items": [
+    {
+      "id": "pp-mcp-fetch",
+      "identifier": "pp-mcp-fetch",
+      "title": "Fetch（网络抓取）",
+      "titleEn": "Fetch (HTTP)",
+      "description": "通过 PyPI 上的 `mcp-server-fetch`（与 modelcontextprotocol/servers 生态一致）拉取 URL 内容；需本机已安装 uv，命令为 `uvx mcp-server-fetch`。",
+      "descriptionEn": "Fetch URL content via `mcp-server-fetch` on PyPI (same ecosystem as modelcontextprotocol/servers); requires `uv` locally (`uvx mcp-server-fetch`).",
+      "tags": ["网络", "stdio"],
+      "tagsEn": ["network", "stdio"],
+      "category": "general",
+      "updatedAt": "2026-04-05T09:00:00.000Z",
+      "serverKey": "pp-fetch",
+      "mcpServer": {
+        "command": "uvx",
+        "args": ["mcp-server-fetch"]
+      },
+      "installNote": "依赖 Python 生态的 uv/uvx；若未安装 uv，可在 mcp-market.json 中改为本机可用的 fetch 类 MCP 命令。",
+      "installNoteEn": "Requires Python `uv`/`uvx`. If `uv` is missing, edit `mcp-market.json` to a fetch-style MCP command available on your machine."
+    },
+    {
+      "id": "pp-mcp-fs",
+      "identifier": "pp-mcp-fs",
+      "title": "Filesystem（项目目录）",
+      "titleEn": "Filesystem (project path)",
+      "description": "官方 npm 包 `@modelcontextprotocol/server-filesystem`（MIT）：为所选项目磁盘路径提供文件树读写。安装时需选择已注册项目以替换占位路径。",
+      "descriptionEn": "Official npm `@modelcontextprotocol/server-filesystem` (MIT): read/write project tree for a chosen path. Pick a registered project so the placeholder path is filled in.",
+      "tags": ["文件", "stdio"],
+      "tagsEn": ["files", "stdio"],
+      "category": "programming",
+      "updatedAt": "2026-04-04T11:00:00.000Z",
+      "serverKey": "pp-filesystem",
+      "requiresProjectPath": true,
+      "mcpServer": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "{{PROJECT_PATH}}"]
+      },
+      "installNote": "占位符 {{PROJECT_PATH}} 会在安装时替换为所选项目的磁盘路径；请确认路径正确且符合你的安全策略。",
+      "installNoteEn": "`{{PROJECT_PATH}}` is replaced at install time with the selected project's path; verify the path and your security policy."
+    },
+    {
+      "id": "pp-mcp-memory",
+      "identifier": "pp-mcp-memory",
+      "title": "Memory（知识图谱记忆）",
+      "titleEn": "Memory (knowledge graph)",
+      "description": "官方 `@modelcontextprotocol/server-memory`（MIT）：基于本地知识图谱的实体/关系存储，适合跨会话记住结构化事实（仍须注意隐私与数据驻留）。",
+      "descriptionEn": "Official `@modelcontextprotocol/server-memory` (MIT): local knowledge-graph style memory for structured facts across sessions (mind privacy and data residency).",
+      "tags": ["记忆", "stdio"],
+      "tagsEn": ["memory", "stdio"],
+      "category": "general",
+      "updatedAt": "2026-04-06T10:00:00.000Z",
+      "serverKey": "pp-memory",
+      "mcpServer": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-memory"]
+      },
+      "installNote": "命令与 modelcontextprotocol/servers 仓库 README 中的 memory 示例一致；持久化位置由该包默认行为决定，部署前请阅读其文档。",
+      "installNoteEn": "Matches the memory server example in the modelcontextprotocol/servers README; persistence defaults are defined by that package—read upstream docs before production use."
+    },
+    {
+      "id": "pp-mcp-github",
+      "identifier": "pp-mcp-github",
+      "title": "GitHub API",
+      "titleEn": "GitHub API",
+      "description": "官方 `@modelcontextprotocol/server-github`（MIT）：需配置 `GITHUB_PERSONAL_ACCESS_TOKEN`（PAT），用于 Issues、PR、仓库元数据等 API 调用。",
+      "descriptionEn": "Official `@modelcontextprotocol/server-github` (MIT): requires `GITHUB_PERSONAL_ACCESS_TOKEN` (PAT) for Issues, PRs, repo metadata, etc.",
+      "tags": ["GitHub", "stdio"],
+      "tagsEn": ["GitHub", "stdio"],
+      "category": "programming",
+      "updatedAt": "2026-04-06T11:00:00.000Z",
+      "serverKey": "pp-github",
+      "mcpServer": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-github"]
+      },
+      "installNote": "在运行 ProjectPilot / Electron 的环境变量或 shell profile 中设置 GITHUB_PERSONAL_ACCESS_TOKEN；勿把 token 写进仓库。权限范围遵循最小权限原则，详见 GitHub PAT 文档。",
+      "installNoteEn": "Set `GITHUB_PERSONAL_ACCESS_TOKEN` in the environment that launches ProjectPilot/Electron—never commit tokens. Scope the PAT minimally per GitHub docs."
+    },
+    {
+      "id": "pp-mcp-git",
+      "identifier": "pp-mcp-git",
+      "title": "Git（仓库只读）",
+      "titleEn": "Git (read-only repo)",
+      "description": "官方 PyPI 包 `mcp-server-git`（README 示例：`uvx mcp-server-git --repository <path>`）：对指定本地仓库执行 log、diff、blame 等只读操作。",
+      "descriptionEn": "Official PyPI `mcp-server-git` (README: `uvx mcp-server-git --repository <path>`): read-only git operations (log, diff, blame) on a local repo.",
+      "tags": ["Git", "stdio"],
+      "tagsEn": ["Git", "stdio"],
+      "category": "programming",
+      "updatedAt": "2026-04-07T09:00:00.000Z",
+      "serverKey": "pp-git",
+      "requiresProjectPath": true,
+      "mcpServer": {
+        "command": "uvx",
+        "args": ["mcp-server-git", "--repository", "{{PROJECT_PATH}}"]
+      },
+      "installNote": "需要已安装 uv；{{PROJECT_PATH}} 安装时替换为所选项目路径。仅授予你信任的本地仓库路径。",
+      "installNoteEn": "Requires `uv`; `{{PROJECT_PATH}}` is filled at install time. Only point at local repos you trust."
+    },
+    {
+      "id": "pp-mcp-postgres",
+      "identifier": "pp-mcp-postgres",
+      "title": "PostgreSQL",
+      "titleEn": "PostgreSQL",
+      "description": "官方 `@modelcontextprotocol/server-postgres`（MIT）：通过连接串访问数据库；请在安装后把 args 中的示例 DSN 换成你自己的只读或受限账号连接串。",
+      "descriptionEn": "Official `@modelcontextprotocol/server-postgres` (MIT): takes a connection string; replace the example DSN in args with your own read-only or least-privilege URL.",
+      "tags": ["数据库", "stdio"],
+      "tagsEn": ["database", "stdio"],
+      "category": "programming",
+      "updatedAt": "2026-04-07T10:00:00.000Z",
+      "serverKey": "pp-postgres",
+      "mcpServer": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-postgres",
+          "postgresql://localhost:5432/postgres"
+        ]
+      },
+      "installNote": "第三个参数为 PostgreSQL 连接 URI（示例指向本机默认库）。生产或共享环境务必使用受限账号，并优先只读角色；修改 config/mcp-market.json 中对应 args。",
+      "installNoteEn": "The third arg is a Postgres URI (example points at local default DB). Use a restricted, preferably read-only role in shared/prod environments; edit args in `mcp-market.json`."
+    }
+  ]
+}
