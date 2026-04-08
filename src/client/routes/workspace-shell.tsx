@@ -135,7 +135,8 @@ export default function WorkspaceShell({ children }: { children?: React.ReactNod
         </div>
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          {children ?? <Outlet />}
+          {/* 保证嵌套路由（如社区商店左右分栏）能继承 flex-1 + min-h-0，避免子树高度塌缩 */}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children ?? <Outlet />}</div>
         </main>
 
         {!isButlerPage && (

@@ -18,7 +18,16 @@ const KnowledgePage = lazy(() => import('@/app/[locale]/flows/knowledge/page'));
 const PromptsPage = lazy(() => import('@/app/[locale]/flows/prompts/page'));
 const SkillsPage = lazy(() => import('@/app/[locale]/flows/skills/page'));
 const PresetsPage = lazy(() => import('@/app/[locale]/flows/presets/page'));
-const CommunityPage = lazy(() => import('@/app/[locale]/flows/community/page'));
+const CommunityLayout = lazy(() => import('@/app/[locale]/flows/community/layout'));
+const CommunityHomePage = lazy(() => import('@/app/[locale]/flows/community/page'));
+const CommunityAgentListPage = lazy(() => import('@/app/[locale]/flows/community/agent/page'));
+const CommunityAgentDetailPage = lazy(() => import('@/app/[locale]/flows/community/agent/[identifier]/page'));
+const CommunitySkillListPage = lazy(() => import('@/app/[locale]/flows/community/skill/page'));
+const CommunitySkillDetailPage = lazy(() => import('@/app/[locale]/flows/community/skill/[identifier]/page'));
+const CommunityMcpListPage = lazy(() => import('@/app/[locale]/flows/community/mcp/page'));
+const CommunityMcpDetailPage = lazy(() => import('@/app/[locale]/flows/community/mcp/[identifier]/page'));
+const CommunityModelTabPage = lazy(() => import('@/app/[locale]/flows/community/model/page'));
+const CommunityProviderTabPage = lazy(() => import('@/app/[locale]/flows/community/provider/page'));
 const McpPage = lazy(() => import('@/app/[locale]/flows/mcp/page'));
 const ChatPage = lazy(() => import('@/app/[locale]/flows/chat/page'));
 const SchedulesPage = lazy(() => import('@/app/[locale]/flows/schedules/page'));
@@ -67,7 +76,17 @@ function AppRoutes() {
           <Route path="prompts" element={<PromptsPage />} />
           <Route path="skills" element={<SkillsPage />} />
           <Route path="presets" element={<PresetsPage />} />
-          <Route path="community" element={<CommunityPage />} />
+          <Route path="community" element={<CommunityLayout />}>
+            <Route index element={<CommunityHomePage />} />
+            <Route path="agent/:identifier" element={<CommunityAgentDetailPage />} />
+            <Route path="agent" element={<CommunityAgentListPage />} />
+            <Route path="skill/:identifier" element={<CommunitySkillDetailPage />} />
+            <Route path="skill" element={<CommunitySkillListPage />} />
+            <Route path="mcp/:identifier" element={<CommunityMcpDetailPage />} />
+            <Route path="mcp" element={<CommunityMcpListPage />} />
+            <Route path="model" element={<CommunityModelTabPage />} />
+            <Route path="provider" element={<CommunityProviderTabPage />} />
+          </Route>
           <Route path="mcp" element={<McpPage />} />
           <Route path="chat" element={<ChatPage />} />
           <Route path="schedules" element={<SchedulesPage />} />

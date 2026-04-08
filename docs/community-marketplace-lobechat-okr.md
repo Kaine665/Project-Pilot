@@ -1,5 +1,7 @@
 # LobeHub / LobeChat「社区市场」调研与 ProjectPilot 复刻 OKR
 
+`last_reviewed`: 2026-04-07
+
 ## 一、源码与产品侧结论（调研摘要）
 
 ### 1.1 产品形态（以 [LobeHub 社区](https://app.lobehub.com/community) / Discover 为参照）
@@ -65,8 +67,8 @@ LobeHub 市场包含 **助手 / 插件 / 模型 / MCP / 多语言 SEO / 账号�
 
 | 阶段 | 内容 | 状态 |
 |------|------|------|
-| **P0** | 本文档 + 种子 `community-catalog-seed.json` + `GET /api/community/catalog` + `/workspace/community` + 导入预设 | **已落地（代码库）** |
-| **P1** | 远端 URL 拉取、缓存、Schema 校验（zod）、详情页路由 | 待办 |
+| **P0** | 本文档 + 助手/Skills/MCP 三套种子 + `GET/POST` 社区 API（助手预设、Skills 安装至 `writeSkillFile`、MCP 合并至 `config/mcp-market.json` 且与 `.mcp.json` 在 `BaseChatManager` 合并）+ **Lobe 式商店壳**（发现/助手/Skills/MCP + 模型/服务商占位）+ 列表/分类 + **顶栏右侧来源下拉**（`?source=`，助手/MCP/Skills 共用：全部 / PP 内置·开发 / 远程·Registry / 含参考链接）+ 排序 + 详情/安装闭环 | **已落地（代码库）** |
+| **P1** | 远端 URL 拉取、缓存、Schema 校验（zod）；Skills/MCP/模型/服务商**数据面**与 Lobe `discoverService` 对齐 | 待办（UI 占位已就绪） |
 | **P2** | 插件/MCP 等第二品类（独立 catalog 类型枚举） | 待办 |
 | **P3** | 独立社区仓库 + PR 流程 + 与 CI 发布索引 | 待办 |
 

@@ -1,0 +1,277 @@
+{
+  "version": 3,
+  "source": "project-pilot-skills-seed",
+  "items": [
+    {
+      "id": "pp-skill-commit",
+      "identifier": "pp-skill-commit",
+      "title": "规范化提交说明",
+      "titleEn": "Conventional commit messages",
+      "description": "根据 diff / 暂存变更生成约定式提交（Conventional Commits）风格的 commit message。",
+      "descriptionEn": "Generate Conventional Commits–style messages from a diff or staged changes.",
+      "tags": [
+        "Git",
+        "写作"
+      ],
+      "tagsEn": [
+        "Git",
+        "writing"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-01T10:00:00.000Z",
+      "dirName": "pp-commit-helper",
+      "skillMarkdown": "---\nname: pp-commit-helper\ndescription: 根据变更生成约定式提交说明\n---\n\n## 使用场景\n用户需要撰写 commit message、或给出 `git diff` / 变更说明时启用。\n\n## 输出要求\n1. 第一行：`<type>(<scope>): <subject>`，英文小写 type，subject 英文或中英混合均可。\n2. 空一行后附简短 body 说明动机与影响；需要时附 `BREAKING CHANGE:`。\n3. 若信息不足，先列出需补充的最小问题再给出草稿。\n\n常见 type：`feat` `fix` `docs` `refactor` `test` `chore`。\n",
+      "skillMarkdownEn": "---\nname: pp-commit-helper\ndescription: Generate conventional commit messages from changes\n---\n\n## When to use\nEnable when the user needs a commit message or provides `git diff` / change summary.\n\n## Output rules\n1. First line: `<type>(<scope>): <subject>` with lowercase English type; subject can be English or mixed.\n2. Blank line, then a short body (motivation & impact); add `BREAKING CHANGE:` when needed.\n3. If context is missing, list the smallest questions to clarify before drafting.\n\nCommon types: `feat` `fix` `docs` `refactor` `test` `chore`.\n",
+      "sourceNote": "内容由 **ProjectPilot 仓库** 内置（`src/data/community-skills-seed.json`）。下列 Skill 正文由本项目编写，**非**从链接站点自动抓取全文；链接仅供查阅规范或产品文档。\n\n**参考**：Conventional Commits 约定。",
+      "sourceNoteEn": "Bundled in the **ProjectPilot** repo (`src/data/community-skills-seed.json`). The SKILL body is authored here and is **not** auto-scraped from the linked sites; URLs point to specs or product docs only.\n\n**Reference**: Conventional Commits.",
+      "sourceUrl": "https://www.conventionalcommits.org/"
+    },
+    {
+      "id": "pp-skill-pr-body",
+      "identifier": "pp-skill-pr-body",
+      "title": "PR 描述生成",
+      "titleEn": "PR description",
+      "description": "把分支变更整理成可评审的 Pull Request 描述：背景、变更点、测试方式、风险。",
+      "descriptionEn": "Turn branch changes into a reviewable PR description: context, changes, testing, risks.",
+      "tags": [
+        "协作",
+        "写作"
+      ],
+      "tagsEn": [
+        "collaboration",
+        "writing"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-03-22T12:00:00.000Z",
+      "dirName": "pp-pr-body",
+      "skillMarkdown": "---\nname: pp-pr-body\ndescription: 生成结构化 PR 描述\n---\n\n## 使用场景\n用户要开 PR、或已有 diff / 提交列表需要写成评审说明时启用。\n\n## 输出结构（Markdown）\n- **背景**：解决什么问题\n- **变更摘要**：条列主要改动\n- **测试**：如何验证\n- **风险与回滚**：边界与注意事项\n\n避免编造未在上下文中出现的文件路径或 issue 号。\n",
+      "skillMarkdownEn": "---\nname: pp-pr-body\ndescription: Generate structured PR descriptions\n---\n\n## When to use\nOpening a PR or turning a diff / commit list into review notes.\n\n## Markdown structure\n- **Context**: what problem this solves\n- **Summary**: bullet the main changes\n- **Testing**: how to verify\n- **Risks & rollback**: edge cases and caveats\n\nDo not invent file paths or issue numbers absent from context.\n",
+      "sourceNote": "内容由 **ProjectPilot 仓库** 内置（`src/data/community-skills-seed.json`）。下列 Skill 正文由本项目编写，**非**从链接站点自动抓取全文；链接仅供查阅规范或产品文档。\n\n**参考**：GitHub 上关于 Pull Request 说明的文档。",
+      "sourceNoteEn": "Bundled in the **ProjectPilot** repo (`src/data/community-skills-seed.json`). The SKILL body is authored here and is **not** auto-scraped from the linked sites; URLs point to specs or product docs only.\n\n**Reference**: GitHub docs on pull requests.",
+      "sourceUrl": "https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/about-pull-requests"
+    },
+    {
+      "id": "pp-skill-readme-section",
+      "identifier": "pp-skill-readme-section",
+      "title": "README 小节补全",
+      "titleEn": "README sections",
+      "description": "按项目现状补写或重写 README 中的安装、开发、目录结构等小节。",
+      "descriptionEn": "Draft or rewrite README sections (install, dev, layout) based on the repo as described.",
+      "tags": [
+        "文档"
+      ],
+      "tagsEn": [
+        "docs"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-03-10T08:00:00.000Z",
+      "dirName": "pp-readme-section",
+      "skillMarkdown": "---\nname: pp-readme-section\ndescription: 补全 README 常用小节\n---\n\n## 使用场景\n用户需要安装说明、快速开始、目录说明、贡献指南等 README 内容时启用。\n\n## 要求\n- 使用清晰标题层级与代码块（命令需可拷贝）。\n- 仅基于用户提供的仓库事实；缺失信息用「待补充」占位，勿虚构脚本名或端口。\n- 中文或英文与用户消息语言一致。\n",
+      "skillMarkdownEn": "---\nname: pp-readme-section\ndescription: Fill in common README sections\n---\n\n## When to use\nInstall steps, quick start, repo layout, contributing guide, etc.\n\n## Rules\n- Clear headings and copy-pasteable command blocks.\n- Only facts from the user's repo; use \"TBD\" for gaps—no fake script names or ports.\n- Match the user's message language (Chinese or English).\n",
+      "sourceNote": "内容由 **ProjectPilot 仓库** 内置（`src/data/community-skills-seed.json`）。下列 Skill 正文由本项目编写，**非**从链接站点自动抓取全文；链接仅供查阅规范或产品文档。\n\n**参考**：README 最佳实践（GitHub 文档）。",
+      "sourceNoteEn": "Bundled in the **ProjectPilot** repo (`src/data/community-skills-seed.json`). The SKILL body is authored here and is **not** auto-scraped from the linked sites; URLs point to specs or product docs only.\n\n**Reference**: README best practices (GitHub).",
+      "sourceUrl": "https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes"
+    },
+    {
+      "id": "pp-skill-openapi-stub",
+      "identifier": "pp-skill-openapi-stub",
+      "title": "OpenAPI 3.1 骨架",
+      "titleEn": "OpenAPI 3.1 stub",
+      "description": "从资源与操作列表生成可粘贴的 OpenAPI 3.1 YAML 骨架（paths、components.schemas 占位）。",
+      "descriptionEn": "From resource and operation lists, emit a paste-ready OpenAPI 3.1 YAML stub (paths + schema placeholders).",
+      "tags": [
+        "API",
+        "OpenAPI",
+        "YAML"
+      ],
+      "tagsEn": [
+        "API",
+        "OpenAPI",
+        "YAML"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-06T14:00:00.000Z",
+      "dirName": "pp-openapi-stub",
+      "skillMarkdown": "---\nname: pp-openapi-stub\ndescription: 生成 OpenAPI 3.1 YAML 骨架\n---\n\n## 使用场景\n用户描述了一组 REST 资源与 CRUD/自定义操作时，生成可迭代的 OpenAPI 草稿。\n\n## 输出要求\n- 使用 `openapi: 3.1.0`，包含 `info`（title/version 可占位）、`paths`。\n- 每个 path 写清 method、`summary`、`operationId`、请求体与响应 `description`；schema 用 `$ref` 指向 `components.schemas` 下的占位定义。\n- 在文末列出「需与后端确认」的假设（认证方式、分页字段、错误模型等）。\n- 不声称已与现网实现逐字段对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-openapi-stub\ndescription: Emit OpenAPI 3.1 YAML stubs\n---\n\n## When to use\nThe user lists REST resources and operations and wants a draft spec to iterate on.\n\n## Output rules\n- Use `openapi: 3.1.0` with `info` (title/version may be placeholders) and `paths`.\n- For each path: methods, `summary`, `operationId`, request/response descriptions; schemas as `$ref` placeholders under `components.schemas`.\n- End with assumptions to confirm with backend (auth, pagination, error shape).\n- Do not claim field-by-field parity with production.\n",
+      "sourceNote": "内容由 **ProjectPilot 仓库** 内置（`src/data/community-skills-seed.json`）。下列 Skill 正文由本项目编写，**非**从链接站点自动抓取全文；链接仅供查阅规范或产品文档。\n\n**参考**：OpenAPI Specification。",
+      "sourceNoteEn": "Bundled in the **ProjectPilot** repo (`src/data/community-skills-seed.json`). The SKILL body is authored here and is **not** auto-scraped from the linked sites; URLs point to specs or product docs only.\n\n**Reference**: OpenAPI Specification.",
+      "sourceUrl": "https://spec.openapis.org/oas/latest.html"
+    },
+    {
+      "id": "pp-skill-security-checklist",
+      "identifier": "pp-skill-security-checklist",
+      "title": "发版前安全自查清单",
+      "titleEn": "Pre-release security checklist",
+      "description": "引导按条目检查密钥、依赖、HTTP 头、日志与鉴权边界；输出勾选表与待办。",
+      "descriptionEn": "Walk through secrets, deps, HTTP headers, logging, and auth boundaries; output a checklist with follow-ups.",
+      "tags": [
+        "安全",
+        "检查清单"
+      ],
+      "tagsEn": [
+        "security",
+        "checklist"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-05T09:30:00.000Z",
+      "dirName": "pp-security-checklist",
+      "skillMarkdown": "---\nname: pp-security-checklist\ndescription: 发版前安全与配置自查\n---\n\n## 使用场景\n临近发布或合并大改动前，用户希望系统化过一遍常见风险点。\n\n## 流程\n1. 先确认技术栈（语言、框架、部署：容器/Serverless/裸机）。\n2. 按类别输出 Markdown 表格：类别 | 检查项 | 状态（已满足/待核实/不适用）| 备注。\n3. 类别建议：密钥与配置注入、依赖与 SBOM、TLS 与 HSTS、CORS、会话与 CSRF、速率限制、日志与 PII、文件上传、管理员接口。\n4. 对「待核实」项给出最小验证步骤（命令或文档位置），不执行破坏性操作。\n\n声明：此为自查辅助，不能替代专业渗透测试或合规审计。\n",
+      "skillMarkdownEn": "---\nname: pp-security-checklist\ndescription: Pre-release security and config review\n---\n\n## When to use\nBefore shipping or merging large changes, the user wants a structured pass over common risks.\n\n## Flow\n1. Confirm stack (language, framework, deployment).\n2. Emit a Markdown table: area | check | status (ok / verify / n/a) | notes.\n3. Suggested areas: secrets & config injection, deps/SBOM, TLS/HSTS, CORS, session/CSRF, rate limits, logging/PII, uploads, admin surfaces.\n4. For \"verify\" items, give minimal non-destructive verification steps.\n\nDisclaimer: assistant checklist only—not a pentest or compliance audit.\n",
+      "sourceNote": "内容由 **ProjectPilot 仓库** 内置（`src/data/community-skills-seed.json`）。下列 Skill 正文由本项目编写，**非**从链接站点自动抓取全文；链接仅供查阅规范或产品文档。\n\n**参考**：OWASP 公开资料（清单为工程向摘要，非渗透报告）。",
+      "sourceNoteEn": "Bundled in the **ProjectPilot** repo (`src/data/community-skills-seed.json`). The SKILL body is authored here and is **not** auto-scraped from the linked sites; URLs point to specs or product docs only.\n\n**Reference**: OWASP public materials (checklist is engineering guidance, not a pentest).",
+      "sourceUrl": "https://owasp.org/www-project-top-ten/"
+    },
+    {
+      "id": "pp-skill-meeting-actions",
+      "identifier": "pp-skill-meeting-actions",
+      "title": "会议纪要结构化",
+      "titleEn": "Structured meeting notes",
+      "description": "把原始纪要转为决策、行动项表与未决问题；负责人缺失时标「待指派」。",
+      "descriptionEn": "Turn raw notes into decisions, an action table, and open questions; mark owners as TBD when missing.",
+      "tags": [
+        "协作",
+        "效率"
+      ],
+      "tagsEn": [
+        "collaboration",
+        "productivity"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-02T16:00:00.000Z",
+      "dirName": "pp-meeting-actions",
+      "skillMarkdown": "---\nname: pp-meeting-actions\ndescription: 纪要 → 决策与行动项\n---\n\n## 使用场景\n用户粘贴会议记录、聊天摘录或语音转写，需要可跟踪的产出。\n\n## 输出结构\n1. **会议主题与日期**（若文中无日期则写「未提供」）。\n2. **决策**：编号列表，每条一句话。\n3. **行动项表**：| 事项 | 负责人 | 截止 | 依赖 | — 负责人未知则填「待指派」。\n4. **未决问题**与**风险**（如有）。\n\n禁止编造纪要中未出现的承诺、日期或人名。\n",
+      "skillMarkdownEn": "---\nname: pp-meeting-actions\ndescription: Notes to decisions and actions\n---\n\n## When to use\nThe user pastes meeting notes, chat logs, or transcripts and wants trackable output.\n\n## Structure\n1. **Topic & date** (write \"not provided\" if missing).\n2. **Decisions**: numbered one-liners.\n3. **Action table**: | item | owner | due | deps | — use \"TBD\" for unknown owners.\n4. **Open questions** and **risks** if any.\n\nDo not invent commitments, dates, or names absent from the source.\n",
+      "sourceNote": "内容由 **ProjectPilot 仓库** 内置（`src/data/community-skills-seed.json`）。下列 Skill 正文由本项目编写，**非**从链接站点自动抓取全文；链接仅供查阅规范或产品文档。\n\n**说明**：会议纪要结构化习惯因团队而异，本模板为通用写法。",
+      "sourceNoteEn": "Bundled in the **ProjectPilot** repo (`src/data/community-skills-seed.json`). The SKILL body is authored here and is **not** auto-scraped from the linked sites; URLs point to specs or product docs only.\n\n**Note**: meeting note styles vary; this is a generic template."
+    },
+    {
+      "id": "pp-skill-changelog-from-commits",
+      "identifier": "pp-skill-changelog-from-commits",
+      "title": "从提交生成 CHANGELOG 条目",
+      "titleEn": "CHANGELOG entries from commits",
+      "description": "将 `git log` 风格列表整理为 Keep a Changelog 风格的 Added/Fixed/Changed 小节。",
+      "descriptionEn": "Turn a `git log`–style list into Keep a Changelog–style Added/Fixed/Changed sections.",
+      "tags": [
+        "Git",
+        "发布",
+        "写作"
+      ],
+      "tagsEn": [
+        "Git",
+        "release",
+        "writing"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-03-28T11:00:00.000Z",
+      "dirName": "pp-changelog-from-commits",
+      "skillMarkdown": "---\nname: pp-changelog-from-commits\ndescription: 提交列表 → CHANGELOG 草稿\n---\n\n## 使用场景\n用户给出一段 commit subject 列表或 release 范围内的提交说明。\n\n## 输出\n- 使用 `## [Unreleased]` 或用户指定版本号作为二级标题。\n- 分 `### Added` `### Changed` `### Fixed` `### Removed`（无内容则省略该节）。\n- 每条以 `- ` 开头，尽量用户可读；保留破坏性变更在 `### Changed` 或单独 `### Breaking` 并加醒目标注。\n- 若 commit message 含糊，在条目后附 `(需人工润色)`。\n",
+      "skillMarkdownEn": "---\nname: pp-changelog-from-commits\ndescription: Commits to CHANGELOG draft\n---\n\n## When to use\nThe user provides commit subjects or notes for a release range.\n\n## Output\n- Use `## [Unreleased]` or the user's version as H2.\n- Sections `### Added` `### Changed` `### Fixed` `### Removed` (omit empty).\n- Bullet lines; call out breaking changes clearly.\n- Tag vague commits with `(needs human edit)`.\n",
+      "sourceNote": "内容由 **ProjectPilot 仓库** 内置（`src/data/community-skills-seed.json`）。下列 Skill 正文由本项目编写，**非**从链接站点自动抓取全文；链接仅供查阅规范或产品文档。\n\n**参考**：Keep a Changelog。",
+      "sourceNoteEn": "Bundled in the **ProjectPilot** repo (`src/data/community-skills-seed.json`). The SKILL body is authored here and is **not** auto-scraped from the linked sites; URLs point to specs or product docs only.\n\n**Reference**: Keep a Changelog.",
+      "sourceUrl": "https://keepachangelog.com/"
+    },
+    {
+      "id": "pp-skill-adr-stub",
+      "identifier": "pp-skill-adr-stub",
+      "title": "架构决策记录（ADR）模板",
+      "titleEn": "ADR template",
+      "description": "根据一句话决策意图生成 Markdown ADR 骨架（上下文、决策、后果、备选方案）。",
+      "descriptionEn": "From a one-line decision intent, emit a Markdown ADR skeleton (context, decision, consequences, alternatives).",
+      "tags": [
+        "架构",
+        "文档"
+      ],
+      "tagsEn": [
+        "architecture",
+        "docs"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-07T08:00:00.000Z",
+      "dirName": "pp-adr-stub",
+      "skillMarkdown": "---\nname: pp-adr-stub\ndescription: 生成 ADR Markdown 骨架\n---\n\n## 使用场景\n团队需要记录「为什么选 B 而不是 A」时启用。\n\n## 输出格式\n- 标题：`# ADR-NNN: <短标题>`（NNN 可由用户指定或占位 001）。\n- 章节：**状态**（提议/已接受/已废弃）、**背景**、**决策**、**后果**（正面/负面）、**备选方案**（每项优缺点一行）。\n- 信息不足处用 `TODO:` 列出需产品/技术负责人补全的问题。\n",
+      "skillMarkdownEn": "---\nname: pp-adr-stub\ndescription: ADR Markdown skeleton\n---\n\n## When to use\nRecording why option B was chosen over A.\n\n## Format\n- Title: `# ADR-NNN: <short title>` (NNN from user or placeholder).\n- Sections: **Status**, **Context**, **Decision**, **Consequences** (pro/con), **Alternatives** (one line pros/cons each).\n- Use `TODO:` for gaps owners must fill.\n",
+      "sourceNote": "内容由 **ProjectPilot 仓库** 内置（`src/data/community-skills-seed.json`）。下列 Skill 正文由本项目编写，**非**从链接站点自动抓取全文；链接仅供查阅规范或产品文档。\n\n**参考**：Architecture Decision Records（adr.github.io）。",
+      "sourceNoteEn": "Bundled in the **ProjectPilot** repo (`src/data/community-skills-seed.json`). The SKILL body is authored here and is **not** auto-scraped from the linked sites; URLs point to specs or product docs only.\n\n**Reference**: Architecture Decision Records (adr.github.io).",
+      "sourceUrl": "https://adr.github.io/"
+    },
+    {
+      "id": "pp-skill-installer",
+      "identifier": "skill-installer",
+      "title": "Skill 安装器（skill-installer）",
+      "titleEn": "Skill installer (skill-installer)",
+      "description": "对标社区常见的 skill-installer：帮用户从粘贴的 SKILL.md、商店条目或链接说明完成校验、命名与安装路径选择（ProjectPilot 作用域）。",
+      "descriptionEn": "Popular skill-installer pattern: validate pasted SKILL.md, pick names/paths, and guide install for ProjectPilot scopes (not a verbatim copy of any vendor file).",
+      "tags": [
+        "Skill",
+        "安装",
+        "元技能"
+      ],
+      "tagsEn": [
+        "Skill",
+        "install",
+        "meta"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-07T14:00:00.000Z",
+      "dirName": "skill-installer",
+      "skillMarkdown": "---\nname: skill-installer\ndescription: 协助发现、校验与安装 Agent Skill（SKILL.md），适配 ProjectPilot 与社区商店\n---\n\n## 何时启用\n用户想「装一个 skill」、粘贴了完整或片段 SKILL.md、提到 GitHub 上的技能仓库、或问「skill-installer / 怎么装别人的 skill」时优先启用。\n\n## ProjectPilot 中应记住的事实\n- 每个技能是一个目录下的 `SKILL.md`；数据根目录默认在 `~/.project-pilot`（可用环境变量覆盖，见项目文档）。\n- 作用域分为**全局 / 项目 / Agent** 等；安装到全局与安装到当前项目目录是不同路径，写入前与用户确认。\n- 社区商店种子安装会按条目的 **目录名（dirName）** 作为磁盘文件夹名；本技能的目录名为 `skill-installer`。\n- 解析器只可靠识别顶部 **YAML frontmatter** 中的 `name` 与 `description` 字段，二者必填且 `name` 建议与文件夹名一致或用户明确指定。\n\n## 推荐工作流\n1. **澄清来源**：商店一键安装 / 用户粘贴 / 仅有一段说明文字 / 外部 URL（仅作引用，不代用户抓取受版权限制的全文）。\n2. **校验内容**：检查 `---` 围栏、YAML 是否可解析、`name`/`description` 是否存在；正文是否包含「何时启用」与可执行步骤；缺失则给出最小补全模板而非瞎编第三方「官方」表述。\n3. **命名与安全**：文件夹名仅使用字母数字、`-`、`_`；提醒用户审查第三方 Skill 后再写入；不要建议把密钥写进 Skill 正文。\n4. **落地方式**：优先引导应用内 Skills / 社区 **安装** 按钮；若用户在 Agent 会话中请求，说明可由后端 `writeSkillFile` 写入（取决于当前产品入口），不要假定用户会用 curl 调私有 API。\n\n## 反模式\n- 不要把其他编辑器专有路径写成 ProjectPilot 的唯一真相；若需对比，可简述迁移思路并指向 `skill-migrator` 类技能。\n- 不要在 frontmatter 不完整时仍声称「已安装成功」。\n",
+      "skillMarkdownEn": "---\nname: skill-installer\ndescription: Help discover, validate, and install Agent Skills (SKILL.md) for ProjectPilot and the community store\n---\n\n## When to use\nUser wants to install a skill, pastes SKILL.md (full or partial), mentions a skills repo, or asks how skill-installer-style flows work.\n\n## ProjectPilot facts\n- Each skill is `SKILL.md` under a directory; data root defaults to `~/.project-pilot` (env overrides per project docs).\n- Scopes include **global / project / agent**; confirm before writing.\n- Community install uses the seed **dirName** as the on-disk folder name; this skill uses `skill-installer`.\n- Frontmatter must include YAML `name` and `description`; `name` should match the folder unless the user chooses otherwise.\n\n## Workflow\n1. Clarify source: store install vs paste vs prose-only vs URL (cite links; do not pull copyrighted text without permission).\n2. Validate frontmatter and body; if missing, supply a minimal template—do not invent \"official\" wording for third parties.\n3. Naming & safety: directory names `[a-zA-Z0-9_-]`; warn before installing untrusted skills; never embed secrets in SKILL bodies.\n4. Prefer in-app Install; if the user is in chat, explain that writes go through the app's skill pipeline—do not assume ad-hoc curl to private APIs.\n\n## Anti-patterns\n- Do not present another editor's paths as the only truth for ProjectPilot; mention migration and pair with a migrator skill if useful.\n- Do not claim success when frontmatter is invalid.\n",
+      "sourceNote": "**模式说明**：对标社区常见的 *skill-installer* 流程（发现 / 校验 / 安装路径）。正文由 **ProjectPilot** 编写。可参考各产品公开的 Agent Skill 文档对照使用。",
+      "sourceNoteEn": "**Pattern**: common *skill-installer* style flow (discover / validate / paths). Body authored by **ProjectPilot**. See vendor docs for how Skills work in each product.",
+      "sourceUrl": "https://cursor.com/docs"
+    },
+    {
+      "id": "pp-skill-creator",
+      "identifier": "skill-creator",
+      "title": "Skill 创作脚手架（skill-creator）",
+      "titleEn": "Skill author scaffold (skill-creator)",
+      "description": "把一句话需求变成带 frontmatter 的 SKILL.md 草稿：适用场景、步骤、约束与反模式，便于再交给安装流程或人工审阅。",
+      "descriptionEn": "Turn a one-liner into a SKILL.md draft with frontmatter, triggers, steps, constraints, and anti-patterns—ready to install or review.",
+      "tags": [
+        "Skill",
+        "创作",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "authoring",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-07T14:05:00.000Z",
+      "dirName": "skill-creator",
+      "skillMarkdown": "---\nname: skill-creator\ndescription: 根据用户需求生成可安装的 SKILL.md 草稿（frontmatter + 结构化正文）\n---\n\n## 何时启用\n用户想「写一条自己的 skill」「给团队定一个 Agent 工作规范」「把重复提示词固化成 Skill」时启用。\n\n## 输出格式（必须）\n1. 顶部 YAML：`name`（小写+连字符优先）、`description`（一句话，说明何时加载本技能）。\n2. `## 何时启用`：列出具体用户原话或场景触发条件。\n3. `## 指令`：分步骤写清代理要做什么；步骤需可验证（例如「先列出文件再改」）。\n4. `## 约束`：语言、工具、禁止行为（如禁止虚构路径、禁止未授权网络抓取）。\n5. `## 反模式`：常见错误写法 2～4 条。\n\n## 命名建议\n- 目录/ `name` 用英文短名：`invoice-parser`、`release-checklist`；避免与已有内置 `pp-*` 冲突除非用户有意覆盖。\n- 若用户给中文标题，保留在正文一级标题，YAML `name` 仍用 ASCII slug。\n\n## 交付说明\n- 输出完整 Markdown 代码块，用户可复制到 Skills 编辑器或保存为 `SKILL.md`。\n- 若需求过大，拆成多条 Skill 并说明依赖关系。\n",
+      "skillMarkdownEn": "---\nname: skill-creator\ndescription: Generate installable SKILL.md drafts from a short user request\n---\n\n## When to use\nUser wants a custom skill, team playbook as a skill, or to codify a repeated prompt.\n\n## Required output shape\n1. YAML frontmatter: `name` (prefer lowercase kebab-case), `description` (one line—when to load this skill).\n2. `## When to use`: concrete triggers.\n3. `## Instructions`: ordered, verifiable steps.\n4. `## Constraints`: language/tools/forbidden behaviors (no fake paths, no unapproved fetching).\n5. `## Anti-patterns`: 2–4 bullets.\n\n## Naming\n- Use ASCII slugs: `invoice-parser`, `release-checklist`; avoid clobbering `pp-*` seeds unless intended.\n- Chinese titles can live in an H1; YAML `name` stays ASCII.\n\n## Delivery\n- Emit a single fenced Markdown block ready to save as `SKILL.md`.\n- Split oversized requests into multiple skills with dependencies noted.\n",
+      "sourceNote": "**模式说明**：从零编写 `SKILL.md` 的脚手架提示。正文由 **ProjectPilot** 编写。可参考 OpenAI 对 Skills 的公开说明。",
+      "sourceNoteEn": "**Pattern**: scaffold for authoring `SKILL.md`. Body by **ProjectPilot**. See OpenAI’s public Skills guide.",
+      "sourceUrl": "https://platform.openai.com/docs/guides/skills"
+    },
+    {
+      "id": "pp-skill-migrator",
+      "identifier": "skill-migrator",
+      "title": "Skill 迁移向导（Cursor 等 → ProjectPilot）",
+      "titleEn": "Skill migrator (Cursor → ProjectPilot)",
+      "description": "把来自 `.cursor/skills`、`SKILL.md` 单文件或 README 片段的 skill，映射到 ProjectPilot 的 `_global` / 项目作用域目录约定。",
+      "descriptionEn": "Map skills from `.cursor/skills`, loose SKILL.md files, or README snippets into ProjectPilot global/project skill layouts.",
+      "tags": [
+        "Skill",
+        "迁移",
+        "Cursor"
+      ],
+      "tagsEn": [
+        "Skill",
+        "migration",
+        "Cursor"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-07T14:10:00.000Z",
+      "dirName": "skill-migrator",
+      "skillMarkdown": "---\nname: skill-migrator\ndescription: 将外部编辑器或仓库中的 Skill 迁移到 ProjectPilot 约定目录\n---\n\n## 何时启用\n用户从 Cursor、VS Code 插件文档、或 GitHub 技能仓库搬移内容，询问「目录放哪」「frontmatter 要不要改」。\n\n## 映射关系（概念层）\n- 许多仓库使用 `<skillName>/SKILL.md` 或 `.cursor/skills/<name>/SKILL.md`；ProjectPilot 使用数据目录下按作用域划分的 `skills` 树（含 `_global` 等子目录，详见 `src/lib/skill-store.ts` 注释）。\n- **内容层**：若 frontmatter 已是 `name` + `description`，通常只需改文件夹名以符合 `[a-zA-Z0-9_-]` 并选择全局/项目作用域。\n- **引用层**：正文中若写死 `.cursor/` 路径，应改为「当前工作区 / 数据目录」等中性描述，或删除与产品无关的文件路径。\n\n## 迁移检查清单\n1. Frontmatter 完整且 YAML 合法。\n2. 无仅适用于其他产品的 CLI 命令（若保留，须标注「可选，仅当用户环境存在该 CLI」）。\n3. 资源链接仍有效；失效则标注待更新。\n4. 安装后让用户在 Skills 列表中打开验证描述是否显示正常。\n\n## 不要做的事\n- 不要声称「一键同步」两个产品；迁移是复制 + 约定对齐。\n- 不要替用户执行可能覆盖已有同名 skill 的写入，除非用户明确确认。\n",
+      "skillMarkdownEn": "---\nname: skill-migrator\ndescription: Migrate skills from other editors/repos into ProjectPilot layouts\n---\n\n## When to use\nMoving content from Cursor, VS Code docs, or GitHub skill repos; questions about where files go and whether frontmatter must change.\n\n## Mapping (conceptual)\n- Common layouts: `<skillName>/SKILL.md` or `.cursor/skills/<name>/SKILL.md`. ProjectPilot stores skills under the data dir with scoped subtrees (see `src/lib/skill-store.ts` comments).\n- **Content**: if frontmatter already has `name` and `description`, often only the folder name and chosen scope need adjustment.\n- **References**: replace hard-coded `.cursor/` paths with neutral wording or workspace-relative guidance.\n\n## Checklist\n1. Valid YAML frontmatter.\n2. No mandatory third-party CLIs unless labeled optional.\n3. Links still work or are flagged.\n4. After install, verify the skill appears in the Skills list.\n\n## Do not\n- Claim two products stay in sync automatically.\n- Overwrite an existing skill without explicit user confirmation.\n",
+      "sourceNote": "**说明**：迁移步骤针对 **ProjectPilot** 数据目录与 `skill-store` 约定；若你从 Cursor 等环境搬运，请同时阅读对方官方文档中的 Skills 目录说明。",
+      "sourceNoteEn": "**Note**: migration targets **ProjectPilot** layouts (`skill-store`). If copying from Cursor etc., read that product’s official Skills docs too.",
+      "sourceUrl": "https://docs.cursor.com/context/skills"
+    }
+  ]
+}

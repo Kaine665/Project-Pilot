@@ -18,6 +18,7 @@
 
 import path from 'path';
 import fs from 'fs';
+import { resolveMcpConfigPathForSpawn } from '@/lib/mcp-market-store';
 import { spawnClaude } from '@/lib/claude-cli';
 import { StreamParser, LineBuffer } from '@/lib/claude-stream-parser';
 import { hasToolCallWithId } from '@/lib/agent-tool-call-dedupe';
@@ -213,10 +214,10 @@ export abstract class BaseChatManager<TRun extends BaseRun> {
     const run = this.createRun(config, shell);
     this.runs.set(runKey, run);
 
-    // ── Build MCP config args ──
-    const mcpConfigPath = path.join(workingDir, '.mcp.json');
+    // ── Build MCP config args（项目 `.mcp.json` + 数据目录 `config/mcp-market.json` 合并）
+    const mcpConfigPath = resolveMcpConfigPathForSpawn(workingDir);
     const mcpArgs: string[] = [];
-    if (fs.existsSync(mcpConfigPath)) {
+    if (mcpConfigPath) {
       mcpArgs.push('--mcp-config', mcpConfigPath);
     }
 

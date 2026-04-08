@@ -5,7 +5,7 @@
 > - **本机迁移与现实**：`~/.project-pilot/数据文件夹现状.md`  
 > - **代码中的路径**：[`src/lib/file-store.ts`](../src/lib/file-store.ts)（`PROJECT_PILOT_DATA_DIR` 未设置时默认 `path.join(os.homedir(), '.project-pilot')`）  
 > - **本文**：与当前 `develop-static` 实现一致的目录树与主要 getter 索引，便于人类与 Agent 对齐认知。  
-> **对齐日期**：2026-04-03。  
+> **对齐日期**：2026-04-07。  
 > **给 AI**：多厂商入口（Cursor / Claude / 内置提示词）如何一起更新，见 [`AI_AGENT_KNOWLEDGE_MAP.md`](./AI_AGENT_KNOWLEDGE_MAP.md)。
 
 ## 默认数据根
@@ -88,6 +88,7 @@ export PROJECT_PILOT_DATA_DIR=/path/to/custom-root
 | `config/settings.json` | 用户设置 | `getSettingsPath` |
 | `config/agents-workspace-ui.json` | Agents 工作区已打开标签 / 当前面板（按项目 `_global` 或 `projectKey`） | `getAgentsWorkspaceUiPath` |
 | `config/agent-presets.json` | Agent 运行预设列表 | `getAgentPresetsPath` |
+| `config/mcp-market.json` | 社区商店安装的 MCP 服务（`mcpServers`），与任务工作区 `.mcp.json` 合并后传给 Claude `--mcp-config` | `getMcpMarketPath`（`mcp-market-store.ts`） |
 | `config/dimensions.json` | 维度 | `getDimensionsPath` |
 | `config/worktree-ports.json` | Worktree 端口 | `getWorktreePortsPath` |
 | `.google-oauth/<google-sub>.json` | Google 登录 refresh token（按账号分文件） | `getGoogleOAuthDir` |

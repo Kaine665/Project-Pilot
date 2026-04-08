@@ -1,0 +1,2766 @@
+{
+  "version": 1,
+  "source": "project-pilot-dev-templates",
+  "items": [
+    {
+      "id": "pp-dev-skill-0001",
+      "identifier": "pp-dev-skill-0001",
+      "title": "Skill 模板：commit-message #1",
+      "titleEn": "Skill template: commit-message #1",
+      "description": "围绕「commit-message」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “commit-message” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-02T10:00:00.000Z",
+      "dirName": "pp-dev-commit-message-0001",
+      "skillMarkdown": "---\nname: pp-dev-commit-message-0001\ndescription: 开发环境 Skill 模板：commit-message\n---\n\n## 何时启用\n用户提到 commit-message 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-commit-message-0001\ndescription: Dev Skill template: commit-message\n---\n\n## When to use\nWhen the user asks for commit-message-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0002",
+      "identifier": "pp-dev-skill-0002",
+      "title": "Skill 模板：pr-description #2",
+      "titleEn": "Skill template: pr-description #2",
+      "description": "围绕「pr-description」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “pr-description” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-03T10:00:00.000Z",
+      "dirName": "pp-dev-pr-description-0002",
+      "skillMarkdown": "---\nname: pp-dev-pr-description-0002\ndescription: 开发环境 Skill 模板：pr-description\n---\n\n## 何时启用\n用户提到 pr-description 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-pr-description-0002\ndescription: Dev Skill template: pr-description\n---\n\n## When to use\nWhen the user asks for pr-description-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0003",
+      "identifier": "pp-dev-skill-0003",
+      "title": "Skill 模板：readme-section #3",
+      "titleEn": "Skill template: readme-section #3",
+      "description": "围绕「readme-section」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “readme-section” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-04T10:00:00.000Z",
+      "dirName": "pp-dev-readme-section-0003",
+      "skillMarkdown": "---\nname: pp-dev-readme-section-0003\ndescription: 开发环境 Skill 模板：readme-section\n---\n\n## 何时启用\n用户提到 readme-section 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-readme-section-0003\ndescription: Dev Skill template: readme-section\n---\n\n## When to use\nWhen the user asks for readme-section-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0004",
+      "identifier": "pp-dev-skill-0004",
+      "title": "Skill 模板：adr-stub #4",
+      "titleEn": "Skill template: adr-stub #4",
+      "description": "围绕「adr-stub」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “adr-stub” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-05T10:00:00.000Z",
+      "dirName": "pp-dev-adr-stub-0004",
+      "skillMarkdown": "---\nname: pp-dev-adr-stub-0004\ndescription: 开发环境 Skill 模板：adr-stub\n---\n\n## 何时启用\n用户提到 adr-stub 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-adr-stub-0004\ndescription: Dev Skill template: adr-stub\n---\n\n## When to use\nWhen the user asks for adr-stub-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0005",
+      "identifier": "pp-dev-skill-0005",
+      "title": "Skill 模板：openapi-path #5",
+      "titleEn": "Skill template: openapi-path #5",
+      "description": "围绕「openapi-path」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “openapi-path” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-06T10:00:00.000Z",
+      "dirName": "pp-dev-openapi-path-0005",
+      "skillMarkdown": "---\nname: pp-dev-openapi-path-0005\ndescription: 开发环境 Skill 模板：openapi-path\n---\n\n## 何时启用\n用户提到 openapi-path 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-openapi-path-0005\ndescription: Dev Skill template: openapi-path\n---\n\n## When to use\nWhen the user asks for openapi-path-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0006",
+      "identifier": "pp-dev-skill-0006",
+      "title": "Skill 模板：sql-explain #6",
+      "titleEn": "Skill template: sql-explain #6",
+      "description": "围绕「sql-explain」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “sql-explain” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-07T10:00:00.000Z",
+      "dirName": "pp-dev-sql-explain-0006",
+      "skillMarkdown": "---\nname: pp-dev-sql-explain-0006\ndescription: 开发环境 Skill 模板：sql-explain\n---\n\n## 何时启用\n用户提到 sql-explain 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-sql-explain-0006\ndescription: Dev Skill template: sql-explain\n---\n\n## When to use\nWhen the user asks for sql-explain-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0007",
+      "identifier": "pp-dev-skill-0007",
+      "title": "Skill 模板：risk-checklist #7",
+      "titleEn": "Skill template: risk-checklist #7",
+      "description": "围绕「risk-checklist」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “risk-checklist” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-08T10:00:00.000Z",
+      "dirName": "pp-dev-risk-checklist-0007",
+      "skillMarkdown": "---\nname: pp-dev-risk-checklist-0007\ndescription: 开发环境 Skill 模板：risk-checklist\n---\n\n## 何时启用\n用户提到 risk-checklist 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-risk-checklist-0007\ndescription: Dev Skill template: risk-checklist\n---\n\n## When to use\nWhen the user asks for risk-checklist-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0008",
+      "identifier": "pp-dev-skill-0008",
+      "title": "Skill 模板：release-note #8",
+      "titleEn": "Skill template: release-note #8",
+      "description": "围绕「release-note」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “release-note” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-09T10:00:00.000Z",
+      "dirName": "pp-dev-release-note-0008",
+      "skillMarkdown": "---\nname: pp-dev-release-note-0008\ndescription: 开发环境 Skill 模板：release-note\n---\n\n## 何时启用\n用户提到 release-note 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-release-note-0008\ndescription: Dev Skill template: release-note\n---\n\n## When to use\nWhen the user asks for release-note-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0009",
+      "identifier": "pp-dev-skill-0009",
+      "title": "Skill 模板：runbook-skeleton #9",
+      "titleEn": "Skill template: runbook-skeleton #9",
+      "description": "围绕「runbook-skeleton」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “runbook-skeleton” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-10T10:00:00.000Z",
+      "dirName": "pp-dev-runbook-skeleton-0009",
+      "skillMarkdown": "---\nname: pp-dev-runbook-skeleton-0009\ndescription: 开发环境 Skill 模板：runbook-skeleton\n---\n\n## 何时启用\n用户提到 runbook-skeleton 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-runbook-skeleton-0009\ndescription: Dev Skill template: runbook-skeleton\n---\n\n## When to use\nWhen the user asks for runbook-skeleton-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0010",
+      "identifier": "pp-dev-skill-0010",
+      "title": "Skill 模板：postmortem #10",
+      "titleEn": "Skill template: postmortem #10",
+      "description": "围绕「postmortem」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “postmortem” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-11T10:00:00.000Z",
+      "dirName": "pp-dev-postmortem-0010",
+      "skillMarkdown": "---\nname: pp-dev-postmortem-0010\ndescription: 开发环境 Skill 模板：postmortem\n---\n\n## 何时启用\n用户提到 postmortem 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-postmortem-0010\ndescription: Dev Skill template: postmortem\n---\n\n## When to use\nWhen the user asks for postmortem-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0011",
+      "identifier": "pp-dev-skill-0011",
+      "title": "Skill 模板：interview-notes #11",
+      "titleEn": "Skill template: interview-notes #11",
+      "description": "围绕「interview-notes」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “interview-notes” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-12T10:00:00.000Z",
+      "dirName": "pp-dev-interview-notes-0011",
+      "skillMarkdown": "---\nname: pp-dev-interview-notes-0011\ndescription: 开发环境 Skill 模板：interview-notes\n---\n\n## 何时启用\n用户提到 interview-notes 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-interview-notes-0011\ndescription: Dev Skill template: interview-notes\n---\n\n## When to use\nWhen the user asks for interview-notes-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0012",
+      "identifier": "pp-dev-skill-0012",
+      "title": "Skill 模板：user-story #12",
+      "titleEn": "Skill template: user-story #12",
+      "description": "围绕「user-story」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “user-story” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-13T10:00:00.000Z",
+      "dirName": "pp-dev-user-story-0012",
+      "skillMarkdown": "---\nname: pp-dev-user-story-0012\ndescription: 开发环境 Skill 模板：user-story\n---\n\n## 何时启用\n用户提到 user-story 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-user-story-0012\ndescription: Dev Skill template: user-story\n---\n\n## When to use\nWhen the user asks for user-story-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0013",
+      "identifier": "pp-dev-skill-0013",
+      "title": "Skill 模板：test-case-brief #13",
+      "titleEn": "Skill template: test-case-brief #13",
+      "description": "围绕「test-case-brief」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “test-case-brief” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-14T10:00:00.000Z",
+      "dirName": "pp-dev-test-case-brief-0013",
+      "skillMarkdown": "---\nname: pp-dev-test-case-brief-0013\ndescription: 开发环境 Skill 模板：test-case-brief\n---\n\n## 何时启用\n用户提到 test-case-brief 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-test-case-brief-0013\ndescription: Dev Skill template: test-case-brief\n---\n\n## When to use\nWhen the user asks for test-case-brief-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0014",
+      "identifier": "pp-dev-skill-0014",
+      "title": "Skill 模板：regex-explainer #14",
+      "titleEn": "Skill template: regex-explainer #14",
+      "description": "围绕「regex-explainer」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “regex-explainer” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-15T10:00:00.000Z",
+      "dirName": "pp-dev-regex-explainer-0014",
+      "skillMarkdown": "---\nname: pp-dev-regex-explainer-0014\ndescription: 开发环境 Skill 模板：regex-explainer\n---\n\n## 何时启用\n用户提到 regex-explainer 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-regex-explainer-0014\ndescription: Dev Skill template: regex-explainer\n---\n\n## When to use\nWhen the user asks for regex-explainer-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0015",
+      "identifier": "pp-dev-skill-0015",
+      "title": "Skill 模板：cron-builder #15",
+      "titleEn": "Skill template: cron-builder #15",
+      "description": "围绕「cron-builder」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “cron-builder” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-16T10:00:00.000Z",
+      "dirName": "pp-dev-cron-builder-0015",
+      "skillMarkdown": "---\nname: pp-dev-cron-builder-0015\ndescription: 开发环境 Skill 模板：cron-builder\n---\n\n## 何时启用\n用户提到 cron-builder 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-cron-builder-0015\ndescription: Dev Skill template: cron-builder\n---\n\n## When to use\nWhen the user asks for cron-builder-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0016",
+      "identifier": "pp-dev-skill-0016",
+      "title": "Skill 模板：env-example #16",
+      "titleEn": "Skill template: env-example #16",
+      "description": "围绕「env-example」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “env-example” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-17T10:00:00.000Z",
+      "dirName": "pp-dev-env-example-0016",
+      "skillMarkdown": "---\nname: pp-dev-env-example-0016\ndescription: 开发环境 Skill 模板：env-example\n---\n\n## 何时启用\n用户提到 env-example 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-env-example-0016\ndescription: Dev Skill template: env-example\n---\n\n## When to use\nWhen the user asks for env-example-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0017",
+      "identifier": "pp-dev-skill-0017",
+      "title": "Skill 模板：docker-compose-hint #17",
+      "titleEn": "Skill template: docker-compose-hint #17",
+      "description": "围绕「docker-compose-hint」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “docker-compose-hint” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-18T10:00:00.000Z",
+      "dirName": "pp-dev-docker-compose-hint-0017",
+      "skillMarkdown": "---\nname: pp-dev-docker-compose-hint-0017\ndescription: 开发环境 Skill 模板：docker-compose-hint\n---\n\n## 何时启用\n用户提到 docker-compose-hint 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-docker-compose-hint-0017\ndescription: Dev Skill template: docker-compose-hint\n---\n\n## When to use\nWhen the user asks for docker-compose-hint-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0018",
+      "identifier": "pp-dev-skill-0018",
+      "title": "Skill 模板：k8s-probe-text #18",
+      "titleEn": "Skill template: k8s-probe-text #18",
+      "description": "围绕「k8s-probe-text」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “k8s-probe-text” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-19T10:00:00.000Z",
+      "dirName": "pp-dev-k8s-probe-text-0018",
+      "skillMarkdown": "---\nname: pp-dev-k8s-probe-text-0018\ndescription: 开发环境 Skill 模板：k8s-probe-text\n---\n\n## 何时启用\n用户提到 k8s-probe-text 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-k8s-probe-text-0018\ndescription: Dev Skill template: k8s-probe-text\n---\n\n## When to use\nWhen the user asks for k8s-probe-text-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0019",
+      "identifier": "pp-dev-skill-0019",
+      "title": "Skill 模板：helm-values-comment #19",
+      "titleEn": "Skill template: helm-values-comment #19",
+      "description": "围绕「helm-values-comment」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “helm-values-comment” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-20T10:00:00.000Z",
+      "dirName": "pp-dev-helm-values-comment-0019",
+      "skillMarkdown": "---\nname: pp-dev-helm-values-comment-0019\ndescription: 开发环境 Skill 模板：helm-values-comment\n---\n\n## 何时启用\n用户提到 helm-values-comment 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-helm-values-comment-0019\ndescription: Dev Skill template: helm-values-comment\n---\n\n## When to use\nWhen the user asks for helm-values-comment-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0020",
+      "identifier": "pp-dev-skill-0020",
+      "title": "Skill 模板：terraform-var-doc #20",
+      "titleEn": "Skill template: terraform-var-doc #20",
+      "description": "围绕「terraform-var-doc」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “terraform-var-doc” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-21T10:00:00.000Z",
+      "dirName": "pp-dev-terraform-var-doc-0020",
+      "skillMarkdown": "---\nname: pp-dev-terraform-var-doc-0020\ndescription: 开发环境 Skill 模板：terraform-var-doc\n---\n\n## 何时启用\n用户提到 terraform-var-doc 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-terraform-var-doc-0020\ndescription: Dev Skill template: terraform-var-doc\n---\n\n## When to use\nWhen the user asks for terraform-var-doc-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0021",
+      "identifier": "pp-dev-skill-0021",
+      "title": "Skill 模板：github-actions-snippet #21",
+      "titleEn": "Skill template: github-actions-snippet #21",
+      "description": "围绕「github-actions-snippet」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “github-actions-snippet” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-22T10:00:00.000Z",
+      "dirName": "pp-dev-github-actions-snippet-0021",
+      "skillMarkdown": "---\nname: pp-dev-github-actions-snippet-0021\ndescription: 开发环境 Skill 模板：github-actions-snippet\n---\n\n## 何时启用\n用户提到 github-actions-snippet 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-github-actions-snippet-0021\ndescription: Dev Skill template: github-actions-snippet\n---\n\n## When to use\nWhen the user asks for github-actions-snippet-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0022",
+      "identifier": "pp-dev-skill-0022",
+      "title": "Skill 模板：codeowner-hint #22",
+      "titleEn": "Skill template: codeowner-hint #22",
+      "description": "围绕「codeowner-hint」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “codeowner-hint” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-23T10:00:00.000Z",
+      "dirName": "pp-dev-codeowner-hint-0022",
+      "skillMarkdown": "---\nname: pp-dev-codeowner-hint-0022\ndescription: 开发环境 Skill 模板：codeowner-hint\n---\n\n## 何时启用\n用户提到 codeowner-hint 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-codeowner-hint-0022\ndescription: Dev Skill template: codeowner-hint\n---\n\n## When to use\nWhen the user asks for codeowner-hint-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0023",
+      "identifier": "pp-dev-skill-0023",
+      "title": "Skill 模板：license-pick #23",
+      "titleEn": "Skill template: license-pick #23",
+      "description": "围绕「license-pick」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “license-pick” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-24T10:00:00.000Z",
+      "dirName": "pp-dev-license-pick-0023",
+      "skillMarkdown": "---\nname: pp-dev-license-pick-0023\ndescription: 开发环境 Skill 模板：license-pick\n---\n\n## 何时启用\n用户提到 license-pick 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-license-pick-0023\ndescription: Dev Skill template: license-pick\n---\n\n## When to use\nWhen the user asks for license-pick-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0024",
+      "identifier": "pp-dev-skill-0024",
+      "title": "Skill 模板：semver-bump #24",
+      "titleEn": "Skill template: semver-bump #24",
+      "description": "围绕「semver-bump」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “semver-bump” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-25T10:00:00.000Z",
+      "dirName": "pp-dev-semver-bump-0024",
+      "skillMarkdown": "---\nname: pp-dev-semver-bump-0024\ndescription: 开发环境 Skill 模板：semver-bump\n---\n\n## 何时启用\n用户提到 semver-bump 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-semver-bump-0024\ndescription: Dev Skill template: semver-bump\n---\n\n## When to use\nWhen the user asks for semver-bump-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0025",
+      "identifier": "pp-dev-skill-0025",
+      "title": "Skill 模板：changelog-entry #25",
+      "titleEn": "Skill template: changelog-entry #25",
+      "description": "围绕「changelog-entry」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “changelog-entry” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-26T10:00:00.000Z",
+      "dirName": "pp-dev-changelog-entry-0025",
+      "skillMarkdown": "---\nname: pp-dev-changelog-entry-0025\ndescription: 开发环境 Skill 模板：changelog-entry\n---\n\n## 何时启用\n用户提到 changelog-entry 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-changelog-entry-0025\ndescription: Dev Skill template: changelog-entry\n---\n\n## When to use\nWhen the user asks for changelog-entry-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0026",
+      "identifier": "pp-dev-skill-0026",
+      "title": "Skill 模板：deprecation-notice #26",
+      "titleEn": "Skill template: deprecation-notice #26",
+      "description": "围绕「deprecation-notice」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “deprecation-notice” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-27T10:00:00.000Z",
+      "dirName": "pp-dev-deprecation-notice-0026",
+      "skillMarkdown": "---\nname: pp-dev-deprecation-notice-0026\ndescription: 开发环境 Skill 模板：deprecation-notice\n---\n\n## 何时启用\n用户提到 deprecation-notice 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-deprecation-notice-0026\ndescription: Dev Skill template: deprecation-notice\n---\n\n## When to use\nWhen the user asks for deprecation-notice-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0027",
+      "identifier": "pp-dev-skill-0027",
+      "title": "Skill 模板：breaking-change #27",
+      "titleEn": "Skill template: breaking-change #27",
+      "description": "围绕「breaking-change」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “breaking-change” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-28T10:00:00.000Z",
+      "dirName": "pp-dev-breaking-change-0027",
+      "skillMarkdown": "---\nname: pp-dev-breaking-change-0027\ndescription: 开发环境 Skill 模板：breaking-change\n---\n\n## 何时启用\n用户提到 breaking-change 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-breaking-change-0027\ndescription: Dev Skill template: breaking-change\n---\n\n## When to use\nWhen the user asks for breaking-change-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0028",
+      "identifier": "pp-dev-skill-0028",
+      "title": "Skill 模板：migration-steps #28",
+      "titleEn": "Skill template: migration-steps #28",
+      "description": "围绕「migration-steps」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “migration-steps” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-01T10:00:00.000Z",
+      "dirName": "pp-dev-migration-steps-0028",
+      "skillMarkdown": "---\nname: pp-dev-migration-steps-0028\ndescription: 开发环境 Skill 模板：migration-steps\n---\n\n## 何时启用\n用户提到 migration-steps 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-migration-steps-0028\ndescription: Dev Skill template: migration-steps\n---\n\n## When to use\nWhen the user asks for migration-steps-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0029",
+      "identifier": "pp-dev-skill-0029",
+      "title": "Skill 模板：rollback-plan #29",
+      "titleEn": "Skill template: rollback-plan #29",
+      "description": "围绕「rollback-plan」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “rollback-plan” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-02T10:00:00.000Z",
+      "dirName": "pp-dev-rollback-plan-0029",
+      "skillMarkdown": "---\nname: pp-dev-rollback-plan-0029\ndescription: 开发环境 Skill 模板：rollback-plan\n---\n\n## 何时启用\n用户提到 rollback-plan 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-rollback-plan-0029\ndescription: Dev Skill template: rollback-plan\n---\n\n## When to use\nWhen the user asks for rollback-plan-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0030",
+      "identifier": "pp-dev-skill-0030",
+      "title": "Skill 模板：feature-flag-doc #30",
+      "titleEn": "Skill template: feature-flag-doc #30",
+      "description": "围绕「feature-flag-doc」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “feature-flag-doc” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-03T10:00:00.000Z",
+      "dirName": "pp-dev-feature-flag-doc-0030",
+      "skillMarkdown": "---\nname: pp-dev-feature-flag-doc-0030\ndescription: 开发环境 Skill 模板：feature-flag-doc\n---\n\n## 何时启用\n用户提到 feature-flag-doc 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-feature-flag-doc-0030\ndescription: Dev Skill template: feature-flag-doc\n---\n\n## When to use\nWhen the user asks for feature-flag-doc-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0031",
+      "identifier": "pp-dev-skill-0031",
+      "title": "Skill 模板：metric-name #31",
+      "titleEn": "Skill template: metric-name #31",
+      "description": "围绕「metric-name」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “metric-name” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-04T10:00:00.000Z",
+      "dirName": "pp-dev-metric-name-0031",
+      "skillMarkdown": "---\nname: pp-dev-metric-name-0031\ndescription: 开发环境 Skill 模板：metric-name\n---\n\n## 何时启用\n用户提到 metric-name 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-metric-name-0031\ndescription: Dev Skill template: metric-name\n---\n\n## When to use\nWhen the user asks for metric-name-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0032",
+      "identifier": "pp-dev-skill-0032",
+      "title": "Skill 模板：log-field-set #32",
+      "titleEn": "Skill template: log-field-set #32",
+      "description": "围绕「log-field-set」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “log-field-set” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-05T10:00:00.000Z",
+      "dirName": "pp-dev-log-field-set-0032",
+      "skillMarkdown": "---\nname: pp-dev-log-field-set-0032\ndescription: 开发环境 Skill 模板：log-field-set\n---\n\n## 何时启用\n用户提到 log-field-set 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-log-field-set-0032\ndescription: Dev Skill template: log-field-set\n---\n\n## When to use\nWhen the user asks for log-field-set-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0033",
+      "identifier": "pp-dev-skill-0033",
+      "title": "Skill 模板：trace-span-name #33",
+      "titleEn": "Skill template: trace-span-name #33",
+      "description": "围绕「trace-span-name」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “trace-span-name” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-06T10:00:00.000Z",
+      "dirName": "pp-dev-trace-span-name-0033",
+      "skillMarkdown": "---\nname: pp-dev-trace-span-name-0033\ndescription: 开发环境 Skill 模板：trace-span-name\n---\n\n## 何时启用\n用户提到 trace-span-name 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-trace-span-name-0033\ndescription: Dev Skill template: trace-span-name\n---\n\n## When to use\nWhen the user asks for trace-span-name-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0034",
+      "identifier": "pp-dev-skill-0034",
+      "title": "Skill 模板：alert-rule-text #34",
+      "titleEn": "Skill template: alert-rule-text #34",
+      "description": "围绕「alert-rule-text」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “alert-rule-text” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-07T10:00:00.000Z",
+      "dirName": "pp-dev-alert-rule-text-0034",
+      "skillMarkdown": "---\nname: pp-dev-alert-rule-text-0034\ndescription: 开发环境 Skill 模板：alert-rule-text\n---\n\n## 何时启用\n用户提到 alert-rule-text 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-alert-rule-text-0034\ndescription: Dev Skill template: alert-rule-text\n---\n\n## When to use\nWhen the user asks for alert-rule-text-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0035",
+      "identifier": "pp-dev-skill-0035",
+      "title": "Skill 模板：slo-definition #35",
+      "titleEn": "Skill template: slo-definition #35",
+      "description": "围绕「slo-definition」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “slo-definition” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-08T10:00:00.000Z",
+      "dirName": "pp-dev-slo-definition-0035",
+      "skillMarkdown": "---\nname: pp-dev-slo-definition-0035\ndescription: 开发环境 Skill 模板：slo-definition\n---\n\n## 何时启用\n用户提到 slo-definition 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-slo-definition-0035\ndescription: Dev Skill template: slo-definition\n---\n\n## When to use\nWhen the user asks for slo-definition-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0036",
+      "identifier": "pp-dev-skill-0036",
+      "title": "Skill 模板：oncall-handoff #36",
+      "titleEn": "Skill template: oncall-handoff #36",
+      "description": "围绕「oncall-handoff」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “oncall-handoff” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-09T10:00:00.000Z",
+      "dirName": "pp-dev-oncall-handoff-0036",
+      "skillMarkdown": "---\nname: pp-dev-oncall-handoff-0036\ndescription: 开发环境 Skill 模板：oncall-handoff\n---\n\n## 何时启用\n用户提到 oncall-handoff 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-oncall-handoff-0036\ndescription: Dev Skill template: oncall-handoff\n---\n\n## When to use\nWhen the user asks for oncall-handoff-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0037",
+      "identifier": "pp-dev-skill-0037",
+      "title": "Skill 模板：incident-title #37",
+      "titleEn": "Skill template: incident-title #37",
+      "description": "围绕「incident-title」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “incident-title” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-10T10:00:00.000Z",
+      "dirName": "pp-dev-incident-title-0037",
+      "skillMarkdown": "---\nname: pp-dev-incident-title-0037\ndescription: 开发环境 Skill 模板：incident-title\n---\n\n## 何时启用\n用户提到 incident-title 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-incident-title-0037\ndescription: Dev Skill template: incident-title\n---\n\n## When to use\nWhen the user asks for incident-title-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0038",
+      "identifier": "pp-dev-skill-0038",
+      "title": "Skill 模板：status-page-copy #38",
+      "titleEn": "Skill template: status-page-copy #38",
+      "description": "围绕「status-page-copy」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “status-page-copy” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-11T10:00:00.000Z",
+      "dirName": "pp-dev-status-page-copy-0038",
+      "skillMarkdown": "---\nname: pp-dev-status-page-copy-0038\ndescription: 开发环境 Skill 模板：status-page-copy\n---\n\n## 何时启用\n用户提到 status-page-copy 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-status-page-copy-0038\ndescription: Dev Skill template: status-page-copy\n---\n\n## When to use\nWhen the user asks for status-page-copy-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0039",
+      "identifier": "pp-dev-skill-0039",
+      "title": "Skill 模板：api-error-body #39",
+      "titleEn": "Skill template: api-error-body #39",
+      "description": "围绕「api-error-body」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “api-error-body” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-12T10:00:00.000Z",
+      "dirName": "pp-dev-api-error-body-0039",
+      "skillMarkdown": "---\nname: pp-dev-api-error-body-0039\ndescription: 开发环境 Skill 模板：api-error-body\n---\n\n## 何时启用\n用户提到 api-error-body 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-api-error-body-0039\ndescription: Dev Skill template: api-error-body\n---\n\n## When to use\nWhen the user asks for api-error-body-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0040",
+      "identifier": "pp-dev-skill-0040",
+      "title": "Skill 模板：http-status-pick #40",
+      "titleEn": "Skill template: http-status-pick #40",
+      "description": "围绕「http-status-pick」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “http-status-pick” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-13T10:00:00.000Z",
+      "dirName": "pp-dev-http-status-pick-0040",
+      "skillMarkdown": "---\nname: pp-dev-http-status-pick-0040\ndescription: 开发环境 Skill 模板：http-status-pick\n---\n\n## 何时启用\n用户提到 http-status-pick 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-http-status-pick-0040\ndescription: Dev Skill template: http-status-pick\n---\n\n## When to use\nWhen the user asks for http-status-pick-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0041",
+      "identifier": "pp-dev-skill-0041",
+      "title": "Skill 模板：idempotency-key #41",
+      "titleEn": "Skill template: idempotency-key #41",
+      "description": "围绕「idempotency-key」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “idempotency-key” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-14T10:00:00.000Z",
+      "dirName": "pp-dev-idempotency-key-0041",
+      "skillMarkdown": "---\nname: pp-dev-idempotency-key-0041\ndescription: 开发环境 Skill 模板：idempotency-key\n---\n\n## 何时启用\n用户提到 idempotency-key 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-idempotency-key-0041\ndescription: Dev Skill template: idempotency-key\n---\n\n## When to use\nWhen the user asks for idempotency-key-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0042",
+      "identifier": "pp-dev-skill-0042",
+      "title": "Skill 模板：pagination-style #42",
+      "titleEn": "Skill template: pagination-style #42",
+      "description": "围绕「pagination-style」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “pagination-style” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-15T10:00:00.000Z",
+      "dirName": "pp-dev-pagination-style-0042",
+      "skillMarkdown": "---\nname: pp-dev-pagination-style-0042\ndescription: 开发环境 Skill 模板：pagination-style\n---\n\n## 何时启用\n用户提到 pagination-style 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-pagination-style-0042\ndescription: Dev Skill template: pagination-style\n---\n\n## When to use\nWhen the user asks for pagination-style-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0043",
+      "identifier": "pp-dev-skill-0043",
+      "title": "Skill 模板：cursor-vs-offset #43",
+      "titleEn": "Skill template: cursor-vs-offset #43",
+      "description": "围绕「cursor-vs-offset」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “cursor-vs-offset” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-16T10:00:00.000Z",
+      "dirName": "pp-dev-cursor-vs-offset-0043",
+      "skillMarkdown": "---\nname: pp-dev-cursor-vs-offset-0043\ndescription: 开发环境 Skill 模板：cursor-vs-offset\n---\n\n## 何时启用\n用户提到 cursor-vs-offset 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-cursor-vs-offset-0043\ndescription: Dev Skill template: cursor-vs-offset\n---\n\n## When to use\nWhen the user asks for cursor-vs-offset-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0044",
+      "identifier": "pp-dev-skill-0044",
+      "title": "Skill 模板：etag-hint #44",
+      "titleEn": "Skill template: etag-hint #44",
+      "description": "围绕「etag-hint」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “etag-hint” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-17T10:00:00.000Z",
+      "dirName": "pp-dev-etag-hint-0044",
+      "skillMarkdown": "---\nname: pp-dev-etag-hint-0044\ndescription: 开发环境 Skill 模板：etag-hint\n---\n\n## 何时启用\n用户提到 etag-hint 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-etag-hint-0044\ndescription: Dev Skill template: etag-hint\n---\n\n## When to use\nWhen the user asks for etag-hint-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0045",
+      "identifier": "pp-dev-skill-0045",
+      "title": "Skill 模板：cache-control #45",
+      "titleEn": "Skill template: cache-control #45",
+      "description": "围绕「cache-control」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “cache-control” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-18T10:00:00.000Z",
+      "dirName": "pp-dev-cache-control-0045",
+      "skillMarkdown": "---\nname: pp-dev-cache-control-0045\ndescription: 开发环境 Skill 模板：cache-control\n---\n\n## 何时启用\n用户提到 cache-control 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-cache-control-0045\ndescription: Dev Skill template: cache-control\n---\n\n## When to use\nWhen the user asks for cache-control-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0046",
+      "identifier": "pp-dev-skill-0046",
+      "title": "Skill 模板：cors-snippet #46",
+      "titleEn": "Skill template: cors-snippet #46",
+      "description": "围绕「cors-snippet」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “cors-snippet” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-19T10:00:00.000Z",
+      "dirName": "pp-dev-cors-snippet-0046",
+      "skillMarkdown": "---\nname: pp-dev-cors-snippet-0046\ndescription: 开发环境 Skill 模板：cors-snippet\n---\n\n## 何时启用\n用户提到 cors-snippet 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-cors-snippet-0046\ndescription: Dev Skill template: cors-snippet\n---\n\n## When to use\nWhen the user asks for cors-snippet-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0047",
+      "identifier": "pp-dev-skill-0047",
+      "title": "Skill 模板：csrf-token #47",
+      "titleEn": "Skill template: csrf-token #47",
+      "description": "围绕「csrf-token」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “csrf-token” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-20T10:00:00.000Z",
+      "dirName": "pp-dev-csrf-token-0047",
+      "skillMarkdown": "---\nname: pp-dev-csrf-token-0047\ndescription: 开发环境 Skill 模板：csrf-token\n---\n\n## 何时启用\n用户提到 csrf-token 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-csrf-token-0047\ndescription: Dev Skill template: csrf-token\n---\n\n## When to use\nWhen the user asks for csrf-token-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0048",
+      "identifier": "pp-dev-skill-0048",
+      "title": "Skill 模板：oauth-scope #48",
+      "titleEn": "Skill template: oauth-scope #48",
+      "description": "围绕「oauth-scope」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “oauth-scope” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-21T10:00:00.000Z",
+      "dirName": "pp-dev-oauth-scope-0048",
+      "skillMarkdown": "---\nname: pp-dev-oauth-scope-0048\ndescription: 开发环境 Skill 模板：oauth-scope\n---\n\n## 何时启用\n用户提到 oauth-scope 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-oauth-scope-0048\ndescription: Dev Skill template: oauth-scope\n---\n\n## When to use\nWhen the user asks for oauth-scope-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0049",
+      "identifier": "pp-dev-skill-0049",
+      "title": "Skill 模板：jwt-claims #49",
+      "titleEn": "Skill template: jwt-claims #49",
+      "description": "围绕「jwt-claims」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “jwt-claims” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-22T10:00:00.000Z",
+      "dirName": "pp-dev-jwt-claims-0049",
+      "skillMarkdown": "---\nname: pp-dev-jwt-claims-0049\ndescription: 开发环境 Skill 模板：jwt-claims\n---\n\n## 何时启用\n用户提到 jwt-claims 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-jwt-claims-0049\ndescription: Dev Skill template: jwt-claims\n---\n\n## When to use\nWhen the user asks for jwt-claims-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0050",
+      "identifier": "pp-dev-skill-0050",
+      "title": "Skill 模板：refresh-flow #50",
+      "titleEn": "Skill template: refresh-flow #50",
+      "description": "围绕「refresh-flow」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “refresh-flow” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-23T10:00:00.000Z",
+      "dirName": "pp-dev-refresh-flow-0050",
+      "skillMarkdown": "---\nname: pp-dev-refresh-flow-0050\ndescription: 开发环境 Skill 模板：refresh-flow\n---\n\n## 何时启用\n用户提到 refresh-flow 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-refresh-flow-0050\ndescription: Dev Skill template: refresh-flow\n---\n\n## When to use\nWhen the user asks for refresh-flow-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0051",
+      "identifier": "pp-dev-skill-0051",
+      "title": "Skill 模板：mfa-copy #51",
+      "titleEn": "Skill template: mfa-copy #51",
+      "description": "围绕「mfa-copy」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “mfa-copy” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-24T10:00:00.000Z",
+      "dirName": "pp-dev-mfa-copy-0051",
+      "skillMarkdown": "---\nname: pp-dev-mfa-copy-0051\ndescription: 开发环境 Skill 模板：mfa-copy\n---\n\n## 何时启用\n用户提到 mfa-copy 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-mfa-copy-0051\ndescription: Dev Skill template: mfa-copy\n---\n\n## When to use\nWhen the user asks for mfa-copy-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0052",
+      "identifier": "pp-dev-skill-0052",
+      "title": "Skill 模板：password-policy #52",
+      "titleEn": "Skill template: password-policy #52",
+      "description": "围绕「password-policy」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “password-policy” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-25T10:00:00.000Z",
+      "dirName": "pp-dev-password-policy-0052",
+      "skillMarkdown": "---\nname: pp-dev-password-policy-0052\ndescription: 开发环境 Skill 模板：password-policy\n---\n\n## 何时启用\n用户提到 password-policy 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-password-policy-0052\ndescription: Dev Skill template: password-policy\n---\n\n## When to use\nWhen the user asks for password-policy-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0053",
+      "identifier": "pp-dev-skill-0053",
+      "title": "Skill 模板：session-timeout #53",
+      "titleEn": "Skill template: session-timeout #53",
+      "description": "围绕「session-timeout」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “session-timeout” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-26T10:00:00.000Z",
+      "dirName": "pp-dev-session-timeout-0053",
+      "skillMarkdown": "---\nname: pp-dev-session-timeout-0053\ndescription: 开发环境 Skill 模板：session-timeout\n---\n\n## 何时启用\n用户提到 session-timeout 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-session-timeout-0053\ndescription: Dev Skill template: session-timeout\n---\n\n## When to use\nWhen the user asks for session-timeout-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0054",
+      "identifier": "pp-dev-skill-0054",
+      "title": "Skill 模板：rate-limit-msg #54",
+      "titleEn": "Skill template: rate-limit-msg #54",
+      "description": "围绕「rate-limit-msg」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “rate-limit-msg” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-27T10:00:00.000Z",
+      "dirName": "pp-dev-rate-limit-msg-0054",
+      "skillMarkdown": "---\nname: pp-dev-rate-limit-msg-0054\ndescription: 开发环境 Skill 模板：rate-limit-msg\n---\n\n## 何时启用\n用户提到 rate-limit-msg 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-rate-limit-msg-0054\ndescription: Dev Skill template: rate-limit-msg\n---\n\n## When to use\nWhen the user asks for rate-limit-msg-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0055",
+      "identifier": "pp-dev-skill-0055",
+      "title": "Skill 模板：quota-error #55",
+      "titleEn": "Skill template: quota-error #55",
+      "description": "围绕「quota-error」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “quota-error” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-28T10:00:00.000Z",
+      "dirName": "pp-dev-quota-error-0055",
+      "skillMarkdown": "---\nname: pp-dev-quota-error-0055\ndescription: 开发环境 Skill 模板：quota-error\n---\n\n## 何时启用\n用户提到 quota-error 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-quota-error-0055\ndescription: Dev Skill template: quota-error\n---\n\n## When to use\nWhen the user asks for quota-error-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0056",
+      "identifier": "pp-dev-skill-0056",
+      "title": "Skill 模板：upload-limit #56",
+      "titleEn": "Skill template: upload-limit #56",
+      "description": "围绕「upload-limit」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “upload-limit” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-01T10:00:00.000Z",
+      "dirName": "pp-dev-upload-limit-0056",
+      "skillMarkdown": "---\nname: pp-dev-upload-limit-0056\ndescription: 开发环境 Skill 模板：upload-limit\n---\n\n## 何时启用\n用户提到 upload-limit 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-upload-limit-0056\ndescription: Dev Skill template: upload-limit\n---\n\n## When to use\nWhen the user asks for upload-limit-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0057",
+      "identifier": "pp-dev-skill-0057",
+      "title": "Skill 模板：virus-scan-hint #57",
+      "titleEn": "Skill template: virus-scan-hint #57",
+      "description": "围绕「virus-scan-hint」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “virus-scan-hint” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-02T10:00:00.000Z",
+      "dirName": "pp-dev-virus-scan-hint-0057",
+      "skillMarkdown": "---\nname: pp-dev-virus-scan-hint-0057\ndescription: 开发环境 Skill 模板：virus-scan-hint\n---\n\n## 何时启用\n用户提到 virus-scan-hint 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-virus-scan-hint-0057\ndescription: Dev Skill template: virus-scan-hint\n---\n\n## When to use\nWhen the user asks for virus-scan-hint-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0058",
+      "identifier": "pp-dev-skill-0058",
+      "title": "Skill 模板：mime-allowlist #58",
+      "titleEn": "Skill template: mime-allowlist #58",
+      "description": "围绕「mime-allowlist」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “mime-allowlist” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-03T10:00:00.000Z",
+      "dirName": "pp-dev-mime-allowlist-0058",
+      "skillMarkdown": "---\nname: pp-dev-mime-allowlist-0058\ndescription: 开发环境 Skill 模板：mime-allowlist\n---\n\n## 何时启用\n用户提到 mime-allowlist 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-mime-allowlist-0058\ndescription: Dev Skill template: mime-allowlist\n---\n\n## When to use\nWhen the user asks for mime-allowlist-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0059",
+      "identifier": "pp-dev-skill-0059",
+      "title": "Skill 模板：path-sanitize #59",
+      "titleEn": "Skill template: path-sanitize #59",
+      "description": "围绕「path-sanitize」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “path-sanitize” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-04T10:00:00.000Z",
+      "dirName": "pp-dev-path-sanitize-0059",
+      "skillMarkdown": "---\nname: pp-dev-path-sanitize-0059\ndescription: 开发环境 Skill 模板：path-sanitize\n---\n\n## 何时启用\n用户提到 path-sanitize 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-path-sanitize-0059\ndescription: Dev Skill template: path-sanitize\n---\n\n## When to use\nWhen the user asks for path-sanitize-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0060",
+      "identifier": "pp-dev-skill-0060",
+      "title": "Skill 模板：zip-slip-check #60",
+      "titleEn": "Skill template: zip-slip-check #60",
+      "description": "围绕「zip-slip-check」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “zip-slip-check” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-05T10:00:00.000Z",
+      "dirName": "pp-dev-zip-slip-check-0060",
+      "skillMarkdown": "---\nname: pp-dev-zip-slip-check-0060\ndescription: 开发环境 Skill 模板：zip-slip-check\n---\n\n## 何时启用\n用户提到 zip-slip-check 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-zip-slip-check-0060\ndescription: Dev Skill template: zip-slip-check\n---\n\n## When to use\nWhen the user asks for zip-slip-check-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0061",
+      "identifier": "pp-dev-skill-0061",
+      "title": "Skill 模板：ssrf-guard #61",
+      "titleEn": "Skill template: ssrf-guard #61",
+      "description": "围绕「ssrf-guard」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “ssrf-guard” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-06T10:00:00.000Z",
+      "dirName": "pp-dev-ssrf-guard-0061",
+      "skillMarkdown": "---\nname: pp-dev-ssrf-guard-0061\ndescription: 开发环境 Skill 模板：ssrf-guard\n---\n\n## 何时启用\n用户提到 ssrf-guard 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-ssrf-guard-0061\ndescription: Dev Skill template: ssrf-guard\n---\n\n## When to use\nWhen the user asks for ssrf-guard-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0062",
+      "identifier": "pp-dev-skill-0062",
+      "title": "Skill 模板：xxe-hint #62",
+      "titleEn": "Skill template: xxe-hint #62",
+      "description": "围绕「xxe-hint」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “xxe-hint” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-07T10:00:00.000Z",
+      "dirName": "pp-dev-xxe-hint-0062",
+      "skillMarkdown": "---\nname: pp-dev-xxe-hint-0062\ndescription: 开发环境 Skill 模板：xxe-hint\n---\n\n## 何时启用\n用户提到 xxe-hint 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-xxe-hint-0062\ndescription: Dev Skill template: xxe-hint\n---\n\n## When to use\nWhen the user asks for xxe-hint-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0063",
+      "identifier": "pp-dev-skill-0063",
+      "title": "Skill 模板：nosql-injection #63",
+      "titleEn": "Skill template: nosql-injection #63",
+      "description": "围绕「nosql-injection」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “nosql-injection” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-08T10:00:00.000Z",
+      "dirName": "pp-dev-nosql-injection-0063",
+      "skillMarkdown": "---\nname: pp-dev-nosql-injection-0063\ndescription: 开发环境 Skill 模板：nosql-injection\n---\n\n## 何时启用\n用户提到 nosql-injection 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-nosql-injection-0063\ndescription: Dev Skill template: nosql-injection\n---\n\n## When to use\nWhen the user asks for nosql-injection-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0064",
+      "identifier": "pp-dev-skill-0064",
+      "title": "Skill 模板：ldap-filter #64",
+      "titleEn": "Skill template: ldap-filter #64",
+      "description": "围绕「ldap-filter」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “ldap-filter” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-09T10:00:00.000Z",
+      "dirName": "pp-dev-ldap-filter-0064",
+      "skillMarkdown": "---\nname: pp-dev-ldap-filter-0064\ndescription: 开发环境 Skill 模板：ldap-filter\n---\n\n## 何时启用\n用户提到 ldap-filter 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-ldap-filter-0064\ndescription: Dev Skill template: ldap-filter\n---\n\n## When to use\nWhen the user asks for ldap-filter-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0065",
+      "identifier": "pp-dev-skill-0065",
+      "title": "Skill 模板：graphql-depth #65",
+      "titleEn": "Skill template: graphql-depth #65",
+      "description": "围绕「graphql-depth」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “graphql-depth” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-10T10:00:00.000Z",
+      "dirName": "pp-dev-graphql-depth-0065",
+      "skillMarkdown": "---\nname: pp-dev-graphql-depth-0065\ndescription: 开发环境 Skill 模板：graphql-depth\n---\n\n## 何时启用\n用户提到 graphql-depth 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-graphql-depth-0065\ndescription: Dev Skill template: graphql-depth\n---\n\n## When to use\nWhen the user asks for graphql-depth-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0066",
+      "identifier": "pp-dev-skill-0066",
+      "title": "Skill 模板：resolver-timeout #66",
+      "titleEn": "Skill template: resolver-timeout #66",
+      "description": "围绕「resolver-timeout」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “resolver-timeout” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-11T10:00:00.000Z",
+      "dirName": "pp-dev-resolver-timeout-0066",
+      "skillMarkdown": "---\nname: pp-dev-resolver-timeout-0066\ndescription: 开发环境 Skill 模板：resolver-timeout\n---\n\n## 何时启用\n用户提到 resolver-timeout 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-resolver-timeout-0066\ndescription: Dev Skill template: resolver-timeout\n---\n\n## When to use\nWhen the user asks for resolver-timeout-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0067",
+      "identifier": "pp-dev-skill-0067",
+      "title": "Skill 模板：subscription-limit #67",
+      "titleEn": "Skill template: subscription-limit #67",
+      "description": "围绕「subscription-limit」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “subscription-limit” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-12T10:00:00.000Z",
+      "dirName": "pp-dev-subscription-limit-0067",
+      "skillMarkdown": "---\nname: pp-dev-subscription-limit-0067\ndescription: 开发环境 Skill 模板：subscription-limit\n---\n\n## 何时启用\n用户提到 subscription-limit 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-subscription-limit-0067\ndescription: Dev Skill template: subscription-limit\n---\n\n## When to use\nWhen the user asks for subscription-limit-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0068",
+      "identifier": "pp-dev-skill-0068",
+      "title": "Skill 模板：websocket-ping #68",
+      "titleEn": "Skill template: websocket-ping #68",
+      "description": "围绕「websocket-ping」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “websocket-ping” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-13T10:00:00.000Z",
+      "dirName": "pp-dev-websocket-ping-0068",
+      "skillMarkdown": "---\nname: pp-dev-websocket-ping-0068\ndescription: 开发环境 Skill 模板：websocket-ping\n---\n\n## 何时启用\n用户提到 websocket-ping 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-websocket-ping-0068\ndescription: Dev Skill template: websocket-ping\n---\n\n## When to use\nWhen the user asks for websocket-ping-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0069",
+      "identifier": "pp-dev-skill-0069",
+      "title": "Skill 模板：sse-headers #69",
+      "titleEn": "Skill template: sse-headers #69",
+      "description": "围绕「sse-headers」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “sse-headers” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-14T10:00:00.000Z",
+      "dirName": "pp-dev-sse-headers-0069",
+      "skillMarkdown": "---\nname: pp-dev-sse-headers-0069\ndescription: 开发环境 Skill 模板：sse-headers\n---\n\n## 何时启用\n用户提到 sse-headers 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-sse-headers-0069\ndescription: Dev Skill template: sse-headers\n---\n\n## When to use\nWhen the user asks for sse-headers-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0070",
+      "identifier": "pp-dev-skill-0070",
+      "title": "Skill 模板：grpc-deadline #70",
+      "titleEn": "Skill template: grpc-deadline #70",
+      "description": "围绕「grpc-deadline」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “grpc-deadline” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-15T10:00:00.000Z",
+      "dirName": "pp-dev-grpc-deadline-0070",
+      "skillMarkdown": "---\nname: pp-dev-grpc-deadline-0070\ndescription: 开发环境 Skill 模板：grpc-deadline\n---\n\n## 何时启用\n用户提到 grpc-deadline 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-grpc-deadline-0070\ndescription: Dev Skill template: grpc-deadline\n---\n\n## When to use\nWhen the user asks for grpc-deadline-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0071",
+      "identifier": "pp-dev-skill-0071",
+      "title": "Skill 模板：proto-comment #71",
+      "titleEn": "Skill template: proto-comment #71",
+      "description": "围绕「proto-comment」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “proto-comment” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-16T10:00:00.000Z",
+      "dirName": "pp-dev-proto-comment-0071",
+      "skillMarkdown": "---\nname: pp-dev-proto-comment-0071\ndescription: 开发环境 Skill 模板：proto-comment\n---\n\n## 何时启用\n用户提到 proto-comment 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-proto-comment-0071\ndescription: Dev Skill template: proto-comment\n---\n\n## When to use\nWhen the user asks for proto-comment-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0072",
+      "identifier": "pp-dev-skill-0072",
+      "title": "Skill 模板：avro-schema-note #72",
+      "titleEn": "Skill template: avro-schema-note #72",
+      "description": "围绕「avro-schema-note」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “avro-schema-note” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-17T10:00:00.000Z",
+      "dirName": "pp-dev-avro-schema-note-0072",
+      "skillMarkdown": "---\nname: pp-dev-avro-schema-note-0072\ndescription: 开发环境 Skill 模板：avro-schema-note\n---\n\n## 何时启用\n用户提到 avro-schema-note 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-avro-schema-note-0072\ndescription: Dev Skill template: avro-schema-note\n---\n\n## When to use\nWhen the user asks for avro-schema-note-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0073",
+      "identifier": "pp-dev-skill-0073",
+      "title": "Skill 模板：kafka-key-choice #73",
+      "titleEn": "Skill template: kafka-key-choice #73",
+      "description": "围绕「kafka-key-choice」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “kafka-key-choice” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-18T10:00:00.000Z",
+      "dirName": "pp-dev-kafka-key-choice-0073",
+      "skillMarkdown": "---\nname: pp-dev-kafka-key-choice-0073\ndescription: 开发环境 Skill 模板：kafka-key-choice\n---\n\n## 何时启用\n用户提到 kafka-key-choice 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-kafka-key-choice-0073\ndescription: Dev Skill template: kafka-key-choice\n---\n\n## When to use\nWhen the user asks for kafka-key-choice-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0074",
+      "identifier": "pp-dev-skill-0074",
+      "title": "Skill 模板：partition-count #74",
+      "titleEn": "Skill template: partition-count #74",
+      "description": "围绕「partition-count」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “partition-count” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-19T10:00:00.000Z",
+      "dirName": "pp-dev-partition-count-0074",
+      "skillMarkdown": "---\nname: pp-dev-partition-count-0074\ndescription: 开发环境 Skill 模板：partition-count\n---\n\n## 何时启用\n用户提到 partition-count 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-partition-count-0074\ndescription: Dev Skill template: partition-count\n---\n\n## When to use\nWhen the user asks for partition-count-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0075",
+      "identifier": "pp-dev-skill-0075",
+      "title": "Skill 模板：consumer-lag #75",
+      "titleEn": "Skill template: consumer-lag #75",
+      "description": "围绕「consumer-lag」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “consumer-lag” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-20T10:00:00.000Z",
+      "dirName": "pp-dev-consumer-lag-0075",
+      "skillMarkdown": "---\nname: pp-dev-consumer-lag-0075\ndescription: 开发环境 Skill 模板：consumer-lag\n---\n\n## 何时启用\n用户提到 consumer-lag 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-consumer-lag-0075\ndescription: Dev Skill template: consumer-lag\n---\n\n## When to use\nWhen the user asks for consumer-lag-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0076",
+      "identifier": "pp-dev-skill-0076",
+      "title": "Skill 模板：outbox-pattern #76",
+      "titleEn": "Skill template: outbox-pattern #76",
+      "description": "围绕「outbox-pattern」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “outbox-pattern” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-21T10:00:00.000Z",
+      "dirName": "pp-dev-outbox-pattern-0076",
+      "skillMarkdown": "---\nname: pp-dev-outbox-pattern-0076\ndescription: 开发环境 Skill 模板：outbox-pattern\n---\n\n## 何时启用\n用户提到 outbox-pattern 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-outbox-pattern-0076\ndescription: Dev Skill template: outbox-pattern\n---\n\n## When to use\nWhen the user asks for outbox-pattern-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0077",
+      "identifier": "pp-dev-skill-0077",
+      "title": "Skill 模板：inbox-pattern #77",
+      "titleEn": "Skill template: inbox-pattern #77",
+      "description": "围绕「inbox-pattern」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “inbox-pattern” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-22T10:00:00.000Z",
+      "dirName": "pp-dev-inbox-pattern-0077",
+      "skillMarkdown": "---\nname: pp-dev-inbox-pattern-0077\ndescription: 开发环境 Skill 模板：inbox-pattern\n---\n\n## 何时启用\n用户提到 inbox-pattern 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-inbox-pattern-0077\ndescription: Dev Skill template: inbox-pattern\n---\n\n## When to use\nWhen the user asks for inbox-pattern-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0078",
+      "identifier": "pp-dev-skill-0078",
+      "title": "Skill 模板：saga-step #78",
+      "titleEn": "Skill template: saga-step #78",
+      "description": "围绕「saga-step」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “saga-step” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-23T10:00:00.000Z",
+      "dirName": "pp-dev-saga-step-0078",
+      "skillMarkdown": "---\nname: pp-dev-saga-step-0078\ndescription: 开发环境 Skill 模板：saga-step\n---\n\n## 何时启用\n用户提到 saga-step 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-saga-step-0078\ndescription: Dev Skill template: saga-step\n---\n\n## When to use\nWhen the user asks for saga-step-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0079",
+      "identifier": "pp-dev-skill-0079",
+      "title": "Skill 模板：tcc-hint #79",
+      "titleEn": "Skill template: tcc-hint #79",
+      "description": "围绕「tcc-hint」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “tcc-hint” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-24T10:00:00.000Z",
+      "dirName": "pp-dev-tcc-hint-0079",
+      "skillMarkdown": "---\nname: pp-dev-tcc-hint-0079\ndescription: 开发环境 Skill 模板：tcc-hint\n---\n\n## 何时启用\n用户提到 tcc-hint 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-tcc-hint-0079\ndescription: Dev Skill template: tcc-hint\n---\n\n## When to use\nWhen the user asks for tcc-hint-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0080",
+      "identifier": "pp-dev-skill-0080",
+      "title": "Skill 模板：2pc-warning #80",
+      "titleEn": "Skill template: 2pc-warning #80",
+      "description": "围绕「2pc-warning」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “2pc-warning” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-25T10:00:00.000Z",
+      "dirName": "pp-dev-2pc-warning-0080",
+      "skillMarkdown": "---\nname: pp-dev-2pc-warning-0080\ndescription: 开发环境 Skill 模板：2pc-warning\n---\n\n## 何时启用\n用户提到 2pc-warning 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-2pc-warning-0080\ndescription: Dev Skill template: 2pc-warning\n---\n\n## When to use\nWhen the user asks for 2pc-warning-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0081",
+      "identifier": "pp-dev-skill-0081",
+      "title": "Skill 模板：vector-clock #81",
+      "titleEn": "Skill template: vector-clock #81",
+      "description": "围绕「vector-clock」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “vector-clock” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-26T10:00:00.000Z",
+      "dirName": "pp-dev-vector-clock-0081",
+      "skillMarkdown": "---\nname: pp-dev-vector-clock-0081\ndescription: 开发环境 Skill 模板：vector-clock\n---\n\n## 何时启用\n用户提到 vector-clock 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-vector-clock-0081\ndescription: Dev Skill template: vector-clock\n---\n\n## When to use\nWhen the user asks for vector-clock-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0082",
+      "identifier": "pp-dev-skill-0082",
+      "title": "Skill 模板：crdt-merge #82",
+      "titleEn": "Skill template: crdt-merge #82",
+      "description": "围绕「crdt-merge」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “crdt-merge” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-27T10:00:00.000Z",
+      "dirName": "pp-dev-crdt-merge-0082",
+      "skillMarkdown": "---\nname: pp-dev-crdt-merge-0082\ndescription: 开发环境 Skill 模板：crdt-merge\n---\n\n## 何时启用\n用户提到 crdt-merge 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-crdt-merge-0082\ndescription: Dev Skill template: crdt-merge\n---\n\n## When to use\nWhen the user asks for crdt-merge-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0083",
+      "identifier": "pp-dev-skill-0083",
+      "title": "Skill 模板：ot-hint #83",
+      "titleEn": "Skill template: ot-hint #83",
+      "description": "围绕「ot-hint」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “ot-hint” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-28T10:00:00.000Z",
+      "dirName": "pp-dev-ot-hint-0083",
+      "skillMarkdown": "---\nname: pp-dev-ot-hint-0083\ndescription: 开发环境 Skill 模板：ot-hint\n---\n\n## 何时启用\n用户提到 ot-hint 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-ot-hint-0083\ndescription: Dev Skill template: ot-hint\n---\n\n## When to use\nWhen the user asks for ot-hint-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0084",
+      "identifier": "pp-dev-skill-0084",
+      "title": "Skill 模板：unicode-nfc #84",
+      "titleEn": "Skill template: unicode-nfc #84",
+      "description": "围绕「unicode-nfc」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “unicode-nfc” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-01T10:00:00.000Z",
+      "dirName": "pp-dev-unicode-nfc-0084",
+      "skillMarkdown": "---\nname: pp-dev-unicode-nfc-0084\ndescription: 开发环境 Skill 模板：unicode-nfc\n---\n\n## 何时启用\n用户提到 unicode-nfc 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-unicode-nfc-0084\ndescription: Dev Skill template: unicode-nfc\n---\n\n## When to use\nWhen the user asks for unicode-nfc-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0085",
+      "identifier": "pp-dev-skill-0085",
+      "title": "Skill 模板：slugify-rule #85",
+      "titleEn": "Skill template: slugify-rule #85",
+      "description": "围绕「slugify-rule」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “slugify-rule” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-02T10:00:00.000Z",
+      "dirName": "pp-dev-slugify-rule-0085",
+      "skillMarkdown": "---\nname: pp-dev-slugify-rule-0085\ndescription: 开发环境 Skill 模板：slugify-rule\n---\n\n## 何时启用\n用户提到 slugify-rule 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-slugify-rule-0085\ndescription: Dev Skill template: slugify-rule\n---\n\n## When to use\nWhen the user asks for slugify-rule-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0086",
+      "identifier": "pp-dev-skill-0086",
+      "title": "Skill 模板：i18n-plural #86",
+      "titleEn": "Skill template: i18n-plural #86",
+      "description": "围绕「i18n-plural」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “i18n-plural” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-03T10:00:00.000Z",
+      "dirName": "pp-dev-i18n-plural-0086",
+      "skillMarkdown": "---\nname: pp-dev-i18n-plural-0086\ndescription: 开发环境 Skill 模板：i18n-plural\n---\n\n## 何时启用\n用户提到 i18n-plural 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-i18n-plural-0086\ndescription: Dev Skill template: i18n-plural\n---\n\n## When to use\nWhen the user asks for i18n-plural-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0087",
+      "identifier": "pp-dev-skill-0087",
+      "title": "Skill 模板：rtl-layout #87",
+      "titleEn": "Skill template: rtl-layout #87",
+      "description": "围绕「rtl-layout」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “rtl-layout” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-04T10:00:00.000Z",
+      "dirName": "pp-dev-rtl-layout-0087",
+      "skillMarkdown": "---\nname: pp-dev-rtl-layout-0087\ndescription: 开发环境 Skill 模板：rtl-layout\n---\n\n## 何时启用\n用户提到 rtl-layout 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-rtl-layout-0087\ndescription: Dev Skill template: rtl-layout\n---\n\n## When to use\nWhen the user asks for rtl-layout-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0088",
+      "identifier": "pp-dev-skill-0088",
+      "title": "Skill 模板：a11y-aria #88",
+      "titleEn": "Skill template: a11y-aria #88",
+      "description": "围绕「a11y-aria」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “a11y-aria” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-05T10:00:00.000Z",
+      "dirName": "pp-dev-a11y-aria-0088",
+      "skillMarkdown": "---\nname: pp-dev-a11y-aria-0088\ndescription: 开发环境 Skill 模板：a11y-aria\n---\n\n## 何时启用\n用户提到 a11y-aria 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-a11y-aria-0088\ndescription: Dev Skill template: a11y-aria\n---\n\n## When to use\nWhen the user asks for a11y-aria-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0089",
+      "identifier": "pp-dev-skill-0089",
+      "title": "Skill 模板：focus-trap #89",
+      "titleEn": "Skill template: focus-trap #89",
+      "description": "围绕「focus-trap」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “focus-trap” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-06T10:00:00.000Z",
+      "dirName": "pp-dev-focus-trap-0089",
+      "skillMarkdown": "---\nname: pp-dev-focus-trap-0089\ndescription: 开发环境 Skill 模板：focus-trap\n---\n\n## 何时启用\n用户提到 focus-trap 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-focus-trap-0089\ndescription: Dev Skill template: focus-trap\n---\n\n## When to use\nWhen the user asks for focus-trap-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0090",
+      "identifier": "pp-dev-skill-0090",
+      "title": "Skill 模板：keyboard-shortcut #90",
+      "titleEn": "Skill template: keyboard-shortcut #90",
+      "description": "围绕「keyboard-shortcut」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “keyboard-shortcut” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-07T10:00:00.000Z",
+      "dirName": "pp-dev-keyboard-shortcut-0090",
+      "skillMarkdown": "---\nname: pp-dev-keyboard-shortcut-0090\ndescription: 开发环境 Skill 模板：keyboard-shortcut\n---\n\n## 何时启用\n用户提到 keyboard-shortcut 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-keyboard-shortcut-0090\ndescription: Dev Skill template: keyboard-shortcut\n---\n\n## When to use\nWhen the user asks for keyboard-shortcut-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0091",
+      "identifier": "pp-dev-skill-0091",
+      "title": "Skill 模板：color-contrast #91",
+      "titleEn": "Skill template: color-contrast #91",
+      "description": "围绕「color-contrast」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “color-contrast” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-08T10:00:00.000Z",
+      "dirName": "pp-dev-color-contrast-0091",
+      "skillMarkdown": "---\nname: pp-dev-color-contrast-0091\ndescription: 开发环境 Skill 模板：color-contrast\n---\n\n## 何时启用\n用户提到 color-contrast 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-color-contrast-0091\ndescription: Dev Skill template: color-contrast\n---\n\n## When to use\nWhen the user asks for color-contrast-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0092",
+      "identifier": "pp-dev-skill-0092",
+      "title": "Skill 模板：motion-prefers #92",
+      "titleEn": "Skill template: motion-prefers #92",
+      "description": "围绕「motion-prefers」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “motion-prefers” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-09T10:00:00.000Z",
+      "dirName": "pp-dev-motion-prefers-0092",
+      "skillMarkdown": "---\nname: pp-dev-motion-prefers-0092\ndescription: 开发环境 Skill 模板：motion-prefers\n---\n\n## 何时启用\n用户提到 motion-prefers 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-motion-prefers-0092\ndescription: Dev Skill template: motion-prefers\n---\n\n## When to use\nWhen the user asks for motion-prefers-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0093",
+      "identifier": "pp-dev-skill-0093",
+      "title": "Skill 模板：form-label #93",
+      "titleEn": "Skill template: form-label #93",
+      "description": "围绕「form-label」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “form-label” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-10T10:00:00.000Z",
+      "dirName": "pp-dev-form-label-0093",
+      "skillMarkdown": "---\nname: pp-dev-form-label-0093\ndescription: 开发环境 Skill 模板：form-label\n---\n\n## 何时启用\n用户提到 form-label 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-form-label-0093\ndescription: Dev Skill template: form-label\n---\n\n## When to use\nWhen the user asks for form-label-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0094",
+      "identifier": "pp-dev-skill-0094",
+      "title": "Skill 模板：error-summary #94",
+      "titleEn": "Skill template: error-summary #94",
+      "description": "围绕「error-summary」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “error-summary” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-11T10:00:00.000Z",
+      "dirName": "pp-dev-error-summary-0094",
+      "skillMarkdown": "---\nname: pp-dev-error-summary-0094\ndescription: 开发环境 Skill 模板：error-summary\n---\n\n## 何时启用\n用户提到 error-summary 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-error-summary-0094\ndescription: Dev Skill template: error-summary\n---\n\n## When to use\nWhen the user asks for error-summary-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0095",
+      "identifier": "pp-dev-skill-0095",
+      "title": "Skill 模板：empty-state #95",
+      "titleEn": "Skill template: empty-state #95",
+      "description": "围绕「empty-state」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “empty-state” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-12T10:00:00.000Z",
+      "dirName": "pp-dev-empty-state-0095",
+      "skillMarkdown": "---\nname: pp-dev-empty-state-0095\ndescription: 开发环境 Skill 模板：empty-state\n---\n\n## 何时启用\n用户提到 empty-state 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-empty-state-0095\ndescription: Dev Skill template: empty-state\n---\n\n## When to use\nWhen the user asks for empty-state-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0096",
+      "identifier": "pp-dev-skill-0096",
+      "title": "Skill 模板：skeleton-copy #96",
+      "titleEn": "Skill template: skeleton-copy #96",
+      "description": "围绕「skeleton-copy」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “skeleton-copy” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-13T10:00:00.000Z",
+      "dirName": "pp-dev-skeleton-copy-0096",
+      "skillMarkdown": "---\nname: pp-dev-skeleton-copy-0096\ndescription: 开发环境 Skill 模板：skeleton-copy\n---\n\n## 何时启用\n用户提到 skeleton-copy 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-skeleton-copy-0096\ndescription: Dev Skill template: skeleton-copy\n---\n\n## When to use\nWhen the user asks for skeleton-copy-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0097",
+      "identifier": "pp-dev-skill-0097",
+      "title": "Skill 模板：toast-tone #97",
+      "titleEn": "Skill template: toast-tone #97",
+      "description": "围绕「toast-tone」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “toast-tone” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-14T10:00:00.000Z",
+      "dirName": "pp-dev-toast-tone-0097",
+      "skillMarkdown": "---\nname: pp-dev-toast-tone-0097\ndescription: 开发环境 Skill 模板：toast-tone\n---\n\n## 何时启用\n用户提到 toast-tone 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-toast-tone-0097\ndescription: Dev Skill template: toast-tone\n---\n\n## When to use\nWhen the user asks for toast-tone-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0098",
+      "identifier": "pp-dev-skill-0098",
+      "title": "Skill 模板：modal-confirm #98",
+      "titleEn": "Skill template: modal-confirm #98",
+      "description": "围绕「modal-confirm」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “modal-confirm” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-15T10:00:00.000Z",
+      "dirName": "pp-dev-modal-confirm-0098",
+      "skillMarkdown": "---\nname: pp-dev-modal-confirm-0098\ndescription: 开发环境 Skill 模板：modal-confirm\n---\n\n## 何时启用\n用户提到 modal-confirm 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-modal-confirm-0098\ndescription: Dev Skill template: modal-confirm\n---\n\n## When to use\nWhen the user asks for modal-confirm-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0099",
+      "identifier": "pp-dev-skill-0099",
+      "title": "Skill 模板：destructive-action #99",
+      "titleEn": "Skill template: destructive-action #99",
+      "description": "围绕「destructive-action」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “destructive-action” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-16T10:00:00.000Z",
+      "dirName": "pp-dev-destructive-action-0099",
+      "skillMarkdown": "---\nname: pp-dev-destructive-action-0099\ndescription: 开发环境 Skill 模板：destructive-action\n---\n\n## 何时启用\n用户提到 destructive-action 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-destructive-action-0099\ndescription: Dev Skill template: destructive-action\n---\n\n## When to use\nWhen the user asks for destructive-action-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0100",
+      "identifier": "pp-dev-skill-0100",
+      "title": "Skill 模板：undo-snackbar #100",
+      "titleEn": "Skill template: undo-snackbar #100",
+      "description": "围绕「undo-snackbar」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “undo-snackbar” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-17T10:00:00.000Z",
+      "dirName": "pp-dev-undo-snackbar-0100",
+      "skillMarkdown": "---\nname: pp-dev-undo-snackbar-0100\ndescription: 开发环境 Skill 模板：undo-snackbar\n---\n\n## 何时启用\n用户提到 undo-snackbar 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-undo-snackbar-0100\ndescription: Dev Skill template: undo-snackbar\n---\n\n## When to use\nWhen the user asks for undo-snackbar-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0101",
+      "identifier": "pp-dev-skill-0101",
+      "title": "Skill 模板：optimistic-ui #101",
+      "titleEn": "Skill template: optimistic-ui #101",
+      "description": "围绕「optimistic-ui」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “optimistic-ui” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-18T10:00:00.000Z",
+      "dirName": "pp-dev-optimistic-ui-0101",
+      "skillMarkdown": "---\nname: pp-dev-optimistic-ui-0101\ndescription: 开发环境 Skill 模板：optimistic-ui\n---\n\n## 何时启用\n用户提到 optimistic-ui 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-optimistic-ui-0101\ndescription: Dev Skill template: optimistic-ui\n---\n\n## When to use\nWhen the user asks for optimistic-ui-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0102",
+      "identifier": "pp-dev-skill-0102",
+      "title": "Skill 模板：stale-data #102",
+      "titleEn": "Skill template: stale-data #102",
+      "description": "围绕「stale-data」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “stale-data” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-19T10:00:00.000Z",
+      "dirName": "pp-dev-stale-data-0102",
+      "skillMarkdown": "---\nname: pp-dev-stale-data-0102\ndescription: 开发环境 Skill 模板：stale-data\n---\n\n## 何时启用\n用户提到 stale-data 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-stale-data-0102\ndescription: Dev Skill template: stale-data\n---\n\n## When to use\nWhen the user asks for stale-data-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0103",
+      "identifier": "pp-dev-skill-0103",
+      "title": "Skill 模板：retry-backoff #103",
+      "titleEn": "Skill template: retry-backoff #103",
+      "description": "围绕「retry-backoff」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “retry-backoff” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-20T10:00:00.000Z",
+      "dirName": "pp-dev-retry-backoff-0103",
+      "skillMarkdown": "---\nname: pp-dev-retry-backoff-0103\ndescription: 开发环境 Skill 模板：retry-backoff\n---\n\n## 何时启用\n用户提到 retry-backoff 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-retry-backoff-0103\ndescription: Dev Skill template: retry-backoff\n---\n\n## When to use\nWhen the user asks for retry-backoff-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0104",
+      "identifier": "pp-dev-skill-0104",
+      "title": "Skill 模板：jitter-hint #104",
+      "titleEn": "Skill template: jitter-hint #104",
+      "description": "围绕「jitter-hint」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “jitter-hint” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-21T10:00:00.000Z",
+      "dirName": "pp-dev-jitter-hint-0104",
+      "skillMarkdown": "---\nname: pp-dev-jitter-hint-0104\ndescription: 开发环境 Skill 模板：jitter-hint\n---\n\n## 何时启用\n用户提到 jitter-hint 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-jitter-hint-0104\ndescription: Dev Skill template: jitter-hint\n---\n\n## When to use\nWhen the user asks for jitter-hint-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0105",
+      "identifier": "pp-dev-skill-0105",
+      "title": "Skill 模板：circuit-open #105",
+      "titleEn": "Skill template: circuit-open #105",
+      "description": "围绕「circuit-open」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “circuit-open” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-22T10:00:00.000Z",
+      "dirName": "pp-dev-circuit-open-0105",
+      "skillMarkdown": "---\nname: pp-dev-circuit-open-0105\ndescription: 开发环境 Skill 模板：circuit-open\n---\n\n## 何时启用\n用户提到 circuit-open 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-circuit-open-0105\ndescription: Dev Skill template: circuit-open\n---\n\n## When to use\nWhen the user asks for circuit-open-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0106",
+      "identifier": "pp-dev-skill-0106",
+      "title": "Skill 模板：bulkhead-note #106",
+      "titleEn": "Skill template: bulkhead-note #106",
+      "description": "围绕「bulkhead-note」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “bulkhead-note” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-23T10:00:00.000Z",
+      "dirName": "pp-dev-bulkhead-note-0106",
+      "skillMarkdown": "---\nname: pp-dev-bulkhead-note-0106\ndescription: 开发环境 Skill 模板：bulkhead-note\n---\n\n## 何时启用\n用户提到 bulkhead-note 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-bulkhead-note-0106\ndescription: Dev Skill template: bulkhead-note\n---\n\n## When to use\nWhen the user asks for bulkhead-note-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0107",
+      "identifier": "pp-dev-skill-0107",
+      "title": "Skill 模板：timeout-budget #107",
+      "titleEn": "Skill template: timeout-budget #107",
+      "description": "围绕「timeout-budget」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “timeout-budget” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-24T10:00:00.000Z",
+      "dirName": "pp-dev-timeout-budget-0107",
+      "skillMarkdown": "---\nname: pp-dev-timeout-budget-0107\ndescription: 开发环境 Skill 模板：timeout-budget\n---\n\n## 何时启用\n用户提到 timeout-budget 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-timeout-budget-0107\ndescription: Dev Skill template: timeout-budget\n---\n\n## When to use\nWhen the user asks for timeout-budget-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0108",
+      "identifier": "pp-dev-skill-0108",
+      "title": "Skill 模板：hedging-warning #108",
+      "titleEn": "Skill template: hedging-warning #108",
+      "description": "围绕「hedging-warning」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “hedging-warning” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-25T10:00:00.000Z",
+      "dirName": "pp-dev-hedging-warning-0108",
+      "skillMarkdown": "---\nname: pp-dev-hedging-warning-0108\ndescription: 开发环境 Skill 模板：hedging-warning\n---\n\n## 何时启用\n用户提到 hedging-warning 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-hedging-warning-0108\ndescription: Dev Skill template: hedging-warning\n---\n\n## When to use\nWhen the user asks for hedging-warning-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0109",
+      "identifier": "pp-dev-skill-0109",
+      "title": "Skill 模板：load-shedding #109",
+      "titleEn": "Skill template: load-shedding #109",
+      "description": "围绕「load-shedding」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “load-shedding” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-26T10:00:00.000Z",
+      "dirName": "pp-dev-load-shedding-0109",
+      "skillMarkdown": "---\nname: pp-dev-load-shedding-0109\ndescription: 开发环境 Skill 模板：load-shedding\n---\n\n## 何时启用\n用户提到 load-shedding 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-load-shedding-0109\ndescription: Dev Skill template: load-shedding\n---\n\n## When to use\nWhen the user asks for load-shedding-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0110",
+      "identifier": "pp-dev-skill-0110",
+      "title": "Skill 模板：queue-depth #110",
+      "titleEn": "Skill template: queue-depth #110",
+      "description": "围绕「queue-depth」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “queue-depth” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-27T10:00:00.000Z",
+      "dirName": "pp-dev-queue-depth-0110",
+      "skillMarkdown": "---\nname: pp-dev-queue-depth-0110\ndescription: 开发环境 Skill 模板：queue-depth\n---\n\n## 何时启用\n用户提到 queue-depth 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-queue-depth-0110\ndescription: Dev Skill template: queue-depth\n---\n\n## When to use\nWhen the user asks for queue-depth-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0111",
+      "identifier": "pp-dev-skill-0111",
+      "title": "Skill 模板：backpressure #111",
+      "titleEn": "Skill template: backpressure #111",
+      "description": "围绕「backpressure」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “backpressure” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-28T10:00:00.000Z",
+      "dirName": "pp-dev-backpressure-0111",
+      "skillMarkdown": "---\nname: pp-dev-backpressure-0111\ndescription: 开发环境 Skill 模板：backpressure\n---\n\n## 何时启用\n用户提到 backpressure 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-backpressure-0111\ndescription: Dev Skill template: backpressure\n---\n\n## When to use\nWhen the user asks for backpressure-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0112",
+      "identifier": "pp-dev-skill-0112",
+      "title": "Skill 模板：poison-message #112",
+      "titleEn": "Skill template: poison-message #112",
+      "description": "围绕「poison-message」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “poison-message” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-01T10:00:00.000Z",
+      "dirName": "pp-dev-poison-message-0112",
+      "skillMarkdown": "---\nname: pp-dev-poison-message-0112\ndescription: 开发环境 Skill 模板：poison-message\n---\n\n## 何时启用\n用户提到 poison-message 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-poison-message-0112\ndescription: Dev Skill template: poison-message\n---\n\n## When to use\nWhen the user asks for poison-message-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0113",
+      "identifier": "pp-dev-skill-0113",
+      "title": "Skill 模板：dlq-policy #113",
+      "titleEn": "Skill template: dlq-policy #113",
+      "description": "围绕「dlq-policy」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “dlq-policy” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-02T10:00:00.000Z",
+      "dirName": "pp-dev-dlq-policy-0113",
+      "skillMarkdown": "---\nname: pp-dev-dlq-policy-0113\ndescription: 开发环境 Skill 模板：dlq-policy\n---\n\n## 何时启用\n用户提到 dlq-policy 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-dlq-policy-0113\ndescription: Dev Skill template: dlq-policy\n---\n\n## When to use\nWhen the user asks for dlq-policy-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0114",
+      "identifier": "pp-dev-skill-0114",
+      "title": "Skill 模板：replay-safety #114",
+      "titleEn": "Skill template: replay-safety #114",
+      "description": "围绕「replay-safety」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “replay-safety” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-03T10:00:00.000Z",
+      "dirName": "pp-dev-replay-safety-0114",
+      "skillMarkdown": "---\nname: pp-dev-replay-safety-0114\ndescription: 开发环境 Skill 模板：replay-safety\n---\n\n## 何时启用\n用户提到 replay-safety 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-replay-safety-0114\ndescription: Dev Skill template: replay-safety\n---\n\n## When to use\nWhen the user asks for replay-safety-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0115",
+      "identifier": "pp-dev-skill-0115",
+      "title": "Skill 模板：ordering-key #115",
+      "titleEn": "Skill template: ordering-key #115",
+      "description": "围绕「ordering-key」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “ordering-key” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-04T10:00:00.000Z",
+      "dirName": "pp-dev-ordering-key-0115",
+      "skillMarkdown": "---\nname: pp-dev-ordering-key-0115\ndescription: 开发环境 Skill 模板：ordering-key\n---\n\n## 何时启用\n用户提到 ordering-key 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-ordering-key-0115\ndescription: Dev Skill template: ordering-key\n---\n\n## When to use\nWhen the user asks for ordering-key-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0116",
+      "identifier": "pp-dev-skill-0116",
+      "title": "Skill 模板：dedupe-window #116",
+      "titleEn": "Skill template: dedupe-window #116",
+      "description": "围绕「dedupe-window」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “dedupe-window” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-05T10:00:00.000Z",
+      "dirName": "pp-dev-dedupe-window-0116",
+      "skillMarkdown": "---\nname: pp-dev-dedupe-window-0116\ndescription: 开发环境 Skill 模板：dedupe-window\n---\n\n## 何时启用\n用户提到 dedupe-window 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-dedupe-window-0116\ndescription: Dev Skill template: dedupe-window\n---\n\n## When to use\nWhen the user asks for dedupe-window-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0117",
+      "identifier": "pp-dev-skill-0117",
+      "title": "Skill 模板：exactly-once-note #117",
+      "titleEn": "Skill template: exactly-once-note #117",
+      "description": "围绕「exactly-once-note」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “exactly-once-note” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "copywriting",
+      "updatedAt": "2026-04-06T10:00:00.000Z",
+      "dirName": "pp-dev-exactly-once-note-0117",
+      "skillMarkdown": "---\nname: pp-dev-exactly-once-note-0117\ndescription: 开发环境 Skill 模板：exactly-once-note\n---\n\n## 何时启用\n用户提到 exactly-once-note 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-exactly-once-note-0117\ndescription: Dev Skill template: exactly-once-note\n---\n\n## When to use\nWhen the user asks for exactly-once-note-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0118",
+      "identifier": "pp-dev-skill-0118",
+      "title": "Skill 模板：at-least-once #118",
+      "titleEn": "Skill template: at-least-once #118",
+      "description": "围绕「at-least-once」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “at-least-once” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "discover",
+      "updatedAt": "2026-04-07T10:00:00.000Z",
+      "dirName": "pp-dev-at-least-once-0118",
+      "skillMarkdown": "---\nname: pp-dev-at-least-once-0118\ndescription: 开发环境 Skill 模板：at-least-once\n---\n\n## 何时启用\n用户提到 at-least-once 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-at-least-once-0118\ndescription: Dev Skill template: at-least-once\n---\n\n## When to use\nWhen the user asks for at-least-once-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0119",
+      "identifier": "pp-dev-skill-0119",
+      "title": "Skill 模板：batching-size #119",
+      "titleEn": "Skill template: batching-size #119",
+      "description": "围绕「batching-size」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “batching-size” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "general",
+      "updatedAt": "2026-04-08T10:00:00.000Z",
+      "dirName": "pp-dev-batching-size-0119",
+      "skillMarkdown": "---\nname: pp-dev-batching-size-0119\ndescription: 开发环境 Skill 模板：batching-size\n---\n\n## 何时启用\n用户提到 batching-size 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-batching-size-0119\ndescription: Dev Skill template: batching-size\n---\n\n## When to use\nWhen the user asks for batching-size-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    },
+    {
+      "id": "pp-dev-skill-0120",
+      "identifier": "pp-dev-skill-0120",
+      "title": "Skill 模板：flush-interval #120",
+      "titleEn": "Skill template: flush-interval #120",
+      "description": "围绕「flush-interval」生成简短步骤或清单（开发环境展示用）。",
+      "descriptionEn": "Short steps or checklist for “flush-interval” (dev demo).",
+      "tags": [
+        "Skill",
+        "模板"
+      ],
+      "tagsEn": [
+        "Skill",
+        "template"
+      ],
+      "category": "programming",
+      "updatedAt": "2026-04-09T10:00:00.000Z",
+      "dirName": "pp-dev-flush-interval-0120",
+      "skillMarkdown": "---\nname: pp-dev-flush-interval-0120\ndescription: 开发环境 Skill 模板：flush-interval\n---\n\n## 何时启用\n用户提到 flush-interval 相关产出或需要一段可粘贴的说明/清单时。\n\n## 输出要求\n- 用 Markdown，步骤编号。\n- 缺信息时列出最少追问项。\n- 不声称已与生产配置对齐。\n",
+      "skillMarkdownEn": "---\nname: pp-dev-flush-interval-0120\ndescription: Dev Skill template: flush-interval\n---\n\n## When to use\nWhen the user asks for flush-interval-related output or a paste-ready checklist.\n\n## Output\n- Markdown with numbered steps.\n- List minimal follow-up questions if context is missing.\n- Do not claim production parity.\n",
+      "sourceNote": "**来源**：由本仓库脚本 `scripts/gen-community-dev-bulk.mjs` 批量生成的开发环境展示模板；非外部社区搬运。未配置 `sourceUrl` 时不提供外链。",
+      "sourceNoteEn": "**Source**: bulk-generated dev demo from `scripts/gen-community-dev-bulk.mjs` in this repo; not imported from a third-party marketplace. No `sourceUrl` unless you add one in remote catalog JSON."
+    }
+  ]
+}
