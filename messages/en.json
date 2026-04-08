@@ -96,6 +96,11 @@
       "capabilities": "Capabilities",
       "tags": "Tags"
     },
+    "agent": {
+      "sourceSection": "Source",
+      "openExternalSource": "Open reference link in browser",
+      "sourceFallbackPp": "**Bundled ProjectPilot template** (no `sourceNote`): the system prompt below is authored in this repo as general engineering guidance and is **not** auto-imported from external sites. Review before use; for third-party patterns with provenance, pick rows that include `sourceNote` / `sourceUrl`, or supply your own catalog via `PROJECT_PILOT_COMMUNITY_CATALOG_URL`."
+    },
     "cap": {
       "bash": "Bash",
       "fileAccess": "File access",

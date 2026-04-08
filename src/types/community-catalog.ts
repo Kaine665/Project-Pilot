@@ -47,6 +47,10 @@ export interface CommunityCatalogItem {
   tokenUsage?: number;
   /** 上游社区或 Registry 页面，便于路线 B 外链溯源 */
   sourceUrl?: string;
+  /** 人类可读来源说明（中文），与 Skills 种子字段语义一致 */
+  sourceNote?: string;
+  /** 人类可读来源说明（英文） */
+  sourceNoteEn?: string;
   /** 目录合并管道（用于来源筛选） */
   catalogItemOrigin?: Exclude<CommunityCatalogListOrigin, 'registry'>;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, Download, Loader2 } from 'lucide-react';
+import { ArrowLeft, Download, ExternalLink, Loader2 } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale, useTranslations } from '@/client/i18n/use-translations';
 import { Link, useParams, useSearchParams } from '@/client/i18n/routing';
@@ -9,6 +9,7 @@ import { useCommunityCatalog } from '@/components/community-store/community-cata
 import { CommunityStoreShell } from '@/components/community-store/community-store-shell';
 import { useProject } from '@/components/project-context';
 import { Button } from '@/components/ui/button';
+import { FormattedText } from '@/components/formatted-text';
 import { isHttpUrl, localizedAgent } from '@/lib/community-catalog-locale';
 import { DEFAULT_AGENT_CAPABILITIES, type AgentCapabilities } from '@/types';
 import type { CommunityCatalogItem } from '@/types/community-catalog';
@@ -147,6 +148,30 @@ export const CommunityAgentDetailPage = memo(function CommunityAgentDetailPage()
               </div>
             </div>
 
+            <section className="rounded-xl border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
+              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{t('agent.sourceSection')}</h2>
+              <div className="formatted-markdown mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+                <FormattedText
+                  text={
+                    locDisplay.sourceNote?.trim()
+                      ? locDisplay.sourceNote
+                      : t('agent.sourceFallbackPp')
+                  }
+                />
+              </div>
+              {isHttpUrl(item.sourceUrl) ? (
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                  <Button variant="default" className="gap-2 sm:w-auto" asChild>
+                    <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4" aria-hidden />
+                      {t('agent.openExternalSource')}
+                    </a>
+                  </Button>
+                  <span className="break-all font-mono text-[11px] text-zinc-500 dark:text-zinc-400">{item.sourceUrl}</span>
+                </div>
+              ) : null}
+            </section>
+
             <div className="flex flex-wrap gap-2">
               <Button disabled={installing} onClick={() => void install()} className="gap-2">
                 {installing ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Download className="h-4 w-4" aria-hidden />}
@@ -155,13 +180,6 @@ export const CommunityAgentDetailPage = memo(function CommunityAgentDetailPage()
               <Button variant="outline" asChild>
                 <Link to="/workspace/presets">{t('presetsLink')}</Link>
               </Button>
-              {isHttpUrl(item.sourceUrl) ? (
-                <Button variant="outline" asChild>
-                  <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer">
-                    {t('detail.sourceLink')}
-                  </a>
-                </Button>
-              ) : null}
             </div>
 
             {toast ? (

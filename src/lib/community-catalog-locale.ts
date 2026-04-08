@@ -7,12 +7,17 @@ import type {
 export type CommunityUiLocale = 'zh' | 'en';
 
 export function localizedAgent(item: CommunityCatalogItem, locale: CommunityUiLocale) {
+  const sourceNote =
+    locale === 'en'
+      ? item.sourceNoteEn?.trim() || item.sourceNote?.trim()
+      : item.sourceNote?.trim() || item.sourceNoteEn?.trim();
   if (locale !== 'en') {
     return {
       title: item.title,
       description: item.description,
       tags: item.tags,
       systemPrompt: item.systemPrompt,
+      sourceNote: sourceNote ?? '',
     };
   }
   return {
@@ -20,6 +25,7 @@ export function localizedAgent(item: CommunityCatalogItem, locale: CommunityUiLo
     description: item.descriptionEn?.trim() || item.description,
     tags: item.tagsEn?.length ? item.tagsEn : item.tags,
     systemPrompt: item.systemPromptEn?.trim() || item.systemPrompt,
+    sourceNote: sourceNote ?? '',
   };
 }
 
@@ -33,6 +39,9 @@ export function agentSearchText(item: CommunityCatalogItem): string {
     item.titleEn ?? '',
     item.descriptionEn ?? '',
     ...(item.tagsEn ?? []),
+    item.sourceNote ?? '',
+    item.sourceNoteEn ?? '',
+    item.sourceUrl ?? '',
   ].join(' ');
 }
 

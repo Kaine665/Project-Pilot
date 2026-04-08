@@ -96,6 +96,11 @@
       "capabilities": "能力开关",
       "tags": "标签"
     },
+    "agent": {
+      "sourceSection": "来源说明",
+      "openExternalSource": "在浏览器中打开参考链接",
+      "sourceFallbackPp": "**ProjectPilot 内置模板**（本条未写 `sourceNote`）：下方系统角色由本仓库编写，属通用工程提示，**非**从链接站点自动抓取。安装前请自行审阅；若需可核验的第三方范式，请选用带来源说明与参考链接的条目，或通过 `PROJECT_PILOT_COMMUNITY_CATALOG_URL` 接入自有目录 JSON。"
+    },
     "cap": {
       "bash": "Bash",
       "fileAccess": "文件访问",
