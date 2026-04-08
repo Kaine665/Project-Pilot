@@ -21,6 +21,129 @@
     "schedules": "Schedules",
     "mcp": "MCP"
   },
+  "community": {
+    "title": "Community",
+    "subtitle": "Browse reusable templates and add them as runtime presets for new agents. Flow mirrors LobeHub-style discover → install (see docs/community-marketplace-lobechat-okr.md).",
+    "storeBadge": "Store",
+    "tab": {
+      "home": "Discover",
+      "assistant": "Assistants",
+      "skill": "Skills",
+      "mcp": "MCP",
+      "model": "Models",
+      "provider": "Providers"
+    },
+    "search": {
+      "placeholder": "Search titles, descriptions, tags…"
+    },
+    "sort": {
+      "recommended": "Recommended",
+      "updatedAt": "Recently updated",
+      "title": "Name"
+    },
+    "category": {
+      "title": "Categories",
+      "all": "All",
+      "programming": "Programming",
+      "copywriting": "Writing & docs",
+      "discover": "Research",
+      "general": "General"
+    },
+    "filterSource": {
+      "title": "Source",
+      "all": "All",
+      "pp": "ProjectPilot (bundled / dev)",
+      "remote": "Remote catalog",
+      "external": "Has reference link"
+    },
+    "home": {
+      "bannerTitle": "Discover agents, skills, and MCP servers",
+      "bannerBody": "Aligned with LobeHub Community: assistants (presets), Skills (SKILL.md), and MCP. Presets go to agent presets; skills install to disk; MCP merges into data-dir config/mcp-market.json and is combined with the project .mcp.json for Claude CLI.",
+      "bannerCta": "Browse assistants",
+      "featuredAssistants": "Featured assistants",
+      "more": "See more",
+      "featuredSkills": "Featured skills",
+      "moreSkills": "Browse all skills",
+      "featuredMcp": "Featured MCP",
+      "moreMcp": "Browse all MCP",
+      "mcpStripHint": "Installed MCP is saved to mcp-market.json under your data directory and merged with the task workspace .mcp.json (project wins on name clashes)."
+    },
+    "meta": {
+      "plugins": "Plugins {n}",
+      "knowledge": "Knowledge {n}",
+      "tokens": "Tokens {n}"
+    },
+    "empty": "No matches. Try another category, source, or keyword.",
+    "addToPresets": "Add to my presets",
+    "presetNameSuffix": " (Community)",
+    "installOk": "Added “{name}”. You can view or edit it on the Presets page.",
+    "installFail": "Could not add. Please try again.",
+    "presetsHint": "After installing, find presets under",
+    "presetsLink": "Agent presets",
+    "catalogMeta": "Catalog: {source} · v{version}",
+    "catalogOrigin": {
+      "local": "Source: bundled seed",
+      "remote": "Source: merged remote catalog JSON",
+      "registry": "Source: MCP Registry + bundled seed",
+      "devBulk": "Source: seed + dev template bulk (development only)"
+    },
+    "loadError": "Failed to load catalog",
+    "detail": {
+      "back": "Back to list",
+      "notFound": "Item not found",
+      "sourceLink": "Open source page",
+      "systemRole": "System prompt",
+      "capabilities": "Capabilities",
+      "tags": "Tags"
+    },
+    "cap": {
+      "bash": "Bash",
+      "fileAccess": "File access",
+      "web": "Web",
+      "subAgent": "Sub-agent",
+      "dataStore": "Data store",
+      "on": "On",
+      "off": "Off"
+    },
+    "skill": {
+      "installGlobal": "Install to global Skills",
+      "installProject": "Install to current project",
+      "openSkillsPage": "Open Skills",
+    "preview": "Preview",
+    "sourceSection": "Source",
+    "openExternalSource": "Open reference link in browser",
+    "sourceFallbackPp": "**Provided by ProjectPilot** (no `sourceNote`): from bundled seeds, dev bulk, or a local row not overridden by remote merge; installs to your local data directory.",
+    "sourceFallbackUnknown": "**Unknown source** (no `sourceNote`): from a remote merged catalog, or this id was **overridden by remote JSON**. Verify trust before installing; ask the publisher for `sourceNote` / `sourceUrl`.",
+    "needProject": "Select a project in the workspace first",
+      "needProjectHint": "Project-scoped install needs an active project.",
+      "installOk": "Installed “{name}”. Open the Skills page to edit.",
+      "installFail": "Install failed. Please try again."
+    },
+    "mcp": {
+      "listHint": "Install merges into data-dir config/mcp-market.json and combines with the project .mcp.json when Claude starts.",
+      "installedBadge": "Added",
+      "addToMcpMarket": "Add to local MCP bundle",
+      "openMcpWorkspace": "Workspace MCP docs",
+      "configPreview": "Server config to merge",
+      "mergeHint": "Market file merges with project .mcp.json; project overrides on the same server key.",
+      "needProject": "This MCP needs a registered project path.",
+      "willUseProject": "Will substitute path using the selected project “{key}”.",
+      "selectProjectFirst": "Pick a current project before installing path-based MCP.",
+      "installOk": "Added MCP server “{key}”.",
+      "installFail": "Could not add. Please try again."
+    },
+    "placeholder": {
+      "backAssistants": "Back to assistants",
+      "model": {
+        "title": "Model discovery (coming soon)",
+        "body": "This tab mirrors LobeHub model listings. Configure models and providers in Settings."
+      },
+      "provider": {
+        "title": "Providers (coming soon)",
+        "body": "This tab mirrors LobeHub provider listings. Add custom providers under Settings → Models & providers."
+      }
+    }
+  },
   "folderExplorer": {
     "contextMenu": {
       "referenceChat": "Insert path into chat",
@@ -392,21 +515,6 @@
     "fieldContextStrategy": "Context injection",
     "strategyAdditive": "Additive project context (default)",
     "strategyExclusive": "Exclusive: only bound context"
-  },
-  "community": {
-    "title": "Community",
-    "subtitle": "Browse reusable templates and add them as runtime presets for new agents. Flow mirrors LobeHub-style discover → install (see docs/community-marketplace-lobechat-okr.md).",
-    "presetsHint": "Installed items appear under",
-    "presetsLink": "Runtime presets",
-    "catalogMeta": "Catalog: {source} · schema v{version}",
-    "searchPlaceholder": "Search title, description, or tags…",
-    "tagAll": "All",
-    "empty": "No matching items",
-    "loadError": "Failed to load catalog",
-    "addToPresets": "Add to my presets",
-    "presetNameSuffix": " (community)",
-    "installOk": "Preset “{name}” added",
-    "installFail": "Could not add preset"
   },
   "plans": {
     "title": "Execution Plan",

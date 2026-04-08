@@ -1,4 +1,5 @@
 import path from "node:path";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { spawn, execSync } from "node:child_process";
 import { createRequire } from "node:module";
@@ -9,8 +10,73 @@ const require = createRequire(import.meta.url);
 const { loadDevServerConfig, isDevStackReady } = require(
   path.join(root, "config", "load-dev-server.cjs"),
 );
+
+/**
+ * 解析 Electron 可执行文件路径。
+ * 1) PROJECT_PILOT_ELECTRON 或 ELECTRON_BINARY：指向本机二进制（macOS 常为 …/Electron.app/Contents/MacOS/Electron）
+ * 2) 否则 require("electron")（正常 npm/bun 安装）
+ * 3) 再否则 PATH 上的 `electron`（全局安装或 shim）
+ *
+ * 另：electron npm 包支持 ELECTRON_OVERRIDE_DIST_PATH 覆盖 dist 目录，见 node_modules/electron/index.js。
+ */
+function resolveElectronExecutable() {
+  const explicit =
+    process.env.PROJECT_PILOT_ELECTRON?.trim() ||
+    process.env.ELECTRON_BINARY?.trim();
+  if (explicit) {
+    if (existsSync(explicit)) return explicit;
+    console.error(
+      `[electron-dev] PROJECT_PILOT_ELECTRON / ELECTRON_BINARY 指向的文件不存在: ${explicit}`,
+    );
+    process.exit(1);
+  }
+
+  try {
+    const fromPkg = require("electron");
+    if (typeof fromPkg === "string" && existsSync(fromPkg)) {
+      return fromPkg;
+    }
+  } catch {
+    /* 未安装或安装不完整 */
+  }
+
+  let fromPath = null;
+  try {
+    if (process.platform === "win32") {
+      const out = execSync("where.exe electron", {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+        shell: true,
+      });
+      fromPath = out.split(/\r?\n/).map((l) => l.trim()).find(Boolean) ?? null;
+    } else {
+      fromPath = execSync("command -v electron", {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim() || null;
+    }
+  } catch {
+    /* 无全局 electron */
+  }
+
+  if (fromPath && existsSync(fromPath)) {
+    console.warn(`[electron-dev] node_modules/electron 不可用，改用 PATH 中的: ${fromPath}`);
+    return fromPath;
+  }
+
+  console.error(
+    [
+      "[electron-dev] 找不到 Electron 可执行文件。可选：",
+      "  • 在项目根执行 npm install / bun install",
+      "  • 或 export PROJECT_PILOT_ELECTRON='/path/to/Electron.app/Contents/MacOS/Electron'",
+      "  • 或安装全局 electron 并保证 `electron` 在 PATH 中",
+    ].join("\n"),
+  );
+  process.exit(1);
+}
+
 /** 直接指向 Electron 可执行文件，避免 Windows 上依赖 .cmd / shell 拼接 */
-const electronExe = require("electron");
+const electronExe = resolveElectronExecutable();
 
 const cfg = loadDevServerConfig(root);
 
@@ -37,6 +103,11 @@ async function startDevStackWithElectron() {
   const { default: waitOn } = await import("wait-on");
 
   const viteScript = path.join(root, "node_modules", "vite", "bin", "vite.js");
+  const devChildEnv = {
+    ...process.env,
+    NODE_ENV: process.env.NODE_ENV || "development",
+  };
+
   const vite = spawn(process.execPath, [
     viteScript,
     "--port",
@@ -47,13 +118,13 @@ async function startDevStackWithElectron() {
   ], {
     cwd: root,
     stdio: "inherit",
-    env: process.env,
+    env: devChildEnv,
   });
 
   const server = spawn("bun", ["./src/server/index.ts"], {
     cwd: root,
     stdio: "inherit",
-    env: process.env,
+    env: devChildEnv,
     shell: process.platform === "win32",
   });
 
