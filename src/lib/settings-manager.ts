@@ -577,6 +577,10 @@ export async function buildSdkQueryOptions(opts: {
   resumeSessionId?: string;
   cwd?: string;
   maxTurns?: number;
+  /** 最大预算（美元），超限返回 error_max_budget_usd */
+  maxBudgetUsd?: number;
+  /** SDK hooks 配置，支持 PreToolUse、PostToolUse 等事件干预 */
+  hooks?: SdkQueryOptions['hooks'];
 }): Promise<SdkQueryOptions> {
   const settings = await getSettings();
   const claude = settings.claude;
@@ -623,6 +627,8 @@ export async function buildSdkQueryOptions(opts: {
     ...(allowDangerouslySkipPermissions ? { allowDangerouslySkipPermissions: true } : {}),
     ...(allowedTools ? { allowedTools } : {}),
     ...(maxTurns && maxTurns > 0 ? { maxTurns } : {}),
+    ...(opts.maxBudgetUsd && opts.maxBudgetUsd > 0 ? { maxBudgetUsd: opts.maxBudgetUsd } : {}),
+    ...(opts.hooks ? { hooks: opts.hooks } : {}),
     ...(opts.resumeSessionId ? { resume: opts.resumeSessionId } : {}),
     ...(opts.systemPrompt ? {
       systemPrompt: opts.systemPrompt,

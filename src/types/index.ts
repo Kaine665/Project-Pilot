@@ -388,7 +388,23 @@ export type AgentEvent =
   | { type: 'awaiting_sub_agents' }
   | { type: 'done' }
   /** 流结束信号；前端在 `done` 后已可更新 UI，Transport 层据此关闭连接。 */
-  | { type: 'stream_end' };
+  | { type: 'stream_end' }
+  /** 会话结果详情（来自 SDK result 消息） */
+  | {
+      type: 'result_end';
+      subtype: 'success' | 'error_during_execution' | 'error_max_turns' | 'error_max_budget_usd' | 'error_max_structured_output_retries';
+      stopReason: string | null;
+      numTurns: number;
+      totalCostUsd: number;
+      durationMs: number;
+    }
+  /** 速率限制状态 */
+  | {
+      type: 'rate_limit';
+      status: 'allowed' | 'allowed_warning' | 'rejected';
+      utilization?: number;
+      resetsAt?: number;
+    };
 
 /** @deprecated 历史别名，新代码请用 AgentEvent */
 export type ChatSSEEvent = AgentEvent;

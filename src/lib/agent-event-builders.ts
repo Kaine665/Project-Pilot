@@ -107,3 +107,37 @@ export function formatCodexTodoSummaryLine(items: CodexTodoItem[]): string {
   if (!items.length) return '';
   return items.map((t) => `${t.completed ? '✓' : '○'} ${t.text}`).join(' · ');
 }
+
+// ── SDK result / rate_limit 事件构造 ─────────────────────────────────────────
+
+/** 会话结果详情事件（来自 SDK result 消息） */
+export function buildResultEnd(params: {
+  subtype: 'success' | 'error_during_execution' | 'error_max_turns' | 'error_max_budget_usd' | 'error_max_structured_output_retries';
+  stopReason: string | null;
+  numTurns: number;
+  totalCostUsd: number;
+  durationMs: number;
+}): AgentEvent {
+  return {
+    type: 'result_end',
+    subtype: params.subtype,
+    stopReason: params.stopReason,
+    numTurns: params.numTurns,
+    totalCostUsd: params.totalCostUsd,
+    durationMs: params.durationMs,
+  };
+}
+
+/** 速率限制状态事件 */
+export function buildRateLimit(params: {
+  status: 'allowed' | 'allowed_warning' | 'rejected';
+  utilization?: number;
+  resetsAt?: number;
+}): AgentEvent {
+  return {
+    type: 'rate_limit',
+    status: params.status,
+    ...(params.utilization != null ? { utilization: params.utilization } : {}),
+    ...(params.resetsAt != null ? { resetsAt: params.resetsAt } : {}),
+  };
+}

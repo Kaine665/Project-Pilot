@@ -16,6 +16,8 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentEvent } from '@/types';
 import {
   buildError,
+  buildRateLimit,
+  buildResultEnd,
   buildTextDelta,
   buildThinkingDelta,
   buildTokenUsage,
@@ -90,6 +92,20 @@ export class SdkEventAdapter {
       if (!this.sessionId && msg.session_id) {
         this.sessionId = msg.session_id;
       }
+
+      // 提取完整的 result 信息，发出 result_end 事件
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const msgAny = msg as any;
+      events.push(
+        buildResultEnd({
+          subtype: msg.subtype,
+          stopReason: msg.stop_reason ?? null,
+          numTurns: msgAny.num_turns ?? 0,
+          totalCostUsd: msgAny.total_cost_usd ?? 0,
+          durationMs: msgAny.duration_ms ?? 0,
+        }),
+      );
+
       // 如果是错误结果（error_during_execution 等），emit error event
       if (msg.subtype !== 'success') {
         events.push(buildError(`SDK query ended: ${msg.subtype}`));
@@ -97,7 +113,7 @@ export class SdkEventAdapter {
       // 从 modelUsage 提取精确的累计 token 用量（含跨工具调用的所有轮次）
       // modelUsage 字段使用 camelCase，且包含 contextWindow，是最可靠的数据来源
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const modelUsage = (msg as any).modelUsage as Record<string, { inputTokens?: number; outputTokens?: number; contextWindow?: number }> | undefined;
+      const modelUsage = msgAny.modelUsage as Record<string, { inputTokens?: number; outputTokens?: number; contextWindow?: number }> | undefined;
       if (modelUsage) {
         let inputTokens = 0;
         let outputTokens = 0;
@@ -119,6 +135,22 @@ export class SdkEventAdapter {
         }
       }
       // NOTE: 不在此处 emit done — done 由 AgentChatManager 在 query 迭代结束后统一处理
+      return events;
+    }
+
+    // 处理 rate_limit_event
+    if (msg.type === 'rate_limit_event') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const info = (msg as any).rate_limit_info;
+      if (info) {
+        events.push(
+          buildRateLimit({
+            status: info.status,
+            utilization: info.utilization,
+            resetsAt: info.resetsAt,
+          }),
+        );
+      }
       return events;
     }
 
