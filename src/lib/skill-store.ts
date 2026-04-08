@@ -10,6 +10,9 @@
  * 根下平铺（无 _ 前缀子目录）：`skills/{name}/SKILL.md` 仍支持列表与读取，可通过 API 迁到 _global。
  *
  * 版本历史：{skillDir}/.history/v_YYMMDD_HHmmss.md（最多 20 份）
+ *
+ * 标准包内子目录（与 UI / API 一致）：`scripts/`、`references/`、`assets/`。
+ * 注入 Agent 提示词时除 `SKILL.md` 正文外，会列出这些文件；小文本可在预算内内联，大文件与二进制仅列路径。
  */
 
 import { promises as fs } from 'fs';
@@ -33,6 +36,59 @@ const yaml = require('js-yaml') as {
 
 /** 最大 skill 文件大小：10MB */
 const MAX_SKILL_SIZE = 10 * 1024 * 1024;
+
+/** 注入提示词时：`scripts/`、`references/`、`assets/` 下单个文本文件最大内联字节数 */
+const MAX_SKILL_SUBFILE_INLINE_BYTES = 48 * 1024;
+
+/** 同一 skill 在三个子目录中内联正文的总预算（避免 prompt 爆炸） */
+const MAX_SKILL_BUNDLE_INLINE_TOTAL_BYTES = 256 * 1024;
+
+const SKILL_BUNDLE_TEXT_EXT = new Set([
+  '.md',
+  '.txt',
+  '.json',
+  '.jsonl',
+  '.yaml',
+  '.yml',
+  '.toml',
+  '.csv',
+  '.xml',
+  '.html',
+  '.htm',
+  '.css',
+  '.scss',
+  '.less',
+  '.sh',
+  '.bash',
+  '.zsh',
+  '.env',
+  '.gitignore',
+  '.mjs',
+  '.cjs',
+  '.js',
+  '.ts',
+  '.tsx',
+  '.jsx',
+  '.py',
+  '.sql',
+  '.ps1',
+  '.psm1',
+]);
+
+/** 内嵌子文件正文时：选比正文中最长连续 \` 串更长的围栏，避免破坏外层 Markdown。 */
+export function fenceLengthForEmbedding(content: string): number {
+  let maxRun = 0;
+  let current = 0;
+  for (let i = 0; i < content.length; i++) {
+    if (content[i] === '`') {
+      current++;
+      if (current > maxRun) maxRun = current;
+    } else {
+      current = 0;
+    }
+  }
+  return Math.max(3, maxRun + 1);
+}
 
 /** 版本历史最大保留数 */
 const MAX_SKILL_VERSIONS = 20;
@@ -580,6 +636,100 @@ function validateSubPath(subdir: string, fileName: string): { safeSubdir: SkillS
     throw new Error(`Invalid file name: ${fileName}`);
   }
   return { safeSubdir: subdir as SkillSubdir, safeName };
+}
+
+export interface SkillBundleAppendixOptions {
+  /** 单文件内联上限（字节），默认 48KB */
+  maxPerFile?: number;
+  /** 三目录合计内联上限（字节），默认 256KB */
+  maxTotal?: number;
+}
+
+function skillSubfileSortKey(item: SkillFileItem): number {
+  const i = SKILL_SUBDIRS.indexOf(item.subdir);
+  return i >= 0 ? i : 99;
+}
+
+function isSkillBundleTextFileName(fileName: string): boolean {
+  const ext = path.extname(fileName).toLowerCase();
+  if (ext && SKILL_BUNDLE_TEXT_EXT.has(ext)) return true;
+  const base = path.basename(fileName);
+  return base === 'Dockerfile' || base === 'Makefile' || base === 'LICENSE';
+}
+
+/**
+ * 为提示词组装追加「标准 skill 包」中 scripts / references / assets 的索引与可选内联正文。
+ * 大文件与二进制只列路径与大小，避免把整包塞进模型上下文。
+ */
+export async function formatSkillBundleAppendixForPrompt(
+  skillName: string,
+  scope: SkillScope = DEFAULT_SKILL_SCOPE,
+  opts?: SkillBundleAppendixOptions,
+): Promise<string> {
+  const maxPer = opts?.maxPerFile ?? MAX_SKILL_SUBFILE_INLINE_BYTES;
+  const maxTotal = opts?.maxTotal ?? MAX_SKILL_BUNDLE_INLINE_TOTAL_BYTES;
+  const items = await listSkillFiles(skillName, scope);
+  if (items.length === 0) return '';
+
+  const sorted = [...items].sort((a, b) => {
+    const d = skillSubfileSortKey(a) - skillSubfileSortKey(b);
+    if (d !== 0) return d;
+    const p = a.subdir.localeCompare(b.subdir);
+    if (p !== 0) return p;
+    return a.name.localeCompare(b.name);
+  });
+
+  const lines: string[] = [
+    '#### Skill bundle (scripts / references / assets)',
+    '',
+    '下列文件位于该 skill 目录下；需要时请通过工作区或 Skills 页打开对应路径。',
+  ];
+  let budget = maxTotal;
+
+  for (const item of sorted) {
+    const rel = `${item.subdir}/${item.name}`;
+    const tooBig = item.size > maxPer;
+    const textCandidate = isSkillBundleTextFileName(item.name);
+    const canTryRead = textCandidate && !tooBig && budget > 0;
+    if (!canTryRead) {
+      const reason = !textCandidate
+        ? '（非内联类型，请直接读盘）'
+        : tooBig
+          ? `（${item.size} bytes，超过单文件内联上限）`
+          : '（已达 skill 附件内联总预算）';
+      lines.push(`- \`${rel}\` — ${item.size} bytes ${reason}`);
+      continue;
+    }
+
+    const got = await readSkillSubFile(skillName, item.subdir, item.name, scope);
+    if (!got) {
+      lines.push(`- \`${rel}\` — （读取失败）`);
+      continue;
+    }
+
+    let slice = got.content;
+    if (Buffer.byteLength(slice, 'utf8') > maxPer) {
+      lines.push(`- \`${rel}\` — ${got.size} bytes （超过单文件内联上限，请直接读盘）`);
+      continue;
+    }
+
+    const used = Buffer.byteLength(slice, 'utf8');
+    if (used > budget) {
+      lines.push(`- \`${rel}\` — ${got.size} bytes （已达 skill 附件内联总预算，请直接读盘）`);
+      continue;
+    }
+    budget -= used;
+
+    const fenceLen = fenceLengthForEmbedding(slice);
+    const fence = '`'.repeat(fenceLen);
+    lines.push(`- \`${rel}\` (${got.size} bytes)`);
+    lines.push(fence);
+    lines.push(slice.trimEnd());
+    lines.push(fence);
+    lines.push('');
+  }
+
+  return `\n\n${lines.join('\n').trimEnd()}`;
 }
 
 export async function readSkillSubFile(

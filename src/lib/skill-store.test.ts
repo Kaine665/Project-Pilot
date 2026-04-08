@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseSkillFrontmatter, stripSkillFrontmatter } from './skill-store';
+import { parseSkillFrontmatter, stripSkillFrontmatter, fenceLengthForEmbedding } from './skill-store';
 
 test('parseSkillFrontmatter reads inline YAML fields', () => {
   const meta = parseSkillFrontmatter(`---
@@ -101,4 +101,10 @@ description: y
 Do the thing.
 `);
   assert.equal(body, '## Instructions\n\nDo the thing.');
+});
+
+test('fenceLengthForEmbedding extends fence when body has long backtick runs', () => {
+  assert.equal(fenceLengthForEmbedding('hello'), 3);
+  assert.equal(fenceLengthForEmbedding('a `` b'), 3);
+  assert.equal(fenceLengthForEmbedding('````'), 5);
 });

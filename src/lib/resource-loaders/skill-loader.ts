@@ -6,7 +6,8 @@
  *   "agent:xxx:safe-merge"      → agent-scoped
  *
  * 与 AgentSkills / OpenClaw 一致：注入 **完整 SKILL.md 正文**（frontmatter 外的说明），
- * 并在正文前附带 name + description 标题块，便于模型按标准 skill 结构阅读。
+ * 并附带 `scripts/`、`references/`、`assets/` 的索引（小文本在预算内内联，其余仅路径），
+ * 正文前附带 name + description 标题块。
  * `disable-model-invocation: true` 时不注入（返回空 content、ok: true）。
  *
  * Skill not found → ok: false (silent skip).
@@ -19,6 +20,7 @@ import {
   parseSkillFrontmatter,
   parseQualifiedId,
   stripSkillFrontmatter,
+  formatSkillBundleAppendixForPrompt,
 } from '../skill-store';
 
 export class SkillResourceLoader implements ResourceLoader {
@@ -42,7 +44,8 @@ export class SkillResourceLoader implements ResourceLoader {
       const headerLines = [`### Skill: ${name}`];
       if (description) headerLines.push(description);
       const header = `${headerLines.join('\n')}\n\n`;
-      const injected = `${header}${body}`.trimEnd();
+      const appendix = await formatSkillBundleAppendixForPrompt(skillName, scope);
+      const injected = `${header}${body}${appendix}`.trimEnd();
       return { ref, content: injected, ok: true };
     } catch {
       return { ref, content: '', ok: false };

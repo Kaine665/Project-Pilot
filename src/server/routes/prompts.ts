@@ -27,7 +27,11 @@ import {
   deleteSegment,
 } from '@/lib/segmented-prompt-store';
 import { assertDocumentTextWritable, documentTextWriteErrorResponse } from '@/lib/document-text-write-guard';
-import { parseSkillFrontmatter, stripSkillFrontmatter } from '@/lib/skill-store';
+import {
+  parseSkillFrontmatter,
+  stripSkillFrontmatter,
+  formatSkillBundleAppendixForPrompt,
+} from '@/lib/skill-store';
 
 const app = new Hono();
 
@@ -296,16 +300,18 @@ app.get('/prompt-blocks', async (c) => {
               ? `### Skill: ${displayName}\n${meta.description.trim()}\n\n${body}`
               : `### Skill: ${displayName}\n\n${body}`).trim()
             : content;
+          const appendix = noInject ? '' : await formatSkillBundleAppendixForPrompt(skillName, scope);
+          const fullInject = `${injectPreview}${appendix}`.trim();
           blocks.push({
             id: `${idPrefix}-${skillName}`,
             name: displayName,
             description: scopeHint,
             source: 'skill',
-            tokenEstimate: noInject ? 0 : estimateTokens(injectPreview.trim()),
+            tokenEstimate: noInject ? 0 : estimateTokens(fullInject),
             enabled: true,
             contentPreview: noInject
               ? truncate('（disable-model-invocation：不注入模型提示词）')
-              : truncate(body || content),
+              : truncate(fullInject || body || content),
             location: skillMd,
           });
         }

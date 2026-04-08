@@ -116,7 +116,7 @@ export PROJECT_PILOT_DATA_DIR=/path/to/custom-root
 
 与 [AgentSkills](https://agentskills.io/) / [OpenClaw Skills](https://docs.clawdbot.com/skills) 对齐：每个 skill 是一个目录，根文件为 `SKILL.md`，**顶部 YAML frontmatter 至少含 `name` 与 `description`**，其后为给模型阅读的说明正文。
 
-当 Agent 或会话通过 `ResourceRef`（`type: skill`）绑定 skill 时，`SkillResourceLoader` 会把 **frontmatter 外的正文** 注入系统提示词的组装结果；正文前会附带 `### Skill: {name}` 与 `description` 行，便于与目录中 `SKILL.md` 的结构对应。若 frontmatter 含 `disable-model-invocation: true`（OpenClaw 可选键），则**不向模型注入**该 skill（与 OpenClaw「仅用户侧可调」语义一致）。
+当 Agent 或会话通过 `ResourceRef`（`type: skill`）绑定 skill 时，`SkillResourceLoader` 会把 **frontmatter 外的正文** 注入系统提示词的组装结果；正文前会附带 `### Skill: {name}` 与 `description` 行，便于与目录中 `SKILL.md` 的结构对应。同一 skill 目录下的 **`scripts/`、`references/`、`assets/`** 会生成**文件清单**；常见文本后缀（`.md`、`.txt`、`.json`、`.ts` 等）在大小与总预算允许时**内联正文**，过大或非文本类型仅列路径，避免把整个 skill 包无界塞进 prompt。若 frontmatter 含 `disable-model-invocation: true`（OpenClaw 可选键），则**不向模型注入**该 skill（与 OpenClaw「仅用户侧可调」语义一致）。
 
 磁盘布局与历史目录约定见 [`src/lib/skill-store.ts`](../src/lib/skill-store.ts) 文件头注释（`_global` / `_projects` / `_agents`、根下平铺遗留路径等）。**提示词树**（`GET` 组装各 scope 的 prompt blocks，见 [`src/server/routes/prompts.ts`](../src/server/routes/prompts.ts)）中 Skill 条目的 token 估算与预览与上述注入逻辑一致（`disable-model-invocation` 时估算为 0、预览提示不注入）。
 
