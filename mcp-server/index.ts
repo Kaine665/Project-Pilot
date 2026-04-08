@@ -5,7 +5,9 @@
  *
  * 能力域：Projects · Documents · Todos · Agents · Skills · Prompts（只读）
  *
- * 启动方式: npx tsx mcp-server/index.ts
+ * 本地开发：`npm run mcp` 或 `npx tsx mcp-server/index.ts`（在仓库根、已 `npm install`）。
+ * **Cursor 外部 MCP**：见仓库根 `.cursor/mcp.json` 与 `docs/cursor-mcp-project-pilot.md`
+ * （须 `node` + `tsx/dist/cli.mjs` + `TSX_TSCONFIG_PATH`；勿用 `npm run mcp` 作 Cursor 启动命令，避免污染 stdout）。
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';

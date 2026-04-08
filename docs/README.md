@@ -50,6 +50,7 @@ docs/
 
 - **分支语义与 GitHub 权限（维护者清单）**：[github-branch-policy.md](./github-branch-policy.md)
 - **贡献者日常流程**：仓库 [`../CONTRIBUTING.md`](../CONTRIBUTING.md)
+- **Cursor 接入 ProjectPilot MCP（路径、`TSX_TSCONFIG_PATH`、嵌套布局）**：[cursor-mcp-project-pilot.md](./cursor-mcp-project-pilot.md)
 
 ### 领域与路线图
 

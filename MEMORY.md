@@ -42,6 +42,10 @@
 
 - **`main`** 稳定可发布；**`next`** 日常集成；**`feature/*`** 从 `next` 开、PR → `next`；**`hotfix/*`** 从 `main` 开、PR → `main` 并回灌 `next`。详情 **[`CONTRIBUTING.md`](CONTRIBUTING.md)**；GitHub 保护规则 **[`docs/github-branch-policy.md`](docs/github-branch-policy.md)**。
 
+## Cursor MCP（外部）
+
+- 仓库根 **`.cursor/mcp.json`** 启动 **`project-pilot`** stdio MCP：用 **`node`** + **`node_modules/tsx/dist/cli.mjs`**，并设 **`TSX_TSCONFIG_PATH=tsconfig.json`**（否则 `@/` 解析失败）。若应用仅在 **`develop-static/`** 子目录，路径前缀与 tsconfig 见 **[`docs/cursor-mcp-project-pilot.md`](docs/cursor-mcp-project-pilot.md)**。
+
 ## 数据存储
 
 - 数据布局：本机 `~/.project-pilot/README.md` + **`数据文件夹现状.md`**；仓库内与代码对齐的索引 **[`docs/data-storage.md`](docs/data-storage.md)**（`file-store` 默认 **`~/.project-pilot`**，不再默认 `~/.project-pilot/data/`）。对齐 2026-04-03
