@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseSkillFrontmatter, stripSkillFrontmatter, fenceLengthForEmbedding } from './skill-store';
+import {
+  parseSkillFrontmatter,
+  stripSkillFrontmatter,
+  fenceLengthForEmbedding,
+  parseSkillBundleRelativePath,
+} from './skill-store';
 
 test('parseSkillFrontmatter reads inline YAML fields', () => {
   const meta = parseSkillFrontmatter(`---
@@ -107,4 +112,14 @@ test('fenceLengthForEmbedding extends fence when body has long backtick runs', (
   assert.equal(fenceLengthForEmbedding('hello'), 3);
   assert.equal(fenceLengthForEmbedding('a `` b'), 3);
   assert.equal(fenceLengthForEmbedding('````'), 5);
+});
+
+test('parseSkillBundleRelativePath accepts one-level scripts|references|assets paths', () => {
+  assert.deepEqual(parseSkillBundleRelativePath('references/foo.md'), {
+    subdir: 'references',
+    fileName: 'foo.md',
+  });
+  assert.equal(parseSkillBundleRelativePath('references/a/b.md'), null);
+  assert.equal(parseSkillBundleRelativePath('../x'), null);
+  assert.equal(parseSkillBundleRelativePath('other/x.txt'), null);
 });

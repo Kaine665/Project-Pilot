@@ -72,6 +72,7 @@
 - Prompt 构建通过 **Resource 系统**：`defaultResources` / `resourceRefs` → `ResourceRegistry.loadAll()` → 按 priority 排序加载
 - Resource 类型（节选）：`design-docs-index`、`global-prompt`、`project-prompt`、`inline-text`、`todo-list`、`flow-context`、`reference-turns`、`skill` 等；**无** `context-index` / `context` 运行时加载
 - **`skill` 资源**：`SkillResourceLoader` 按 AgentSkills/OpenClaw 约定注入 `SKILL.md` 的 **frontmatter 外正文**（外加 `### Skill:` 标题行），并追加 `scripts/`、`references/`、`assets/` 的**清单 + 小文本内联**（有单文件与合计字节上限）；`disable-model-invocation: true` 时不注入；提示词树 API（`routes/prompts.ts`）对 Skill 块的 token 估算与预览与此对齐
+- **Skill 全链路**：`GET /api/skills` 与 `GET /api/skills/:name` 带 **`bundle`** 汇总；**`POST /api/skills/import-zip`** 导入 ZIP 写入三子目录；社区 `bundleFiles` 与 `parseSkillBundleRelativePath` 同规则
 - Butler 是默认 agent；内置提示词种子在仓库 `src/data/defaults/prompts/builtin/`（含 `manifest.json` 版本号），运行时落在 `~/.project-pilot/prompts/builtin/`；种子版本升高时自动备份并覆盖 builtin 下 md，`.applied-builtin-prompts.json` 记录已应用版本
 - **全局约束**（`global-prompt`）：默认模板经 `prompts/builtin/global.md` 提供；用户可在 `prompts/global.md` 或设置里覆盖。`agent-data-info` 仅在 **dataStore** 时列出 `agents/workspaces/<id>/` 下文件
 - **未读消息**：`AgentChatSession.unreadCount` 字段，`persistSession()` 递增，`markAsRead()` 清零

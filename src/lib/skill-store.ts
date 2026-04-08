@@ -258,6 +258,35 @@ export interface SkillListItem {
   scope: SkillScope;
   /** 磁盘目录名（与 front matter 的 name 可不同）；API 与读盘优先用此字段 */
   dirName?: string;
+  /** `scripts/`、`references/`、`assets/` 汇总（列表/统计用） */
+  bundle?: SkillBundleSummary;
+}
+
+/** 标准 skill 包三子目录的文件数与字节合计 */
+export interface SkillBundleSummary {
+  fileCount: number;
+  totalBytes: number;
+  bySubdir: Partial<Record<SkillSubdir, { fileCount: number; totalBytes: number }>>;
+}
+
+/**
+ * 校验相对路径是否为 `scripts|references|assets` 下的一层文件名（用于导入 / 远程 bundle）。
+ */
+export function parseSkillBundleRelativePath(rel: string): { subdir: SkillSubdir; fileName: string } | null {
+  const norm = rel.replace(/\\/g, '/').replace(/^\/+/, '').trim();
+  if (!norm || norm.includes('..')) return null;
+  const lower = norm.toLowerCase();
+  for (const sub of SKILL_SUBDIRS) {
+    const prefix = `${sub}/`;
+    if (lower.startsWith(prefix)) {
+      const rest = norm.slice(sub.length + 1);
+      if (!rest || rest.includes('/') || rest.includes('..')) return null;
+      const safeName = path.basename(rest);
+      if (!safeName || safeName !== rest) return null;
+      return { subdir: sub, fileName: safeName };
+    }
+  }
+  return null;
 }
 
 /** global：优先 `skills/_global/<dir>/`，否则根下平铺 `skills/<dir>/` */
@@ -313,10 +342,10 @@ export async function listSkills(scope: SkillScope = DEFAULT_SKILL_SCOPE): Promi
         dirName: leg.dirName,
       });
     }
-    return Array.from(byDir.values()).sort((a, b) => a.name.localeCompare(b.name));
+    return attachBundleSummaries(Array.from(byDir.values()).sort((a, b) => a.name.localeCompare(b.name)));
   }
   const scopedDir = getScopedSkillsDir(scope);
-  return scanSkillsInDir(scopedDir, scope);
+  return attachBundleSummaries(await scanSkillsInDir(scopedDir, scope));
 }
 
 /**
@@ -625,6 +654,34 @@ export async function listSkillFiles(
   }
 
   return results;
+}
+
+export async function summarizeSkillBundle(
+  skillName: string,
+  scope: SkillScope = DEFAULT_SKILL_SCOPE,
+): Promise<SkillBundleSummary | undefined> {
+  const items = await listSkillFiles(skillName, scope);
+  if (items.length === 0) return undefined;
+  let totalBytes = 0;
+  const bySubdir: Partial<Record<SkillSubdir, { fileCount: number; totalBytes: number }>> = {};
+  for (const it of items) {
+    totalBytes += it.size;
+    const cur = bySubdir[it.subdir] ?? { fileCount: 0, totalBytes: 0 };
+    cur.fileCount += 1;
+    cur.totalBytes += it.size;
+    bySubdir[it.subdir] = cur;
+  }
+  return { fileCount: items.length, totalBytes, bySubdir };
+}
+
+export async function attachBundleSummaries(items: SkillListItem[]): Promise<SkillListItem[]> {
+  return Promise.all(
+    items.map(async (item) => {
+      const diskKey = item.dirName ?? item.name;
+      const bundle = await summarizeSkillBundle(diskKey, item.scope);
+      return bundle ? { ...item, bundle } : item;
+    }),
+  );
 }
 
 function validateSubPath(subdir: string, fileName: string): { safeSubdir: SkillSubdir; safeName: string } {
