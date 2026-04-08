@@ -42,10 +42,37 @@ const MAX_SKILL_VERSIONS = 20;
 export interface SkillMeta {
   name: string;
   description: string;
+  /**
+   * OpenClaw / AgentSkills：`disable-model-invocation: true` 时不把该 skill 注入模型提示词
+   *（仍可通过用户侧 slash 等入口使用，与 OpenClaw 语义一致）。
+   */
+  disableModelInvocation?: boolean;
+}
+
+function parseYamlBoolean(value: unknown): boolean | undefined {
+  if (value === true) return true;
+  if (value === false) return false;
+  if (typeof value === 'string') {
+    const s = value.trim().toLowerCase();
+    if (s === 'true') return true;
+    if (s === 'false') return false;
+  }
+  return undefined;
 }
 
 /**
- * 解析 SKILL.md 顶部的 YAML frontmatter（仅提取 name 和 description）。
+ * 去掉首个 YAML frontmatter 块，返回正文（与 OpenClaw「SKILL.md = frontmatter + 说明」一致）。
+ * 无合法起始 `---`…`---` 时返回全文 trim。
+ */
+export function stripSkillFrontmatter(content: string): string {
+  const match = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?([\s\S]*)$/);
+  if (!match) return content.trim();
+  return match[1].replace(/^\n+/, '').trimEnd();
+}
+
+/**
+ * 解析 SKILL.md 顶部的 YAML frontmatter（AgentSkills 必填：name、description）。
+ * 同时识别 OpenClaw 可选键 `disable-model-invocation`。
  */
 export function parseSkillFrontmatter(content: string): SkillMeta | null {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
@@ -60,7 +87,12 @@ export function parseSkillFrontmatter(content: string): SkillMeta | null {
     ? frontmatter.description.trim()
     : '';
   if (!name) return null;
-  return { name, description };
+  const disableModelInvocation = parseYamlBoolean(frontmatter['disable-model-invocation']);
+  const out: SkillMeta = { name, description };
+  if (disableModelInvocation === true) {
+    out.disableModelInvocation = true;
+  }
+  return out;
 }
 
 // ── 基础读写（scope-aware）──
