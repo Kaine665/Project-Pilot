@@ -869,6 +869,31 @@ export function AgentChatPanel({
             case 'stream_end':
               // SSE 正常结束；UI 已在 `done` 时 finalize。
               break;
+
+            case 'result_end': {
+              // 会话结果详情：可以显示统计信息（轮次、成本、时长）
+              console.log('[AgentChat] result_end:', {
+                subtype: event.subtype,
+                stopReason: event.stopReason,
+                numTurns: event.numTurns,
+                totalCostUsd: event.totalCostUsd,
+                durationMs: event.durationMs,
+              });
+              // 可以在这里 dispatch 到 store 或显示 toast
+              break;
+            }
+
+            case 'rate_limit': {
+              // 速率限制状态
+              if (event.status === 'rejected') {
+                const resetTime = event.resetsAt ? new Date(event.resetsAt * 1000).toLocaleTimeString() : '未知';
+                console.warn(`[AgentChat] 速率限制，将在 ${resetTime} 恢复`);
+              } else if (event.status === 'allowed_warning') {
+                const utilizationPct = Math.round((event.utilization ?? 0) * 100);
+                console.warn(`[AgentChat] 接近速率限制，已使用 ${utilizationPct}%`);
+              }
+              break;
+            }
           }
         }
 
