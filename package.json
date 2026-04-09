@@ -50,14 +50,18 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "public/icon.png"
+      "icon": "public/icon.png",
+      "signAndEditExecutable": false
     },
     "mac": {
       "target": [
         "dmg",
         "zip"
       ],
-      "icon": "public/icon.png"
+      "icon": "public/icon.png",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "identity": null
     },
     "nsis": {
       "oneClick": true,
