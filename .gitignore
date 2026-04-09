@@ -22,6 +22,7 @@
 /dist
 
 # misc
+.mcp-stdin-null
 .DS_Store
 *.pem
 
