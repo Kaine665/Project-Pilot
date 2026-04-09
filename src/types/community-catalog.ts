@@ -80,6 +80,11 @@ export interface CommunitySkillSeedItem {
   updatedAt?: string;
   dirName: string;
   skillMarkdown: string;
+  /**
+   * 可选：与 `SKILL.md` 一并安装到 `scripts/`、`references/`、`assets/` 的文本文件。
+   * key 为相对路径（如 `references/api.md`），value 为 UTF-8 正文。
+   */
+  bundleFiles?: Record<string, string>;
   /** 英文界面详情预览；缺省用 skillMarkdown */
   skillMarkdownEn?: string;
   /** 人类可读来源说明（中文） */

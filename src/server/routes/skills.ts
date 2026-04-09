@@ -18,9 +18,11 @@ import {
   readSkillSubFile,
   writeSkillSubFile,
   deleteSkillSubFile,
+  summarizeSkillBundle,
 } from '@/lib/skill-store';
 import { exportSkill, listExportFormats } from '@/lib/skill-export';
 import type { SkillScope } from '@/lib/file-store';
+import { installSkillFromZipBuffer } from '@/lib/skill-zip-import';
 
 const app = new Hono();
 
@@ -187,6 +189,31 @@ app.post('/', async (c) => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /import-zip — Install skill from ZIP (SKILL.md + scripts|references|assets)
+// Must stay before GET /:name
+// ---------------------------------------------------------------------------
+
+app.post('/import-zip', async (c) => {
+  try {
+    const url = new URL(c.req.url);
+    const scope = parseScopeFromParams(url.searchParams);
+    const body = await c.req.parseBody();
+    const file = body.file;
+    const dirNameOverride =
+      typeof body.dirName === 'string' && body.dirName.trim() ? body.dirName.trim() : undefined;
+    if (!file || typeof (file as Blob).arrayBuffer !== 'function') {
+      return c.json({ error: 'multipart field "file" (ZIP) is required' }, 400);
+    }
+    const buf = Buffer.from(await (file as Blob).arrayBuffer());
+    const result = await installSkillFromZipBuffer(buf, scope, { dirNameOverride });
+    return c.json(result, 201);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return c.json({ error: message }, 400);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /export-all — Batch export all skills as ZIP
 // ---------------------------------------------------------------------------
 
@@ -259,11 +286,13 @@ app.get('/:name', async (c) => {
       return c.json({ error: 'Skill not found' }, 404);
     }
     const meta = parseSkillFrontmatter(content);
+    const bundle = await summarizeSkillBundle(name, scope);
     return c.json({
       name: meta?.name ?? name,
       description: meta?.description ?? '',
       content,
       scope,
+      ...(bundle ? { bundle } : {}),
     });
   } catch (error) {
     return c.json({ error: String(error) }, 500);

@@ -23,7 +23,7 @@ export type ResourceType =
   | 'shared-memory'                // Agent shared memory (blackboard)
   | 'global-prompt'                // Global prompt injected into every agent
   | 'project-prompt'               // Project-level prompt injected when projectKey is set
-  | 'skill'                        // Skill bound to agent (name + description summary)
+  | 'skill'                        // AgentSkills：SKILL.md（frontmatter + 正文）注入提示词
   | 'agent-data-info'              // Agent private data store directory listing
   | 'prompt-block'                  // Reusable prompt fragment (from prompts/blocks/)
   | 'inbox-digest';                 // Agent inbox — recent changes since last session

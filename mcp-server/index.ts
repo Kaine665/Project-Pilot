@@ -358,9 +358,10 @@ server.tool(
       count: skills.length,
       skills: skills.map((s) => ({
         name: s.name,
-        qualifiedId: s.qualifiedId,
+        dirName: s.dirName ?? s.name,
         scope: s.scope,
         description: s.description,
+        bundle: s.bundle,
       })),
     });
   },

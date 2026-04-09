@@ -27,6 +27,11 @@ import {
   deleteSegment,
 } from '@/lib/segmented-prompt-store';
 import { assertDocumentTextWritable, documentTextWriteErrorResponse } from '@/lib/document-text-write-guard';
+import {
+  parseSkillFrontmatter,
+  stripSkillFrontmatter,
+  formatSkillBundleAppendixForPrompt,
+} from '@/lib/skill-store';
 
 const app = new Hono();
 
@@ -285,14 +290,28 @@ app.get('/prompt-blocks', async (c) => {
         const skillMd = getSkillFilePath(skillName, scope);
         const content = await safeReadFile(skillMd);
         if (content) {
+          const meta = parseSkillFrontmatter(content);
+          const displayName = meta?.name?.trim() || skillName;
+          const scopeHint = meta?.description?.trim() ? `${label} · ${meta.description.trim()}` : label;
+          const noInject = meta?.disableModelInvocation === true;
+          const body = meta ? stripSkillFrontmatter(content) : content.trim();
+          const injectPreview = meta
+            ? (meta.description?.trim()
+              ? `### Skill: ${displayName}\n${meta.description.trim()}\n\n${body}`
+              : `### Skill: ${displayName}\n\n${body}`).trim()
+            : content;
+          const appendix = noInject ? '' : await formatSkillBundleAppendixForPrompt(skillName, scope);
+          const fullInject = `${injectPreview}${appendix}`.trim();
           blocks.push({
             id: `${idPrefix}-${skillName}`,
-            name: skillName,
-            description: label,
+            name: displayName,
+            description: scopeHint,
             source: 'skill',
-            tokenEstimate: estimateTokens(content),
+            tokenEstimate: noInject ? 0 : estimateTokens(fullInject),
             enabled: true,
-            contentPreview: truncate(content),
+            contentPreview: noInject
+              ? truncate('（disable-model-invocation：不注入模型提示词）')
+              : truncate(fullInject || body || content),
             location: skillMd,
           });
         }

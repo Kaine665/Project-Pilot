@@ -5,7 +5,7 @@
 > - **本机迁移与现实**：`~/.project-pilot/数据文件夹现状.md`  
 > - **代码中的路径**：[`src/lib/file-store.ts`](../src/lib/file-store.ts)（`PROJECT_PILOT_DATA_DIR` 未设置时默认 `path.join(os.homedir(), '.project-pilot')`）  
 > - **本文**：与当前 `develop-static` 实现一致的目录树与主要 getter 索引，便于人类与 Agent 对齐认知。  
-> **对齐日期**：2026-04-07。  
+> **对齐日期**：2026-04-08。  
 > **给 AI**：多厂商入口（Cursor / Claude / 内置提示词）如何一起更新，见 [`AI_AGENT_KNOWLEDGE_MAP.md`](./AI_AGENT_KNOWLEDGE_MAP.md)。
 
 ## 默认数据根
@@ -67,7 +67,7 @@ export PROJECT_PILOT_DATA_DIR=/path/to/custom-root
     global.md
     agents/  history/  runtime/  blocks/  projects/
   artifacts/
-  skills/
+  skills/                       # 见下文「Skills 磁盘与注入」
     _global/  _projects/  _agents/
     _vendor/
   mcp/                          # 若已使用
@@ -111,6 +111,20 @@ export PROJECT_PILOT_DATA_DIR=/path/to/custom-root
 | `prompts/agents/<id>.md` | Agent 提示词（用户正式版，优先于 builtin） | `getPromptFilePath` |
 
 完整列表以 `file-store.ts` 为准。
+
+## Skills 磁盘与注入
+
+与 [AgentSkills](https://agentskills.io/) / [OpenClaw Skills](https://docs.clawdbot.com/skills) 对齐：每个 skill 是一个目录，根文件为 `SKILL.md`，**顶部 YAML frontmatter 至少含 `name` 与 `description`**，其后为给模型阅读的说明正文。
+
+当 Agent 或会话通过 `ResourceRef`（`type: skill`）绑定 skill 时，`SkillResourceLoader` 会把 **frontmatter 外的正文** 注入系统提示词的组装结果；正文前会附带 `### Skill: {name}` 与 `description` 行，便于与目录中 `SKILL.md` 的结构对应。同一 skill 目录下的 **`scripts/`、`references/`、`assets/`** 会生成**文件清单**；常见文本后缀（`.md`、`.txt`、`.json`、`.ts` 等）在大小与总预算允许时**内联正文**，过大或非文本类型仅列路径，避免把整个 skill 包无界塞进 prompt。若 frontmatter 含 `disable-model-invocation: true`（OpenClaw 可选键），则**不向模型注入**该 skill（与 OpenClaw「仅用户侧可调」语义一致）。
+
+磁盘布局与历史目录约定见 [`src/lib/skill-store.ts`](../src/lib/skill-store.ts) 文件头注释（`_global` / `_projects` / `_agents`、根下平铺遗留路径等）。**提示词树**（`GET` 组装各 scope 的 prompt blocks，见 [`src/server/routes/prompts.ts`](../src/server/routes/prompts.ts)）中 Skill 条目的 token 估算与预览与上述注入逻辑一致（`disable-model-invocation` 时估算为 0、预览提示不注入）。
+
+**导入与清单**：
+
+- **`POST /api/skills/import-zip`**（`multipart/form-data`，字段 `file` = 与导出一致的 ZIP）：写入 `SKILL.md` 及允许的 `scripts/`、`references/`、`assets/` 一层文件；可选字段 `dirName` 覆盖目录名。实现见 [`src/lib/skill-zip-import.ts`](../src/lib/skill-zip-import.ts)。
+- **`GET /api/skills`** 列表项带 **`bundle`**（三子目录文件数与字节合计），便于 UI/工具在「计算」侧感知附件规模。
+- **社区安装** `POST /api/community/skills/install`：除 `skillMarkdown` 外，目录 JSON 可含可选 **`bundleFiles`**（`Record<相对路径, UTF-8 正文>`，路径须为 `scripts|references|assets` 下单层文件名），与上述三目录对齐。
 
 **内置提示词版本**：仓库种子目录 `src/data/defaults/prompts/builtin/manifest.json` 中的 `version` 大于数据目录 `.applied-builtin-prompts.json` 时，服务启动会将种子中的 `global.md` 与 `agents/*.md` **整包覆盖**写入 `prompts/builtin/`（覆盖前把旧文件拷到 `prompts/builtin/.backups/pre-upgrade-to-v{N}-时间戳/`）。若数据目录版本更高（例如降级安装旧应用），则**不覆盖**仅补缺文件。长期定制请优先使用 `prompts/agents/<id>.md`（正式版，优先级高于 builtin）。
 

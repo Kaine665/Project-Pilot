@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseSkillFrontmatter } from './skill-store';
+import {
+  parseSkillFrontmatter,
+  stripSkillFrontmatter,
+  fenceLengthForEmbedding,
+  parseSkillBundleRelativePath,
+} from './skill-store';
 
 test('parseSkillFrontmatter reads inline YAML fields', () => {
   const meta = parseSkillFrontmatter(`---
@@ -72,4 +77,49 @@ Body`);
     name: 'sample-skill',
     description: 'First line.\nSecond line.',
   });
+});
+
+test('parseSkillFrontmatter reads disable-model-invocation', () => {
+  const meta = parseSkillFrontmatter(`---
+name: gated
+description: Hidden from model
+disable-model-invocation: true
+---
+
+Never show this body in prompt.`);
+
+  assert.deepEqual(meta, {
+    name: 'gated',
+    description: 'Hidden from model',
+    disableModelInvocation: true,
+  });
+});
+
+test('stripSkillFrontmatter returns body after closing ---', () => {
+  const body = stripSkillFrontmatter(`---
+name: x
+description: y
+---
+
+## Instructions
+
+Do the thing.
+`);
+  assert.equal(body, '## Instructions\n\nDo the thing.');
+});
+
+test('fenceLengthForEmbedding extends fence when body has long backtick runs', () => {
+  assert.equal(fenceLengthForEmbedding('hello'), 3);
+  assert.equal(fenceLengthForEmbedding('a `` b'), 3);
+  assert.equal(fenceLengthForEmbedding('````'), 5);
+});
+
+test('parseSkillBundleRelativePath accepts one-level scripts|references|assets paths', () => {
+  assert.deepEqual(parseSkillBundleRelativePath('references/foo.md'), {
+    subdir: 'references',
+    fileName: 'foo.md',
+  });
+  assert.equal(parseSkillBundleRelativePath('references/a/b.md'), null);
+  assert.equal(parseSkillBundleRelativePath('../x'), null);
+  assert.equal(parseSkillBundleRelativePath('other/x.txt'), null);
 });

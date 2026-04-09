@@ -16,7 +16,12 @@ import {
   resolveMcpCatalogItems,
   resolveSkillsCatalogItems,
 } from '@/lib/community-catalog-remote';
-import { parseSkillFrontmatter, writeSkillFile } from '@/lib/skill-store';
+import {
+  parseSkillFrontmatter,
+  parseSkillBundleRelativePath,
+  writeSkillFile,
+  writeSkillSubFile,
+} from '@/lib/skill-store';
 import type { SkillScope } from '@/lib/file-store';
 import type { CommunityCatalogItem, CommunityMcpSeedItem, CommunitySkillSeedItem } from '@/types/community-catalog';
 
@@ -106,7 +111,40 @@ app.post('/skills/install', async (c) => {
     }
     const skillName = seed.dirName?.trim() || meta.name;
     await writeSkillFile(skillName, seed.skillMarkdown, scope);
-    return c.json({ ok: true, name: skillName, scope }, 201);
+
+    const bundleWritten: string[] = [];
+    const bundleSkipped: string[] = [];
+    if (seed.bundleFiles && typeof seed.bundleFiles === 'object') {
+      for (const [rel, raw] of Object.entries(seed.bundleFiles)) {
+        if (typeof raw !== 'string') {
+          bundleSkipped.push(rel);
+          continue;
+        }
+        const mapped = parseSkillBundleRelativePath(rel);
+        if (!mapped) {
+          bundleSkipped.push(rel);
+          continue;
+        }
+        try {
+          await writeSkillSubFile(skillName, mapped.subdir, mapped.fileName, raw, scope);
+          bundleWritten.push(rel);
+        } catch {
+          bundleSkipped.push(rel);
+        }
+      }
+    }
+
+    return c.json(
+      {
+        ok: true,
+        name: skillName,
+        scope,
+        ...(bundleWritten.length || bundleSkipped.length
+          ? { bundleWritten, bundleSkipped }
+          : {}),
+      },
+      201,
+    );
   } catch (e) {
     return c.json({ error: String(e) }, 500);
   }
