@@ -20,9 +20,9 @@
     "migrate:layout": "tsx scripts/run-layout-migrations.ts",
     "electron:dev": "node scripts/electron-dev.mjs",
     "electron:compile": "tsc -p electron/tsconfig.json",
-    "electron:build": "cross-env NODE_ENV=production npm run build && npm run electron:compile && electron-builder --win",
-    "electron:build:win": "cross-env NODE_ENV=production npm run build && npm run electron:compile && electron-builder --win",
-    "electron:build:mac": "cross-env NODE_ENV=production npm run build && npm run electron:compile && electron-builder --mac",
+    "electron:build": "cross-env NODE_ENV=production npm run build && npm run electron:compile && electron-builder --win --publish never",
+    "electron:build:win": "cross-env NODE_ENV=production npm run build && npm run electron:compile && electron-builder --win --publish never",
+    "electron:build:mac": "cross-env NODE_ENV=production npm run build && npm run electron:compile && electron-builder --mac --publish never",
     "release:desktop:bump": "node scripts/bump-desktop-release.mjs",
     "gen:dev-community": "node scripts/gen-community-dev-bulk.mjs",
     "patch:community-skills-sources": "node scripts/patch-community-skills-sources.mjs",
@@ -35,6 +35,7 @@
   "build": {
     "appId": "com.projectpilot.app",
     "productName": "ProjectPilot",
+    "publish": null,
     "directories": {
       "output": "build"
     },

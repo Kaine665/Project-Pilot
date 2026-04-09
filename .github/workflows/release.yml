@@ -33,7 +33,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install dependencies
@@ -46,9 +46,7 @@ jobs:
         run: npm run electron:compile
 
       - name: Package Windows installer (NSIS .exe)
-        run: npx electron-builder --win
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --publish never
 
       - name: List build output
         run: Get-ChildItem -Recurse build | ForEach-Object { $_.FullName }
@@ -78,7 +76,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install dependencies
@@ -91,9 +89,8 @@ jobs:
         run: npm run electron:compile
 
       - name: Package macOS (DMG + ZIP, unsigned)
-        run: npx electron-builder --mac
+        run: npx electron-builder --mac --publish never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
       - name: List build output
