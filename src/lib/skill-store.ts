@@ -34,8 +34,8 @@ const yaml = require('js-yaml') as {
   load(input: string): unknown;
 };
 
-/** 最大 skill 文件大小：10MB */
-const MAX_SKILL_SIZE = 10 * 1024 * 1024;
+/** 最大 skill 文件大小：10MB（ZIP 导入等需与 skill-store 校验一致） */
+export const MAX_SKILL_SIZE = 10 * 1024 * 1024;
 
 /** 注入提示词时：`scripts/`、`references/`、`assets/` 下单个文本文件最大内联字节数 */
 const MAX_SKILL_SUBFILE_INLINE_BYTES = 48 * 1024;
