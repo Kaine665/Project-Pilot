@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Dry run (build only, no release)'
+        description: '仅构建并上传 Artifact，不创建 GitHub Release（对任意分支有效）'
         required: false
         default: 'true'
         type: choice
@@ -19,11 +19,16 @@ jobs:
   build-windows:
     runs-on: windows-latest
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -34,37 +39,100 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Next.js (standalone)
-        run: npx cross-env NODE_ENV=production BUILD_TARGET=electron next build
+      - name: Production build (Vite + Hono bundle)
+        run: npx cross-env NODE_ENV=production npm run build
 
       - name: Compile Electron main process
         run: npm run electron:compile
 
-      - name: Build sidecar
-        run: npm run build:sidecar
-
-      - name: Package with electron-builder
+      - name: Package Windows installer (NSIS .exe)
         run: npx electron-builder --win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: List build output
-        run: dir build /s /b
-        shell: cmd
+        run: Get-ChildItem -Recurse build | ForEach-Object { $_.FullName }
 
-      - name: Upload build artifact
+      - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-exe
+          name: desktop-windows
           path: build/*.exe
-          retention-days: 7
+          if-no-files-found: error
+          retention-days: 14
 
-      - name: Upload to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') && inputs.dry_run != 'true'
+  build-macos:
+    runs-on: macos-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Production build (Vite + Hono bundle)
+        run: npx cross-env NODE_ENV=production npm run build
+
+      - name: Compile Electron main process
+        run: npm run electron:compile
+
+      - name: Package macOS (DMG + ZIP, unsigned)
+        run: npx electron-builder --mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: List build output
+        run: find build -maxdepth 2 -type f
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos
+          path: |
+            build/*.dmg
+            build/*.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-windows
+          path: release-assets
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-macos
+          path: release-assets
+
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            build/*.exe
+          files: release-assets/*
           draft: true
           generate_release_notes: true
         env:
