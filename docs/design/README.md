@@ -5,7 +5,7 @@
 ## 子目录
 
 - [`decisions/`](./decisions/)：ADR（架构/产品决策记录），编号递增。
-- [`product-boundary-TEMPLATE.md`](./product-boundary-TEMPLATE.md)：产品边界**填空模板**（复制后改名填写；与契约模板类似，偏产品定义）。
+- [`product-boundary-TEMPLATE.md`](./product-boundary-TEMPLATE.md)：产品边界**填空模板**（5 项：一句话、为谁与场景、界内、界外、修订）。
 
 ## 已有页面
 
