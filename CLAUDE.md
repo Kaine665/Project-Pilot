@@ -13,7 +13,7 @@
 
 > 详细文档：[`docs/design/product-direction-and-dashboard.md`](docs/design/product-direction-and-dashboard.md)
 
-**一句话定位**：让 AI 对你的项目越来越懂，而不是每次都从零开始。是一个**记忆驱动的项目推进系统**。
+**一句话定位**：Builder 的 AI 工作台 — 让 AI 对你的项目越来越懂，覆盖工程/产品/设计/商业/增长/运营全维度。
 
 ### 五模块飞轮
 
