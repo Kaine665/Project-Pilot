@@ -9,6 +9,38 @@
 - **后端**：Hono (Node.js/Bun) — 统一后端，吸收了原 Sidecar 进程
 - **桌面**：Electron (简化为 2 进程：Main + Hono Backend)
 
+## 产品定位与系统架构
+
+> 详细文档：[`docs/design/product-direction-and-dashboard.md`](docs/design/product-direction-and-dashboard.md)
+
+**一句话定位**：让 AI 对你的项目越来越懂，而不是每次都从零开始。是一个**记忆驱动的项目推进系统**。
+
+### 五模块飞轮
+
+```
+① Memory（项目记忆）→ ② Loader（装载引擎）→ ③ Runtime（执行）→ ④ Distiller（沉淀器）→ 回到 ①
+```
+
+| 模块 | 作用 | 现状 |
+|------|------|------|
+| ① Memory | 存储积累的项目理解（决策/约定/踩坑/变更） | 文档/知识存储有，缺自动积累 |
+| ② Loader | 开聊前自动注入相关上下文 | ResourceRegistry 已有 ✅ |
+| ③ Runtime | Agent 带着完整上下文执行 | Claude SDK + Codex 已有 ✅ |
+| ④ Distiller | 聊完后自动提取决策/约定/踩坑 | **缺失，最该先做** |
+| ⑤ Dashboard | 全局视图 + 行动入口 | 设计已确认，待实现 |
+
+### 核心数据概念
+
+- **板块（Area）**：项目的功能区域（如数据存储、Agent 系统、前端 UI），AI 推荐 + 用户确认，不固定分类
+- **功能（Feature）**：跨板块的用户可感知能力（如「Agent 会话重连」横跨 Agent 系统 + 错误处理 + 前端 UI）
+- **任务（Task）**：可关联 0~N 个板块，支持 AI 自动打标签 + 用户确认
+
+### Dashboard 设计
+
+- **唯一视图**：板块视角马赛克地图，跨板块功能通过彩色标签体现
+- **功能详情页**：点击功能标签进入，展示该功能在各板块的任务分布
+- 视觉风格：浅色纸感（功能详情页）/ 深色（Dashboard）
+
 ## 技术栈
 
 - **前端**: React 19 + Vite 8 + TypeScript (strict) + Tailwind CSS 4 + shadcn/ui (Radix)
@@ -42,6 +74,7 @@
 | 能力域 | as-is | design |
 |--------|-------|--------|
 | Agents 工作区（布局/侧栏/会话） | `docs/as-is/agents-workspace.md` | `docs/design/agents-workspace.md` |
+| 产品定位 / 系统架构 / Dashboard | — | `docs/design/product-direction-and-dashboard.md` |
 
 > 随项目演进补充更多行。未覆盖的域：先检查 `docs/as-is/` 和 `docs/design/` 是否已有对应页面；若无，改动后创建。
 

@@ -33,6 +33,7 @@
 | 数据规范索引 | [`data-spec/README.md`](./data-spec/README.md) |
 | Agent Chat 架构 | [`agent-chat-architecture.md`](./agent-chat-architecture.md) |
 | 统一文档（设计 + 知识） | [`context-system.md`](./context-system.md) |
+| 产品定位 / 五模块飞轮 / Dashboard / 数据模型 | [`design/product-direction-and-dashboard.md`](./design/product-direction-and-dashboard.md) |
 | Git 分支策略与 GitHub 权限（维护者） | [`github-branch-policy.md`](./github-branch-policy.md) |
 | 社区市场（LobeHub 对标 OKR + 契约） | [`community-marketplace-lobechat-okr.md`](./community-marketplace-lobechat-okr.md) |
 | Google 账号与云端同步范围（产品方向；代码参考 **PR #39**） | [`design/google-account-cloud-sync-scope.md`](./design/google-account-cloud-sync-scope.md) |
@@ -111,5 +112,6 @@
 | 2026-04-08 | **Cursor 外部 MCP**：`.cursor/mcp.json` 改为 `node` + `tsx/dist/cli.mjs` + `TSX_TSCONFIG_PATH`；文档 `docs/cursor-mcp-project-pilot.md`（根目录布局与 `develop-static/` 嵌套、禁止 `npm run` 污染 stdout） | `.cursor/mcp.json`、`docs/cursor-mcp-project-pilot.md`、`docs/README.md`、`mcp-server/index.ts` 头注释、`MEMORY.md`、本文件 |
 | 2026-04-08 | **Skills 与 AgentSkills/OpenClaw 对齐**：绑定 `type: skill` 时注入完整 `SKILL.md` 正文（非仅摘要）+ `scripts|references|assets` 清单与小文本内联；支持 `disable-model-invocation`；提示词树 Skill 块估算/预览与注入一致 | `skill-loader.ts`、`skill-store.ts`、`routes/prompts.ts`、`types/resource.ts`、`data-storage.md`、`领域与数据.md`、`MEMORY.md`、本文件 |
 | 2026-04-08 | **Skill 包三目录贯通导入/统计**：列表与详情带 `bundle` 汇总；`POST /api/skills/import-zip`；社区目录 `bundleFiles`；`skill-zip-import.ts`、`parseSkillBundleRelativePath` | `routes/skills.ts`、`routes/community.ts`、`community-catalog.ts`、`mcp-server/index.ts`、`skill-zip-import.ts`、`skill-store.ts`、`data-storage.md`、`MEMORY.md`、本文件 |
+| 2026-04-10 | **产品定位与 Dashboard 设计决策**：记忆驱动项目推进系统定位；五模块飞轮架构（Memory/Loader/Runtime/Distiller/Dashboard）；板块视角马赛克地图 + 功能详情页；数据模型（Area AI推荐+用户确认 / Feature 跨板块 / Task 多板块标签） | `docs/design/product-direction-and-dashboard.md`、`CLAUDE.md`、本文件 |
 
 （后续变更请继续追加表格行，勿删历史。）
