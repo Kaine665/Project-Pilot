@@ -9,6 +9,41 @@
 - **后端**：Hono (Node.js/Bun) — 统一后端，吸收了原 Sidecar 进程
 - **桌面**：Electron (简化为 2 进程：Main + Hono Backend)
 
+## 产品定位与系统架构
+
+> 详细文档：[`docs/design/product-direction-and-dashboard.md`](docs/design/product-direction-and-dashboard.md)
+
+**一句话定位**：Builder 的 AI 工作台 — 让 AI 对你的项目越来越懂，覆盖工程/产品/设计/商业/增长/运营全维度。
+
+### 五模块飞轮
+
+```
+① Memory（项目记忆）→ ② Loader（装载引擎）→ ③ Runtime（执行）→ ④ Distiller（沉淀器）→ 回到 ①
+```
+
+| 模块 | 作用 | 现状 |
+|------|------|------|
+| ① Memory | 存储积累的项目理解（决策/约定/踩坑/变更） | 文档/知识存储有，缺自动积累 |
+| ② Loader | 开聊前自动注入相关上下文 | ResourceRegistry 已有 ✅ |
+| ③ Runtime | Agent 带着完整上下文执行 | Claude SDK + Codex 已有 ✅ |
+| ④ Distiller | 聊完后自动提取决策/约定/踩坑 | **缺失，最该先做** |
+| ⑤ Dashboard | 全局视图 + 行动入口 | 设计已确认，待实现 |
+
+### 核心数据概念
+
+- **六大维度（固定）**：工程 / 产品 / 设计 / 商业 / 增长 / 运营 — 覆盖项目的所有方面，不只是代码
+- **板块（Area）**：维度下的灵活分区（如工程下有数据存储、Agent 系统），AI 推荐 + 用户确认
+- **功能（Feature）**：跨板块的用户可感知能力（如「Agent 会话重连」横跨工程 + 设计）
+- **任务（Task）**：可关联 0~N 个板块，支持 AI 自动打标签 + 用户确认
+- **知识（Knowledge）**：五种性质 — 事实 / 决策 / 规则 / 经验 / 备忘。知识系统只存文本，非文本放项目空间资产区
+
+### Dashboard 设计
+
+- **六大维度 3x2 网格一屏展示**：工程/产品/设计/商业/增长/运营
+- **交互**：默认六块等分 → 点击某块展开 75%，其他缩到右侧 → 面包屑回全览
+- **跨维度功能**通过彩色标签体现，点击进入功能详情页
+- 视觉风格：深色（与确认的板块视角一致）
+
 ## 技术栈
 
 - **前端**: React 19 + Vite 8 + TypeScript (strict) + Tailwind CSS 4 + shadcn/ui (Radix)
@@ -42,6 +77,7 @@
 | 能力域 | as-is | design |
 |--------|-------|--------|
 | Agents 工作区（布局/侧栏/会话） | `docs/as-is/agents-workspace.md` | `docs/design/agents-workspace.md` |
+| 产品定位 / 系统架构 / Dashboard | — | `docs/design/product-direction-and-dashboard.md` |
 
 > 随项目演进补充更多行。未覆盖的域：先检查 `docs/as-is/` 和 `docs/design/` 是否已有对应页面；若无，改动后创建。
 
