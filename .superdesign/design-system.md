@@ -1,32 +1,123 @@
-# develop-static — Design system (settings / AI)
+# ProjectPilot Dashboard — Design System
 
-## Product
-Desktop-style web app: zinc neutral palette, light/dark, cards with border + shadow-sm.
+## Product Context
 
-## Typography
-- UI: system / sans, `text-sm` body, `text-xs` hints, `text-lg font-semibold` card titles.
+ProjectPilot is an AI project advancement system. Its core value: **AI gets smarter about YOUR project over time, so each interaction builds on the last.**
 
-## Colors (Tailwind zinc + semantic)
-- Background: `bg-white` / `dark:bg-zinc-950`
-- Borders: `border-zinc-200` / `dark:border-zinc-800`
-- Muted text: `text-zinc-500`, secondary `text-zinc-600` / `dark:text-zinc-400`
-- Active pill/button: `bg-zinc-900 text-white` / `dark:bg-zinc-100 dark:text-zinc-900`
-- Inactive outline control: `border border-zinc-200 text-zinc-600 hover:bg-zinc-50` + dark variants
-- Success: `text-green-600 dark:text-green-400`
-- Error: `text-red-600 dark:text-red-400`
-- AI accent (top nav CTA only): `bg-ai-subtle text-ai` (purple family from CSS vars)
+The Dashboard is the "home screen" — the first thing a developer sees when they open PP. It must answer in <5 seconds: "Where is my project? What happened? What's next?"
 
-## Components
-- **Card**: `rounded-lg border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950`
-- **CardHeader**: `p-4`, **CardTitle**: `text-lg font-semibold`, **CardContent**: `p-4 pt-0 space-y-*`
-- **Input**: h-9, rounded-md, border zinc, px-3, text-sm
-- **Button outline**: border zinc, sm size h-7 text-xs
-- **Settings layout**: `max-w-[1100px] mx-auto px-6 py-8`, left nav `w-52`, content `pl-8 border-l border-zinc-200`, vertical `space-y-6`
+### Key Pages & Architecture
+- **Dashboard (this design)**: Project overview, recent memory, progress, next steps
+- **Agent Chat**: Where actual AI coding work happens
+- **Memory/Knowledge**: Browse accumulated project understanding
 
-## Icons
-Lucide outline, h-4 w-4 in nav, h-5 w-5 in card titles.
+### Target User
+Solo developers or small teams using AI to build software projects. Technical, value efficiency, hate visual noise.
 
-## Rules for this task
-- Do **not** introduce new fonts, neon colors, or gradients outside zinc + existing semantic colors.
-- **Fixed chrome** (must match current app): full-width top header with border-b; settings page title「设置」; left sidebar section list with icons; right column top border-l; bottom save row when on AI section.
-- **Change area only**: the blocks for **AI 供应商选择** and **默认模型** (and their immediate helper text / sub-controls visible in the reference). Authentication card and advanced base URL may stay as in reference unless the variation explicitly redesigns provider+model strip only.
+### Key Features (Dashboard)
+1. **Yesterday Summary**: What was accomplished, decisions made, issues resolved
+2. **Project Progress**: Task status, completion %, blockers
+3. **Recent Memory**: Auto-accumulated knowledge entries (decisions, conventions, pitfalls)
+4. **Next Steps**: AI-recommended next actions based on progress + priority
+5. **Active Sessions**: Currently running or paused agent sessions
+6. **Knowledge Growth**: Visual indicator of how much the AI "knows" about the project
+
+## Branding & Visual Direction
+
+### Philosophy
+"Functional elegance" — feels like a well-designed developer tool, not a marketing page. Every pixel earns its place. Information density is high but never cluttered.
+
+### Color Palette
+
+| Token | Value | Usage |
+|-------|-------|-------|
+| `--bg-primary` | `#0F1117` | Main background (dark) |
+| `--bg-secondary` | `#161922` | Card/panel backgrounds |
+| `--bg-tertiary` | `#1C2030` | Hover states, elevated surfaces |
+| `--border` | `#2A2E3B` | Default borders |
+| `--border-subtle` | `#1E2231` | Subtle dividers |
+| `--text-primary` | `#E8EAED` | Primary text |
+| `--text-secondary` | `#8B8FA3` | Secondary/muted text |
+| `--text-tertiary` | `#5C6070` | Timestamps, metadata |
+| `--accent-blue` | `#3B82F6` | Primary actions, active states |
+| `--accent-green` | `#22C55E` | Success, completed, growth |
+| `--accent-amber` | `#F59E0B` | Warnings, in-progress |
+| `--accent-red` | `#EF4444` | Errors, blockers |
+| `--accent-purple` | `#A855F7` | AI/memory related elements |
+
+### Typography
+
+| Element | Font | Size | Weight | Tracking |
+|---------|------|------|--------|----------|
+| Page title | Inter | 24px | 600 | -0.02em |
+| Section header | Inter | 14px | 600 | 0 |
+| Card title | Inter | 13px | 500 | 0 |
+| Body text | Inter | 13px | 400 | 0 |
+| Metadata/label | Inter | 11px | 500 | 0.02em |
+| Code/mono | JetBrains Mono | 12px | 400 | 0 |
+| Stat number | Inter | 28px | 700 | -0.02em |
+
+### Spacing & Layout
+
+- Base unit: 4px
+- Card padding: 16px (compact) / 20px (standard)
+- Card gap: 12px
+- Section gap: 24px
+- Border radius: 8px (cards), 6px (buttons/badges), 4px (tags)
+- Max content width: 1200px
+
+### Component Patterns
+
+#### Cards
+- Background: `--bg-secondary`
+- Border: 1px solid `--border`
+- Border-radius: 8px
+- Subtle glow on hover: 0 0 0 1px `--accent-blue` at 20% opacity
+- No drop shadows
+
+#### Status Badges
+- Completed: green bg at 10% opacity, green text
+- In Progress: amber bg at 10% opacity, amber text
+- Blocked: red bg at 10% opacity, red text
+- Pending: gray bg at 10% opacity, gray text
+
+#### Progress Indicators
+- Thin horizontal bars (4px height, rounded)
+- Track: `--bg-tertiary`
+- Fill: gradient from `--accent-blue` to `--accent-purple`
+
+#### Memory Entries
+- Left color bar (3px width) indicating type:
+  - Decision: blue
+  - Convention: purple
+  - Pitfall: amber
+  - Change: green
+- Compact list items with timestamp + one-line summary
+
+#### Stat Cards
+- Large number prominently displayed
+- Small label above
+- Optional sparkline or trend indicator
+- Subtle icon in top-right corner
+
+### Motion & Animation
+- Transitions: 150ms ease-out
+- No decorative animations
+- Subtle fade-in for newly loaded content
+- Progress bars animate on initial load (600ms ease-out)
+
+### Layout Structure (Dashboard)
+- Top bar: minimal, project name + project switcher + settings
+- Main area: responsive grid layout
+  - Left column (2/3): Summary + Progress + Next Steps
+  - Right column (1/3): Memory + Knowledge Stats + Sessions
+- No sidebar navigation on dashboard (it's the landing page)
+
+### Icons
+- Lucide icon set
+- Size: 16px default, 14px for compact contexts
+- Stroke width: 1.5px
+- Color inherits from text color
+
+### Dark Mode Only
+This design is dark-mode only. The dark palette reduces eye strain for developers who spend hours in code editors.
