@@ -70,6 +70,7 @@ openclaw/
 
 # 与主仓库无关的侧项目（各自独立 Git 仓库；勿提交进 ProjectPilot）
 /external/
+/weight-agent/
 
 # 本地连接测试 JSON（可能含明文 API 密钥，绝不可提交）
 .tmp-test-conn.json
