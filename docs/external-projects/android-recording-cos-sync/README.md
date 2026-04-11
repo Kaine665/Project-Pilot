@@ -26,6 +26,7 @@ git push -u origin main
 ## 文档
 
 - 第一期验收与边界：见同目录 **[SPEC.md](./SPEC.md)**。
+- 在 **weight-agent** 里开新对话时用的可复制提示词：**[AGENT_PROMPT.md](./AGENT_PROMPT.md)**（打开后复制其中「开始～结束」整段）。
 
 ## 与 PP 仓库的关系
 
