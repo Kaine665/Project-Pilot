@@ -68,6 +68,9 @@ openclaw/
 # 本地临时目录（截图、试验脚本、导入缓存等）
 /tmp/
 
+# 与主仓库无关的侧项目（各自独立 Git 仓库；勿提交进 ProjectPilot）
+/external/
+
 # 本地连接测试 JSON（可能含明文 API 密钥，绝不可提交）
 .tmp-test-conn.json
 
