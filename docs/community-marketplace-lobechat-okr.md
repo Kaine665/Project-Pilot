@@ -1,6 +1,6 @@
 # LobeHub / LobeChat「社区市场」调研与 ProjectPilot 复刻 OKR
 
-`last_reviewed`: 2026-04-07
+`last_reviewed`: 2026-04-09
 
 ## 一、源码与产品侧结论（调研摘要）
 
@@ -19,7 +19,7 @@
 |------|----------------|------------------------|
 | 目录 | 远端 JSON 索引 + 条目文件 | `GET /api/community/catalog` + 可选远端 URL；本地 `community-catalog-seed.json` 兜底 |
 | 详情 | identifier → 拉取完整 manifest | 条目内嵌 `systemPrompt` + `capabilities` 等（MVP）；后续拆 `GET /item/:id` |
-| 安装 | 写入用户/会话侧配置（DB 或本地） | **映射为 `AgentPreset`**，`POST /api/data/agent-presets`（与现有「运行预设」一致） |
+| 安装 | 写入用户/会话侧配置（DB 或本地） | **映射为 `AgentPreset`**，`POST /api/data/agent-presets`（与现有 **agent 模板**一致；类型/API 路径仍为 preset 历史命名） |
 | 贡献 | GitHub PR + Review | 后续：独立 `project-pilot-community` 仓库或站内提交 + 审核队列 |
 
 ### 1.3 「完整复刻」的边界说明
@@ -48,8 +48,8 @@ LobeHub 市场包含 **助手 / 插件 / 模型 / MCP / 多语言 SEO / 账号�
 
 ### KR3 — 安装闭环（对齐「一键使用」）
 
-- **指标**：单条「添加到我的预设」成功率 ≥ 99%（有效条目）；写入后可在 `/workspace/presets` 看到。
-- **验收**：重复点击不产生重复预设**或**有幂等策略（MVP：允许重复，名称带「（社区）」后缀区分）。
+- **指标**：单条「添加到我的模板」成功率 ≥ 99%（有效条目）；写入后可在 `/workspace/presets` 看到。
+- **验收**：重复点击不产生重复模板**或**有幂等策略（MVP：允许重复，名称带「（社区）」后缀区分）。
 
 ### KR4 — 与 Lobe 生态可选互通（进阶）
 
@@ -67,7 +67,7 @@ LobeHub 市场包含 **助手 / 插件 / 模型 / MCP / 多语言 SEO / 账号�
 
 | 阶段 | 内容 | 状态 |
 |------|------|------|
-| **P0** | 本文档 + 助手/Skills/MCP 三套种子 + `GET/POST` 社区 API（助手预设、Skills 安装至 `writeSkillFile`、MCP 合并至 `config/mcp-market.json` 且与 `.mcp.json` 在 `BaseChatManager` 合并）+ **Lobe 式商店壳**（发现/助手/Skills/MCP + 模型/服务商占位）+ 列表/分类 + **顶栏右侧来源下拉**（`?source=`，助手/MCP/Skills 共用：全部 / PP 内置·开发 / 远程·Registry / 含参考链接）+ 排序 + 详情/安装闭环 | **已落地（代码库）** |
+| **P0** | 本文档 + 助手/Skills/MCP 三套种子 + `GET/POST` 社区 API（助手 agent 模板、Skills 安装至 `writeSkillFile`、MCP 合并至 `config/mcp-market.json` 且与 `.mcp.json` 在 `BaseChatManager` 合并）+ **Lobe 式商店壳**（发现/助手/Skills/MCP + 模型/服务商占位）+ 列表/分类 + **顶栏右侧来源下拉**（`?source=`，助手/MCP/Skills 共用：全部 / PP 内置·开发 / 远程·Registry / 含参考链接）+ 排序 + 详情/安装闭环 | **已落地（代码库）** |
 | **P1** | 远端 URL 拉取、缓存、Schema 校验（zod）；Skills/MCP/模型/服务商**数据面**与 Lobe `discoverService` 对齐 | 待办（UI 占位已就绪） |
 | **P2** | 插件/MCP 等第二品类（独立 catalog 类型枚举） | 待办 |
 | **P3** | 独立社区仓库 + PR 流程 + 与 CI 发布索引 | 待办 |
@@ -76,7 +76,7 @@ LobeHub 市场包含 **助手 / 插件 / 模型 / MCP / 多语言 SEO / 账号�
 
 ## 五、成功定义（本轮「任务成功」）
 
-- 用户可在应用内打开**社区市场**页，浏览内置条目，并**一键生成本地运行预设**；API 与数据格式在本文有据可查，后续可接 Lobe 或自研索引而**无需改 UI 主流程**。
+- 用户可在应用内打开**社区市场**页，浏览内置条目，并**一键生成本地 agent 模板**；API 与数据格式在本文有据可查，后续可接 Lobe 或自研索引而**无需改 UI 主流程**。
 
 ---
 

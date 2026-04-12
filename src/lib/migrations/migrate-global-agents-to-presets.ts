@@ -1,5 +1,5 @@
 /**
- * 一次性迁移：将「全局」自定义 Agent（无 projectKey、非内置、未归档）转为运行预设并归档原 Agent。
+ * 一次性迁移：将「全局」自定义 Agent（无 projectKey、非内置、未归档）转为 agent 模板并归档原 Agent。
  * 内置 Agent 不动。历史会话仍通过 agentId 引用已归档记录；新对话需选用仍活跃的 Agent。
  *
  * 标记文件：config/.migration-global-agents-to-presets-v1.json

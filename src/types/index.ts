@@ -532,7 +532,7 @@ export interface AgentsData {
 }
 
 /**
- * Agent「运行预设」：复用模型、能力、Skills、上下文策略与系统提示模板，
+ * Agent「agent 模板」（数据文件仍为 agent-presets.json）：复用模型、能力、Skills、上下文策略与系统提示模板，
  * 供新建 Agent 时加载，或项目级默认（见 ProjectEntry.defaultPresetId）。
  */
 export interface AgentPreset {
@@ -738,7 +738,7 @@ export interface ProjectEntry {
   // ── AI 默认配置 ──
   /** 创建待办时默认绑定的 Agent ID */
   defaultAgentId?: string;
-  /** 在本项目下新建 Agent 时默认套用的运行预设（config/agent-presets.json） */
+  /** 在本项目下新建 Agent 时默认套用的 agent 模板（config/agent-presets.json） */
   defaultPresetId?: string;
 
   // ── 视觉标识 ──

@@ -47,8 +47,12 @@ export default function WorkspaceShell({ children }: { children?: React.ReactNod
     }
   }, [mdUp, sidebarRailMini, setRailMini]);
 
-  const isTaskTriggersPage = pathname.startsWith('/workspace/task-triggers');
-  const isSchedulesPage = pathname.startsWith('/workspace/schedules');
+  const isTaskTriggersPage =
+    pathname.startsWith('/workspace/task-triggers') ||
+    pathname.includes('/workspace/tasks/triggers');
+  const isSchedulesPage =
+    pathname.startsWith('/workspace/schedules') ||
+    pathname.includes('/workspace/tasks/schedules');
   const isButlerPage = pathname.startsWith('/workspace/butler');
 
   useEffect(() => {
@@ -86,11 +90,11 @@ export default function WorkspaceShell({ children }: { children?: React.ReactNod
 
   useEffect(() => {
     if (isSchedulesPage && !schedulesPageEnabled) {
-      router.replace('/workspace/projects');
+      router.replace('/workspace/tasks/todos');
       return;
     }
     if (isTaskTriggersPage && !taskTriggersPageEnabled) {
-      router.replace('/workspace/projects');
+      router.replace('/workspace/tasks/todos');
     }
   }, [isSchedulesPage, isTaskTriggersPage, router, schedulesPageEnabled, taskTriggersPageEnabled]);
 
@@ -127,11 +131,7 @@ export default function WorkspaceShell({ children }: { children?: React.ReactNod
               ),
           )}
         >
-          <WorkspaceSidebarRail
-            mini={mdUp ? sidebarRailMini : false}
-            schedulesPageEnabled={schedulesPageEnabled}
-            taskTriggersPageEnabled={taskTriggersPageEnabled}
-          />
+          <WorkspaceSidebarRail mini={mdUp ? sidebarRailMini : false} />
         </div>
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

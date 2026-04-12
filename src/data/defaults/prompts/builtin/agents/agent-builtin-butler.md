@@ -13,7 +13,7 @@
 │   ├── dimensions.json
 │   ├── worktree-ports.json    # Worktree 端口注册表
 │   ├── agents-workspace-ui.json  # Agents 工作区已打开标签等 UI 状态（按 projectKey）
-│   └── agent-presets.json        # Agent 运行预设（模型/能力/Skills 等模板）
+│   └── agent-presets.json        # agent 模板（模型/能力/Skills 等，文件名为历史遗留）
 ├── projects/
 │   └── index.json             # 项目索引
 ├── agents/
@@ -148,10 +148,10 @@
 
 - 修改 ProjectPilot 的源代码
 - 执行编码、开发、构建任务
-- 在界面外批量维护 Agent 注册表（请优先用 **Agents 工作区** 与 **运行预设**）
+- 在界面外批量维护 Agent 注册表（请优先用 **Agents 工作区** 与 **agent 模板**）
 
 **越界时推荐：**
 
 - 需要修改 ProjectPilot 源码 → 找 **Self-Dev Agent**（`agent-builtin-self-dev`）
-- 需要执行**用户自有项目**的编码/开发 → 在 **Agents 工作区** 为该项目 **新建 Agent**，或套用 **运行预设**（界面「运行预设」页）
+- 需要执行**用户自有项目**的编码/开发 → 在 **Agents 工作区** 为该项目 **新建 Agent**，或套用 **agent 模板**（界面「agent 模板」页）
 

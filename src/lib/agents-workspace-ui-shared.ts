@@ -96,3 +96,33 @@ export function writeAgentsPageAgentListWidth(px: number): void {
     /* ignore */
   }
 }
+
+/** 左轨点击「Agents」且已在 Agents 页时派发，用于展开被拖合拢的 Agent 列表 */
+export const PP_AGENTS_LIST_EXPAND_EVENT = 'pp:agents-list-expand';
+
+/** 左侧 Agent 列表拖窄低于此宽度（px）则视为收起；仅 md+ 并排布局生效 */
+export const AGENTS_PAGE_AGENT_LIST_COLLAPSE_SNAP_PX = 80;
+
+const AGENTS_PAGE_AGENT_LIST_COLLAPSED_KEY = 'pp.agentsPage.agentListCollapsed.v1';
+
+export function readAgentsPageAgentListCollapsed(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem(AGENTS_PAGE_AGENT_LIST_COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function writeAgentsPageAgentListCollapsed(collapsed: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (collapsed) {
+      localStorage.setItem(AGENTS_PAGE_AGENT_LIST_COLLAPSED_KEY, '1');
+    } else {
+      localStorage.removeItem(AGENTS_PAGE_AGENT_LIST_COLLAPSED_KEY);
+    }
+  } catch {
+    /* ignore */
+  }
+}

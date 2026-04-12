@@ -11,7 +11,6 @@
  */
 
 import type { Agent } from '@/types';
-import { readBuiltinAgents } from './builtin-defaults';
 
 export const BUTLER_AGENT_ID = 'agent-builtin-butler';
 
@@ -31,7 +30,9 @@ let _initPromise: Promise<Agent[]> | null = null;
 
 export function initDefaultAgents(): Promise<Agent[]> {
   if (!_initPromise) {
-    _initPromise = readBuiltinAgents().then((agents) => {
+    // 动态导入：避免仅引用 BUTLER_AGENT_ID 的客户端包打进 builtin-defaults（含 fs / file-store）
+    _initPromise = import('./builtin-defaults').then(async (m) => {
+      const agents = await m.readBuiltinAgents();
       DEFAULT_AGENTS = agents;
       return agents;
     });

@@ -55,8 +55,12 @@ import {
   agentsWorkspaceStorageKey,
   AGENTS_PAGE_AGENT_LIST_WIDTH_MIN,
   AGENTS_PAGE_AGENT_LIST_WIDTH_MAX,
+  AGENTS_PAGE_AGENT_LIST_COLLAPSE_SNAP_PX,
+  PP_AGENTS_LIST_EXPAND_EVENT,
+  readAgentsPageAgentListCollapsed,
   readAgentsPageAgentListWidth,
   readAgentsPageWorkspaceRailVisible,
+  writeAgentsPageAgentListCollapsed,
   writeAgentsPageAgentListWidth,
   writeAgentsPageWorkspaceRailVisible,
 } from '@/lib/agents-workspace-ui-shared';
@@ -211,7 +215,7 @@ export default function AgentsPage() {
   const [saving, setSaving] = useState(false);
   const [expandedPrompt, setExpandedPrompt] = useState(false);
 
-  /** 侧栏「+」下拉：外部导入 / 自主填写 / 使用预设 */
+  /** 侧栏「+」下拉：外部导入 / 自主填写 / 使用模板 */
   const [newAgentMenuOpen, setNewAgentMenuOpen] = useState(false);
   const newAgentMenuRef = useRef<HTMLDivElement>(null);
   const [newAgentModal, setNewAgentModal] = useState<'closed' | 'import' | 'presetPick' | 'create'>('closed');
@@ -244,19 +248,30 @@ export default function AgentsPage() {
 
   /** >= md：左侧列表与主区并排，可拖改列宽；<md 为抽屉，宽度类名单独控制 */
   const mdUpAgents = useMediaQuery('(min-width: 768px)');
+  const [agentListCollapsed, setAgentListCollapsed] = useState(() => readAgentsPageAgentListCollapsed());
   const [agentListWidthPx, setAgentListWidthPx] = useState(() => readAgentsPageAgentListWidth());
+  const persistedExpandedWidthRef = useRef(agentListWidthPx);
   const agentListWidthRef = useRef(agentListWidthPx);
   agentListWidthRef.current = agentListWidthPx;
   const agentListResizeDragRef = useRef<{ startX: number; startW: number } | null>(null);
 
+  useEffect(() => {
+    const onExpand = () => {
+      setAgentListCollapsed(false);
+      writeAgentsPageAgentListCollapsed(false);
+    };
+    window.addEventListener(PP_AGENTS_LIST_EXPAND_EVENT, onExpand);
+    return () => window.removeEventListener(PP_AGENTS_LIST_EXPAND_EVENT, onExpand);
+  }, []);
+
   const onAgentListResizePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!mdUpAgents) return;
+      if (!mdUpAgents || agentListCollapsed) return;
       e.preventDefault();
       agentListResizeDragRef.current = { startX: e.clientX, startW: agentListWidthRef.current };
       e.currentTarget.setPointerCapture(e.pointerId);
     },
-    [mdUpAgents],
+    [mdUpAgents, agentListCollapsed],
   );
 
   const onAgentListResizePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -267,20 +282,25 @@ export default function AgentsPage() {
       AGENTS_PAGE_AGENT_LIST_WIDTH_MAX,
       Math.max(AGENTS_PAGE_AGENT_LIST_WIDTH_MIN, window.innerWidth - roomForMain),
     );
-    const next = Math.min(
-      maxW,
-      Math.max(
-        AGENTS_PAGE_AGENT_LIST_WIDTH_MIN,
-        drag.startW + (e.clientX - drag.startX),
-      ),
-    );
+    const raw = drag.startW + (e.clientX - drag.startX);
+    const next = Math.min(maxW, Math.max(0, raw));
     setAgentListWidthPx(next);
   }, []);
 
   const onAgentListResizePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (agentListResizeDragRef.current) {
       agentListResizeDragRef.current = null;
-      writeAgentsPageAgentListWidth(agentListWidthRef.current);
+      const w = agentListWidthRef.current;
+      if (w < AGENTS_PAGE_AGENT_LIST_COLLAPSE_SNAP_PX) {
+        setAgentListCollapsed(true);
+        writeAgentsPageAgentListCollapsed(true);
+        setAgentListWidthPx(persistedExpandedWidthRef.current);
+      } else {
+        setAgentListCollapsed(false);
+        writeAgentsPageAgentListCollapsed(false);
+        persistedExpandedWidthRef.current = w;
+        writeAgentsPageAgentListWidth(w);
+      }
     }
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
@@ -290,18 +310,25 @@ export default function AgentsPage() {
   }, []);
 
   useEffect(() => {
-    if (!mdUpAgents) return;
+    if (!mdUpAgents || agentListCollapsed) return;
     const clampToViewport = () => {
       const maxW = Math.min(
         AGENTS_PAGE_AGENT_LIST_WIDTH_MAX,
         Math.max(AGENTS_PAGE_AGENT_LIST_WIDTH_MIN, window.innerWidth - 320),
       );
-      setAgentListWidthPx((w) => Math.min(w, maxW));
+      setAgentListWidthPx((w) => {
+        const next = Math.min(w, maxW);
+        if (next !== w) {
+          persistedExpandedWidthRef.current = next;
+          writeAgentsPageAgentListWidth(next);
+        }
+        return next;
+      });
     };
     clampToViewport();
     window.addEventListener('resize', clampToViewport);
     return () => window.removeEventListener('resize', clampToViewport);
-  }, [mdUpAgents]);
+  }, [mdUpAgents, agentListCollapsed]);
 
   const lgUpAgents = useMediaQuery('(min-width: 1024px)');
 
@@ -700,7 +727,6 @@ export default function AgentsPage() {
           unreadCount: s.unreadCount,
           pinned: s.pinned,
           archived: s.archived,
-          pinned: s.pinned,
           projectKey: s.projectKey,
         };
       });
@@ -1244,7 +1270,7 @@ export default function AgentsPage() {
   // Alias for handleAgentClick used by handleClone
   const handleSelect = handleAgentClick;
 
-  /** 自主填写：空白表单，不自动合并项目默认预设 */
+  /** 自主填写：空白表单，不自动合并项目默认 agent 模板 */
   const openNewAgentManual = useCallback(() => {
     setNewAgentMenuOpen(false);
     setSelectedAgentId(null);
@@ -1929,15 +1955,17 @@ export default function AgentsPage() {
         />
       )}
       <aside
+        aria-hidden={mdUpAgents && agentListCollapsed ? true : undefined}
         className={cn(
           'relative z-50 flex shrink-0 flex-col border-r border-border bg-muted/20',
           mdUpAgents ? '' : 'w-[292px]',
+          mdUpAgents && agentListCollapsed && 'min-w-0 max-w-0 overflow-hidden border-r-0 p-0',
           'md:z-auto',
           'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:h-full max-md:w-[min(100%,300px)] max-md:max-w-[90vw] max-md:shadow-xl',
           'max-md:transition-transform max-md:duration-200 max-md:ease-out',
           mobileAgentsListOpen ? 'max-md:translate-x-0' : 'max-md:pointer-events-none max-md:-translate-x-full',
         )}
-        style={mdUpAgents ? { width: agentListWidthPx } : undefined}
+        style={mdUpAgents ? { width: agentListCollapsed ? 0 : agentListWidthPx } : undefined}
       >
         <div className="border-b border-border/80 bg-card/40 px-4 pb-3 pt-4 backdrop-blur-sm">
           <div className="mb-3 flex items-start justify-between gap-2">
@@ -2060,7 +2088,7 @@ export default function AgentsPage() {
                               }
                             }}
                             className={cn(
-                              'group/agent flex cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2.5 transition-colors',
+                              'group/agent flex cursor-pointer items-start gap-3 rounded-xl px-2.5 py-2.5 transition-colors',
                               isActive
                                 ? 'bg-card shadow-sm ring-1 ring-border'
                                 : 'hover:bg-muted/70',
@@ -2068,7 +2096,7 @@ export default function AgentsPage() {
                           >
                             <div
                               className={cn(
-                                'h-10 w-10 shrink-0 overflow-hidden rounded-xl ring-1 ring-inset',
+                                'mt-0.5 h-10 w-10 shrink-0 overflow-hidden rounded-xl ring-1 ring-inset',
                                 isActive
                                   ? 'bg-primary/10 text-primary ring-primary/15'
                                   : 'bg-muted/80 text-muted-foreground ring-border/60',
@@ -2084,58 +2112,62 @@ export default function AgentsPage() {
                               />
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className="mb-0.5 flex items-center justify-between gap-2">
-                                <div className="flex min-w-0 items-center gap-1.5">
-                                  <span
-                                    className={cn(
-                                      'truncate text-sm',
-                                      isActive ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
-                                    )}
-                                  >
-                                    {agent.name}
-                                  </span>
-                                </div>
-                                {lastSession && (
-                                  <span className="shrink-0 text-[10px] font-medium tabular-nums text-muted-foreground">
-                                    {formatSessionTimestamp(lastSession.updatedAt, Date.now(), t('session.yesterday'))}
-                                  </span>
-                                )}
+                              <div className="mb-0.5 min-w-0">
+                                <span
+                                  className={cn(
+                                    'block truncate text-sm',
+                                    isActive ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
+                                  )}
+                                >
+                                  {agent.name}
+                                </span>
                               </div>
                               <div
-                                className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
-                                title={agent.description || agent.id}
+                                className="flex min-w-0 items-start gap-1.5 text-xs text-muted-foreground"
+                                title={displayText(
+                                  agent.description?.trim() ? agent.description : undefined,
+                                  t('workspace.defaultAgentDescription', { agentName: agent.name }),
+                                )}
                               >
                                 {hasRunning && (
                                   <span
-                                    className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500 animate-pulse"
+                                    className="mt-0.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500 animate-pulse"
                                     aria-hidden
                                   />
                                 )}
-                                <span className="truncate">
-                                  {lastSession
-                                    ? displayText(lastSession.title, agent.description || agent.id)
-                                    : (agent.description || agent.id)}
+                                <span className="line-clamp-2 min-w-0 flex-1 break-words leading-snug">
+                                  {displayText(
+                                    agent.description?.trim() ? agent.description : undefined,
+                                    t('workspace.defaultAgentDescription', { agentName: agent.name }),
+                                  )}
                                 </span>
                               </div>
                             </div>
-                            {totalUnread > 0 && !isActive && (
-                              <span className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
-                                {totalUnread > 99 ? '99+' : totalUnread}
-                              </span>
-                            )}
-                            {agentSessions.length > 0 && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleAgentHistoryExpanded(agent.id);
-                                }}
-                                className="shrink-0 rounded-md bg-muted/80 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/agent:opacity-100 hover:bg-muted"
-                                title={isHistoryExpanded ? tActions('collapse') : tActions('expand')}
-                              >
-                                {isHistoryExpanded ? '−' : '+'} {agentSessions.length}
-                              </button>
-                            )}
+                            <div className="flex shrink-0 items-center gap-1.5 self-start pt-0.5">
+                              {lastSession ? (
+                                <span className="text-[10px] font-medium tabular-nums text-muted-foreground">
+                                  {formatSessionTimestamp(lastSession.updatedAt, Date.now(), t('session.yesterday'))}
+                                </span>
+                              ) : null}
+                              {totalUnread > 0 && !isActive ? (
+                                <span className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
+                                  {totalUnread > 99 ? '99+' : totalUnread}
+                                </span>
+                              ) : null}
+                              {agentSessions.length > 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleAgentHistoryExpanded(agent.id);
+                                  }}
+                                  className="shrink-0 rounded-md bg-muted/80 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/agent:opacity-100 hover:bg-muted"
+                                  title={isHistoryExpanded ? tActions('collapse') : tActions('expand')}
+                                >
+                                  {isHistoryExpanded ? '−' : '+'} {agentSessions.length}
+                                </button>
+                              ) : null}
+                            </div>
                           </div>
 
                           {isHistoryExpanded && historySessions.length === 0 && (
@@ -2331,7 +2363,7 @@ export default function AgentsPage() {
           )}
         </div>
 
-        {mdUpAgents ? (
+        {mdUpAgents && !agentListCollapsed ? (
           <div
             role="separator"
             aria-orientation="vertical"
