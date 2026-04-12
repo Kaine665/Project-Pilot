@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { ChevronDown, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { useTranslations } from '@/client/i18n/use-translations';
+import { projectDisplayName } from '@/lib/default-project';
 import { cn } from '@/lib/utils';
 import { LanguageSwitcher } from './language-switcher';
 import { useProject } from './project-context';
@@ -64,6 +65,7 @@ export function TopNav({
 
 function ProjectSwitcher() {
   const { projects, activeKey, setActiveKey } = useProject();
+  const tProjects = useTranslations('projects');
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -88,14 +90,14 @@ function ProjectSwitcher() {
         className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-4 py-1.5 text-sm font-medium text-zinc-600 shadow-sm transition-all hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
       >
         <span className="max-w-[min(200px,42vw)] truncate sm:max-w-[200px]">
-          {activeProject ? activeProject.name : '无项目'}
+          {activeProject ? projectDisplayName(activeProject, tProjects('defaultWorkspaceName')) : tProjects('topNavNoProject')}
         </span>
         <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} />
       </button>
       {open && (
         <div className="absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 min-w-[180px] max-w-[280px] rounded-md border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
           {projects.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-zinc-400">无项目</div>
+            <div className="px-3 py-2 text-xs text-zinc-400">{tProjects('noProjects')}</div>
           ) : (
             projects.map(p => (
               <button
@@ -111,7 +113,7 @@ function ProjectSwitcher() {
                     : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-200',
                 )}
               >
-                <span className="truncate">{p.name}</span>
+                <span className="truncate">{projectDisplayName(p, tProjects('defaultWorkspaceName'))}</span>
               </button>
             ))
           )}

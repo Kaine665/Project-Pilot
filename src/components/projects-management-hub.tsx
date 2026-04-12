@@ -26,6 +26,12 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { hasElectronFolderPicker, canPickFolder, pickLocalFolderPath } from '@/lib/electron-folder-picker';
+import {
+  DEFAULT_PLACEHOLDER_PROJECT_KEY,
+  isReservedDefaultProjectKey,
+  projectDisplayName,
+  projectDisplaySubtitle,
+} from '@/lib/default-project';
 import type { ProjectEntry, ProjectLocation } from '@/types';
 
 const LOCATION_OPTIONS: { value: ProjectLocation; labelKey: string }[] = [
@@ -47,9 +53,10 @@ function makeProjectKey(name: string, existingKeys: string[]) {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '') || `project-${Date.now()}`;
 
+  const taken = new Set([DEFAULT_PLACEHOLDER_PROJECT_KEY, ...existingKeys]);
   let next = base;
   let index = 2;
-  while (existingKeys.includes(next)) {
+  while (taken.has(next)) {
     next = `${base}-${index}`;
     index += 1;
   }
@@ -111,6 +118,11 @@ export function ProjectsManagementHub() {
   const tActions = useTranslations('actions');
   const tStatus = useTranslations('status');
   const locale = useLocale();
+
+  const soleBuiltInPlaceholder = useMemo(() => {
+    const act = projects.filter(p => !p.archived);
+    return act.length === 1 && isReservedDefaultProjectKey(act[0].key);
+  }, [projects]);
 
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -222,6 +234,11 @@ export function ProjectsManagementHub() {
     filteredProjects.find(p => p.key === activeKey) ??
     filteredProjects[0] ??
     null;
+
+  const lockBuiltInArchive = useMemo(() => {
+    if (!activeProject || activeProject.archived) return false;
+    return soleBuiltInPlaceholder && isReservedDefaultProjectKey(activeProject.key);
+  }, [activeProject, soleBuiltInPlaceholder]);
 
   const refreshProjects = useCallback(async () => {
     return fetchProjects();
@@ -763,13 +780,15 @@ export function ProjectsManagementHub() {
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <h4 className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{project.name}</h4>
+                        <h4 className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                          {projectDisplayName(project, t('defaultWorkspaceName'))}
+                        </h4>
                         <span className="shrink-0 rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
                           {domainLabel(project, t)}
                         </span>
                       </div>
                       <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
-                        {project.description?.trim() || project.key}
+                        {projectDisplaySubtitle(project, t('defaultWorkspaceDescription'))}
                       </p>
                     </div>
                   </button>
@@ -787,7 +806,7 @@ export function ProjectsManagementHub() {
                     <div className="mb-6 flex flex-col gap-4 md:mb-8 md:flex-row md:items-start md:justify-between">
                       <div className="space-y-2">
                         <h2 className="text-2xl font-bold tracking-tight text-zinc-950 dark:text-zinc-50 md:text-3xl">
-                          {activeProject.name}
+                          {projectDisplayName(activeProject, t('defaultWorkspaceName'))}
                         </h2>
                         <div className="flex flex-wrap gap-2">
                           {activeProject.location && (
@@ -814,7 +833,9 @@ export function ProjectsManagementHub() {
                       <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{t('detailOverview')}</h3>
                       <div className="rounded-2xl bg-zinc-50/80 p-4 ring-1 ring-zinc-200 dark:bg-zinc-900/40 dark:ring-zinc-800 md:p-5">
                         <p className="text-sm leading-7 text-zinc-600 dark:text-zinc-400">
-                          {activeProject.description?.trim() || t('noDescription')}
+                          {isReservedDefaultProjectKey(activeProject.key) || activeProject.systemPlaceholder
+                            ? t('defaultWorkspaceDescription')
+                            : activeProject.description?.trim() || t('noDescription')}
                         </p>
                       </div>
                     </section>
@@ -927,7 +948,9 @@ export function ProjectsManagementHub() {
                   {confirmingDeleteKey === activeProject.key ? (
                     <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm dark:border-red-900/50 dark:bg-red-950/20">
                       <div className="text-red-700 dark:text-red-300">
-                        {t('cardDeleteConfirm', { name: activeProject.name })}
+                        {t('cardDeleteConfirm', {
+                          name: projectDisplayName(activeProject, t('defaultWorkspaceName')),
+                        })}
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button
@@ -953,7 +976,7 @@ export function ProjectsManagementHub() {
                         <div className="hidden h-6 w-px bg-zinc-200 sm:block dark:bg-zinc-800" />
                         <ProjectSettings
                           projectKey={activeProject.key}
-                          projectName={activeProject.name}
+                          projectName={projectDisplayName(activeProject, t('defaultWorkspaceName'))}
                           projectDescription={activeProject.description}
                           projectEntry={activeProject}
                           onUpdated={handleProjectUpdated}
@@ -964,6 +987,8 @@ export function ProjectsManagementHub() {
                         <Button
                           variant="outline"
                           className="rounded-lg"
+                          disabled={lockBuiltInArchive}
+                          title={lockBuiltInArchive ? t('defaultWorkspaceArchiveLockedHint') : undefined}
                           onClick={() => handleArchiveProject(activeProject.key)}
                         >
                           <Archive className="h-4 w-4" />
@@ -972,6 +997,8 @@ export function ProjectsManagementHub() {
                         <Button
                           variant="ghost"
                           className="rounded-lg text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30"
+                          disabled={lockBuiltInArchive}
+                          title={lockBuiltInArchive ? t('defaultWorkspaceArchiveLockedHint') : undefined}
                           onClick={() => setConfirmingDeleteKey(activeProject.key)}
                         >
                           <Trash2 className="h-4 w-4" />

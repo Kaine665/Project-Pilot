@@ -14,6 +14,11 @@ import type {
   AgentsWorkspacePerAgentFocusPersist,
   AgentsWorkspaceProjectPersist,
 } from '@/lib/agents-workspace-ui-shared';
+import {
+  buildDefaultPlaceholderProject,
+  DEFAULT_PLACEHOLDER_PROJECT_KEY,
+  isReservedDefaultProjectKey,
+} from '@/lib/default-project';
 import { isValidProjectKey } from '@/lib/security';
 import type {
   AgentCapabilities,
@@ -65,6 +70,9 @@ app.post('/projects', async (c) => {
   const safe = (key as string).replace(/[^a-zA-Z0-9_-]/g, '');
   if (!safe) {
     return c.json({ error: 'invalid key' }, 400);
+  }
+  if (safe === DEFAULT_PLACEHOLDER_PROJECT_KEY) {
+    return c.json({ error: 'reserved project key' }, 409);
   }
 
   const index = await readIndex();
@@ -206,6 +214,23 @@ app.delete('/projects', async (c) => {
   const project = index.projects.find((p) => p.key === key);
   if (!project) {
     return c.json({ error: 'project not found' }, 404);
+  }
+
+  const active = index.projects.filter((p) => !p.archived);
+  if (active.length === 1 && active[0].key === key) {
+    if (isReservedDefaultProjectKey(key)) {
+      return c.json({ error: 'cannot archive the built-in default workspace' }, 400);
+    }
+    let ph = index.projects.find((p) => p.key === DEFAULT_PLACEHOLDER_PROJECT_KEY);
+    const now = new Date().toISOString();
+    if (!ph) {
+      index.projects.unshift(buildDefaultPlaceholderProject());
+    } else {
+      ph.archived = false;
+      delete ph.archivedAt;
+      ph.systemPlaceholder = true;
+      ph.updatedAt = now;
+    }
   }
 
   project.archived = true;
