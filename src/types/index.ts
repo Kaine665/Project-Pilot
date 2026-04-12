@@ -216,6 +216,14 @@ export const DEFAULT_TITLE_GENERATION: TitleGenerationSettings = {
   chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }],
 };
 
+/** Distiller：会话结束后提炼知识/待办的后台模型（v0 无设置页，可在 settings.json 配置） */
+export interface DistillerSettings {
+  /** 默认 true；设为 false 可关闭提炼 */
+  enabled?: boolean;
+  provider?: ProviderId;
+  model?: string;
+}
+
 export const BUILT_IN_NOTIFICATION_SOUND_IDS = [
   'classic',
   'glass',
@@ -285,6 +293,8 @@ export interface AppSettings {
   dangerDetector?: DangerDetectorSettings;
   /** 会话标题自动生成配置 */
   titleGeneration?: TitleGenerationSettings;
+  /** Distiller 后台提炼（可选） */
+  distiller?: DistillerSettings;
   /** 通知和音频设置 */
   notifications?: NotificationSettings;
   version: number;
@@ -753,6 +763,9 @@ export interface ProjectEntry {
   // ── 归档 ──
   archived?: boolean;
   archivedAt?: string;
+
+  /** 系统内置的「无仓库」默认工作区（key 为 `_pp_inbox`）；勿手动占用该 key */
+  systemPlaceholder?: boolean;
 }
 
 export interface ProjectIndex {

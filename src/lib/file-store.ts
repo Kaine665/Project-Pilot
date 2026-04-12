@@ -19,6 +19,10 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
+import {
+  buildDefaultPlaceholderProject,
+  DEFAULT_PLACEHOLDER_PROJECT_KEY,
+} from '@/lib/default-project';
 
 /**
  * Strip UTF-8 BOM (byte order mark) and parse JSON.
@@ -570,6 +574,35 @@ async function ensureLegacyDataSubdirProjectsMerged(): Promise<void> {
   _legacyDataSubdirProjectsMerged = true;
 }
 
+/**
+ * 项目注册表不变量：
+ * 1) 始终存在内置行 `_pp_inbox`（老用户已有其它项目时也会补一条，否则顶栏永远看不到「默认工作区」）。
+ * 2) 至少一个未归档：若全部归档则恢复 `_pp_inbox` 为活动。
+ */
+async function ensureProjectIndexInvariants(index: import('@/types').ProjectIndex): Promise<void> {
+  let dirty = false;
+  let ph = index.projects.find((p) => p.key === DEFAULT_PLACEHOLDER_PROJECT_KEY);
+  if (!ph) {
+    index.projects.unshift(buildDefaultPlaceholderProject());
+    dirty = true;
+    ph = index.projects.find((p) => p.key === DEFAULT_PLACEHOLDER_PROJECT_KEY)!;
+  } else if (!ph.systemPlaceholder) {
+    ph.systemPlaceholder = true;
+    dirty = true;
+  }
+
+  const active = index.projects.filter((p) => !p.archived);
+  if (active.length === 0) {
+    ph.archived = false;
+    delete ph.archivedAt;
+    ph.systemPlaceholder = true;
+    ph.updatedAt = new Date().toISOString();
+    dirty = true;
+  }
+
+  if (dirty) await writeProjectIndex(index);
+}
+
 export async function readProjectIndex(): Promise<import('@/types').ProjectIndex> {
   await ensureDataDirV2Migrated();
   await ensureLegacyDataSubdirProjectsMerged();
@@ -577,7 +610,9 @@ export async function readProjectIndex(): Promise<import('@/types').ProjectIndex
   const projects = (raw.projects ?? [])
     .map((row) => normalizeDiskProjectRow(row))
     .filter((e): e is import('@/types').ProjectEntry => e !== null);
-  return { projects };
+  const index = { projects };
+  await ensureProjectIndexInvariants(index);
+  return index;
 }
 
 export async function writeProjectIndex(index: import('@/types').ProjectIndex): Promise<void> {
