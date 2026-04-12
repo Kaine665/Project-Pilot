@@ -148,7 +148,7 @@ export const emptyForm: FormData = {
   contextStrategy: 'additive',
 };
 
-/** 将运行预设合并进表单（保留 name、projectKey、requiredParams、contextIds） */
+/** 将 agent 模板合并进表单（保留 name、projectKey、requiredParams、contextIds） */
 export function applyAgentPresetToForm(base: FormData, preset: AgentPreset): FormData {
   return {
     ...base,
@@ -449,7 +449,7 @@ export function SettingsForm({
               <p className="mt-1 text-xs text-zinc-400">
                 {selectedAgent?.builtIn
                   ? '内置 Agent 在所有项目下可用'
-                  : '须绑定到具体项目；跨项目复用配置请使用「运行预设」页'}
+                  : '须绑定到具体项目；跨项目复用配置请使用「agent 模板」页'}
               </p>
             </div>
           )}

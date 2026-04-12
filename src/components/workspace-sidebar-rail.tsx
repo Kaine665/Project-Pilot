@@ -8,24 +8,26 @@ import {
   Bot,
   FolderKanban,
   Layers,
-  ListTodo,
-  Store,
+  ListChecks,
   Plug,
   ScrollText,
   Settings,
-  Timer,
-  Zap,
+  Store,
 } from 'lucide-react';
 import { useTranslations } from '@/client/i18n/use-translations';
 import { useProject } from '@/components/project-context';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useRouter, usePathname } from '@/client/i18n/routing';
 import { cn } from '@/lib/utils';
+import { PP_AGENTS_LIST_EXPAND_EVENT } from '@/lib/agents-workspace-ui-shared';
 
 /** 迷你导览宽度（仅图标）。与 `w-10` 按钮同宽时：`px-4` → 左右各 16px，与 40px 图标合计 72px，避免 `px-2` 左贴右空。 */
 const WIDTH_MINI_PX = 72;
 /** 展开宽度（图标 + 文案），约为原 240 的 2/3，避免占用过宽 */
 const WIDTH_EXPANDED_PX = 160;
+
+/** 侧栏是否展示「社区市场」入口；false 时不挂载对应 `SidebarNavRow`，路由 `/workspace/community` 仍可手动访问。 */
+const WORKSPACE_SIDEBAR_COMMUNITY_ENABLED = false;
 
 /**
  * 左侧固定 40×40 图标槽 + 可选文案；迷你时仅收起文案（不占布局），图标相对侧栏左缘位置与展开一致，
@@ -98,15 +100,9 @@ function RailDivider() {
 export interface WorkspaceSidebarRailProps {
   /** true = 迷你条；false = 展开带文字（折叠切换在顶栏，状态由 WorkspaceShell 持有） */
   mini: boolean;
-  schedulesPageEnabled?: boolean;
-  taskTriggersPageEnabled?: boolean;
 }
 
-export function WorkspaceSidebarRail({
-  mini,
-  schedulesPageEnabled = true,
-  taskTriggersPageEnabled = true,
-}: WorkspaceSidebarRailProps) {
+export function WorkspaceSidebarRail({ mini }: WorkspaceSidebarRailProps) {
   const { activeKey } = useProject();
   const router = useRouter();
   const pathname = usePathname();
@@ -116,9 +112,11 @@ export function WorkspaceSidebarRail({
   const isAgentsPage = pathname.startsWith('/workspace/agents');
   const isContextPage = pathname.startsWith('/workspace/context');
   const isDocsPage = pathname.startsWith('/workspace/docs');
-  const isTodosPage = pathname.startsWith('/workspace/todos');
-  const isTaskTriggersPage = pathname.startsWith('/workspace/task-triggers');
-  const isSchedulesPage = pathname.startsWith('/workspace/schedules');
+  const isTasksPage =
+    pathname.startsWith('/workspace/tasks') ||
+    pathname.startsWith('/workspace/todos') ||
+    pathname.startsWith('/workspace/task-triggers') ||
+    pathname.startsWith('/workspace/schedules');
   const isChatPage = pathname.startsWith('/workspace/chat');
   const isSkillsPage = pathname.startsWith('/workspace/skills');
   const isPresetsPage = pathname.startsWith('/workspace/presets');
@@ -132,9 +130,7 @@ export function WorkspaceSidebarRail({
     isAgentsPage ||
     isContextPage ||
     isDocsPage ||
-    isTodosPage ||
-    isTaskTriggersPage ||
-    isSchedulesPage ||
+    isTasksPage ||
     isChatPage ||
     isSkillsPage ||
     isPresetsPage ||
@@ -187,7 +183,12 @@ export function WorkspaceSidebarRail({
                 label={tr('agents')}
                 tooltip={tr('agents')}
                 active={isAgentsPage}
-                onClick={go('/workspace/agents')}
+                onClick={() => {
+                  if (pathname.startsWith('/workspace/agents')) {
+                    window.dispatchEvent(new CustomEvent(PP_AGENTS_LIST_EXPAND_EVENT));
+                  }
+                  router.push('/workspace/agents');
+                }}
               />
               <SidebarNavRow
                 mini={mini}
@@ -233,41 +234,25 @@ export function WorkspaceSidebarRail({
               <RailDivider />
               <SidebarNavRow
                 mini={mini}
-                icon={ListTodo}
-                label={tr('todos')}
-                tooltip={tr('todos')}
-                active={isTodosPage}
-                onClick={go('/workspace/todos')}
+                icon={ListChecks}
+                label={tr('tasks')}
+                tooltip={tr('tasks')}
+                active={isTasksPage}
+                onClick={go('/workspace/tasks')}
               />
-              {taskTriggersPageEnabled && (
-                <SidebarNavRow
-                  mini={mini}
-                  icon={Zap}
-                  label={tr('taskTriggers')}
-                  tooltip={tr('taskTriggers')}
-                  active={isTaskTriggersPage}
-                  onClick={go('/workspace/task-triggers')}
-                />
-              )}
-              {schedulesPageEnabled && (
-                <SidebarNavRow
-                  mini={mini}
-                  icon={Timer}
-                  label={tr('schedules')}
-                  tooltip={tr('schedules')}
-                  active={isSchedulesPage}
-                  onClick={go('/workspace/schedules')}
-                />
-              )}
-              <RailDivider />
-              <SidebarNavRow
-                mini={mini}
-                icon={Store}
-                label={tr('community')}
-                tooltip={tr('community')}
-                active={isCommunityPage}
-                onClick={go('/workspace/community')}
-              />
+              {WORKSPACE_SIDEBAR_COMMUNITY_ENABLED ? (
+                <>
+                  <RailDivider />
+                  <SidebarNavRow
+                    mini={mini}
+                    icon={Store}
+                    label={tr('community')}
+                    tooltip={tr('community')}
+                    active={isCommunityPage}
+                    onClick={go('/workspace/community')}
+                  />
+                </>
+              ) : null}
             </div>,
           )}
 

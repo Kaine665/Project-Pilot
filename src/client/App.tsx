@@ -11,6 +11,7 @@ const ProjectsPage = lazy(() => import('@/app/[locale]/flows/projects/page'));
 const AgentsPage = lazy(() => import('@/app/[locale]/flows/agents/page'));
 const ButlerPage = lazy(() => import('@/app/[locale]/flows/butler/page'));
 const TodosPage = lazy(() => import('@/app/[locale]/flows/todos/page'));
+const TasksWorkspaceLayout = lazy(() => import('@/app/[locale]/flows/tasks/layout'));
 const DocsPage = lazy(() => import('@/app/[locale]/flows/docs/page'));
 const DocsProjectPage = lazy(() => import('@/app/[locale]/flows/docs/[projectKey]/page'));
 const ContextPage = lazy(() => import('@/app/[locale]/flows/context/page'));
@@ -31,6 +32,7 @@ const CommunityProviderTabPage = lazy(() => import('@/app/[locale]/flows/communi
 const McpPage = lazy(() => import('@/app/[locale]/flows/mcp/page'));
 const ChatPage = lazy(() => import('@/app/[locale]/flows/chat/page'));
 const SchedulesPage = lazy(() => import('@/app/[locale]/flows/schedules/page'));
+const ScheduleDetailPage = lazy(() => import('@/app/[locale]/flows/schedules/[scheduleId]/page'));
 const TaskTriggersPage = lazy(() => import('@/app/[locale]/flows/task-triggers/page'));
 const DimensionsPage = lazy(() => import('@/app/[locale]/flows/dimensions/page'));
 const RecycleBinPage = lazy(() => import('@/app/[locale]/flows/recycle-bin/page'));
@@ -68,7 +70,14 @@ function AppRoutes() {
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="agents" element={<AgentsPage />} />
           <Route path="butler" element={<ButlerPage />} />
-          <Route path="todos" element={<TodosPage />} />
+          <Route path="tasks" element={<TasksWorkspaceLayout />}>
+            <Route index element={<Navigate to="todos" replace />} />
+            <Route path="todos" element={<TodosPage />} />
+            <Route path="triggers" element={<TaskTriggersPage />} />
+            <Route path="schedules" element={<SchedulesPage />} />
+            <Route path="schedules/:scheduleId" element={<ScheduleDetailPage />} />
+          </Route>
+          <Route path="todos" element={<Navigate to="/workspace/tasks/todos" replace />} />
           <Route path="docs" element={<DocsPage />} />
           <Route path="docs/:projectKey" element={<DocsProjectPage />} />
           <Route path="context" element={<ContextPage />} />
@@ -89,8 +98,8 @@ function AppRoutes() {
           </Route>
           <Route path="mcp" element={<McpPage />} />
           <Route path="chat" element={<ChatPage />} />
-          <Route path="schedules" element={<SchedulesPage />} />
-          <Route path="task-triggers" element={<TaskTriggersPage />} />
+          <Route path="schedules" element={<Navigate to="/workspace/tasks/schedules" replace />} />
+          <Route path="task-triggers" element={<Navigate to="/workspace/tasks/triggers" replace />} />
           <Route path="dimensions" element={<DimensionsPage />} />
           <Route path="recycle-bin" element={<RecycleBinPage />} />
         </Route>

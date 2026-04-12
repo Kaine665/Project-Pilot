@@ -216,7 +216,7 @@ app.delete('/projects', async (c) => {
 });
 
 // ---------------------------------------------------------------------------
-// /api/data/agent-presets — Agent 运行预设
+// /api/data/agent-presets — agent 模板（URL/文件名历史遗留）
 // ---------------------------------------------------------------------------
 
 function parsePresetProjectKey(raw: unknown): string | undefined {

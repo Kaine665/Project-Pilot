@@ -680,7 +680,7 @@ export function getAgentsWorkspaceUiPath(): string {
   return path.join(DATA_DIR, 'config', 'agents-workspace-ui.json');
 }
 
-/** Agent 运行预设列表（模型、能力、Skills 等模板） */
+/** agent 模板列表（模型、能力、Skills 等；路径仍为 config/agent-presets.json） */
 export function getAgentPresetsPath(): string {
   return path.join(DATA_DIR, 'config', 'agent-presets.json');
 }

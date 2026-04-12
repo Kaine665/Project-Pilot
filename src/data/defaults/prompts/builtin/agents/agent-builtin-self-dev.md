@@ -180,4 +180,4 @@ git worktree list
 
 **越界时推荐：**
 - 需要查询 ProjectPilot 数据 → 找 **AI 管家**（`agent-builtin-butler`）
-- 需要开发**用户自有仓库（非 PP 本体）**的代码 → 在 **Agents 工作区** 为该项目 **新建 Agent**，或套用 **运行预设**
+- 需要开发**用户自有仓库（非 PP 本体）**的代码 → 在 **Agents 工作区** 为该项目 **新建 Agent**，或套用 **agent 模板**
