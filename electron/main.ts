@@ -5,6 +5,11 @@ import path from 'path';
 import { findAvailablePort } from './port-finder';
 import { startBackendServer } from './server';
 
+/** 部分 Windows 显卡驱动下 Chromium 白屏；设环境变量 `PROJECT_PILOT_DISABLE_GPU=1` 后重启 Electron 可验证 */
+if (process.env.PROJECT_PILOT_DISABLE_GPU === '1') {
+  app.disableHardwareAcceleration();
+}
+
 const isDev = !!process.env.ELECTRON_DEV;
 const APP_ENTRY_PATH = '/workspace/projects';
 const DEFAULT_PORT = 4000;
@@ -227,8 +232,16 @@ ipcMain.handle(
 );
 
 // ── 创建主窗�?────────────────────────────────────────
+/**
+ * Win/Linux 无边框顶栏高度（与 preload `titleBarOverlay.height`、renderer
+ * `TITLE_BAR_OVERLAY_HEIGHT_PX` 同步）。
+ * macOS 不启用 `titleBarOverlay`，顶栏为 `TopNav`，改此常量不会在 macOS 上生效。
+ */
+const TITLE_BAR_OVERLAY_PX = 36;
+
 function createMainWindow() {
   Menu.setApplicationMenu(null);
+  const useWindowControlsOverlay = process.platform !== 'darwin';
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -237,10 +250,22 @@ function createMainWindow() {
     title: 'ProjectPilot',
     show: isDev, // 开发模式立即显示，避免 5s 加载期间用户误以为未启动
     autoHideMenuBar: true,
+    ...(useWindowControlsOverlay
+      ? {
+          titleBarStyle: 'hidden' as const,
+          titleBarOverlay: {
+            color: '#ffffff',
+            symbolColor: '#52525b',
+            height: TITLE_BAR_OVERLAY_PX,
+          },
+        }
+      : {}),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
+      /** Agents 工作区「简单浏览器」侧栏：`<webview>`（与 Cursor Simple Browser 同类） */
+      webviewTag: true,
       // 开发态加载 Vite：需允许 eval/inline，否则脚本不执行 → 白屏（生产仍为 true）
       webSecurity: !isDev,
     },
@@ -311,6 +336,33 @@ function createMainWindow() {
         }, delay);
       },
     );
+  } else {
+    mainWindow.webContents.on(
+      'did-fail-load',
+      (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+        if (!isMainFrame) return;
+        if (errorCode === -3) return;
+        console.error('[electron] prod did-fail-load', errorCode, errorDescription, validatedURL);
+        dialog.showErrorBox(
+          '页面加载失败',
+          `无法加载应用界面（主进程已收到 did-fail-load）。\n\n错误码: ${errorCode}\n${errorDescription}\n\nURL: ${validatedURL}\n\n请确认已执行完整构建（npm run build），或尝试关闭占用端口的其它程序后重试。\n若怀疑显卡兼容问题，可在启动前设置环境变量 PROJECT_PILOT_DISABLE_GPU=1。`,
+        );
+      },
+    );
+  }
+
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[electron] render-process-gone', details);
+    if (!isDev && details.reason !== 'clean-exit') {
+      dialog.showErrorBox(
+        '渲染进程异常退出',
+        `ProjectPilot 界面进程已退出，通常由页面脚本崩溃或内存不足引起。\n\n原因: ${details.reason}\n退出码: ${details.exitCode}\n\n请从终端重新启动应用；若持续出现，可设置 PROJECT_PILOT_DISABLE_GPU=1 排除显卡加速问题。`,
+      );
+    }
+  });
+
+  if (isDev && process.env.PROJECT_PILOT_ELECTRON_DEVTOOLS === '1') {
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
 
   mainWindow.loadURL(`${windowLoadOrigin}${APP_ENTRY_PATH}`);

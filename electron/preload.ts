@@ -7,6 +7,10 @@ import {
   type IndexedAgentEventPayload,
 } from './ipc-channels';
 
+/** 与 `main.ts` 中 `TITLE_BAR_OVERLAY_PX` 同步 */
+const TITLE_BAR_OVERLAY_PX = 36;
+const useWindowControlsOverlay = process.platform !== 'darwin';
+
 contextBridge.exposeInMainWorld('electron', {
   openFolderDialog: () => ipcRenderer.invoke('open-folder-dialog'),
   /** 将渲染进程 <input type="file"> 选中的 File 转为绝对路径（Electron ≥22，用于 webkitdirectory 选文件夹） */
@@ -17,6 +21,8 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('open-external-url', url) as Promise<{ ok?: true; error?: string }>,
   /** OAuth 完成后把焦点拉回主窗口 */
   focusMainWindow: () => ipcRenderer.invoke('focus-main-window') as Promise<void>,
+  /** macOS 以外：主进程启用了 Window Controls Overlay，供 renderer 顶栏内边距与自定义标题条 */
+  titleBarOverlay: useWindowControlsOverlay ? { height: TITLE_BAR_OVERLAY_PX } : undefined,
 });
 
 contextBridge.exposeInMainWorld('electronAPI', {
