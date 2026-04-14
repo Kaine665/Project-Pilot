@@ -95,6 +95,13 @@
 
 - **Allow merge commits** / **Squash** / **Rebase**：团队选一种默认即可；与「线性历史」规则配合时需注意兼容性。
 
+#### 3.6 PR 桌面构建（Artifact + 预发布 Release）
+
+- **工作流**：[`.github/workflows/pr-desktop-build.yml`](../.github/workflows/pr-desktop-build.yml)，在 **针对 `next` 的 `pull_request`** 时并行跑 **Windows（NSIS `.exe`）** 与 **macOS（`.dmg` + `.zip`，未签名）**，与 `release.yml` 的打包步骤一致（`npm ci` → `npm run build` → `electron:compile` → `electron-builder`）。
+- **Artifacts**：PR 页面 → **Checks** → 对应 job → **Artifacts**，名称为 `pr-<PR号>-windows` 与 `pr-<PR号>-macos`（保留 14 天），便于在 Actions 里直接下载。
+- **Releases（CI 自增版本 + 每 PR 一条预发布、多附件）**：本仓库分支的 PR 在构建成功后，会新建 **预发布（Prerelease）**。版本号由脚本 **`scripts/ci-compute-pr-desktop-version.mjs`** 计算：取合并基线 `package.json` 的 **`X.Y.Z` 前缀**，**`Z` + 1（patch 自增）**，再拼 **`-pr.<PR号>`**（如基线为 `0.1.5` → **`0.1.6-pr.76`**）；`electron-builder` 通过 **`extraMetadata.version`** 写入安装包；**Release 标题与 Git tag 同为该字符串**（与正式发版的 **`v*` tag** 区分）。**每个新 PR 对应一条新 Release**；同一 PR 再次推送会先删除该 PR 曾用过的 `*-pr.<PR号>` 旧预发布再上传。**Fork 来的 PR** 不写入 Release（仅 Artifact）。**正式发版**仍由维护者在 `next` 上执行 **`npm run release:desktop:bump`**（或等价）并推 **`v*`** 触发 **`release.yml`**。
+- **分支保护（可选）**：若希望合入前必须通过桌面构建，在 `next` 的 ruleset 里将 **`PR Desktop Build / Windows`** 与 **`PR Desktop Build / macOS`**（与 Checks 里显示名称一致）设为必过；`Publish PR Release` 对 fork 仅跑占位步骤也会通过，可按需加入必过（注意：仅当工作流对 fork PR 可接受时再强制，见 §3.4 Fork 工作流说明）。
+
 ### 4. 落地检查清单（维护者自检）
 
 - [ ] 远端已存在 `next`，且与团队说明「默认集成线」一致。
@@ -102,6 +109,7 @@
 - [ ] 默认 PR 基分支在团队习惯上指向 **`next`**（GitHub 可在开 PR 时选；文档与模板已写明）。
 - [ ] Hotfix 流程已口头或文档约定：**合 `main` 后必回灌 `next`**。
 - [ ] Release/tag 仍从 **`main`**（或与 tag 指向的 commit 一致）触发。
+- [ ]（可选）已了解 **PR 桌面构建**（Artifact + 预发布：**基线 patch+1** + **`-pr.<PR>`**，见 `ci-compute-pr-desktop-version.mjs`）与 **`release:desktop:bump` / `release.yml`（`v*`）** 的分工；按需把对应 checks 设为 `next` 必过项。
 
 ### 5. 变更记录
 
@@ -110,6 +118,7 @@
 | 2026-03-31 | 初版：`main` / `next` / `feature/*` / `hotfix/*` 与 GitHub 权限清单 |
 | 2026-03-31 | 增补英文对照节 |
 | 2026-03-31 | 增加 §2.1：`main` 受保护时与 `next` 对齐、默认分支说明 |
+| 2026-04-14 | §3.6：`pr-desktop-build.yml`（针对 `next` 的 PR）— Artifact + 预发布：CI **patch+1** + `-pr.<PR>`（`ci-compute-pr-desktop-version.mjs`）；fork 仅 Artifact |
 
 ---
 
@@ -202,6 +211,13 @@ Similar to `main`, can be slightly looser:
 
 **Settings → General → Pull Requests**: pick **merge / squash / rebase** defaults consciously alongside linear-history rules.
 
+#### 3.6 PR desktop builds (artifacts + prerelease release)
+
+- **Workflow**: [`.github/workflows/pr-desktop-build.yml`](../.github/workflows/pr-desktop-build.yml) runs on **`pull_request`** targeting **`next`**, in parallel: **Windows** (NSIS `.exe`) and **macOS** (`.dmg` + `.zip`, unsigned), same steps as `release.yml` (`npm ci` → `npm run build` → `electron:compile` → `electron-builder`).
+- **Artifacts**: PR → **Checks** → job → **Artifacts**, named `pr-<PR#>-windows` and `pr-<PR#>-macos` (14-day retention).
+- **Releases (CI auto-incremented version, one prerelease per PR, multiple assets)**: for PRs from **this repo** (not forks), after both jobs succeed the workflow creates a **prerelease**. The version string is computed by **`scripts/ci-compute-pr-desktop-version.mjs`**: take the merge-base `package.json` **`X.Y.Z` prefix**, **increment `Z` by 1**, append **`-pr.<PR#>`** (e.g. base `0.1.5` → **`0.1.6-pr.76`**). **`electron-builder`** gets it via **`extraMetadata.version`**; **release title and Git tag are the same string** (distinct from shipping **`v*` tags**). **Each new PR creates a new release row**; new pushes on the same PR delete any prior `*-pr.<PR#>` prerelease(s) for that PR and re-upload assets. **Fork PRs** skip the release upload (artifacts only; avoids `GITHUB_TOKEN` write limits on the base repo). **Shipping releases** still come from maintainers running **`npm run release:desktop:bump`** (or equivalent) on **`next`** and pushing **`v*`**, which triggers **`release.yml`**.
+- **Branch protection (optional)**: add **`PR Desktop Build / Windows`** and **`PR Desktop Build / macOS`** as required checks on `next`; **`Publish PR Release`** always completes (no-op on forks) and can be required if you want (only if fork PR policy in §3.4 is acceptable).
+
 ### 4. Maintainer rollout checklist
 
 - [ ] Remote **`next`** exists and the team agrees it is the integration line.
@@ -209,6 +225,7 @@ Similar to `main`, can be slightly looser:
 - [ ] Default PR base in practice is **`next`** (GitHub UI + docs/templates aligned).
 - [ ] Hotfix policy documented: **after `main`, backport to `next`**.
 - [ ] Releases/tags still trace to **`main`** (or the tagged commit policy you use).
+- [ ] (Optional) **PR desktop build** (artifacts + prerelease: **baseline patch+1** + **`-pr.<PR>`**, see `ci-compute-pr-desktop-version.mjs`) vs **`release:desktop:bump` / `release.yml` (`v*`)** understood; add checks to `next` if desired.
 
 ### 5. Change log
 
@@ -217,3 +234,4 @@ Similar to `main`, can be slightly looser:
 | 2026-03-31 | First version: branch model + GitHub permissions |
 | 2026-03-31 | Added English section |
 | 2026-03-31 | §2.1: sync `main` with `next` when protected; default branch note |
+| 2026-04-14 | §3.6: `pr-desktop-build.yml` on PRs to `next` — artifacts + prereleases with CI **patch+1** + `-pr.<PR>` (`ci-compute-pr-desktop-version.mjs`); fork PRs artifacts only |

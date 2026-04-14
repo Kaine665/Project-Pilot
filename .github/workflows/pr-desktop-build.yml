@@ -1,0 +1,192 @@
+# PR 针对 next：并行构建 Windows + macOS → 本仓库 PR 自动建 **预发布 Release**。
+# 版本号：合并基线 `package.json` 的 **patch + 1** 再拼 **-pr.<PR号>**（脚本 `scripts/ci-compute-pr-desktop-version.mjs`），写入 electron-builder；Release **标题与 tag 同该字符串**（与正式 `v*` 区分）。多附件 + Artifact。
+# 每个新 PR 一条新 Release；同一 PR 反复推送会先删掉 `*-pr.<N>` 旧预发布再重建。正式发版仍走 release.yml。Fork PR 不写 Release。
+name: PR Desktop Build
+
+on:
+  pull_request:
+    branches:
+      - next
+
+concurrency:
+  group: pr-desktop-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Compute PR desktop app version (patch +1 + -pr.<N>)
+        id: ci_ver
+        shell: bash
+        run: |
+          V=$(node scripts/ci-compute-pr-desktop-version.mjs "${{ github.event.pull_request.number }}")
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Computed app version: $V"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Production build (Vite + Hono)
+        run: npx cross-env NODE_ENV=production npm run build
+
+      - name: Compile Electron main
+        run: npm run electron:compile
+
+      - name: Package Windows
+        run: npx electron-builder --win --publish never --config.extraMetadata.version=${{ steps.ci_ver.outputs.version }}
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-${{ github.event.pull_request.number }}-windows
+          path: build/*.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Compute PR desktop app version (patch +1 + -pr.<N>)
+        id: ci_ver
+        shell: bash
+        run: |
+          V=$(node scripts/ci-compute-pr-desktop-version.mjs "${{ github.event.pull_request.number }}")
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Computed app version: $V"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Production build (Vite + Hono)
+        run: npx cross-env NODE_ENV=production npm run build
+
+      - name: Compile Electron main
+        run: npm run electron:compile
+
+      - name: Package macOS (unsigned)
+        run: npx electron-builder --mac --publish never --config.extraMetadata.version=${{ steps.ci_ver.outputs.version }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-${{ github.event.pull_request.number }}-macos
+          path: |
+            build/*.dmg
+            build/*.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-pr-release:
+    name: Publish PR Release
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Job context (fork PRs skip Release upload)
+        run: |
+          echo "head=${{ github.event.pull_request.head.repo.full_name }} repo=${{ github.repository }}"
+
+      - name: Checkout merge commit (same ref as Windows/macOS build)
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/checkout@v4
+
+      - name: Compute PR desktop app version (same as build jobs)
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        id: appver
+        run: |
+          V=$(node scripts/ci-compute-pr-desktop-version.mjs "${{ github.event.pull_request.number }}")
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Release title & tag: $V"
+
+      - name: Remove prior prereleases for this PR (same PR rebuild or version bump)
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR="${{ github.event.pull_request.number }}"
+          TAGS=$(gh release list --limit 200 --json tagName | jq -r --arg pr "$PR" '.[] | .tagName | select(endswith("-pr." + $pr))')
+          if [ -z "$TAGS" ]; then echo "No prior PR prereleases for #${PR}"; exit 0; fi
+          echo "$TAGS" | while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            echo "Deleting release/tag: ${tag}"
+            gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+            gh api --method DELETE "repos/${{ github.repository }}/git/refs/tags/${tag}" 2>/dev/null || true
+          done
+
+      - name: Download Windows package
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-${{ github.event.pull_request.number }}-windows
+          path: release-assets
+
+      - name: Download macOS packages
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-${{ github.event.pull_request.number }}-macos
+          path: release-assets
+
+      - name: Create prerelease (title & tag = patch+1 semver + -pr.<N>)
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.appver.outputs.version }}
+          name: ${{ steps.appver.outputs.version }}
+          body: |
+            **PR #${{ github.event.pull_request.number }}** 自动桌面构建（**预发布**，非正式版本）。
+
+            - **软件版本**（合并基线 `package.json` 的 **patch + 1** 并加 `-pr.<PR>`）：`${{ steps.appver.outputs.version }}`
+            - **Git tag** 同上（与正式发版 `v*` tag 区分）
+            - **合并验证提交**：`${{ github.sha }}`（`pull_request` 默认 merge commit）
+            - 工作流：[`.github/workflows/pr-desktop-build.yml`](${{ github.server_url }}/${{ github.repository }}/blob/${{ github.event.pull_request.base.ref }}/.github/workflows/pr-desktop-build.yml)
+
+            附件：**Windows**（`.exe`）与 **macOS**（`.dmg`、`.zip`，未签名）。
+          files: release-assets/*
+          prerelease: true
+          draft: false
+          fail_on_unmatched_files: true
+          target_commitish: ${{ github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
