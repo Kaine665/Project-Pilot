@@ -6,6 +6,10 @@
 
 **本文是仓库内「AI 应读哪些文档、改什么要联动哪里」的权威索引。** 人类或任一 AI 在变更项目级事实（路径、架构、工作流）时，应先打开本文，按检查清单更新相关入口。
 
+### 对话与 Agent 系统（进入本仓库请先读）
+
+凡涉及 **Agent Chat、会话生命周期、Runner、上下文装载、与外部 Agent 运行时对标**，在细读 `agent-chat-architecture` 与 as-is 之前，应先建立**统一分层语言**：[`docs/design/conversation-agent-system-lens.md`](./design/conversation-agent-system-lens.md)（八层模型 + Claude Code harness / Hermes Agent / OpenHarness 与 ProjectPilot 对照）。
+
 ## 多入口一览（须相互感知）
 
 
@@ -35,6 +39,7 @@
 | 数据目录与路径函数 | [`data-storage.md`](./data-storage.md) |
 | 数据规范索引 | [`data-spec/README.md`](./data-spec/README.md) |
 | Agent Chat 架构 | [`agent-chat-architecture.md`](./agent-chat-architecture.md) |
+| **对话与 Agent 系统（八层对标）** | [`design/conversation-agent-system-lens.md`](./design/conversation-agent-system-lens.md) |
 | 统一文档（设计 + 知识） | [`context-system.md`](./context-system.md) |
 | 产品定位 / 五模块飞轮 / Dashboard / 数据模型 | [`design/product-direction-and-dashboard.md`](./design/product-direction-and-dashboard.md) |
 | Git 分支策略与 GitHub 权限（维护者） | [`github-branch-policy.md`](./github-branch-policy.md) |
@@ -124,5 +129,6 @@
 | 2026-04-12 | **产品叙事唯一口径**：README / `product-boundary` / `MEMORY` / `CLAUDE` 与 `product-direction-and-dashboard` 对齐 — Builder 工作台 + 五模块飞轮（含 Dashboard）+ 六维度；删除旧「任务推进系统 / Not another chatbox」类对外定位表述 | `README.md`、`docs/design/product-boundary.md`、`MEMORY.md`、`CLAUDE.md`、本文件 |
 | 2026-04-12 | **MCP 默认市场**：`config/mcp-market.json` 首次缺失时写入 `default-mcp-market.json`（Memory、Sequential Thinking、Playwright）；`listMcpMarketServerKeys` / Agent spawn 前调用 `ensureDefaultMcpMarketSeeded`；`/workspace/mcp` 页改为短说明 | `src/data/default-mcp-market.json`、`mcp-market-store.ts`、`base-chat-manager.ts`、`server/index.ts`、`flows/mcp/page.tsx`、`messages/zh.json`、`messages/en.json`、`data-storage.md`、本文件 |
 | 2026-04-12 | **Cursor Paper MCP**：`.cursor/mcp.json` 增加 `paper`（`npx -y mcp-remote http://127.0.0.1:29979/mcp`）；`docs/cursor-mcp-project-pilot.md` 增补前置条件与排错；知识地图 Cursor MCP 行合并 Paper 说明 | `.cursor/mcp.json`、`docs/cursor-mcp-project-pilot.md`、本文件「多入口一览」表 |
+| 2026-04-14 | **对话与 Agent 系统八层对标**：Claude Code harness / Hermes / OpenHarness 与 PP 映射；`AI_AGENT_KNOWLEDGE_MAP` 入口、`CLAUDE.md` 域索引、`MEMORY.md` 速记、`docs/design/README` | [`docs/design/conversation-agent-system-lens.md`](./design/conversation-agent-system-lens.md)、`docs/AI_AGENT_KNOWLEDGE_MAP.md`、`CLAUDE.md`、`MEMORY.md`、`docs/design/README.md`、`docs/README.md` |
 
 （后续变更请继续追加表格行，勿删历史。）

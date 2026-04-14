@@ -117,6 +117,11 @@ npm run lint         # ESLint 检查
 - 代码中变量名/函数名用英文
 - Commit 消息用英文，遵循 Conventional Commits
 
+## 文档（改 Agent / 会话前先读）
+
+- **对话与 Agent 系统八层对标**（Claude Code / Hermes / OpenHarness vs PP）：[`docs/design/conversation-agent-system-lens.md`](docs/design/conversation-agent-system-lens.md)
+- **多 AI 入口与同步清单**：[`docs/AI_AGENT_KNOWLEDGE_MAP.md`](docs/AI_AGENT_KNOWLEDGE_MAP.md)
+
 ## 关键文件索引
 
 | 路径 | 作用 |

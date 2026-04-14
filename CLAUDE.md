@@ -77,12 +77,11 @@
 
 ### 域索引
 
-
 | 能力域                     | as-is                            | design                                           |
 | ----------------------- | -------------------------------- | ------------------------------------------------ |
 | Agents 工作区（布局/侧栏/会话）    | `docs/as-is/agents-workspace.md` | `docs/design/agents-workspace.md`                |
+| 对话与 Agent 系统（分层对标、外部参考） | `docs/agent-chat-architecture.md` | `docs/design/conversation-agent-system-lens.md` |
 | 产品定位 / 系统架构 / Dashboard | —                                | `docs/design/product-direction-and-dashboard.md` |
-
 
 > 随项目演进补充更多行。未覆盖的域：先检查 `docs/as-is/` 和 `docs/design/` 是否已有对应页面；若无，改动后创建。
 
