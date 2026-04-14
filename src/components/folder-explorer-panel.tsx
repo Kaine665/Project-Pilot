@@ -47,6 +47,8 @@ interface FolderExplorerPanelProps {
   embedded?: boolean;
   /** When set with embedded + data resolve: no arbitrary path / folder picker; only retry this root */
   lockToInitialDataPath?: boolean;
+  /** Agents 工作区 Rail 等：隐藏根目录名 + 统计 + 顶栏快捷操作（外层已有标题） */
+  hideFolderSummaryBar?: boolean;
 }
 
 // ── Context Menu State ──
@@ -241,6 +243,7 @@ export function FolderExplorerPanel({
   initialResolveMode,
   embedded = false,
   lockToInitialDataPath = false,
+  hideFolderSummaryBar = false,
 }: FolderExplorerPanelProps) {
   const tAgentsWs = useTranslations('agentsWorkspace');
   const tChat = useTranslations('chat');
@@ -329,11 +332,11 @@ export function FolderExplorerPanel({
         name: e.name, path: e.path, isDirectory: e.isDirectory,
         expanded: false, loaded: false,
       })));
-      if (embedded) {
-        setGitInfo(null);
-      } else {
-        fetchGitInfo(resolvedPath).then(setGitInfo).catch(() => setGitInfo(null));
-      }
+      fetchGitInfo(resolvedPath).then(setGitInfo).catch(() => {
+        const sep = resolvedPath.includes('\\') ? '\\' : '/';
+        const folderName = resolvedPath.split(sep).filter(Boolean).pop() || resolvedPath;
+        setGitInfo({ folderName, branch: null, hasGit: false, fileCount: 0, dirCount: 0 });
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load directory');
       setTree([]);
@@ -441,9 +444,11 @@ export function FolderExplorerPanel({
     if (!rootPath) return;
     void (async () => {
       await resyncFromDisk();
-      if (!embedded) {
-        fetchGitInfo(rootPath).then(setGitInfo).catch(() => setGitInfo(null));
-      }
+      fetchGitInfo(rootPath).then(setGitInfo).catch(() => {
+        const sep = rootPath.includes('\\') ? '\\' : '/';
+        const folderName = rootPath.split(sep).filter(Boolean).pop() || rootPath;
+        setGitInfo({ folderName, branch: null, hasGit: false, fileCount: 0, dirCount: 0 });
+      });
     })();
   }, [rootPath, embedded, resyncFromDisk]);
 
@@ -1149,35 +1154,69 @@ export function FolderExplorerPanel({
         </div>
       )}
 
-      {/* Project info（非嵌入式：当前路径摘要 + Git；嵌入式侧栏直接展示下方树，不重复占一行） */}
-      {rootPath && gitInfo && !embedded && (
-        <div className="border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
-          <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-zinc-100 dark:bg-zinc-800">
-              <FolderOpen className="h-4 w-4 text-zinc-500" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5">
-                <span className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                  {gitInfo.folderName}
-                </span>
-                <button type="button" onClick={handleGoUp} className="rounded p-0.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300" title="Go up">
-                  <ArrowUp className="h-3 w-3" />
+        {/* Project info：独立弹层/聊天侧栏保留；Rail 传 `hideFolderSummaryBar`（或旧逻辑 `embedded`）时隐藏 */}
+        {rootPath && gitInfo && !hideFolderSummaryBar && !embedded && (
+          <div className="border-b border-zinc-100 px-3 py-2.5 dark:border-zinc-800 shrink-0 bg-zinc-50/40 dark:bg-zinc-900/30 flex flex-col gap-1.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="flex h-5 w-5 items-center justify-center rounded-[4px] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.08)] ring-1 ring-zinc-900/5 dark:bg-zinc-800 dark:ring-white/10">
+                <FolderOpen className="h-3 w-3 text-blue-500 dark:text-blue-400" />
+              </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+                      {gitInfo.folderName}
+                    </span>
+                    {!embedded && (
+                      <button type="button" onClick={handleGoUp} className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300" title="Go up">
+                        <ArrowUp className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+              
+            {/* Embedded 模式下右上角的快捷操作（刷新、新建等），非 Embedded 已经在总 Header 里了 */}
+            {embedded && (
+              <div className="flex items-center gap-0 opacity-60 hover:opacity-100 transition-opacity">
+                <button type="button" onClick={handleRefresh} className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" title="Refresh">
+                  <RefreshCw className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInlineInput({ type: 'new-file', parentPath: rootPath });
+                  }}
+                  className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                  title="New File"
+                >
+                  <FilePlus className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInlineInput({ type: 'new-folder', parentPath: rootPath });
+                  }}
+                  className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                  title="New Folder"
+                >
+                  <FolderPlus className="h-3.5 w-3.5" />
                 </button>
               </div>
-              <div className="flex items-center gap-3 text-[11px] text-zinc-500 dark:text-zinc-400">
-                {gitInfo.hasGit && gitInfo.branch && (
-                  <span className="flex items-center gap-1">
-                    <GitBranch className="h-3 w-3" />
-                    {gitInfo.branch}
-                  </span>
-                )}
-                <span>{gitInfo.dirCount} dirs, {gitInfo.fileCount} files</span>
-              </div>
+            )}
+            </div>
+            {/* Git 与文件统计（仅在非嵌入或者空间允许时显示，让侧边栏看起来更专业） */}
+            <div className="flex items-center gap-2.5 text-[10px] text-zinc-500 dark:text-zinc-400 pl-[28px]">
+              {gitInfo.hasGit && gitInfo.branch && (
+                <span className="flex items-center gap-0.5">
+                  <GitBranch className="h-2.5 w-2.5" />
+                  {gitInfo.branch}
+                </span>
+              )}
+              <span className="opacity-80">{gitInfo.dirCount} dirs, {gitInfo.fileCount} files</span>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
       {/* Error banner */}
       {error && (
@@ -1206,7 +1245,7 @@ export function FolderExplorerPanel({
 
       {/* Tree area — 空白处右键 = 针对根目录（新建文件/夹等），不选「重命名/删除根」 */}
       <div
-        className="flex-1 overflow-y-auto p-1"
+        className="flex-1 overflow-y-auto p-1.5"
         onContextMenu={(e) => {
           if (!rootPath || loading || fileLoading) return;
           const t = e.target as HTMLElement;

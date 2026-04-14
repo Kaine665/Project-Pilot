@@ -2,6 +2,7 @@
 
 import { memo, useState, useRef, useCallback, useEffect } from 'react';
 import { Send, Square, X, Paperclip, UserPlus } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup } from '@/components/ui/select';
 import type { Agent } from '@/types';
 
 /** 将 token 数格式化为易读字符串，如 "3.2k"、"12.3k" */
@@ -9,6 +10,18 @@ function formatTokens(n: number): string {
   if (n <= 0) return '0';
   if (n < 1000) return String(n);
   return `${(n / 1000).toFixed(1)}k`;
+}
+
+/**
+ * Radix Select 受控 value 必须与某个 SelectItem 一致；否则（例如模型列表已就绪但 composite 尚未 seed）
+ * 会在控制台抛错并让整个 React 根卸载 → 先正常一帧再立刻白屏。
+ */
+function selectValueIfInOptions(
+  value: string | undefined,
+  options: Array<{ value: string; label: string }> | undefined,
+): string | undefined {
+  if (!value || !options?.length) return undefined;
+  return options.some((o) => o.value === value) ? value : undefined;
 }
 
 /** 上下文窗口圆环（Cursor 风格），颜色随用量变化：绿 → 黄 → 橙 → 红 */
@@ -44,10 +57,11 @@ function ChatComposeDialogSurface({ children }: { children: React.ReactNode }) {
   return (
     <div
       className={[
-        'rounded-2xl border border-zinc-200/90 bg-gradient-to-b from-white to-zinc-50/90 p-2',
-        'shadow-[0_2px_14px_rgba(15,23,42,0.07)] ring-1 ring-zinc-900/[0.04]',
-        'dark:border-zinc-600/70 dark:from-zinc-900 dark:to-zinc-950 dark:ring-white/[0.06]',
-        'dark:shadow-[0_2px_20px_rgba(0,0,0,0.45)]',
+        'rounded-3xl border border-zinc-200/95 bg-white p-2.5',
+        'shadow-sm ring-1 ring-zinc-900/5',
+        'dark:border-white/10 dark:bg-zinc-800/80 dark:ring-white/10',
+        'dark:shadow-sm',
+        'backdrop-blur-xl',
       ].join(' ')}
     >
       {children}
@@ -56,7 +70,7 @@ function ChatComposeDialogSurface({ children }: { children: React.ReactNode }) {
 }
 
 const composeActionBtnBase = [
-  'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-all duration-150',
+  'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl transition-all duration-200',
   'focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-900',
 ].join(' ');
 
@@ -79,7 +93,7 @@ function ComposeActionButton(props: {
         aria-label={title}
         className={[
           composeActionBtnBase,
-          'bg-red-500 text-white shadow-sm hover:bg-red-600 active:scale-[0.97]',
+          'bg-red-500 text-white hover:bg-red-600 active:scale-95',
           'focus-visible:ring-red-400/90',
         ].join(' ')}
       >
@@ -88,20 +102,20 @@ function ComposeActionButton(props: {
     );
   }
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      aria-label={title}
-      className={[
-        composeActionBtnBase,
-        'bg-zinc-900 text-white shadow-sm hover:bg-zinc-800 active:scale-[0.97]',
-        'disabled:pointer-events-none disabled:opacity-35 disabled:shadow-none',
-        'focus-visible:ring-zinc-400/80',
-        'dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200',
-      ].join(' ')}
-    >
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        title={title}
+        aria-label={title}
+        className={[
+          composeActionBtnBase,
+          'bg-black text-white hover:bg-zinc-800 active:scale-95',
+          'disabled:pointer-events-none disabled:opacity-35',
+          'focus-visible:ring-zinc-400/80',
+          'dark:bg-white dark:text-black dark:hover:bg-zinc-200',
+        ].join(' ')}
+      >
       <Send className="h-[18px] w-[18px]" strokeWidth={2.25} />
     </button>
   );
@@ -218,6 +232,12 @@ export const ChatInput = memo(function ChatInput({
       name: 'run',
       description: '手动开启一次 Run（不会发送给模型）',
       commandText: '/run ',
+    },
+    {
+      kind: 'command',
+      name: 'distiller',
+      description: '提炼到「产物」：从当前对话提取知识与待办（侧栏查看）',
+      commandText: '/distiller',
     },
   ];
 
@@ -553,7 +573,7 @@ export const ChatInput = memo(function ChatInput({
       )}
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
       {/* Toolbar */}
-      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+      <div className="mb-3 flex flex-wrap items-center gap-2 px-2">
         {/* Token 圆环指示器 */}
         {tokenInfo && tokenInfo.contextWindow > 0 && (() => {
           const hasActual = tokenInfo.inputTokens > 0;
@@ -584,65 +604,79 @@ export const ChatInput = memo(function ChatInput({
         })()}
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-1 rounded-full border border-zinc-200 px-2 py-0.5 text-xs text-zinc-400 hover:border-zinc-300 hover:text-zinc-600 transition-colors dark:border-zinc-700 dark:text-zinc-500 dark:hover:border-zinc-600 dark:hover:text-zinc-300"
+          className="flex items-center gap-1 shrink-0 rounded-full bg-white border border-zinc-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.04)] px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:bg-zinc-800/60 dark:border-zinc-700/60 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:hover:text-white"
         >
-          <Paperclip className="h-2.5 w-2.5" />
-          附加文件
+          <Paperclip className="h-3.5 w-3.5" />
+          <span>附加文件</span>
         </button>
         {onModelChange && modelOptions && modelOptions.length > 0 && (
-          <label className="flex items-center gap-1 rounded-full border border-zinc-200 bg-white/80 px-2 py-0.5 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-300">
-            <span className="whitespace-nowrap font-medium">模型</span>
-            <select
-              value={modelValue ?? ''}
-              onChange={(e) => onModelChange(e.target.value)}
+          <div
+            role="group"
+            aria-label="选择模型"
+            className="flex items-center gap-1 rounded-full bg-white border border-zinc-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.04)] px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:bg-zinc-800/60 dark:border-zinc-700/60 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:hover:text-white"
+          >
+            <span className="whitespace-nowrap shrink-0">模型</span>
+            <Select
+              value={selectValueIfInOptions(modelValue, modelOptions)}
+              onValueChange={(val) => onModelChange(val)}
               disabled={isStreaming}
-              className="min-w-[120px] rounded-sm bg-transparent text-xs font-medium text-zinc-900 outline-none dark:text-zinc-100"
-              title="选择模型"
             >
-              {modelOptions.map((opt) => (
-                <option key={opt.value} value={opt.value} className="bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
+              <SelectTrigger className="h-6 border-0 bg-transparent px-1 py-0 shadow-none focus:ring-0 text-xs font-medium text-zinc-700 dark:text-zinc-300 w-auto max-w-[110px] data-[state=open]:bg-transparent">
+                <SelectValue placeholder="选择模型" />
+              </SelectTrigger>
+              <SelectContent className="max-w-[200px] border-zinc-200 bg-white/95 backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-900/95 shadow-xl rounded-xl" position="popper" align="center" sideOffset={8}>
+                {modelOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value} className="text-xs focus:bg-zinc-100 dark:focus:bg-zinc-800 cursor-pointer py-1.5 rounded-lg mx-1 my-0.5">
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         )}
         {onEffortChange && effortOptions && effortOptions.length > 0 && (
-          <label className="flex items-center gap-1 rounded-full border border-zinc-200 bg-white/80 px-2 py-0.5 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-300">
-            <span className="whitespace-nowrap font-medium">{effortLabel || '推理档位'}</span>
-            <select
-              value={effortValue ?? ''}
-              onChange={(e) => onEffortChange(e.target.value)}
+          <div
+            role="group"
+            aria-label={effortLabel || '选择推理档位'}
+            className="flex items-center gap-1 rounded-full bg-white border border-zinc-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.04)] px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:bg-zinc-800/60 dark:border-zinc-700/60 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:hover:text-white"
+          >
+            <span className="whitespace-nowrap shrink-0">{effortLabel || '推理档位'}</span>
+            <Select
+              value={selectValueIfInOptions(effortValue, effortOptions)}
+              onValueChange={(val) => onEffortChange(val)}
               disabled={isStreaming}
-              className="min-w-[96px] rounded-sm bg-transparent text-xs font-medium text-zinc-900 outline-none dark:text-zinc-100"
-              title={effortLabel || '选择推理档位'}
             >
-              {effortOptions.map((opt) => (
-                <option key={opt.value} value={opt.value} className="bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
+              <SelectTrigger className="h-6 border-0 bg-transparent px-1 py-0 shadow-none focus:ring-0 text-xs font-medium text-zinc-700 dark:text-zinc-300 w-auto max-w-[90px] data-[state=open]:bg-transparent">
+                <SelectValue placeholder={effortLabel || '选择推理档位'} />
+              </SelectTrigger>
+              <SelectContent className="max-w-[200px] border-zinc-200 bg-white/95 backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-900/95 shadow-xl rounded-xl" position="popper" align="center" sideOffset={8}>
+                {effortOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value} className="text-xs focus:bg-zinc-100 dark:focus:bg-zinc-800 cursor-pointer py-1.5 rounded-lg mx-1 my-0.5">
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         )}
         {showGuestPicker && guestAgents && guestAgents.length > 0 && onSelectGuest && (
           <>
             <button
               onClick={() => setGuestPickerOpen(v => !v)}
-              className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs transition-colors ${
+              className={`flex items-center gap-1 rounded-full bg-white border shadow-[0_1px_2px_rgba(0,0,0,0.04)] px-2.5 py-1 text-xs font-medium transition-colors shrink-0 ${
                 guestPickerOpen
-                  ? 'border border-amber-300 bg-amber-100 text-amber-700 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-                  : 'border border-zinc-200 text-zinc-400 hover:border-amber-200 hover:text-amber-600 dark:border-zinc-700 dark:text-zinc-500 dark:hover:border-amber-800 dark:hover:text-amber-400'
+                  ? 'border-amber-200/80 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300'
+                  : 'border-zinc-200/80 text-zinc-600 hover:bg-zinc-50 hover:text-amber-600 dark:border-zinc-700/60 dark:bg-zinc-800/60 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:hover:text-amber-400'
               }`}
             >
-              <UserPlus className="h-2.5 w-2.5" />
-              召唤旁听
+              <UserPlus className="h-3.5 w-3.5" />
+              <span>召唤旁听</span>
             </button>
             {guestPickerOpen && guestAgents.map(a => (
               <button
                 key={a.id}
                 onClick={() => { onSelectGuest(a); setGuestPickerOpen(false); }}
-                className="flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50/50 px-2 py-0.5 text-xs text-amber-700 transition-colors hover:bg-amber-100 dark:border-amber-800/40 dark:bg-amber-950/20 dark:text-amber-300 dark:hover:bg-amber-900/30"
+                className="flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200/60 shadow-[0_1px_2px_rgba(0,0,0,0.04)] px-2.5 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-950/30 dark:border-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/50"
               >
                 {a.name}
               </button>
@@ -650,30 +684,30 @@ export const ChatInput = memo(function ChatInput({
           </>
         )}
         {pendingFiles.map((f, i) => (
-          <span key={`legacy-${i}`} className="flex items-center gap-1 rounded-full bg-zinc-100 pl-2.5 pr-1.5 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+          <span key={`legacy-${i}`} className="flex items-center gap-1 rounded-full bg-white border border-zinc-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.04)] pl-2.5 pr-1.5 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800/60 dark:border-zinc-700/60 dark:text-zinc-400">
             {f.name}
             <button onClick={() => setPendingFiles(prev => prev.filter((_, j) => j !== i))} className="ml-0.5 rounded-full p-0.5 hover:bg-zinc-200 dark:hover:bg-zinc-700">
-              <X className="h-2.5 w-2.5" />
+              <X className="h-3 w-3" />
             </button>
           </span>
         ))}
         {uploadedFiles.map((f, i) => (
           <span
             key={`uploaded-${i}`}
-            className="group/file flex items-center gap-1 rounded-full bg-blue-50 pl-2.5 pr-1.5 py-0.5 text-xs text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+            className="group/file flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200/60 shadow-[0_1px_2px_rgba(0,0,0,0.04)] pl-2.5 pr-1.5 py-1 text-xs font-medium text-blue-700 dark:bg-blue-950/30 dark:border-blue-900/40 dark:text-blue-300"
             title={f.path}
           >
-            <Paperclip className="h-2.5 w-2.5 shrink-0" />
+            <Paperclip className="h-3 w-3 shrink-0" />
             {f.name}
-            <span className="text-blue-400 dark:text-blue-500">({f.formattedSize})</span>
+            <span className="text-blue-400 dark:text-blue-500 font-normal">({f.formattedSize})</span>
             <button onClick={() => setUploadedFiles(prev => prev.filter((_, j) => j !== i))} className="ml-0.5 rounded-full p-0.5 hover:bg-blue-100 dark:hover:bg-blue-900/40">
-              <X className="h-2.5 w-2.5" />
+              <X className="h-3 w-3" />
             </button>
           </span>
         ))}
         {isUploading && (
-          <span className="flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500">
-            <span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border border-zinc-300 border-t-zinc-600 dark:border-zinc-600 dark:border-t-zinc-300" />
+          <span className="flex items-center gap-1 rounded-full bg-white border border-zinc-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.04)] px-2.5 py-1 text-xs font-medium text-zinc-500 dark:bg-zinc-800/60 dark:border-zinc-700/60 dark:text-zinc-400">
+            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600 dark:border-zinc-600 dark:border-t-zinc-300" />
             上传中...
           </span>
         )}
@@ -744,14 +778,14 @@ export const ChatInput = memo(function ChatInput({
                 ? { minHeight, maxHeight: 'min(50vh, 320px)' }
                 : { minHeight: '40px', maxHeight: '200px' }
             }
-            className={[
-              'flex-1 text-sm text-zinc-900 outline-none transition-colors placeholder:text-zinc-400',
-              'border-0 bg-transparent focus:ring-0 disabled:opacity-50',
-              'dark:text-zinc-100 dark:placeholder:text-zinc-500',
-              fullWidth
-                ? 'min-h-0 resize-y rounded-lg px-2 py-2'
-                : 'resize-none rounded-lg px-2 py-1.5',
-            ].join(' ')}
+              className={[
+                'flex-1 text-[15px] leading-relaxed text-zinc-900 outline-none transition-colors placeholder:text-zinc-500/80',
+                'border-0 bg-transparent focus:ring-0 disabled:opacity-50',
+                'dark:text-zinc-100 dark:placeholder:text-zinc-500',
+                fullWidth
+                  ? 'min-h-0 resize-none rounded-xl px-3 py-2'
+                  : 'resize-none rounded-xl px-3 py-2',
+              ].join(' ')}
           />
           {isStreaming ? (
             <ComposeActionButton variant="abort" onClick={onAbort} title="中止对话" />

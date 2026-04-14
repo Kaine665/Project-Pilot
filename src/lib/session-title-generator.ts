@@ -165,7 +165,7 @@ async function callProviderApi(
 
   // OpenAI-compatible API（openai, deepseek, qwen, zhipu, minimax, kimi, openrouter, ollama, custom）
   // 使用 getProviderScopedBaseUrl 正确获取 baseUrl（支持 providerBaseUrls 中保存的探测后 URL）
-  const baseUrl = getProviderScopedBaseUrl(claude, preset, entry.provider, entry.model);
+  const baseUrl = getProviderScopedBaseUrl(claude, preset, entry.provider, entry.model, 'openai');
 
   if (!baseUrl) return null;
   return generateShortTextOpenAICompatible({

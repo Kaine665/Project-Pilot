@@ -25,6 +25,7 @@ const ProviderEntrySchema = z.object({
   id: z.string().min(1),
   nameKey: z.string().min(1),
   baseUrl: z.string().url().optional(),
+  openaiBaseUrl: z.string().url().optional(),
   candidateBaseUrls: z.array(z.string().url()).optional(),
   models: z.array(ModelOptionSchema),
   supportsOAuth: z.boolean(),
@@ -106,8 +107,10 @@ export interface ProviderPreset {
   id: ProviderId;
   /** i18n key 或显示名称（自定义供应商用 name） */
   nameKey: string;
-  /** 固定 baseUrl，undefined 表示不需要（如 Anthropic 官方用默认） */
+  /** 固定 baseUrl（Anthropic Messages 协议），undefined 表示不需要（如 Anthropic 官方用默认） */
   baseUrl?: string;
+  /** OpenAI Chat Completions 协议端点（Vercel AI SDK generateText 等场景） */
+  openaiBaseUrl?: string;
   /** 推荐模型列表（第一个为默认值） */
   models: ModelOption[];
   /** 是否支持 OAuth 登录（Anthropic / OpenAI） */

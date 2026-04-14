@@ -5,7 +5,7 @@ import { useProject } from '@/components/project-context';
 import {
   Library, Plus, Search, Save, X, Trash2,
   ChevronRight, ChevronDown, LayoutList, Columns3,
-  Tag, Circle, FolderOpen, Settings2,
+  Tag, Circle, FolderOpen, FlaskConical,
 } from 'lucide-react';
 import type { DocEntry, CategoryDef } from '@/types';
 
@@ -69,6 +69,8 @@ export default function KnowledgePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<DocStatus | 'all'>('all');
   const [showDeprecated, setShowDeprecated] = useState(false);
+  /** 仅显示会话产物提炼写入的知识（tags 含 distiller） */
+  const [distillerOnly, setDistillerOnly] = useState(false);
 
   // Editor state
   const [editing, setEditing] = useState(false);
@@ -290,6 +292,7 @@ export default function KnowledgePage() {
   // ── Filter docs ──
 
   const filteredDocs = useMemo(() => docs.filter(d => {
+    if (distillerOnly && !(d.tags ?? []).includes('distiller')) return false;
     if (statusFilter !== 'all' && (d.status ?? 'active') !== statusFilter) return false;
     if (!showDeprecated && (d.status === 'deprecated') && statusFilter !== 'deprecated') return false;
     if (searchQuery) {
@@ -297,7 +300,7 @@ export default function KnowledgePage() {
       if (!d.title.toLowerCase().includes(q) && !(d.description ?? '').toLowerCase().includes(q)) return false;
     }
     return true;
-  }), [docs, statusFilter, showDeprecated, searchQuery]);
+  }), [docs, distillerOnly, statusFilter, showDeprecated, searchQuery]);
 
   // ── Group docs by category ──
 
@@ -359,7 +362,7 @@ export default function KnowledgePage() {
             />
           </div>
           {/* Status filter */}
-          <div className="flex gap-1 mt-2">
+          <div className="flex flex-wrap items-center gap-1 mt-2">
             {(['all', 'active', 'draft', 'deprecated'] as const).map(s => (
               <button
                 key={s}
@@ -376,6 +379,19 @@ export default function KnowledgePage() {
                 {s === 'all' ? '全部' : statusLabel(s)}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => setDistillerOnly(v => !v)}
+              title="仅显示产物提炼写入的知识（distiller 标签）"
+              className={`ml-auto inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] transition-colors ${
+                distillerOnly
+                  ? 'bg-violet-600 text-white dark:bg-violet-500'
+                  : 'text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+              }`}
+            >
+              <FlaskConical className="h-3 w-3 shrink-0" />
+              产物提炼
+            </button>
           </div>
         </div>
 

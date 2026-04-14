@@ -21,6 +21,9 @@ import {
 } from '@/lib/aggregate-model-key';
 import { PROVIDER_LABELS } from '@/components/agent-chat/types';
 import { resolveAgentAvatarSrc } from '@/lib/agent-avatar';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
 // ── Icon picker presets ──
@@ -436,15 +439,21 @@ export function SettingsForm({
                   全局（所有项目）
                 </div>
               ) : projects && projects.length > 0 ? (
-                <select
-                  value={form.projectKey}
-                  onChange={e => setForm(f => ({ ...f, projectKey: e.target.value }))}
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+                <Select
+                  value={projects.some((p) => p.key === form.projectKey) ? form.projectKey : undefined}
+                  onValueChange={val => setForm(f => ({ ...f, projectKey: val }))}
                 >
-                  {projects.map(p => (
-                    <option key={p.key} value={p.key}>{p.name}</option>
-                  ))}
-                </select>
+                  <SelectTrigger className="w-full h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:ring-zinc-400">
+                    <SelectValue placeholder="选择所属项目" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60 border-zinc-200 bg-white/95 backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-900/95 shadow-xl rounded-xl">
+                    {projects.map(p => (
+                      <SelectItem key={p.key} value={p.key} className="text-sm cursor-pointer py-1.5 px-3 rounded-md mx-1 my-0.5 focus:bg-zinc-100 dark:focus:bg-zinc-800">
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               ) : null}
               <p className="mt-1 text-xs text-zinc-400">
                 {selectedAgent?.builtIn
@@ -667,19 +676,18 @@ export function SettingsForm({
             <p className="mb-2 text-xs text-zinc-400">
               仅显示设置中已配置且检测可用的模型；留空则继承全局默认。供应商在「设置」中管理。
             </p>
-            <select
-              value={
-                form.defaultProvider && form.defaultModel
-                  ? compositeKeyForAggregateItem({
-                      providerId: form.defaultProvider as ProviderId,
-                      value: form.defaultModel,
-                      label: form.defaultModel,
-                    })
-                  : ''
-              }
-              onChange={(e) => {
-                const v = e.target.value;
-                if (!v) {
+            <Select
+              value={(() => {
+                if (!form.defaultProvider || !form.defaultModel) return 'inherit';
+                const key = compositeKeyForAggregateItem({
+                  providerId: form.defaultProvider as ProviderId,
+                  value: form.defaultModel,
+                  label: form.defaultModel,
+                });
+                return agentDefaultModelOptions.some((o) => o.value === key) ? key : 'inherit';
+              })()}
+              onValueChange={(v) => {
+                if (!v || v === 'inherit') {
                   setForm((f) => ({
                     ...f,
                     defaultProvider: '',
@@ -698,15 +706,21 @@ export function SettingsForm({
                     parsed.providerId === 'openai' ? f.defaultOpenAIReasoningEffort : '',
                 }));
               }}
-              className="h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
             >
-              <option value="">继承全局默认</option>
-              {agentDefaultModelOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:focus:ring-zinc-400">
+                <SelectValue placeholder="继承全局默认" />
+              </SelectTrigger>
+              <SelectContent className="max-h-80 border-zinc-200 bg-white/95 backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-900/95 shadow-xl rounded-xl">
+                <SelectItem value="inherit" className="text-sm cursor-pointer py-1.5 px-3 rounded-md mx-1 my-0.5 focus:bg-zinc-100 dark:focus:bg-zinc-800">
+                  继承全局默认
+                </SelectItem>
+                {agentDefaultModelOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value} className="text-sm cursor-pointer py-1.5 px-3 rounded-md mx-1 my-0.5 focus:bg-zinc-100 dark:focus:bg-zinc-800">
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             {form.defaultProvider && (
               <p className="mt-1.5 text-xs text-zinc-500">
                 {form.defaultProvider} / {form.defaultModel || '继承全局默认'}
