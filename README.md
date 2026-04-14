@@ -89,6 +89,7 @@ npm run dev
 
 ### 文档
 
+- [Windows 未签名安装包与 SmartScreen](docs/desktop-windows-smartscreen-unsigned.md)（「无法确认发布者」时如何安装）
 - [AI 知识地图与多入口同步](docs/AI_AGENT_KNOWLEDGE_MAP.md)
 - [数据目录（与 file-store 对齐）](docs/data-storage.md)
 - [Agent Chat Architecture](docs/agent-chat-architecture.md)
