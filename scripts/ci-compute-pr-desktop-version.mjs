@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 /**
- * PR 桌面 CI：在合并基线 `package.json` 的 X.Y.Z 上做 **patch + 1**，再拼 `-pr.<PR号>`，
- * 得到安装包 / GitHub 预发布共用的版本号（不改仓库文件、不动 lock）。
+ * PR 桌面 CI：合并基线 `package.json` 的 X.Y.Z 做 **patch+1**，再拼 `-pr.<PR号>`；若存在环境变量
+ * **GITHUB_RUN_NUMBER**（Actions 默认注入），再拼 `.<run号>`，使「基线未 bump」时每次构建版本串仍不同。
+ *
+ * 基线 `version` 未变时，`0.1.6` 段会固定为 patch+1；要升正式号请在 `next` 上 `npm run release:desktop:bump` 或改 `package.json`。
  *
  * 用法：node scripts/ci-compute-pr-desktop-version.mjs <pr_number>
- *  stdout：单行版本字符串，例如 0.1.6-pr.42
+ *  stdout：例如 0.1.6-pr.42 或 0.1.6-pr.42.184523
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -27,5 +29,7 @@ if (!m) {
 const major = m[1];
 const minor = m[2];
 const patch = Number(m[3]) + 1;
-const v = `${major}.${minor}.${patch}-pr.${pr}`;
+const run = process.env.GITHUB_RUN_NUMBER?.trim() ?? '';
+const runSuffix = /^\d+$/.test(run) ? `.${run}` : '';
+const v = `${major}.${minor}.${patch}-pr.${pr}${runSuffix}`;
 process.stdout.write(v);
