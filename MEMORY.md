@@ -4,6 +4,8 @@
 
 > **多厂商入口与同步协议**（改路径/架构时请联动更新）：[`docs/AI_AGENT_KNOWLEDGE_MAP.md`](docs/AI_AGENT_KNOWLEDGE_MAP.md)。仓库根 [`AGENTS.md`](../AGENTS.md) 供 Cursor 等跳转。
 
+**产品定位（唯一口径）**：Builder 的 AI 工作台 — 让 AI 对项目越来越懂，而不是每次从零开始；覆盖 Builder 多维度工作（不止代码）。叙事为五模块飞轮（Memory → Loader → Runtime → Distiller → Dashboard）+ 六维度（工程 / 产品 / 设计 / 商业 / 增长 / 运营）+ Dashboard；详见 [`docs/design/product-direction-and-dashboard.md`](docs/design/product-direction-and-dashboard.md)，边界对照见 [`docs/design/product-boundary.md`](docs/design/product-boundary.md)。
+
 ---
 
 ## 统一文档系统（设计文档 + 知识文档）

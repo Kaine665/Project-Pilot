@@ -5,29 +5,32 @@
 这是 ProjectPilot 的**架构迁移分支** (`arch/vite-hono-migration-260325`)。
 
 从 Next.js 全栈架构迁移到：
+
 - **前端**：React + Vite (SPA) + React Router v7 + react-i18next
 - **后端**：Hono (Node.js/Bun) — 统一后端，吸收了原 Sidecar 进程
 - **桌面**：Electron (简化为 2 进程：Main + Hono Backend)
 
 ## 产品定位与系统架构
 
-> 详细文档：[`docs/design/product-direction-and-dashboard.md`](docs/design/product-direction-and-dashboard.md)
+> 详细文档：`[docs/design/product-direction-and-dashboard.md](docs/design/product-direction-and-dashboard.md)`
 
-**一句话定位**：Builder 的 AI 工作台 — 让 AI 对你的项目越来越懂，覆盖工程/产品/设计/商业/增长/运营全维度。
+**一句话定位**：Builder 的 AI 工作台 — 让 AI 对你的项目越来越懂，而不是每次从零开始；覆盖 Builder 多维度工作（不止代码）。
 
 ### 五模块飞轮
 
 ```
-① Memory（项目记忆）→ ② Loader（装载引擎）→ ③ Runtime（执行）→ ④ Distiller（沉淀器）→ 回到 ①
+① Memory → ② Loader → ③ Runtime → ④ Distiller → ⑤ Dashboard → 回到 ①
 ```
 
-| 模块 | 作用 | 现状 |
-|------|------|------|
-| ① Memory | 存储积累的项目理解（决策/约定/踩坑/变更） | 文档/知识存储有，缺自动积累 |
-| ② Loader | 开聊前自动注入相关上下文 | ResourceRegistry 已有 ✅ |
-| ③ Runtime | Agent 带着完整上下文执行 | Claude SDK + Codex 已有 ✅ |
-| ④ Distiller | 聊完后自动提取决策/约定/踩坑 | **缺失，最该先做** |
-| ⑤ Dashboard | 全局视图 + 行动入口 | 设计已确认，待实现 |
+
+| 模块          | 作用                     | 现状                      |
+| ----------- | ---------------------- | ----------------------- |
+| ① Memory    | 存储积累的项目理解（决策/约定/踩坑/变更） | 文档/知识存储有，缺自动积累          |
+| ② Loader    | 开聊前自动注入相关上下文           | ResourceRegistry 已有 ✅   |
+| ③ Runtime   | Agent 带着完整上下文执行        | Claude SDK + Codex 已有 ✅ |
+| ④ Distiller | 聊完后自动提取决策/约定/踩坑        | **缺失，最该先做**             |
+| ⑤ Dashboard | 全局视图 + 行动入口            | 设计已确认，待实现               |
+
 
 ### 核心数据概念
 
@@ -69,28 +72,30 @@
 
 ### 改动后
 
-5. 若行为发生变化，**必须更新**对应 **as-is** 文档（刷新 `last_reviewed` 日期）。
-6. 若改变了长期方向或做了重大技术取舍，**补充 design** 或新建 **ADR**（`docs/design/decisions/`）。
+1. 若行为发生变化，**必须更新**对应 **as-is** 文档（刷新 `last_reviewed` 日期）。
+2. 若改变了长期方向或做了重大技术取舍，**补充 design** 或新建 **ADR**（`docs/design/decisions/`）。
 
 ### 域索引
 
-| 能力域 | as-is | design |
-|--------|-------|--------|
-| Agents 工作区（布局/侧栏/会话） | `docs/as-is/agents-workspace.md` | `docs/design/agents-workspace.md` |
-| 产品定位 / 系统架构 / Dashboard | — | `docs/design/product-direction-and-dashboard.md` |
+
+| 能力域                     | as-is                            | design                                           |
+| ----------------------- | -------------------------------- | ------------------------------------------------ |
+| Agents 工作区（布局/侧栏/会话）    | `docs/as-is/agents-workspace.md` | `docs/design/agents-workspace.md`                |
+| 产品定位 / 系统架构 / Dashboard | —                                | `docs/design/product-direction-and-dashboard.md` |
+
 
 > 随项目演进补充更多行。未覆盖的域：先检查 `docs/as-is/` 和 `docs/design/` 是否已有对应页面；若无，改动后创建。
 
 ### 协作与分支
 
-- 贡献流程与分支约定：**[`CONTRIBUTING.md`](./CONTRIBUTING.md)**（`main` / `next` / `feature/*` / `hotfix/*`）
-- 维护者配置 GitHub 分支保护：**[`docs/github-branch-policy.md`](docs/github-branch-policy.md)**
+- 贡献流程与分支约定：`**[CONTRIBUTING.md](./CONTRIBUTING.md)`**（`main` / `next` / `feature/`* / `hotfix/`*）
+- 维护者配置 GitHub 分支保护：`**[docs/github-branch-policy.md](docs/github-branch-policy.md)`**
 
 ### 参考
 
-- 体系说明：[`docs/documentation-system/README.md`](docs/documentation-system/README.md)
-- 契约模板：[`docs/contracts/TEMPLATE.md`](docs/contracts/TEMPLATE.md)
-- **多 AI 入口地图与变更检查清单**：[`docs/AI_AGENT_KNOWLEDGE_MAP.md`](docs/AI_AGENT_KNOWLEDGE_MAP.md)（Cursor / Claude / 内置提示词等须交叉感知）
+- 体系说明：`[docs/documentation-system/README.md](docs/documentation-system/README.md)`
+- 契约模板：`[docs/contracts/TEMPLATE.md](docs/contracts/TEMPLATE.md)`
+- **多 AI 入口地图与变更检查清单**：`[docs/AI_AGENT_KNOWLEDGE_MAP.md](docs/AI_AGENT_KNOWLEDGE_MAP.md)`（Cursor / Claude / 内置提示词等须交叉感知）
 
 ## 开发命令
 
@@ -130,7 +135,7 @@ vite.config.ts           # Vite 配置
 ### 数据层
 
 - **磁盘树目标与现实**：本机 `~/.project-pilot/README.md`、`数据文件夹现状.md`（不在仓库）。  
-- **代码当前默认根**：`src/lib/file-store.ts` → 未设置 `PROJECT_PILOT_DATA_DIR` 时为 **`~/.project-pilot`**（不再默认使用 `~/.project-pilot/data/`）。仓库内路径索引：**[`docs/data-storage.md`](docs/data-storage.md)**。与上述目标可能不一致时，以 **`数据文件夹现状.md`** 为准。对齐 2026-03-31。
+- **代码当前默认根**：`src/lib/file-store.ts` → 未设置 `PROJECT_PILOT_DATA_DIR` 时为 `**~/.project-pilot`**（不再默认使用 `~/.project-pilot/data/`）。仓库内路径索引：`**[docs/data-storage.md](docs/data-storage.md)`**。与上述目标可能不一致时，以 `**数据文件夹现状.md**` 为准。对齐 2026-03-31。
 - 数据操作通过 `src/lib/file-store.ts`，使用原子写入（先写 .tmp 再 rename）
 - `modifyJsonFile()` 带进程级写入队列（同文件路径串行）
 
@@ -159,3 +164,4 @@ vite.config.ts           # Vite 配置
 - 内置 Agent 在 `src/lib/default-agents.ts`
 - Agent 通过 `executionMode` 区分：`'task'`（ProcessManager + worktree）vs `'chat'`（AgentChatManager）
 - `AgentChatManager` 是进程级单例
+

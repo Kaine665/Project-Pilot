@@ -93,8 +93,17 @@ node develop-static/node_modules/tsx/dist/cli.mjs develop-static/mcp-server/inde
 
 工具列表与语义见 `mcp-server/index.ts`（`list_projects`、`list_documents`、`search_documents`、`list_todos`、`list_agents` 等）。
 
+## Paper（设计画布 MCP）
+
+仓库根 `.cursor/mcp.json` 中与 **`project-pilot` 并列** 配置了 [Paper MCP](https://paper.design/docs/mcp)：通过 **`npx -y mcp-remote http://127.0.0.1:29979/mcp`** 桥接到本机 **Paper Desktop** 在打开设计文件时启动的服务。
+
+**使用前**：安装 [Paper Desktop](https://paper.design/downloads)，在应用里**打开至少一个设计文件**（后台才会监听 `29979`）。然后在 Cursor **Developer: Reload Window**，在 **Settings → Tools & MCP** 中确认 `paper` 已连接。若 Agent 仍看不到工具，按 Paper 文档对 MCP 开关做一次重载。
+
+**WSL**：若从 Linux 子环境连不上 `127.0.0.1:29979`，见 Paper 文档中的 **Windows WSL / mirrored networking** 说明。
+
 ## 变更记录
 
 | 日期 | 摘要 |
 |------|------|
+| 2026-04-12 | 增补：与 `.cursor/mcp.json` 一致的 **Paper** MCP（`mcp-remote` → Paper Desktop）、前置条件与排错 |
 | 2026-04-08 | 初版：布局 A/B、Cursor 路径解析、`TSX_TSCONFIG_PATH`、禁止 `npm run` 污染 stdout、自检命令 |

@@ -1,8 +1,9 @@
 ---
+
 # 复制本文件后改名填写；勿直接改 TEMPLATE。
-title: （产品或子域名称）
+
+## title: （产品或子域名称）
 last_reviewed: YYYY-MM-DD
----
 
 # 产品边界（与上方 `title` 一致）
 
@@ -27,6 +28,7 @@ last_reviewed: YYYY-MM-DD
 
 ## 5. 修订
 
-| 日期 | 改了什么 |
-|------|----------|
-| YYYY-MM-DD | 初稿 |
+
+| 日期         | 改了什么 |
+| ---------- | ---- |
+| YYYY-MM-DD | 初稿   |

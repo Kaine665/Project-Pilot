@@ -88,7 +88,7 @@ export PROJECT_PILOT_DATA_DIR=/path/to/custom-root
 | `config/settings.json` | 用户设置 | `getSettingsPath` |
 | `config/agents-workspace-ui.json` | Agents 工作区已打开标签 / 当前面板（按项目 `_global` 或 `projectKey`） | `getAgentsWorkspaceUiPath` |
 | `config/agent-presets.json` | agent 模板列表（路径名历史遗留） | `getAgentPresetsPath` |
-| `config/mcp-market.json` | 社区商店安装的 MCP 服务（`mcpServers`），与任务工作区 `.mcp.json` 合并后传给 Claude `--mcp-config` | `getMcpMarketPath`（`mcp-market-store.ts`） |
+| `config/mcp-market.json` | 社区商店安装的 MCP 服务（`mcpServers`），与任务工作区 `.mcp.json` 合并后传给 Claude `--mcp-config`。**文件尚不存在时**，启动链会按 `src/data/default-mcp-market.json` 写入一版常用 stdio（Memory、Sequential Thinking、Playwright）；已存在则**不覆盖** | `getMcpMarketPath`、`ensureDefaultMcpMarketSeeded`（`mcp-market-store.ts`） |
 | `config/dimensions.json` | 维度 | `getDimensionsPath` |
 | `config/worktree-ports.json` | Worktree 端口 | `getWorktreePortsPath` |
 | `.google-oauth/<google-sub>.json` | Google 登录 refresh token（按账号分文件） | `getGoogleOAuthDir` |
