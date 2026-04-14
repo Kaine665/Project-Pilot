@@ -2,6 +2,7 @@
 /**
  * 桌面发布版本自增：更新 package.json / package-lock.json，生成 chore(release) 提交与 v* 标签。
  * 推送后若存在匹配 tag 的 push，会触发 .github/workflows/release.yml 构建 exe + dmg 并上传 Release。
+ * （针对 `next` 的 PR 桌面包另有 CI：`scripts/ci-compute-pr-desktop-version.mjs` 在不打 git 的前提下做 patch+1 并加 `-pr.<N>`，与发版流程分离。）
  *
  * 用法：
  *   node scripts/bump-desktop-release.mjs [patch|minor|major]
