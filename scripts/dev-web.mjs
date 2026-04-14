@@ -1,11 +1,23 @@
 /**
  * 网页开发：同时启动 Vite + Hono（Bun 直跑 server 入口，与 electron-dev 一致；避免损坏的 tsx 包拖垮后端）。
+ *
+ * 启动前会检测端口占用并为本进程分配可用的 client/api 端口，写入环境变量与项目根 `.pp-dev-ports.json`，
+ * 使 Vite 代理与 Hono 监听一致；若探测到已有 dev 栈在响应，则退出并提示先停旧进程。
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 
-const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const root = path.join(__dirname, "..");
+const require = createRequire(import.meta.url);
+const {
+  allocateDevStackPorts,
+  loadDevServerConfig,
+  isDevStackReady,
+} = require(path.join(root, "config", "load-dev-server.cjs"));
+
 const children = [];
 
 let shuttingDown = false;
@@ -41,6 +53,20 @@ function trackChild(c, name) {
   });
   return c;
 }
+
+if (await isDevStackReady(root)) {
+  const cfg = loadDevServerConfig(root);
+  console.error(
+    `[dev-web] 已有开发栈在响应（${cfg.clientProbeOrigin} + ${cfg.apiHealthUrl}）。请先停掉旧进程再执行 npm run dev，或使用其他 worktree。`,
+  );
+  process.exit(1);
+}
+
+await allocateDevStackPorts(root);
+const cfg = loadDevServerConfig(root);
+console.log(
+  `[dev-web] Vite → ${cfg.clientLoadOrigin} | Hono → ${cfg.apiHealthUrl} | 代理 /api → ${cfg.viteProxyTarget}`,
+);
 
 const devChildEnv = {
   ...process.env,

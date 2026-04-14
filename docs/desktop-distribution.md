@@ -35,7 +35,7 @@ npm run check:env
 npm run dev
 ```
 
-Open <http://localhost:4000>
+Open <http://localhost:4287>
 
 ### Electron development
 

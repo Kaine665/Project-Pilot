@@ -129,11 +129,17 @@ export function useSessionBootstrap(params: UseSessionBootstrapParams): void {
     const explicitNewSession = initialSessionId === null;
 
     const fetchRuntimeSnapshot = async (sid: string): Promise<RuntimeSnapshotData> => {
-      const res = await fetch(
-        `/api/agent-chat/runtime-snapshot?sessionId=${sid}`,
-        { cache: 'no-store' },
-      );
-      return (await res.json()) as RuntimeSnapshotData;
+      try {
+        const res = await fetch(
+          `/api/agent-chat/runtime-snapshot?sessionId=${sid}`,
+          { cache: 'no-store' },
+        );
+        if (!res.ok) return {};
+        return (await res.json()) as RuntimeSnapshotData;
+      } catch {
+        // 网络未就绪、后端未监听等会导致 fetch 抛错，避免未处理的 Promise rejection
+        return {};
+      }
     };
 
     const reconnectRunning = async (sid: string, snapshotData: RuntimeSnapshotData) => {
@@ -234,7 +240,9 @@ export function useSessionBootstrap(params: UseSessionBootstrapParams): void {
           break;
         }
       }
-    })();
+    })().catch(() => {
+      // 兜底：bootstrap 中遗漏的异常不应冒泡为 Unhandled Promise Rejection
+    });
 
     return () => {
       cancelled = true;

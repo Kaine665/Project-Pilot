@@ -12,7 +12,7 @@
    - 或者使用无痕模式: Ctrl+Shift+N
 
 3. **访问测试任务**
-   - 打开 http://localhost:4000/tasks/task-1771205763787
+   - 打开 http://localhost:4287/tasks/task-1771205763787
    - 这是"截图/附件上传"任务
 
 4. **查看计划列表**

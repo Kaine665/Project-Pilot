@@ -11,7 +11,7 @@
    npm run dev
    ```
 
-2. 访问 http://localhost:4000
+2. 访问 http://localhost:4287
 
 ### 录制脚本
 

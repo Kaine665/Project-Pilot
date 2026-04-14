@@ -12,7 +12,8 @@ if (process.env.PROJECT_PILOT_DISABLE_GPU === '1') {
 
 const isDev = !!process.env.ELECTRON_DEV;
 const APP_ENTRY_PATH = '/workspace/projects';
-const DEFAULT_PORT = 4000;
+/** 与 `config/dev-server.json` 默认前端端口一致；占用时见 `port-finder` 回退 */
+const DEFAULT_PORT = 4287;
 
 /** 开发态 Vite 偶发未就绪或连接被重置时首屏白屏；限次自动重载 */
 let devMainLoadAttempts = 0;
@@ -126,6 +127,83 @@ if (process.platform === 'darwin') {
       bringMainWindowFromBrowserOAuth();
     }
   });
+}
+
+// ── 内嵌 Hono 子进程（生产）与优雅退出 ─────────────────────
+
+/**
+ * 结束内嵌 Hono 进程；Windows 上 child.kill 常杀不干净子进程，用 taskkill /T /F 清进程树。
+ */
+function killChildProcessTree(child: ChildProcess | null): void {
+  if (!child?.pid) return;
+  const pid = child.pid;
+  try {
+    if (process.platform === 'win32') {
+      execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore', windowsHide: true });
+    } else {
+      child.kill('SIGTERM');
+    }
+  } catch {
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      /* 已退出 */
+    }
+  }
+}
+
+function gracefulShutdown() {
+  if (backendShutdownDone) return;
+  backendShutdownDone = true;
+  if (serverProcess) {
+    killChildProcessTree(serverProcess);
+    serverProcess = null;
+  }
+}
+
+/** Chromium net::ERR_CONNECTION_REFUSED */
+const CHROME_ERR_CONNECTION_REFUSED = -102;
+
+/** 生产：内嵌后端崩溃后用户点「Reload」会连不上本机端口；限次自动拉起 Hono 并重载当前 URL */
+let prodMainLoadRecoveryAttempts = 0;
+const PROD_MAIN_LOAD_RECOVERY_MAX = 8;
+let prodBackendRecoveryInFlight = false;
+
+function wireBackendProcessExit(proc: ChildProcess) {
+  proc.once('exit', (code, signal) => {
+    console.error('[electron] embedded Hono process exited', { code, signal });
+    if (serverProcess === proc) {
+      serverProcess = null;
+    }
+  });
+}
+
+function failedUrlLoopbackPortMatchesServer(failedUrl: string): boolean {
+  try {
+    const u = new URL(failedUrl);
+    const h = u.hostname.toLowerCase();
+    if (h !== '127.0.0.1' && h !== 'localhost' && h !== '[::1]') {
+      return false;
+    }
+    const port = u.port ? Number(u.port) : (u.protocol === 'https:' ? 443 : 80);
+    return port === serverPort;
+  } catch {
+    return false;
+  }
+}
+
+async function recoverProdEmbeddedBackendAndReload(targetUrl: string): Promise<void> {
+  killChildProcessTree(serverProcess);
+  serverProcess = null;
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 400);
+  });
+  const proc = await startBackendServer(serverPort);
+  serverProcess = proc;
+  wireBackendProcessExit(proc);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    await mainWindow.loadURL(targetUrl);
+  }
 }
 
 // ── IPC: 打开文件夹选择对话框 ──
@@ -308,12 +386,13 @@ function createMainWindow() {
     }
   });
 
+  mainWindow.webContents.on('did-finish-load', () => {
+    devMainLoadAttempts = 0;
+    prodMainLoadRecoveryAttempts = 0;
+  });
+
   if (isDev) {
     const devEntryUrl = () => `${windowLoadOrigin}${APP_ENTRY_PATH}`;
-
-    mainWindow.webContents.on('did-finish-load', () => {
-      devMainLoadAttempts = 0;
-    });
 
     mainWindow.webContents.on(
       'did-fail-load',
@@ -342,10 +421,39 @@ function createMainWindow() {
       (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
         if (!isMainFrame) return;
         if (errorCode === -3) return;
+
+        const canRecoverEmbedded =
+          errorCode === CHROME_ERR_CONNECTION_REFUSED
+          && !prodBackendRecoveryInFlight
+          && failedUrlLoopbackPortMatchesServer(validatedURL)
+          && prodMainLoadRecoveryAttempts < PROD_MAIN_LOAD_RECOVERY_MAX;
+
+        if (canRecoverEmbedded) {
+          prodBackendRecoveryInFlight = true;
+          prodMainLoadRecoveryAttempts += 1;
+          console.warn(
+            `[electron] prod did-fail-load (${errorCode}), restarting embedded Hono (${prodMainLoadRecoveryAttempts}/${PROD_MAIN_LOAD_RECOVERY_MAX}) → ${validatedURL}`,
+          );
+          void (async () => {
+            try {
+              await recoverProdEmbeddedBackendAndReload(validatedURL);
+            } catch (e) {
+              console.error('[electron] embedded backend recovery failed:', e);
+              dialog.showErrorBox(
+                '页面加载失败',
+                `无法恢复内嵌服务（已尝试重启 Hono）。\n\n${e instanceof Error ? e.message : String(e)}\n\n错误码: ${errorCode}\n${errorDescription}\n\nURL: ${validatedURL}\n\n若端口被其它程序占用，请关闭后再试；也可完全退出应用后重新启动。`,
+              );
+            } finally {
+              prodBackendRecoveryInFlight = false;
+            }
+          })();
+          return;
+        }
+
         console.error('[electron] prod did-fail-load', errorCode, errorDescription, validatedURL);
         dialog.showErrorBox(
           '页面加载失败',
-          `无法加载应用界面（主进程已收到 did-fail-load）。\n\n错误码: ${errorCode}\n${errorDescription}\n\nURL: ${validatedURL}\n\n请确认已执行完整构建（npm run build），或尝试关闭占用端口的其它程序后重试。\n若怀疑显卡兼容问题，可在启动前设置环境变量 PROJECT_PILOT_DISABLE_GPU=1。`,
+          `无法加载应用界面（主进程已收到 did-fail-load）。\n\n错误码: ${errorCode}\n${errorDescription}\n\nURL: ${validatedURL}\n\n请确认已执行完整构建（npm run build），或尝试关闭占用端口的其它程序后重试。\n若怀疑显卡兼容问题，可在启动前设置环境变量 PROJECT_PILOT_DISABLE_GPU=1。\n\n若此前界面曾正常使用，可能是内嵌服务已退出：应用会自动尝试重启（限 ${PROD_MAIN_LOAD_RECOVERY_MAX} 次）；仍失败时请完全退出后重启应用。`,
         );
       },
     );
@@ -406,6 +514,7 @@ app.whenReady().then(async () => {
     serverPort = await findAvailablePort(DEFAULT_PORT);
 
     serverProcess = await startBackendServer(serverPort);
+    wireBackendProcessExit(serverProcess);
 
     splash.close();
     splash = null;
@@ -440,34 +549,3 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   gracefulShutdown();
 });
-
-/**
- * 结束内嵌 Hono 进程；Windows 上 child.kill 常杀不干净子进程，用 taskkill /T /F 清进程树。
- */
-function killChildProcessTree(child: ChildProcess | null): void {
-  if (!child?.pid) return;
-  const pid = child.pid;
-  try {
-    if (process.platform === 'win32') {
-      execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore', windowsHide: true });
-    } else {
-      child.kill('SIGTERM');
-    }
-  } catch {
-    try {
-      child.kill('SIGKILL');
-    } catch {
-      /* 已退出 */
-    }
-  }
-}
-
-function gracefulShutdown() {
-  if (backendShutdownDone) return;
-  backendShutdownDone = true;
-  if (serverProcess) {
-    killChildProcessTree(serverProcess);
-    serverProcess = null;
-  }
-}
-

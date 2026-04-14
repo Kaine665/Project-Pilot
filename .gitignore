@@ -28,6 +28,7 @@
 /build-pp-v4/
 
 # misc
+.pp-dev-ports.json
 .mcp-stdin-null
 .DS_Store
 *.pem

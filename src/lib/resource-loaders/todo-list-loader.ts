@@ -18,7 +18,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 const API_GUIDE = `### Todo API
 
-基础 URL: \`http://localhost:4000/api/todos\`
+基础 URL: \`http://localhost:4287/api/todos\`
 
 | 操作 | 方法 | 路径 | 请求体 |
 |------|------|------|--------|
@@ -35,13 +35,13 @@ const API_GUIDE = `### Todo API
 使用示例（Bash）:
 \`\`\`bash
 # 标记为进行中
-curl -s -X PATCH http://localhost:4000/api/todos/todo-123 -H "Content-Type: application/json" -d '{"status":"in_progress"}'
+curl -s -X PATCH http://localhost:4287/api/todos/todo-123 -H "Content-Type: application/json" -d '{"status":"in_progress"}'
 
 # 标记为完成
-curl -s -X PATCH http://localhost:4000/api/todos/todo-123 -H "Content-Type: application/json" -d '{"status":"done"}'
+curl -s -X PATCH http://localhost:4287/api/todos/todo-123 -H "Content-Type: application/json" -d '{"status":"done"}'
 
 # 新建待办
-curl -s -X POST http://localhost:4000/api/todos -H "Content-Type: application/json" -d '{"title":"…","priority":"high"}'
+curl -s -X POST http://localhost:4287/api/todos -H "Content-Type: application/json" -d '{"title":"…","priority":"high"}'
 \`\`\``;
 
 export class TodoListLoader implements ResourceLoader {
@@ -86,11 +86,11 @@ export class TodoListLoader implements ResourceLoader {
 
 当你完成了某个待办任务后，请主动更新其状态：
 \`\`\`bash
-curl -s -X PATCH http://localhost:4000/api/todos/<todo-id> -H "Content-Type: application/json" -d '{"status":"done"}'
+curl -s -X PATCH http://localhost:4287/api/todos/<todo-id> -H "Content-Type: application/json" -d '{"status":"done"}'
 \`\`\`
 如果你开始处理某个待办，先将其标记为进行中：
 \`\`\`bash
-curl -s -X PATCH http://localhost:4000/api/todos/<todo-id> -H "Content-Type: application/json" -d '{"status":"in_progress"}'
+curl -s -X PATCH http://localhost:4287/api/todos/<todo-id> -H "Content-Type: application/json" -d '{"status":"in_progress"}'
 \`\`\``;
 
     return {
