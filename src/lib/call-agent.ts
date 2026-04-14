@@ -12,7 +12,7 @@
  *   npx tsx src/lib/call-agent.ts --agent-id <ID> --message "指令" --async [options]
  *
  *   # 查询模式（检查异步任务状态和结果）
- *   npx tsx src/lib/call-agent.ts --poll <sessionId> [--port 4287]
+ *   npx tsx src/lib/call-agent.ts --poll <sessionId> [--port 4000]
  *
  * Options:
  *   --agent-id         Required (sync/async). Target agent ID
@@ -21,7 +21,7 @@
  *   --poll             Optional. Poll a session's status and retrieve result
  *   --project          Optional. Project key for flow context
  *   --parent-session   Optional. Parent session ID for traceability
- *   --port             Optional. Server port (default: 4287 or PROJECT_PILOT_PORT)
+ *   --port             Optional. Server port (default: 4000 or PROJECT_PILOT_PORT)
  *   --timeout          Optional. Timeout in seconds (default: 300, sync mode only)
  *   --task-file        Optional. Path to a file containing full task details (appended to --message)
  *   --depth            Optional. Current call depth for recursion guard (default: 0, max: 3)
@@ -47,7 +47,7 @@ import http from 'http';
 
 const MAX_DEPTH = 3;
 const DEFAULT_TIMEOUT_S = 300;
-const DEFAULT_PORT = 4287;
+const DEFAULT_PORT = 4000;
 const POST_TIMEOUT_MS = 15_000;
 
 // ── Types ──
@@ -500,7 +500,7 @@ async function main() {
       'Usage:\n' +
       '  npx tsx src/lib/call-agent.ts --agent-id <ID> --message "指令" [--task-file path] [options]\n' +
       '  npx tsx src/lib/call-agent.ts --agent-id <ID> --message "指令" --async [--task-file path] [options]\n' +
-      '  npx tsx src/lib/call-agent.ts --poll <sessionId> [--port 4287]\n',
+      '  npx tsx src/lib/call-agent.ts --poll <sessionId> [--port 4000]\n',
     );
     process.exit(1);
   }

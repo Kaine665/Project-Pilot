@@ -104,7 +104,7 @@
 ### 产品技术概况（回答「PP 是什么架构」时用）
 
 - **当前主栈**（以仓库 `develop-static/CLAUDE.md` 为准）：**React + Vite** 前端 SPA、**Hono** 统一后端、可选 **Electron** 桌面；**国际化** react-i18next；路由 **React Router v7**（页面仍在 `src/app/[locale]/flows/` 等目录，对外多为 `/workspace/*`）。
-- **开发命令**：`bun run dev`（通常 **Vite :4287** + **Hono :4500**）。**不是** Next.js 全栈。
+- **开发命令**：`bun run dev`（通常 **Vite :4000** + **Hono :4500**；打包桌面应用内嵌服务首选 **:4287**）。**不是** Next.js 全栈。
 - 细节与目录树以 `**docs/data-storage.md`**、`**file-store.ts**` 为准，勿凭旧版本记忆回答。
 
 ## 文档库（设计文档与知识文档）

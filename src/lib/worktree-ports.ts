@@ -37,8 +37,8 @@ export interface WorktreePortsData {
 
 // ── 常量 ──
 
-/** 主实例端口（保留，不分配） */
-const MAIN_PORT = 4287;
+/** 主实例端口（保留，不分配）；与 `config/dev-server.json` 本地开发前端默认一致 */
+const MAIN_PORT = 4000;
 
 /** 开发实例端口起始值 */
 const DEV_PORT_START = 4010;

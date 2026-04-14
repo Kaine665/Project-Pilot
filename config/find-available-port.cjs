@@ -7,7 +7,7 @@ const net = require("net");
  * 与 `electron/port-finder.ts` 行为一致，供 Node 脚本（dev-web / electron-dev）复用。
  */
 function findAvailablePort(preferred) {
-  const p = typeof preferred === "number" && Number.isFinite(preferred) ? preferred : 4287;
+  const p = typeof preferred === "number" && Number.isFinite(preferred) ? preferred : 4000;
   return new Promise((resolve, reject) => {
     const server = net.createServer();
     server.listen(p, "127.0.0.1", () => {

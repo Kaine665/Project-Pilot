@@ -107,14 +107,14 @@
     {
       "id": "minimax",
       "nameKey": "settings.providers.minimax",
-      "baseUrl": "https://api.minimaxi.com/anthropic",
-      "openaiBaseUrl": "https://api.minimax.chat",
+      "baseUrl": "https://api.minimax.io/anthropic",
+      "openaiBaseUrl": "https://api.minimax.io",
       "candidateBaseUrls": [
+        "https://api.minimax.io/anthropic",
         "https://api.minimaxi.com/anthropic",
-        "https://api.minimax.chat/anthropic",
-        "https://api.minimax.io/anthropic"
+        "https://api.minimax.chat/anthropic"
       ],
-      "modelsListBaseUrl": "https://api.minimax.chat",
+      "modelsListBaseUrl": "https://api.minimax.io",
       "modelsListProtocol": "openai",
       "models": [
         { "id": "MiniMax-M2.7", "label": "MiniMax M2.7", "contextWindow": 204800 },
@@ -129,6 +129,7 @@
       "editableBaseUrl": true,
       "editableModel": true,
       "apiKeyPlaceholder": "your-minimax-api-key",
+      "useApiKeyForAuth": true,
       "extraEnv": {
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
       }
