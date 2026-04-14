@@ -186,14 +186,15 @@ async function startDevStackWithElectron() {
   server.on("exit", (code, signal) => onUnexpectedChildExit("Hono (bun)", code, signal));
 
   try {
+    // 须同时就绪：仅 Vite 时 Electron 首屏可能已渲染但 /api 代理仍失败；长时间挂起 fetch 会导致「假白屏」
     await waitOn({
-      resources: [cfg.clientProbeOrigin],
+      resources: [cfg.clientProbeOrigin, cfg.apiHealthUrl],
       timeout: 120_000,
       interval: 250,
     });
   } catch (e) {
     console.error(
-      `[electron-dev] 等待 Vite 就绪 (${cfg.clientProbeOrigin}) 超时或失败:`,
+      `[electron-dev] 等待开发栈就绪 (Vite: ${cfg.clientProbeOrigin} + API: ${cfg.apiHealthUrl}) 超时或失败:`,
       e?.message ?? e,
     );
     killChildren();

@@ -13,9 +13,14 @@ const dev = loadDevServerConfig(root);
 export default defineConfig({
   plugins: [react()],
   resolve: {
+    /** 避免 Vite 预构建的 Radix 等包内嵌第二份 React → hooks dispatcher 为 null（useMemo 报错、整页白屏） */
+    dedupe: ['react', 'react-dom'],
     alias: {
       '@': path.resolve(__dirname, 'src'),
     },
+  },
+  optimizeDeps: {
+    include: ['react', 'react-dom', '@radix-ui/react-select'],
   },
   root: '.',
   publicDir: 'public',
