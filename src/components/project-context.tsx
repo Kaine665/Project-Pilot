@@ -50,14 +50,18 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const fetchProjects = useCallback(async () => {
+    const ctrl = new AbortController();
+    const t = window.setTimeout(() => ctrl.abort(), 15_000);
     try {
-      const res = await fetch('/api/data/projects');
+      const res = await fetch('/api/data/projects', { signal: ctrl.signal });
       const data = await res.json();
       const list: ProjectEntry[] = data.projects ?? [];
       setProjects(list);
       return list;
     } catch {
       return [];
+    } finally {
+      window.clearTimeout(t);
     }
   }, []);
 
@@ -80,27 +84,30 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     if (initializedRef.current) return;
     initializedRef.current = true;
 
-    fetchProjects().then((list) => {
-      if (list.length > 0) {
-        const urlParams = new URLSearchParams(window.location.search);
-        const projectParam = urlParams.get('project');
-        let stored: string | null = null;
-        try {
-          stored = localStorage.getItem(LAST_ACTIVE_PROJECT_STORAGE_KEY);
-        } catch {
-          /* ignore */
-        }
+    void fetchProjects()
+      .then((list) => {
+        if (list.length > 0) {
+          const urlParams = new URLSearchParams(window.location.search);
+          const projectParam = urlParams.get('project');
+          let stored: string | null = null;
+          try {
+            stored = localStorage.getItem(LAST_ACTIVE_PROJECT_STORAGE_KEY);
+          } catch {
+            /* ignore */
+          }
 
-        if (projectParam && list.some(p => p.key === projectParam)) {
-          setActiveKey(projectParam);
-        } else if (stored && list.some(p => p.key === stored)) {
-          setActiveKey(stored);
-        } else {
-          setActiveKey(list[0].key);
+          if (projectParam && list.some(p => p.key === projectParam)) {
+            setActiveKey(projectParam);
+          } else if (stored && list.some(p => p.key === stored)) {
+            setActiveKey(stored);
+          } else {
+            setActiveKey(list[0].key);
+          }
         }
-      }
-      setInitialized(true);
-    });
+      })
+      .finally(() => {
+        setInitialized(true);
+      });
   }, [fetchProjects, setActiveKey]);
 
   // Listen for external URL changes (e.g. browser back/forward)

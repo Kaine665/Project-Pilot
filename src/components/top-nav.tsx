@@ -1,37 +1,56 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { ChevronDown, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import type { CSSProperties } from 'react';
 import { useTranslations } from '@/client/i18n/use-translations';
-import { projectDisplayName } from '@/lib/default-project';
+import { LanguageSwitcher } from '@/components/language-switcher';
+import { ProjectSwitcher } from '@/components/project-switcher';
 import { cn } from '@/lib/utils';
-import { LanguageSwitcher } from './language-switcher';
-import { useProject } from './project-context';
 
 export function TopNav({
   children,
   workspaceSidebarMini,
   onToggleWorkspaceSidebar,
+  titleBarInsetPx = 0,
 }: {
   children?: React.ReactNode;
-  /** 侧栏是否为迷你条；与 onToggleWorkspaceSidebar 同时传入时显示顶栏切换钮 */
+  /** 桌面：左侧轨是否已完全隐藏；移动：抽屉是否关闭。与 onToggleWorkspaceSidebar 同时传入时显示顶栏切换钮 */
   workspaceSidebarMini?: boolean;
   onToggleWorkspaceSidebar?: () => void;
+  /** Win/Linux Electron：`ElectronTitleBar` 已含侧栏切换时不再重复 */
+  titleBarInsetPx?: number;
 }) {
   const tr = useTranslations('workspaceSidebarRail');
   const showSidebarToggle =
-    typeof workspaceSidebarMini === 'boolean' && typeof onToggleWorkspaceSidebar === 'function';
+    typeof workspaceSidebarMini === 'boolean' &&
+    typeof onToggleWorkspaceSidebar === 'function' &&
+    titleBarInsetPx <= 0;
 
+  /** Electron 无边框窗：空白处拖动；与 `ElectronTitleBar` 一致 */
+  const dragStyle = { WebkitAppRegion: 'drag' } as CSSProperties;
+  const noDragStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties;
+
+  const electronChrome = titleBarInsetPx > 0;
+
+  // 三列 `1fr / auto / 1fr`：中间项目切换在顶栏几何居中，左右工具区宽度不等时也不偏移（Electron 无 WCO 顶栏同理）。
+  // Electron 有 `titleBarOverlay` 时本组件通常不挂载；若挂载则勿在整段 header 上 `drag`（Windows 非客户区问题）。
   return (
-    <header className="flex shrink-0 items-center border-b border-zinc-200 bg-white px-4 py-3 sm:px-6 dark:border-zinc-800 dark:bg-zinc-950">
-      {/* 与右侧区等宽，保证中间项目切换在顶栏水平居中 */}
-      <div className="flex min-w-0 flex-1 items-center justify-start">
+    <header
+      className={cn(
+        'relative grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 bg-white px-4 py-1 sm:px-6 dark:bg-zinc-950 sm:gap-3',
+        electronChrome
+          ? 'border-zinc-200 dark:border-zinc-800'
+          : 'border-b border-zinc-200 dark:border-zinc-800',
+      )}
+      style={electronChrome ? noDragStyle : dragStyle}
+    >
+      <div className="relative z-10 flex min-w-0 items-center justify-start" style={noDragStyle}>
         {showSidebarToggle ? (
           <button
             type="button"
+            style={noDragStyle}
             onClick={onToggleWorkspaceSidebar}
             className={cn(
-              'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-600 shadow-sm',
+              'flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-zinc-200 bg-white px-2.5 text-xs font-medium text-zinc-600 shadow-sm',
               'transition-all hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900',
               'active:scale-[0.97] active:border-zinc-300 active:bg-zinc-100',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2',
@@ -42,83 +61,22 @@ export function TopNav({
             aria-label={workspaceSidebarMini ? tr('expandGuide') : tr('collapseGuide')}
             title={workspaceSidebarMini ? tr('expandGuide') : tr('collapseGuide')}
           >
-            {workspaceSidebarMini ? (
-              <ChevronsRight className="h-5 w-5" aria-hidden />
-            ) : (
-              <ChevronsLeft className="h-5 w-5" aria-hidden />
-            )}
+            {workspaceSidebarMini ? tr('toggleSidebarExpand') : tr('toggleSidebarCollapse')}
           </button>
         ) : (
-          <div className="h-10 w-10 shrink-0" aria-hidden />
+          <div className="h-8 w-8 shrink-0" aria-hidden />
         )}
       </div>
-      <div className="flex shrink-0 justify-center">
+      <div
+        className="relative z-10 flex min-w-0 max-w-[min(42vw,20rem)] shrink items-center justify-center justify-self-center px-1 sm:px-2"
+        style={noDragStyle}
+      >
         <ProjectSwitcher />
       </div>
-      <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
+      <div className="relative z-10 flex min-w-0 items-center justify-end gap-3" style={noDragStyle}>
         <LanguageSwitcher />
         {children}
       </div>
     </header>
-  );
-}
-
-function ProjectSwitcher() {
-  const { projects, activeKey, setActiveKey } = useProject();
-  const tProjects = useTranslations('projects');
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const activeProject = projects.find(p => p.key === activeKey);
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    if (!open) return;
-    const handleClick = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [open]);
-
-  return (
-    <div ref={containerRef} className="relative">
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-4 py-1.5 text-sm font-medium text-zinc-600 shadow-sm transition-all hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-      >
-        <span className="max-w-[min(200px,42vw)] truncate sm:max-w-[200px]">
-          {activeProject ? projectDisplayName(activeProject, tProjects('defaultWorkspaceName')) : tProjects('topNavNoProject')}
-        </span>
-        <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} />
-      </button>
-      {open && (
-        <div className="absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 min-w-[180px] max-w-[280px] rounded-md border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
-          {projects.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-zinc-400">{tProjects('noProjects')}</div>
-          ) : (
-            projects.map(p => (
-              <button
-                key={p.key}
-                onClick={() => {
-                  setActiveKey(p.key);
-                  setOpen(false);
-                }}
-                className={cn(
-                  'flex w-full items-center px-3 py-1.5 text-sm transition-colors text-left',
-                  p.key === activeKey
-                    ? 'bg-zinc-100 text-zinc-900 font-medium dark:bg-zinc-800 dark:text-zinc-100'
-                    : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-200',
-                )}
-              >
-                <span className="truncate">{projectDisplayName(p, tProjects('defaultWorkspaceName'))}</span>
-              </button>
-            ))
-          )}
-        </div>
-      )}
-    </div>
   );
 }
