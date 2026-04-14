@@ -37,6 +37,7 @@ import {
   ActionPanelSection,
   ConfigDrawerSection,
   FolderExplorerSection,
+  ArtifactsDrawerSection,
   PlanPanelSection,
   PlainEmptyStateSection,
   PlainInputSection,
@@ -44,6 +45,7 @@ import {
   ProjectInputSection,
   RuntimeDrawerSection,
 } from './chat-panel-sections';
+import type { ArtifactsPanelPayload } from '@/components/agent-chat/artifacts-panel';
 import { TaskCardBanner } from './task-card-banner';
 import { AgentChatPanelView } from './agent-chat-panel-view';
 import { buildCacheKey } from './agent-session-cache';
@@ -163,6 +165,8 @@ export function AgentChatPanel({
   const [showConfig, setShowConfig] = useState(false);
   const [showFolderExplorer, setShowFolderExplorer] = useState(false);
   const [showRuntimePanel, setShowRuntimePanel] = useState(false);
+  const [showArtifactsPanel, setShowArtifactsPanel] = useState(false);
+  const [artifactsPayload, setArtifactsPayload] = useState<ArtifactsPanelPayload | null>(null);
   const [currentMessageId, setCurrentMessageId] = useState<string | null>(null);
 
   // Plan viewer
@@ -222,6 +226,24 @@ export function AgentChatPanel({
   useEffect(() => {
     messagesRef.current = chat.messages;
   }, [chat.messages]);
+
+  useEffect(() => {
+    setArtifactsPayload(null);
+    setShowArtifactsPanel(false);
+  }, [sessionId]);
+
+  /** Agents 工作区：产物改由右侧 `AgentsWorkspaceRail` 展示，不再在聊天区内嵌 320px 抽屉 */
+  useEffect(() => {
+    if (!workspaceMode) return;
+    window.dispatchEvent(
+      new CustomEvent('pp:artifacts-payload', { detail: { payload: artifactsPayload } }),
+    );
+  }, [workspaceMode, artifactsPayload]);
+
+  useEffect(() => {
+    if (!workspaceMode || !showArtifactsPanel) return;
+    window.dispatchEvent(new CustomEvent('pp:artifacts-rail-focus'));
+  }, [workspaceMode, showArtifactsPanel]);
 
   // Keep sessionTitleRef in sync so finalizeStream can read it without being a dep (avoids useSessionBootstrap loop)
   useEffect(() => {
@@ -1154,6 +1176,114 @@ export function AgentChatPanel({
       }
     }
 
+    // Slash command: /distiller（结果写入「产物」侧栏）
+    if (!reuseLastUserTurn && trimmedText.startsWith('/distiller')) {
+      const currentSessionId = sessionIdRef.current ?? sessionId ?? initialSessionId ?? null;
+      if (!currentSessionId) {
+        chatDispatch({
+          type: 'STREAM_ERROR',
+          message: '请先发送一条普通消息创建会话，再使用 /distiller。',
+        });
+        return;
+      }
+      const noteId = `distiller-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const note: ChatMessage = {
+        id: noteId,
+        role: 'assistant',
+        content: '⏳ 正在提炼当前对话并写入**产物**侧栏，请稍候…',
+        timestamp: new Date().toISOString(),
+      };
+      chatDispatch({ type: 'APPEND_MESSAGE', message: note });
+
+      const updateNote = (content: string) => {
+        chatDispatch({
+          type: 'UPDATE_MESSAGES',
+          updater: (prev) => prev.map((m) => (m.id === noteId ? { ...m, content } : m)),
+        });
+      };
+
+      try {
+        const res = await fetch('/api/distiller/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: currentSessionId }),
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || errData.message || `HTTP ${res.status}`);
+        }
+        const data = await res.json() as {
+          ok: boolean;
+          knowledge?: Array<{ title: string; type?: string; content?: string }>;
+          todos?: Array<{ title: string; priority?: string }>;
+          diagnostic?: { triedModels?: string[]; errors?: string[] };
+        };
+        const kCount = data.knowledge?.length ?? 0;
+        const tCount = data.todos?.length ?? 0;
+        const diag = data.diagnostic;
+
+        let summary: string;
+        if (kCount === 0 && tCount === 0) {
+          if (diag?.errors?.length) {
+            const modelInfo = diag.triedModels?.length
+              ? `尝试了 ${diag.triedModels.join(', ')}`
+              : '未找到可用模型';
+            summary = `⚠️ 未能提炼到**产物**（知识/待办）。${modelInfo}。\n\n> ${diag.errors.slice(0, 3).join('\n> ')}`;
+            setArtifactsPayload({
+              knowledge: [],
+              todos: [],
+              updatedAt: Date.now(),
+              error: summary.replace(/\*\*/g, ''),
+            });
+          } else {
+            summary = '提炼完成：本次对话没有新的**产物**条目（知识或待办）。';
+            setArtifactsPayload({
+              knowledge: [],
+              todos: [],
+              updatedAt: Date.now(),
+            });
+          }
+        } else {
+          const lines: string[] = ['提炼完成，已写入**产物**侧栏：\n'];
+          if (kCount > 0) {
+            lines.push(`**📝 知识（${kCount} 条）** → 已写入「文档」`);
+            for (const k of data.knowledge!) {
+              const tag = k.type ? ` \`${k.type}\`` : '';
+              lines.push(`- ${k.title}${tag}`);
+            }
+            lines.push('');
+          }
+          if (tCount > 0) {
+            lines.push(`**✅ 待办（${tCount} 条）** → 已写入「待办」`);
+            for (const t of data.todos!) {
+              const pri = t.priority ? ` \`${t.priority}\`` : '';
+              lines.push(`- ${t.title}${pri}`);
+            }
+            lines.push('');
+          }
+          summary = lines.join('\n');
+          setArtifactsPayload({
+            knowledge: data.knowledge ?? [],
+            todos: data.todos ?? [],
+            updatedAt: Date.now(),
+          });
+        }
+        setShowArtifactsPanel(true);
+        updateNote(summary);
+      } catch (err) {
+        const msg = (err as Error).message || '未知错误';
+        updateNote(`❌ 写入**产物**失败：${msg}`);
+        setArtifactsPayload({
+          knowledge: [],
+          todos: [],
+          updatedAt: Date.now(),
+          error: msg,
+        });
+        setShowArtifactsPanel(true);
+      }
+      return;
+    }
+
     initTokenRef.current += 1;
 
     const imagesToSend = reuseLastUserTurn ? [] : (images ?? []);
@@ -1342,6 +1472,26 @@ export function AgentChatPanel({
     const handler = () => setShowRuntimePanel(v => !v);
     window.addEventListener('toggle-runtime-panel', handler);
     return () => window.removeEventListener('toggle-runtime-panel', handler);
+  }, []);
+
+  useEffect(() => {
+    const toggle = () => setShowArtifactsPanel(v => !v);
+    window.addEventListener('toggle-artifacts-panel', toggle);
+    window.addEventListener('toggle-distiller-panel', toggle);
+    return () => {
+      window.removeEventListener('toggle-artifacts-panel', toggle);
+      window.removeEventListener('toggle-distiller-panel', toggle);
+    };
+  }, []);
+
+  useEffect(() => {
+    const open = () => setShowArtifactsPanel(true);
+    window.addEventListener('open-artifacts-panel', open);
+    window.addEventListener('open-distiller-panel', open);
+    return () => {
+      window.removeEventListener('open-artifacts-panel', open);
+      window.removeEventListener('open-distiller-panel', open);
+    };
   }, []);
 
   // Listen for toggle-session-compress event
@@ -1829,6 +1979,14 @@ export function AgentChatPanel({
     />
   );
 
+  const artifactsDrawer = workspaceMode ? null : (
+    <ArtifactsDrawerSection
+      isOpen={showArtifactsPanel}
+      payload={artifactsPayload}
+      onClose={() => setShowArtifactsPanel(false)}
+    />
+  );
+
   const messageListProps = {
     messages,
     isStreaming,
@@ -1862,8 +2020,10 @@ export function AgentChatPanel({
       activeRun={activeSessionRun}
       showConfig={showConfig}
       showRuntimePanel={showRuntimePanel}
+      showArtifactsPanel={showArtifactsPanel}
       onToggleConfig={() => setShowConfig(v => !v)}
       onToggleRuntimePanel={() => setShowRuntimePanel(v => !v)}
+      onToggleArtifactsPanel={() => setShowArtifactsPanel(v => !v)}
     />
   );
 
@@ -1914,6 +2074,8 @@ export function AgentChatPanel({
       onCompressOpen={() => setCompressDialogOpen(true)}
       showRuntimePanel={showRuntimePanel}
       onToggleRuntimePanel={() => setShowRuntimePanel(v => !v)}
+      showArtifactsPanel={showArtifactsPanel}
+      onToggleArtifactsPanel={() => setShowArtifactsPanel(v => !v)}
       activeRun={activeSessionRun}
     />
   );
@@ -1997,7 +2159,7 @@ export function AgentChatPanel({
       hasPendingQueue={isStreaming && pendingUserMessages.length > 0}
       plainScrollClassName={workspaceMode ? 'px-5 py-5' : 'px-4 py-4'}
       projectScrollClassName="px-3 py-3"
-      plainToolbar={plainToolbar}
+      plainToolbar={workspaceMode ? null : plainToolbar}
       showPlainEmptyState={messages.length === 0 && !isStreaming}
       plainEmptyState={plainEmptyState}
       plainMessageList={plainMessageList}
@@ -2014,6 +2176,7 @@ export function AgentChatPanel({
       dialogs={dialogs}
       configDrawer={workspaceMode ? null : configDrawer}
       runtimeDrawer={workspaceMode ? null : runtimeDrawer}
+      artifactsDrawer={artifactsDrawer}
       folderExplorer={workspaceMode ? null : folderExplorer}
       planPanel={planPanel}
       actionPanel={actionPanel}

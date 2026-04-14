@@ -1,6 +1,6 @@
 'use client';
 
-import { PanelRight, Play, Settings } from 'lucide-react';
+import { Package, PanelRight, Play, Settings } from 'lucide-react';
 import type { SessionConfig } from '@/types/agent-chat';
 import type { SessionAction } from './session-reducer';
 import type { SessionListItem } from './types';
@@ -39,8 +39,10 @@ export interface PlainToolbarControlsProps {
   activeRun?: ActiveRunChip | null;
   showConfig: boolean;
   showRuntimePanel: boolean;
+  showArtifactsPanel: boolean;
   onToggleConfig: () => void;
   onToggleRuntimePanel: () => void;
+  onToggleArtifactsPanel: () => void;
 }
 
 export function PlainToolbarControls({
@@ -49,8 +51,10 @@ export function PlainToolbarControls({
   activeRun,
   showConfig,
   showRuntimePanel,
+  showArtifactsPanel,
   onToggleConfig,
   onToggleRuntimePanel,
+  onToggleArtifactsPanel,
 }: PlainToolbarControlsProps) {
   if (workspaceMode) {
     const run = activeRun ?? null;
@@ -86,6 +90,18 @@ export function PlainToolbarControls({
       >
         <PanelRight className="h-3.5 w-3.5" />
       </button>
+      <button
+        type="button"
+        onClick={onToggleArtifactsPanel}
+        className={`p-1 rounded transition-colors ${
+          showArtifactsPanel
+            ? 'text-blue-500 dark:text-blue-400'
+            : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+        }`}
+        title="会话产物（提炼、生成物等）"
+      >
+        <Package className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }
@@ -112,18 +128,29 @@ export interface ProjectSessionHeaderControlsProps {
   onCompressOpen: () => void;
   showRuntimePanel?: boolean;
   onToggleRuntimePanel?: () => void;
+  showArtifactsPanel?: boolean;
+  onToggleArtifactsPanel?: () => void;
   activeRun: ActiveRunChip | null;
 }
 
 export function ProjectSessionHeaderControls({
   workspaceMode,
   activeRun,
+  showArtifactsPanel,
+  onToggleArtifactsPanel,
   ...props
 }: ProjectSessionHeaderControlsProps) {
   if (workspaceMode) {
     if (!activeRun) return null;
     return <WorkspaceActiveRunStrip activeRun={activeRun} />;
   }
-  return <ChatSessionHeader {...props} activeRun={activeRun} />;
+  return (
+    <ChatSessionHeader
+      {...props}
+      activeRun={activeRun}
+      showArtifactsPanel={showArtifactsPanel}
+      onToggleArtifactsPanel={onToggleArtifactsPanel}
+    />
+  );
 }
 

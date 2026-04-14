@@ -1,7 +1,7 @@
 'use client';
 
 import { Dispatch } from 'react';
-import { Sparkles, ArrowLeft, Trash2, FileDown, Settings, Maximize2, Minimize2, GitFork, PanelRight, Play, Square } from 'lucide-react';
+import { Sparkles, ArrowLeft, Trash2, FileDown, Settings, Maximize2, Minimize2, GitFork, PanelRight, Play, Square, Package } from 'lucide-react';
 import { useRouter } from '@/client/i18n/routing';
 import { Button } from '@/components/ui/button';
 import { SessionDropdown } from '@/components/session-dropdown';
@@ -32,6 +32,8 @@ export interface ChatSessionHeaderProps {
   onCompressOpen: () => void;
   showRuntimePanel?: boolean;
   onToggleRuntimePanel?: () => void;
+  showArtifactsPanel?: boolean;
+  onToggleArtifactsPanel?: () => void;
   activeRun?: { runId: string; goal?: string; startedAt: string } | null;
   runActionBusy?: boolean;
   onStartRun?: () => void;
@@ -59,6 +61,8 @@ export function ChatSessionHeader({
   onCompressOpen,
   showRuntimePanel,
   onToggleRuntimePanel,
+  showArtifactsPanel,
+  onToggleArtifactsPanel,
   activeRun,
   runActionBusy,
   onStartRun,
@@ -199,6 +203,21 @@ export function ChatSessionHeader({
             title="运行时面板"
           >
             <PanelRight className="h-3 w-3" />
+          </Button>
+        )}
+        {onToggleArtifactsPanel && !isFull && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className={`h-6 px-1.5 text-xs transition-colors ${
+              showArtifactsPanel
+                ? 'text-blue-500 dark:text-blue-400'
+                : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+            }`}
+            onClick={onToggleArtifactsPanel}
+            title="会话产物（提炼、生成物等）"
+          >
+            <Package className="h-3 w-3" />
           </Button>
         )}
         {!isFull && sessionId && (
