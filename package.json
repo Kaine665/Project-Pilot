@@ -47,7 +47,8 @@
       "config/load-dev-server.cjs"
     ],
     "asarUnpack": [
-      "dist/server/**/*"
+      "dist/server/**/*",
+      "dist/client/**/*"
     ],
     "win": {
       "target": "nsis",

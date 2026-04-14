@@ -171,8 +171,24 @@ app.route(api.googleAuth, lazyApiRoute(api.googleAuth, () => import('./routes/go
 app.route(api.root, lazyApiRoute(api.root, () => import('./routes/prompts')));
 
 // --- Static file serving (production) ---
-const clientDistPath = path.resolve(__dirname, '../../dist/client');
-if (fs.existsSync(clientDistPath)) {
+// Electron asar：`dist/server` 与 `dist/client` 须同处 unpacked，见 package.json `asarUnpack`。
+// 开发：`bun ./src/server/index.ts` 时 __dirname 为 `src/server`，须回退到仓库根下 `dist/client`。
+function resolveClientDistDir(): string | null {
+  const candidates = [
+    path.join(__dirname, '..', 'client'),
+    path.resolve(__dirname, '..', '..', 'dist', 'client'),
+  ];
+  for (const dir of candidates) {
+    try {
+      if (fs.existsSync(path.join(dir, 'index.html'))) return dir;
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
+}
+const clientDistPath = resolveClientDistDir();
+if (clientDistPath) {
   app.use('/*', serveStatic({ root: clientDistPath }));
   app.get('*', async (c) => {
     // 勿把未匹配的 /api 当成 SPA：否则前端会收到 HTML 且难排查
