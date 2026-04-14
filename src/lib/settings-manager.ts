@@ -274,15 +274,30 @@ export function getProviderScopedModel(claude: ClaudeSettings, provider?: Provid
 
 /**
  * 获取指定供应商的 baseUrl。
- * 优先级：providerBaseUrls[provider] > 全局 baseUrl > preset.baseUrl
+ *
+ * @param protocol 默认 `'anthropic'`（Claude Agent SDK / Anthropic Messages API）。
+ *                 传 `'openai'` 时返回 OpenAI Chat Completions 协议端点
+ *                 （Vercel AI SDK `generateText` 等场景）。
+ *
+ * anthropic 优先级：providerBaseUrls[provider] > 全局 baseUrl > preset.baseUrl
+ * openai    优先级：preset.openaiBaseUrl > 去 /anthropic 后缀的 anthropic URL > preset.baseUrl
  */
 export function getProviderScopedBaseUrl(
   claude: ClaudeSettings,
-  preset: { baseUrl?: string },
+  preset: { baseUrl?: string; openaiBaseUrl?: string },
   provider?: ProviderId,
   modelOverride?: string,
+  protocol: 'anthropic' | 'openai' = 'anthropic',
 ): string | undefined {
   const p = provider ?? claude.provider ?? 'anthropic';
+
+  if (protocol === 'openai') {
+    if (preset.openaiBaseUrl) return preset.openaiBaseUrl;
+    const anthropicUrl = getProviderScopedBaseUrl(claude, preset, provider, modelOverride, 'anthropic');
+    if (!anthropicUrl) return preset.baseUrl;
+    return anthropicUrl.replace(/\/anthropic\/?$/i, '') || anthropicUrl;
+  }
+
   const scoped = claude.providerBaseUrls?.[p];
   if (p === 'ollama') {
     const o = typeof scoped === 'string' ? scoped.trim() : '';

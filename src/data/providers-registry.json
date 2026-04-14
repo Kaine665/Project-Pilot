@@ -36,6 +36,7 @@
       "id": "deepseek",
       "nameKey": "settings.providers.deepseek",
       "baseUrl": "https://api.deepseek.com/anthropic",
+      "openaiBaseUrl": "https://api.deepseek.com",
       "candidateBaseUrls": ["https://api.deepseek.com/anthropic"],
       "modelsListBaseUrl": "https://api.deepseek.com",
       "modelsListProtocol": "openai",
@@ -58,6 +59,7 @@
       "id": "qwen",
       "nameKey": "settings.providers.qwen",
       "baseUrl": "https://coding.dashscope.aliyuncs.com/apps/anthropic",
+      "openaiBaseUrl": "https://dashscope.aliyuncs.com/compatible-mode",
       "candidateBaseUrls": [
         "https://coding.dashscope.aliyuncs.com/apps/anthropic",
         "https://dashscope-intl.aliyuncs.com/apps/anthropic",
@@ -80,6 +82,7 @@
       "id": "zhipu",
       "nameKey": "settings.providers.zhipu",
       "baseUrl": "https://open.bigmodel.cn/api/anthropic",
+      "openaiBaseUrl": "https://open.bigmodel.cn/api/paas/v4",
       "candidateBaseUrls": ["https://open.bigmodel.cn/api/anthropic"],
       "modelsListBaseUrl": "https://open.bigmodel.cn/api/paas",
       "modelsListProtocol": "openai",
@@ -105,6 +108,7 @@
       "id": "minimax",
       "nameKey": "settings.providers.minimax",
       "baseUrl": "https://api.minimaxi.com/anthropic",
+      "openaiBaseUrl": "https://api.minimax.chat",
       "candidateBaseUrls": [
         "https://api.minimaxi.com/anthropic",
         "https://api.minimax.chat/anthropic",
@@ -133,6 +137,7 @@
       "id": "kimi",
       "nameKey": "settings.providers.kimi",
       "baseUrl": "https://api.kimi.com/coding/",
+      "openaiBaseUrl": "https://api.moonshot.cn",
       "candidateBaseUrls": [
         "https://api.kimi.com/coding/",
         "https://api.moonshot.cn/anthropic",
@@ -157,6 +162,7 @@
       "id": "moonshot",
       "nameKey": "settings.providers.moonshot",
       "baseUrl": "https://api.moonshot.cn/anthropic",
+      "openaiBaseUrl": "https://api.moonshot.cn",
       "candidateBaseUrls": [
         "https://api.moonshot.cn/anthropic",
         "https://api.moonshot.ai/anthropic"
@@ -197,6 +203,7 @@
       "id": "zenmux",
       "nameKey": "settings.providers.zenmux",
       "baseUrl": "https://zenmux.ai/api/anthropic",
+      "openaiBaseUrl": "https://zenmux.ai/api",
       "candidateBaseUrls": ["https://zenmux.ai/api/anthropic"],
       "models": [
         { "id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6 (ZenMux)", "contextWindow": 200000 },

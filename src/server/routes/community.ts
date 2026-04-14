@@ -6,7 +6,7 @@ import { readProjectIndex } from '@/lib/file-store';
 import {
   applyProjectPathTemplate,
   installMcpServerToMarket,
-  listMcpMarketServerKeys,
+  readMcpMarketFile,
 } from '@/lib/mcp-market-store';
 import {
   findAssistantById,
@@ -178,8 +178,9 @@ app.get('/mcp/item/:id', async (c) => {
 });
 
 app.get('/mcp/installed', async (c) => {
-  const keys = await listMcpMarketServerKeys();
-  return c.json({ keys });
+  const data = await readMcpMarketFile();
+  const keys = Object.keys(data.mcpServers ?? {});
+  return c.json({ keys, mcpServers: data.mcpServers ?? {} });
 });
 
 app.post('/mcp/install', async (c) => {

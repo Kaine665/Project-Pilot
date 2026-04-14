@@ -16,5 +16,7 @@ interface Window {
     openFile: (path: string) => Promise<unknown>;
     openExternalUrl: (url: string) => Promise<{ ok?: true; error?: string }>;
     focusMainWindow?: () => Promise<void>;
+    /** Win/Linux：与主进程 `titleBarOverlay.height` 一致；缺省表示使用系统默认标题栏 */
+    titleBarOverlay?: { height: number };
   };
 }
