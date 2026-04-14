@@ -11,6 +11,7 @@
 
 | 文档 | 主题 |
 |------|------|
+| [conversation-agent-system-lens.md](./conversation-agent-system-lens.md) | **对话与 Agent 系统八层对照**（Claude Code / Hermes / OpenHarness vs PP；Agent 进入仓库先读） |
 | [agents-workspace.md](./agents-workspace.md) | Agents 工作区信息架构与体验原则 |
 | [brainstorm-paper-frontend-design-workflow.md](./brainstorm-paper-frontend-design-workflow.md) | **Brainstorm/轻量 PRD → Paper → `frontend-design`** 联合工作流（防蛮干） |
 | [tasks-hub-information-architecture.md](./tasks-hub-information-architecture.md) | **任务**聚合壳（三子页）IA + Layer 1，供 Paper/改版对照 |

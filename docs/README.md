@@ -54,6 +54,7 @@ docs/
 
 ### 领域与路线图
 
+- **对话与 Agent 系统（八层对照：Claude Code / Hermes / OpenHarness vs PP）**：[design/conversation-agent-system-lens.md](./design/conversation-agent-system-lens.md)（AI 入口亦见 [`AI_AGENT_KNOWLEDGE_MAP.md`](./AI_AGENT_KNOWLEDGE_MAP.md)）
 - **领域概念模型**：[领域与数据.md](./领域与数据.md)（Scope / Execution / Trigger / Resource / Tracking）
 - **实施路线图（任务总控 + 设计卡）**：[roadmap.md](./roadmap.md) + [`roadmap/`](./roadmap/)
 - **Google 账号与云端同步范围（可选同步、凭据优先）**：[design/google-account-cloud-sync-scope.md](./design/google-account-cloud-sync-scope.md)

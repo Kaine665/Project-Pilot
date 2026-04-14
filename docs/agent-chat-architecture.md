@@ -2,9 +2,9 @@
 
 > 关联：`src/lib/chat-managers/agent-chat-manager.ts`、`src/server/routes/agent-chat.ts`、`src/components/agent-chat/agent-chat-panel.tsx`
 >
-> 更新时间：2026-04-05
+> 更新时间：2026-04-14
 >
-> **参见**：[供应商/模型/SDK 支持关系](./provider-model-support.md)
+> **参见**：[供应商/模型/SDK 支持关系](./provider-model-support.md) · [对话与 Agent 系统八层对标（设计）](./design/conversation-agent-system-lens.md)
 
 ---
 
