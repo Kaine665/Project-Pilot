@@ -15,6 +15,10 @@ on:
           - 'true'
           - 'false'
 
+# 官方 JS Actions 迁 Node 24：https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -23,7 +27,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -31,7 +35,7 @@ jobs:
           bun-version: latest
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: 'npm'
@@ -52,7 +56,7 @@ jobs:
         run: Get-ChildItem -Recurse build | ForEach-Object { $_.FullName }
 
       - name: Upload Windows artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-windows
           path: build/*.exe
@@ -66,7 +70,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -74,7 +78,7 @@ jobs:
           bun-version: latest
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: 'npm'
@@ -97,7 +101,7 @@ jobs:
         run: find build -maxdepth 2 -type f
 
       - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-macos
           path: |
@@ -114,20 +118,15 @@ jobs:
       contents: write
 
     steps:
-      - name: Download Windows artifact
-        uses: actions/download-artifact@v4
+      - name: Download Windows + macOS artifacts
+        uses: actions/download-artifact@v8
         with:
-          name: desktop-windows
+          pattern: desktop-*
           path: release-assets
-
-      - name: Download macOS artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: desktop-macos
-          path: release-assets
+          merge-multiple: true
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: release-assets/*
           draft: true
