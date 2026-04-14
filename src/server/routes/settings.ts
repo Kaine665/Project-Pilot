@@ -1269,8 +1269,9 @@ app.get('/openai-models', async (c) => {
 // ─── GET /aggregate-models — 各供应商真实 /v1/models（及 Ollama tags、Codex RPC）聚合 ──
 
 let aggregateModelsHttpCache: { at: number; data: AggregateLiveModelsResult } | null = null;
-const AGGREGATE_MODELS_HTTP_CACHE_MS = 60_000;
-const PROBE_SUPPLIER_HTTP_CACHE_MS = 120_000;
+/** 全供应商聚合拉取成本高；短时缓存减轻多标签/设置页+聊天同时命中上游导致的限流 */
+const AGGREGATE_MODELS_HTTP_CACHE_MS = 180_000;
+const PROBE_SUPPLIER_HTTP_CACHE_MS = 180_000;
 const probeSupplierHttpCache = new Map<string, { at: number; row: Awaited<ReturnType<typeof probeSupplierLive>> }>();
 
 app.get('/aggregate-models', async (c) => {

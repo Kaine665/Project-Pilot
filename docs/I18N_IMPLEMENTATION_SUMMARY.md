@@ -133,8 +133,8 @@ npm run dev
 ```
 
 访问测试：
-- 中文：http://localhost:4000/zh
-- 英文：http://localhost:4000/en
+- 中文：http://localhost:4287/zh
+- 英文：http://localhost:4287/en
 
 ## 技术栈
 

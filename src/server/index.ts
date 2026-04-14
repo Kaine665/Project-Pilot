@@ -43,6 +43,9 @@ function loadCorsAllowedOrigins(): Set<string> {
       .map((s) => s.trim())
       .filter(Boolean) ?? [];
   const defaults = [
+    'http://127.0.0.1:4287',
+    'http://localhost:4287',
+    /* 仍有人把 Vite 指到 4000 时，用 PP_ALLOWED_ORIGINS 或保留下列兼容 */
     'http://127.0.0.1:4000',
     'http://localhost:4000',
     'http://127.0.0.1:5173',

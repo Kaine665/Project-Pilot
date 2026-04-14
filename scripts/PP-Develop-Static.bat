@@ -1,6 +1,6 @@
 @echo off
 setlocal
-title ProjectPilot Stable - develop-static:4000
+title ProjectPilot Stable - develop-static:4287
 
 set "ROOT=D:\Desktop\ProgrammingProjects\personal-projects\03-In-Development\project-pilot\develop-static"
 
@@ -14,14 +14,14 @@ cd /d "%ROOT%"
 set "PROJECT_PILOT_WORK_DIR=%ROOT%"
 
 set "PORT_PID="
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr /r /c:":4000 .*LISTENING"') do (
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr /r /c:":4287 .*LISTENING"') do (
   set "PORT_PID=%%a"
   goto :port_busy
 )
 goto :port_ok
 
 :port_busy
-echo [ERROR] Port 4000 is already in use by PID %PORT_PID%.
+echo [ERROR] Port 4287 is already in use by PID %PORT_PID%.
 echo Close the existing develop-static server first, then retry.
 pause
 exit /b 1
@@ -75,11 +75,11 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [ProjectPilot] Starting develop-static on http://127.0.0.1:4000
-call "%ROOT%\node_modules\.bin\next.cmd" dev --port 4000 --turbopack
+echo [ProjectPilot] Starting develop-static on http://127.0.0.1:4287
+call "%ROOT%\node_modules\.bin\next.cmd" dev --port 4287 --turbopack
 if errorlevel 1 (
   echo [ERROR] develop-static failed to start with turbopack.
-  echo Check whether 4000 is occupied or whether another next dev instance is still holding .next\dev\lock.
+  echo Check whether 4287 is occupied or whether another next dev instance is still holding .next\dev\lock.
   pause
   exit /b 1
 )

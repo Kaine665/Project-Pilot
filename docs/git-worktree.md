@@ -168,7 +168,7 @@ npm install    # 或 pnpm install / bun install
 
 ### 场景 1：改自身项目的前端（ProjectPilot 工作流）
 
-主实例跑在 4000 端口，直接改源码会触发 HMR 影响使用。
+主实例跑在 `config/dev-server.json` 所设前端端口（当前默认 4287），直接改源码会触发 HMR 影响使用。
 
 ```bash
 # 创建 worktree
