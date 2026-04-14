@@ -1,16 +1,26 @@
 'use client';
 
+import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useState, lazy, Suspense } from 'react';
+import { ElectronTitleBar } from '@/components/electron-title-bar';
 import { TopNav } from '@/components/top-nav';
 import { useProject } from '@/components/project-context';
 import { WorkspaceSidebarRail } from '@/components/workspace-sidebar-rail';
 import { BUTLER_AGENT_ID } from '@/lib/default-agents';
 import {
-  readWorkspaceSidebarRailMini,
-  writeWorkspaceSidebarRailMini,
+  readWorkspaceSidebarRailHidden,
+  writeWorkspaceSidebarRailHidden,
 } from '@/lib/workspace-sidebar-rail-storage';
 import { useRouter, usePathname } from '@/client/i18n/routing';
 import { useMediaQuery } from '@/hooks/use-media-query';
+import {
+  PP_ELECTRON_TITLEBAR_CSS_VAR,
+  PP_WORKSPACE_FIXED_HEIGHT_CLASS,
+  PP_WORKSPACE_FIXED_TOP_CLASS,
+  PP_WORKSPACE_TOP_NAV_STACK,
+  readElectronTitleBarInsetPx,
+} from '@/lib/electron-title-bar-inset';
+import { PP_WORKSPACE_IMMERSIVE_EVENT, type WorkspaceImmersiveDetail } from '@/lib/workspace-immersive-bus';
 import { cn } from '@/lib/utils';
 import type { Agent } from '@/types';
 
@@ -28,22 +38,28 @@ export default function WorkspaceShellLayout({ children }: { children: React.Rea
   const [butlerAgent, setButlerAgent] = useState<Agent | null>(null);
   const [schedulesPageEnabled, setSchedulesPageEnabled] = useState(true);
   const [taskTriggersPageEnabled, setTaskTriggersPageEnabled] = useState(true);
-  const [sidebarRailMini, setSidebarRailMini] = useState(() => readWorkspaceSidebarRailMini());
+  const [sidebarRailHidden, setSidebarRailHidden] = useState(() =>
+    readWorkspaceSidebarRailHidden(),
+  );
   const [mobileRailOpen, setMobileRailOpen] = useState(false);
+  const [electronTitleBarInsetPx, setElectronTitleBarInsetPx] = useState(() =>
+    readElectronTitleBarInsetPx(),
+  );
+  const [workspaceImmersive, setWorkspaceImmersive] = useState(false);
   const mdUp = useMediaQuery('(min-width: 768px)');
 
-  const setRailMini = useCallback((next: boolean) => {
-    setSidebarRailMini(next);
-    writeWorkspaceSidebarRailMini(next);
+  const setRailHidden = useCallback((next: boolean) => {
+    setSidebarRailHidden(next);
+    writeWorkspaceSidebarRailHidden(next);
   }, []);
 
   const handleWorkspaceSidebarToggle = useCallback(() => {
     if (mdUp) {
-      setRailMini(!sidebarRailMini);
+      setRailHidden(!sidebarRailHidden);
     } else {
       setMobileRailOpen((o) => !o);
     }
-  }, [mdUp, sidebarRailMini, setRailMini]);
+  }, [mdUp, sidebarRailHidden, setRailHidden]);
 
   const isTaskTriggersPage =
     pathname.startsWith('/workspace/task-triggers') ||
@@ -104,33 +120,86 @@ export default function WorkspaceShellLayout({ children }: { children: React.Rea
     if (mdUp) setMobileRailOpen(false);
   }, [mdUp]);
 
+  useEffect(() => {
+    setElectronTitleBarInsetPx(readElectronTitleBarInsetPx());
+  }, []);
+
+  useEffect(() => {
+    const onImmersive = (e: Event) => {
+      const d = (e as CustomEvent<WorkspaceImmersiveDetail>).detail;
+      setWorkspaceImmersive(Boolean(d?.immersive));
+    };
+    window.addEventListener(PP_WORKSPACE_IMMERSIVE_EVENT, onImmersive);
+    return () => window.removeEventListener(PP_WORKSPACE_IMMERSIVE_EVENT, onImmersive);
+  }, []);
+
+  useEffect(() => {
+    if (workspaceImmersive) setMobileRailOpen(false);
+  }, [workspaceImmersive]);
+
+  const showWorkspaceTopNav = !workspaceImmersive && electronTitleBarInsetPx <= 0;
+
+  const fixedTop = workspaceImmersive
+    ? `${electronTitleBarInsetPx}px`
+    : showWorkspaceTopNav
+      ? `calc(${PP_WORKSPACE_TOP_NAV_STACK} + ${electronTitleBarInsetPx}px)`
+      : `${electronTitleBarInsetPx}px`;
+  const fixedHeight = workspaceImmersive
+    ? `calc(100vh - ${electronTitleBarInsetPx}px)`
+    : showWorkspaceTopNav
+      ? `calc(100vh - ${PP_WORKSPACE_TOP_NAV_STACK} - ${electronTitleBarInsetPx}px)`
+      : `calc(100vh - ${electronTitleBarInsetPx}px)`;
+
+  const shellRootStyle = {
+    [PP_ELECTRON_TITLEBAR_CSS_VAR]: `${electronTitleBarInsetPx}px`,
+    '--pp-workspace-fixed-top': fixedTop,
+    '--pp-workspace-fixed-height': fixedHeight,
+    ...(electronTitleBarInsetPx > 0 ? { paddingTop: electronTitleBarInsetPx } : {}),
+  } as CSSProperties;
+
   return (
-    <div className="flex h-screen flex-col overflow-hidden">
-      <TopNav
-        workspaceSidebarMini={mdUp ? sidebarRailMini : !mobileRailOpen}
-        onToggleWorkspaceSidebar={handleWorkspaceSidebarToggle}
-      />
+    <div className="flex h-screen flex-col overflow-hidden" style={shellRootStyle}>
+      {electronTitleBarInsetPx > 0 ? (
+        <ElectronTitleBar
+          heightPx={electronTitleBarInsetPx}
+          dragOnly={workspaceImmersive}
+          workspaceSidebarMini={mdUp ? sidebarRailHidden : !mobileRailOpen}
+          onToggleWorkspaceSidebar={handleWorkspaceSidebarToggle}
+        />
+      ) : null}
+      {showWorkspaceTopNav ? (
+        <TopNav
+          workspaceSidebarMini={mdUp ? sidebarRailHidden : !mobileRailOpen}
+          onToggleWorkspaceSidebar={handleWorkspaceSidebarToggle}
+          titleBarInsetPx={electronTitleBarInsetPx}
+        />
+      ) : null}
       <div className="relative flex flex-1 overflow-hidden">
-        {!mdUp && mobileRailOpen && (
+        {!workspaceImmersive && !mdUp && mobileRailOpen && (
           <button
             type="button"
-            className="fixed inset-0 top-14 z-40 bg-black/40"
+            className={cn('fixed inset-0 z-40 bg-black/40', PP_WORKSPACE_FIXED_TOP_CLASS)}
             aria-label="Close navigation"
             onClick={() => setMobileRailOpen(false)}
           />
         )}
-        <div
-          className={cn(
-            'flex h-full shrink-0',
-            !mdUp &&
-              cn(
-                'fixed left-0 top-14 z-50 h-[calc(100vh-3.5rem)] transition-transform duration-200 ease-out',
-                mobileRailOpen ? 'translate-x-0' : 'pointer-events-none -translate-x-full',
-              ),
-          )}
-        >
-          <WorkspaceSidebarRail mini={mdUp ? sidebarRailMini : false} />
-        </div>
+        {!workspaceImmersive ? (
+          <div
+            className={cn(
+              'flex h-full shrink-0',
+              mdUp && sidebarRailHidden && 'hidden',
+              !mdUp &&
+                cn(
+                  'fixed left-0 z-50 transition-transform duration-200 ease-out',
+                  PP_WORKSPACE_FIXED_TOP_CLASS,
+                  PP_WORKSPACE_FIXED_HEIGHT_CLASS,
+                  mobileRailOpen ? 'translate-x-0' : 'pointer-events-none -translate-x-full',
+                ),
+            )}
+          >
+            <WorkspaceSidebarRail mini={false} />
+          </div>
+        ) : null}
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
 
@@ -139,7 +208,10 @@ export default function WorkspaceShellLayout({ children }: { children: React.Rea
             {plannerOpen && !mdUp && (
               <button
                 type="button"
-                className="fixed inset-0 top-14 z-40 bg-black/40 md:hidden"
+                className={cn(
+                  'fixed inset-0 z-40 bg-black/40 md:hidden',
+                  PP_WORKSPACE_FIXED_TOP_CLASS,
+                )}
                 aria-label="Close planner"
                 onClick={() => setPlannerOpen(false)}
               />
@@ -151,7 +223,8 @@ export default function WorkspaceShellLayout({ children }: { children: React.Rea
                 mdUp && plannerOpen && 'border-l border-zinc-200 dark:border-zinc-800',
                 !mdUp &&
                   cn(
-                    'fixed bottom-0 right-0 top-14 z-50 w-[min(100vw,420px)] max-w-full border-l border-zinc-200 shadow-2xl transition-transform dark:border-zinc-800',
+                    'fixed bottom-0 right-0 z-50 w-[min(100vw,420px)] max-w-full border-l border-zinc-200 shadow-2xl transition-transform dark:border-zinc-800',
+                    PP_WORKSPACE_FIXED_TOP_CLASS,
                     plannerOpen ? 'translate-x-0' : 'pointer-events-none translate-x-full',
                   ),
               )}
