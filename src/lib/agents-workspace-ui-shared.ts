@@ -97,8 +97,49 @@ export function writeAgentsPageAgentListWidth(px: number): void {
   }
 }
 
-/** 左轨点击「Agents」且已在 Agents 页时派发，用于展开被拖合拢的 Agent 列表 */
-export const PP_AGENTS_LIST_EXPAND_EVENT = 'pp:agents-list-expand';
+/**
+ * 中间聊天主区允许的最小宽度（与 `AgentChatPanelView` 消息列表 `min-w-[min(100%,…)]` 对齐）。
+ * Agents 页拖左右栏时以此为「留给主区」的下限，避免与 CSS 不一致导致窄窗下缩不到 240。
+ */
+export const AGENTS_PAGE_MAIN_CHAT_MIN_WIDTH_PX = 240;
+
+/** 右侧 AgentsWorkspaceRail 总宽（lg+ 并排时；含活动栏 + 面板） */
+export const AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_KEY = 'pp.agentsPage.workspaceRailWidth.v1';
+export const AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_DEFAULT = 340;
+export const AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_MIN = 260;
+export const AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_MAX = 560;
+
+export function readAgentsPageWorkspaceRailWidth(): number {
+  if (typeof window === 'undefined') return AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_DEFAULT;
+  try {
+    const raw = localStorage.getItem(AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_KEY);
+    if (!raw) return AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_DEFAULT;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_DEFAULT;
+    return Math.min(
+      AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_MAX,
+      Math.max(AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_MIN, Math.round(n)),
+    );
+  } catch {
+    return AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_DEFAULT;
+  }
+}
+
+export function writeAgentsPageWorkspaceRailWidth(px: number): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const clamped = Math.min(
+      AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_MAX,
+      Math.max(AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_MIN, Math.round(px)),
+    );
+    localStorage.setItem(AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_KEY, String(clamped));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** 左轨点击「Agents」且已在 Agents 页时派发，用于切换 Agent 列表（桌面：并排列收起/展开；窄屏：抽屉开关） */
+export const PP_AGENTS_LIST_TOGGLE_EVENT = 'pp:agents-list-toggle';
 
 /** 左侧 Agent 列表拖窄低于此宽度（px）则视为收起；仅 md+ 并排布局生效 */
 export const AGENTS_PAGE_AGENT_LIST_COLLAPSE_SNAP_PX = 80;

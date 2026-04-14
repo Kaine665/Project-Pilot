@@ -23,27 +23,32 @@ export function lazyApiRoute(
   };
 
   wrapper.all('*', async (c) => {
-    const sub = await ensureLoaded();
-    const url = new URL(c.req.url);
-    const path = url.pathname;
-    const base = mountPath.endsWith('/') ? mountPath.slice(0, -1) : mountPath;
+    try {
+      const sub = await ensureLoaded();
+      const url = new URL(c.req.url);
+      const path = url.pathname;
+      const base = mountPath.endsWith('/') ? mountPath.slice(0, -1) : mountPath;
 
-    let relative: string;
-    if (path === base) {
-      relative = '/';
-    } else if (path.startsWith(`${base}/`)) {
-      relative = path.slice(base.length);
-      if (!relative.startsWith('/')) {
-        relative = `/${relative}`;
+      let relative: string;
+      if (path === base) {
+        relative = '/';
+      } else if (path.startsWith(`${base}/`)) {
+        relative = path.slice(base.length);
+        if (!relative.startsWith('/')) {
+          relative = `/${relative}`;
+        }
+      } else {
+        relative = path;
       }
-    } else {
-      relative = path;
-    }
 
-    url.pathname = relative;
-    const forwarded = new Request(url, c.req.raw);
-    // @hono/node-server 无 ExecutionContext；访问 c.executionCtx 会抛错
-    return sub.fetch(forwarded, c.env);
+      url.pathname = relative;
+      const forwarded = new Request(url, c.req.raw);
+      // @hono/node-server 无 ExecutionContext；访问 c.executionCtx 会抛错
+      return await sub.fetch(forwarded, c.env);
+    } catch (e) {
+      console.error('[lazy-api]', mountPath, e);
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+    }
   });
 
   return wrapper;

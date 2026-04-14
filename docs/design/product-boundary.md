@@ -1,10 +1,14 @@
-# ProjectPilot 产品边界
+# ProjectPilot 产品与能力边界
 
-**状态**：产品定义（与实现可渐进对齐）。**对齐**：[`README.md`](../../README.md) 定位、[`roadmap.md`](../roadmap.md) 核心循环、[`领域与数据.md`](../领域与数据.md)。
+**状态**：与 `[product-direction-and-dashboard.md](./product-direction-and-dashboard.md)` **同一套产品叙事**；本文只收**边界图、界内/相邻/界外、与路线图五段流水线**的对照，不写第二套定位话术。
 
-## 一句话边界
+---
 
-ProjectPilot 是**本地优先的人与多 Agent 协作的任务推进系统**：以 **Task** 为主轴、**Project** 为工作域，把 **Trigger → Scope → Resource → Execution → Tracking** 连成可追踪的闭环；**不是**通用聊天框、**不是**全功能项目管理套件、**不是**云端协作优先的 SaaS。
+## 一句话（唯一口径）
+
+**Builder 的 AI 工作台** — 让 AI 对项目越来越懂，而不是每次从零开始；覆盖 Builder 多维度工作（不止代码）。
+
+**产品叙事**：五模块飞轮（**Memory → Loader → Runtime → Distiller → Dashboard**）+ **六大固定维度**（工程 / 产品 / 设计 / 商业 / 增长 / 运营）+ **Dashboard**（设计稿与实现闸门见方向文档）。
 
 ---
 
@@ -14,9 +18,9 @@ ProjectPilot 是**本地优先的人与多 Agent 协作的任务推进系统**�
 flowchart TB
   subgraph PP["ProjectPilot（产品边界内）"]
     direction TB
-    UI["工作区 UI\nFlow / Project / Todo / Session"]
-    ORCH["编排与状态\nAgent / Task / Context"]
-    STORE["本地数据与执行记录\n（见 data-storage）"]
+    UI["工作区 UI\nFlow / Project / Tasks / Session / Dashboard（目标态）"]
+    ORCH["编排与状态\nAgent / Memory / Resource / 执行记录"]
+    STORE["本地数据与沉淀\n（见 data-storage）"]
     UI --> ORCH --> STORE
   end
 
@@ -37,6 +41,8 @@ flowchart TB
   ORCH -.->|"远期：连接器 / Webhook"| WEB
 ```
 
+
+
 **读图**：人在边界内做决策与分派；Agent 与仓库、API 在边界外执行真实副作用；PP 负责编排、上下文、落盘与追踪。
 
 ---
@@ -47,7 +53,7 @@ flowchart TB
 flowchart LR
   subgraph IN["核心在界内"]
     A["多 Agent 与会话驱动执行"]
-    B["Task 推进与待办 / 状态"]
+    B["Memory / Loader / Distiller / Dashboard 所承载的推进与总览"]
     C["Context / Resource / Prompt 注入"]
     D["项目级视图与本地沉淀"]
     E["Execution 记录（Event / Run）与可观测性"]
@@ -56,7 +62,7 @@ flowchart LR
   subgraph ADJ["相邻（可集成、非本体）"]
     F["CLI / IDE 工具链"]
     G["供应商模型与凭据（本机存储为主）"]
-    H["账号与可选云同步（最小范围设计见 google-account-cloud-sync-scope）"]
+    H["账号与可选云同步（最小范围见 google-account-cloud-sync-scope）"]
   end
 
   subgraph OUT["明确不在界内（或远期单独立项）"]
@@ -70,26 +76,34 @@ flowchart LR
   ADJ --- OUT
 ```
 
+
+
 ---
 
 ## 边界表（验收时对照）
 
-| 类别 | 含义 | 典型包含 |
-|------|------|----------|
-| **界内** | 产品承诺持续投入、文档与路线图优先描述 | 多 Agent、Task/Todo 推进、Session、Project/Flow 视图、Resource 注入、本地执行记录、Trigger/Scheduler（成熟度见 roadmap） |
-| **相邻** | 依赖或可选能力，边界上需清晰接口 | Claude/Codex/MCP、Git 工作区、API Key/凭据、Electron 壳、按类可选的云端凭据同步 |
-| **界外** | 默认不承担；若做则单独立项与风险提示 | 全量会话/文档上云、团队实时协同编辑、完整项目管理方法论工具包、通用搜索引擎/浏览器替代品 |
+
+| 类别     | 含义                  | 典型包含                                                                                                                                        |
+| ------ | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **界内** | 产品承诺持续投入、文档与路线图优先描述 | Builder 工作台叙事下的多 Agent、Memory/Loader/Runtime/Distiller/Dashboard、Session、Project/Flow 视图、Resource 注入、本地执行记录、Trigger/Scheduler（成熟度见 roadmap） |
+| **相邻** | 依赖或可选能力，边界上需清晰接口    | Claude/Codex/MCP、Git 工作区、API Key/凭据、Electron 壳、按类可选的云端凭据同步                                                                                  |
+| **界外** | 默认不承担；若做则单独立项与风险提示  | 全量会话/文档上云、团队实时协同编辑、完整项目管理方法论工具包、通用搜索引擎/浏览器替代品                                                                                               |
+
 
 ---
 
 ## 与「五段流水线」的关系
 
-[`roadmap.md`](../roadmap.md) 中的 **Trigger → Scope → Resource → Execution → Tracking** 是**界内问题的分解框架**：边界图回答「我们为谁、与谁协作、不做什么」；流水线回答「界内能力如何串成闭环」。
+`[roadmap.md](../roadmap.md)` 中的 **Trigger → Scope → Resource → Execution → Tracking** 是**界内能力的工程分解**：与方向文档中的 **五模块飞轮** 描述同一产品的不同切面（编排/数据流 vs 用户感知的记忆—执行—沉淀—总览）。
 
 ---
 
 ## 修订记录
 
-| 日期 | 说明 |
-|------|------|
-| 2026-04-10 | 初版：上下文图 + 能力边界图 + 对照表 |
+
+| 日期         | 说明                                                                                                                |
+| ---------- | ----------------------------------------------------------------------------------------------------------------- |
+| 2026-04-10 | 初版：上下文图 + 能力边界图 + 对照表                                                                                             |
+| 2026-04-12 | **唯一产品叙事**改为 Builder 工作台 + 五模块飞轮 + 六维度 + Dashboard；删除旧「本地优先任务推进系统」一句话边界；与 `product-direction-and-dashboard.md` 对齐 |
+
+

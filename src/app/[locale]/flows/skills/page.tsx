@@ -7,6 +7,9 @@ import {
   ArrowLeft, ChevronRight, ChevronDown, Clock, Search,
   Folder, Download, Copy, Check,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 
 // ── Types ──
 
@@ -955,131 +958,150 @@ export default function SkillsPage() {
   }
 
   // ── Grid Dashboard ──
+  const listSubtitle = loading
+    ? '…'
+    : searchQuery.trim()
+      ? `共 ${skills.length} 个，显示 ${filteredSkills.length} 个`
+      : `共 ${skills.length} 个`;
+
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      {/* Header */}
-      <div className="shrink-0 border-b border-zinc-200 dark:border-zinc-800 px-5 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <Blocks className="h-5 w-5 text-zinc-400" />
-            <h1 className="text-base font-semibold text-zinc-800 dark:text-zinc-200">Skills</h1>
-            <span className="text-xs text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
-              {skills.length}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
-              <input
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="搜索..."
-                className="w-48 rounded-md border border-zinc-200 dark:border-zinc-700 pl-8 pr-3 py-1.5 text-xs outline-none focus:border-zinc-400 dark:bg-zinc-900 dark:focus:border-zinc-500 transition-colors"
-              />
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground">
+      <header className="shrink-0 border-b border-zinc-200 bg-zinc-50/80 px-6 py-4 dark:border-zinc-800 dark:bg-zinc-950/80">
+        <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-4">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900">
+              <Blocks className="h-5 w-5" aria-hidden />
             </div>
-            {/* Batch export */}
+            <div className="min-w-0">
+              <h1 className="text-lg font-semibold tracking-tight">Skills</h1>
+              <p className="mt-0.5 text-sm text-muted-foreground">{listSubtitle}</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             <div className="relative" ref={batchExportMenuRef}>
               <button
-                onClick={() => setShowBatchExportMenu(!showBatchExportMenu)}
+                type="button"
                 disabled={skills.length === 0}
-                className="rounded-md border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-40 flex items-center gap-1.5 transition-colors"
+                onClick={() => setShowBatchExportMenu(!showBatchExportMenu)}
+                className="flex items-center gap-1.5 rounded-md border border-zinc-200 bg-transparent px-3 py-1.5 text-xs text-zinc-600 transition-colors hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
               >
-                <Download className="h-3.5 w-3.5" />
+                <Download className="h-3.5 w-3.5" aria-hidden />
                 批量导出
               </button>
               {showBatchExportMenu && (
-                <div className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg z-50 py-1 overflow-hidden">
+                <div className="absolute right-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
                   <button
+                    type="button"
                     onClick={() => handleBatchExport('standard')}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800"
                   >
-                    <Download className="h-3 w-3 text-zinc-400" />
+                    <Download className="h-3 w-3 text-zinc-400" aria-hidden />
                     公开规范 SKILL.md
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleBatchExport('json')}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800"
                   >
-                    <Download className="h-3 w-3 text-zinc-400" />
+                    <Download className="h-3 w-3 text-zinc-400" aria-hidden />
                     JSON（通用）
                   </button>
                 </div>
               )}
             </div>
             <button
-              onClick={() => { setCreating(true); setSelected(null); }}
-              className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs text-white hover:bg-zinc-700 flex items-center gap-1.5 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300 transition-colors"
+              type="button"
+              onClick={() => {
+                setCreating(true);
+                setSelected(null);
+              }}
+              className="flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Plus className="h-3.5 w-3.5" aria-hidden />
               新建
             </button>
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* Grid */}
-      <div className="flex-1 overflow-auto p-5">
-        {loading ? (
-          <div className="flex items-center justify-center py-20 text-zinc-400 text-sm">加载中...</div>
-        ) : filteredSkills.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
-            <Blocks className="h-12 w-12 mb-4 opacity-20" />
-            {searchQuery ? (
-              <p className="text-sm">未找到匹配的 Skill</p>
-            ) : (
-              <>
-                <p className="text-sm">暂无 Skill</p>
-                <button
-                  onClick={() => setCreating(true)}
-                  className="mt-3 text-xs text-zinc-500 underline hover:text-zinc-700 dark:hover:text-zinc-300"
-                >
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+        <div className="mx-auto max-w-4xl space-y-4">
+          {loading ? (
+            <p className="py-20 text-center text-sm text-muted-foreground">加载中…</p>
+          ) : skills.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
+                <Blocks className="h-10 w-10 text-muted-foreground/40" aria-hidden />
+                <p className="text-sm text-muted-foreground">暂无 Skill</p>
+                <Button type="button" onClick={() => setCreating(true)}>
                   创建第一个 Skill
-                </button>
-              </>
-            )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-            {filteredSkills.map(skill => (
-              <div
-                key={skillApiKey(skill)}
-                onClick={() => handleSelect(skillApiKey(skill))}
-                className="group rounded-lg border border-zinc-200 dark:border-zinc-800 p-4 cursor-pointer hover:border-zinc-300 dark:hover:border-zinc-700 hover:shadow-sm transition-all bg-white dark:bg-zinc-950"
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <div className="rounded-md bg-zinc-100 dark:bg-zinc-800 p-1.5">
-                      <Blocks className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
-                    </div>
-                    <h3 className="text-sm font-medium text-zinc-800 dark:text-zinc-200 truncate">
-                      {skill.name}
-                    </h3>
-                  </div>
-                  <button
-                    onClick={e => handleDelete(skillApiKey(skill), e)}
-                    className="opacity-0 group-hover:opacity-100 rounded p-1 text-zinc-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                </div>
-                <p className="text-xs text-zinc-400 line-clamp-2 mb-3 min-h-[2rem]">
-                  {skill.description || '无描述'}
-                </p>
-                <div className="flex items-center justify-between text-[10px] text-zinc-400">
-                  <div className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    {formatDate(skill.updatedAt)}
-                  </div>
-                  <div className="flex items-center gap-1 text-zinc-300">
-                    <FolderOpen className="h-3 w-3" />
-                    <span>SKILL.md</span>
-                  </div>
-                </div>
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              <div className="relative max-w-md">
+                <Search
+                  className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden
+                />
+                <Input
+                  className="pl-8"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="搜索..."
+                  aria-label="搜索 Skills"
+                />
               </div>
-            ))}
-          </div>
-        )}
+              {filteredSkills.length === 0 ? (
+                <p className="text-sm text-muted-foreground">未找到匹配的 Skill</p>
+              ) : (
+                <ul className="grid gap-4 sm:grid-cols-2">
+                  {filteredSkills.map((skill) => {
+                    const key = skillApiKey(skill);
+                    return (
+                      <li key={key}>
+                        <Card className="h-full overflow-hidden border-zinc-200 shadow-sm dark:border-zinc-800">
+                          <CardHeader className="space-y-2 pb-2">
+                            <CardTitle className="break-all font-mono text-base tracking-tight">{skill.name}</CardTitle>
+                            <p className="line-clamp-3 text-sm leading-relaxed text-muted-foreground">
+                              {skill.description || '无描述'}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                              <span className="inline-flex items-center gap-1.5">
+                                <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                {formatDate(skill.updatedAt)}
+                              </span>
+                              <span className="inline-flex items-center gap-1.5">
+                                <FolderOpen className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                SKILL.md
+                              </span>
+                            </div>
+                          </CardHeader>
+                          <CardContent className="flex flex-wrap gap-2 pt-0">
+                            <Button type="button" variant="outline" size="sm" onClick={() => void handleSelect(key)}>
+                              打开
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              onClick={(e) => void handleDelete(key, e)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                              删除
+                            </Button>
+                          </CardContent>
+                        </Card>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

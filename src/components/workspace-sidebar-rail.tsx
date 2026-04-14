@@ -9,6 +9,7 @@ import {
   FolderKanban,
   Layers,
   ListChecks,
+  Package,
   Plug,
   ScrollText,
   Settings,
@@ -19,7 +20,8 @@ import { useProject } from '@/components/project-context';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useRouter, usePathname } from '@/client/i18n/routing';
 import { cn } from '@/lib/utils';
-import { PP_AGENTS_LIST_EXPAND_EVENT } from '@/lib/agents-workspace-ui-shared';
+import { PP_AGENTS_LIST_TOGGLE_EVENT } from '@/lib/agents-workspace-ui-shared';
+import { LanguageSwitcher } from '@/components/language-switcher';
 
 /** 迷你导览宽度（仅图标）。与 `w-10` 按钮同宽时：`px-4` → 左右各 16px，与 40px 图标合计 72px，避免 `px-2` 左贴右空。 */
 const WIDTH_MINI_PX = 72;
@@ -98,7 +100,7 @@ function RailDivider() {
 }
 
 export interface WorkspaceSidebarRailProps {
-  /** true = 迷你条；false = 展开带文字（折叠切换在顶栏，状态由 WorkspaceShell 持有） */
+  /** true = 迷你条（仅图标）；false = 展开带文字。桌面端顶栏现为整栏隐藏/展开，通常传 false */
   mini: boolean;
 }
 
@@ -125,6 +127,7 @@ export function WorkspaceSidebarRail({ mini }: WorkspaceSidebarRailProps) {
   const isKnowledgePage = pathname.startsWith('/workspace/knowledge');
   const isPromptsPage = pathname.startsWith('/workspace/prompts');
   const isSettingsPage = pathname.startsWith('/workspace/settings');
+  const isButlerPage = pathname.startsWith('/workspace/butler');
 
   const isSubRoute =
     isAgentsPage ||
@@ -185,7 +188,8 @@ export function WorkspaceSidebarRail({ mini }: WorkspaceSidebarRailProps) {
                 active={isAgentsPage}
                 onClick={() => {
                   if (pathname.startsWith('/workspace/agents')) {
-                    window.dispatchEvent(new CustomEvent(PP_AGENTS_LIST_EXPAND_EVENT));
+                    window.dispatchEvent(new CustomEvent(PP_AGENTS_LIST_TOGGLE_EVENT));
+                    return;
                   }
                   router.push('/workspace/agents');
                 }}
@@ -258,10 +262,25 @@ export function WorkspaceSidebarRail({ mini }: WorkspaceSidebarRailProps) {
 
           <div
             className={cn(
-              'shrink-0 pt-2',
-              mini ? 'mt-auto px-4' : 'border-t border-zinc-200 px-2 dark:border-zinc-800',
+              'mt-auto flex shrink-0 flex-col gap-2',
+              mini ? 'px-4 py-2' : 'px-2 py-2',
             )}
           >
+            <div className={cn(mini && 'flex justify-center')}>
+              <LanguageSwitcher compact={mini} />
+            </div>
+            {isButlerPage ? (
+              <SidebarNavRow
+                mini={mini}
+                icon={Package}
+                label={tr('artifacts')}
+                tooltip={tr('artifacts')}
+                active={false}
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('open-artifacts-panel'));
+                }}
+              />
+            ) : null}
             <SidebarNavRow
               mini={mini}
               icon={Settings}

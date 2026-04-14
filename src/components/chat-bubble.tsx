@@ -428,35 +428,35 @@ export const ChatBubble = memo(function ChatBubble({
   return (
     <div
       className={`group/bubble flex w-full items-start ${
-        isUser ? 'flex-row justify-end gap-1.5' : 'flex-row gap-2'
+        isUser ? 'flex-row justify-end gap-1.5' : 'flex-row gap-3'
       }`}
     >
       <div
-        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full ${
+        className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full ${
           isUser
             ? isRunTaskUser
               ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/55 dark:text-emerald-300'
-              : 'bg-user-subtle text-user'
+              : 'bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200'
             : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
-        } ${isUser ? 'order-2' : 'order-1'}`}
+        } ${isUser ? 'order-2' : 'order-1 shadow-sm ring-1 ring-black/5 dark:ring-white/10'}`}
       >
         {isUser ? (
-          <User className="h-3.5 w-3.5" />
+          <User className="h-4 w-4" />
         ) : assistantAvatarSrc ? (
           <img src={assistantAvatarSrc} alt="" className="h-full w-full object-cover" />
         ) : (
-          <Bot className="h-3.5 w-3.5" />
+          <Bot className="h-4 w-4" />
         )}
       </div>
 
-      <div className={`max-w-[85%] ${isUser ? 'order-1 ml-auto' : 'order-2'}`}>
+      <div className={`relative max-w-[85%] ${isUser ? 'order-1 ml-auto' : 'order-2 w-[calc(100%-2.5rem)]'}`}>
         <div
-          className={`rounded-lg px-3 py-2 text-sm ${
+          className={`px-4 py-3 text-[15px] leading-relaxed ${
             isRunTaskUser
-              ? 'border border-emerald-400/40 bg-gradient-to-b from-emerald-50/95 to-white text-emerald-950 dark:border-emerald-700/45 dark:from-emerald-950/55 dark:to-zinc-900 dark:text-emerald-50'
+              ? 'rounded-[20px] border border-emerald-400/40 bg-gradient-to-b from-emerald-50/95 to-white text-emerald-950 dark:border-emerald-700/45 dark:from-emerald-950/55 dark:to-zinc-900 dark:text-emerald-50'
               : isUser
-                ? 'bg-user text-white'
-                : 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200'
+                ? 'rounded-[20px] rounded-tr-[4px] bg-zinc-900 text-white shadow-sm dark:bg-zinc-100 dark:text-zinc-900'
+                : 'w-full max-w-full rounded-[20px] rounded-tl-[4px] bg-zinc-50/50 text-zinc-800 shadow-sm ring-1 ring-black/5 dark:bg-zinc-800/50 dark:text-zinc-200 dark:ring-white/10'
           }`}
         >
           {isRunTaskUser && message.meta?.type === 'run_task' && (
@@ -544,7 +544,7 @@ export const ChatBubble = memo(function ChatBubble({
                 if (!isStreaming) onRetry();
               }}
               disabled={isStreaming}
-              className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-red-500 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:text-red-300 disabled:pointer-events-none disabled:opacity-40"
+                  className="flex items-center whitespace-nowrap gap-0.5 rounded px-1.5 py-0.5 text-xs text-red-500 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:text-red-300 disabled:pointer-events-none disabled:opacity-40"
             >
               <RefreshCw className="h-3 w-3" />
               <span>{t('chat.retry')}</span>
@@ -554,9 +554,9 @@ export const ChatBubble = memo(function ChatBubble({
 
         {showActions && (
           <div
-            className={`mt-0.5 flex items-center gap-1 transition-opacity ${
+            className={`absolute -bottom-3.5 z-10 flex flex-nowrap items-center gap-0.5 rounded-lg border border-black/5 bg-white/95 px-1 py-0.5 shadow-sm backdrop-blur-sm transition-opacity dark:border-white/10 dark:bg-zinc-800/95 ${
               isEditing ? 'opacity-100' : 'opacity-0 group-hover/bubble:opacity-100'
-            } ${isUser ? 'justify-end' : 'justify-start'}`}
+            } ${isUser ? 'right-2' : 'left-2'}`}
           >
             {isEditing ? (
               <>
@@ -566,7 +566,7 @@ export const ChatBubble = memo(function ChatBubble({
                     void handleSaveEdit();
                   }}
                   disabled={isSavingEdit || (!editValue.trim() && (!message.images || message.images.length === 0))}
-                  className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400 disabled:pointer-events-none disabled:opacity-40"
+                  className="flex items-center whitespace-nowrap gap-0.5 rounded px-1.5 py-0.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-400 disabled:pointer-events-none disabled:opacity-40"
                   title={tActions('save')}
                 >
                   <Check className="h-3 w-3" />
@@ -575,7 +575,7 @@ export const ChatBubble = memo(function ChatBubble({
                 <button
                   onClick={handleCancelEdit}
                   disabled={isSavingEdit}
-                  className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400 disabled:pointer-events-none disabled:opacity-40"
+                  className="flex items-center whitespace-nowrap gap-0.5 rounded px-1.5 py-0.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-400 disabled:pointer-events-none disabled:opacity-40"
                 >
                   <span>{tActions('cancel')}</span>
                 </button>
@@ -584,7 +584,7 @@ export const ChatBubble = memo(function ChatBubble({
               <>
                 <button
                   onClick={handleCopy}
-                  className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
+                  className="flex items-center whitespace-nowrap gap-0.5 rounded px-1.5 py-0.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
                   title={tActions('copy')}
                 >
                   {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
@@ -597,7 +597,7 @@ export const ChatBubble = memo(function ChatBubble({
                       e.stopPropagation();
                       onSaveAsKnowledge(message.id, editableText || message.content || '');
                     }}
-                    className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
+                    className="flex items-center whitespace-nowrap gap-0.5 rounded px-1.5 py-0.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
                     title={t('chat.saveAsKnowledge')}
                   >
                     <BookMarked className="h-3 w-3" />
@@ -611,7 +611,7 @@ export const ChatBubble = memo(function ChatBubble({
                       e.stopPropagation();
                       onBranch(message.id);
                     }}
-                    className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
+                    className="flex items-center whitespace-nowrap gap-0.5 rounded px-1.5 py-0.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
                     title={t('chat.createBranchFrom')}
                   >
                     <GitBranch className="h-3 w-3" />
@@ -620,12 +620,12 @@ export const ChatBubble = memo(function ChatBubble({
                 )}
 
                 {onEdit && isUser && (
-                  <button
-                    onClick={handleStartEdit}
-                    disabled={isStreaming}
-                    className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400 disabled:pointer-events-none disabled:opacity-40"
-                    title={tActions('edit')}
-                  >
+                <button
+                  onClick={handleStartEdit}
+                  disabled={isStreaming}
+                  className="flex items-center whitespace-nowrap gap-0.5 rounded px-1.5 py-0.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-400 disabled:pointer-events-none disabled:opacity-40"
+                  title={tActions('edit')}
+                >
                     <Pencil className="h-3 w-3" />
                     <span>{tActions('edit')}</span>
                   </button>
@@ -638,7 +638,7 @@ export const ChatBubble = memo(function ChatBubble({
                       if (!isStreaming) onRegenerate();
                     }}
                     disabled={isStreaming}
-                    className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400 disabled:pointer-events-none disabled:opacity-40"
+                    className="flex items-center whitespace-nowrap gap-0.5 rounded px-1.5 py-0.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-400 disabled:pointer-events-none disabled:opacity-40"
                     title={t('chat.regenerate')}
                   >
                     <RefreshCw className="h-3 w-3" />
@@ -653,7 +653,7 @@ export const ChatBubble = memo(function ChatBubble({
                       if (!isStreaming) setConfirmDelete(true);
                     }}
                     disabled={isStreaming}
-                    className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-red-50 hover:text-red-500 dark:text-zinc-600 dark:hover:bg-red-950/30 dark:hover:text-red-400 disabled:pointer-events-none disabled:opacity-40"
+                    className="flex items-center whitespace-nowrap gap-0.5 rounded px-1.5 py-0.5 text-xs text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:text-zinc-500 dark:hover:bg-red-950/30 dark:hover:text-red-400 disabled:pointer-events-none disabled:opacity-40"
                     title={tActions('delete')}
                   >
                     <Trash2 className="h-3 w-3" />
@@ -669,7 +669,7 @@ export const ChatBubble = memo(function ChatBubble({
                         onDelete(message.id);
                         setConfirmDelete(false);
                       }}
-                      className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-red-500 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                      className="flex items-center whitespace-nowrap gap-0.5 rounded px-1.5 py-0.5 text-xs text-red-500 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
                       title={t('chat.confirmDelete')}
                     >
                       <Trash2 className="h-3 w-3" />
@@ -680,7 +680,7 @@ export const ChatBubble = memo(function ChatBubble({
                         e.stopPropagation();
                         setConfirmDelete(false);
                       }}
-                      className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
+                      className="flex items-center whitespace-nowrap gap-0.5 rounded px-1.5 py-0.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
                     >
                       <span>{tActions('cancel')}</span>
                     </button>

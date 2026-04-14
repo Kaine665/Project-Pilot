@@ -36,7 +36,7 @@ export async function generateShortTextAnthropic(params: {
     const { text } = await generateText({
       model: provider(params.model),
       prompt: params.prompt,
-      maxOutputTokens: params.maxOutputTokens ?? 50,
+      maxTokens: params.maxOutputTokens ?? 50,
     });
     const t = text?.trim();
     return t || null;
@@ -62,7 +62,7 @@ export async function generateShortTextOpenAICompatible(params: {
     const { text } = await generateText({
       model: openai.chat(params.model),
       prompt: params.prompt,
-      maxOutputTokens: params.maxOutputTokens ?? 50,
+      maxTokens: params.maxOutputTokens ?? 50,
     });
     const t = text?.trim();
     return t || null;

@@ -1,11 +1,14 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslations } from '@/client/i18n/use-translations';
 import type { LucideIcon } from 'lucide-react';
-import { Bot, Folder, FolderOpen, Layers, ListTodo } from 'lucide-react';
+import { Bot, Folder, FolderOpen, Globe, Layers, ListTodo, Package } from 'lucide-react';
+import { AgentsRailPanelFrame } from '@/components/agents-rail-panel-frame';
 import { FolderExplorerPanel } from '@/components/folder-explorer-panel';
 import { AgentSessionPromptStack, type PromptStackSeedItem } from '@/components/agent-session-prompt-stack';
+import { AgentsWorkspaceSimpleBrowser } from '@/components/agents-workspace-simple-browser';
+import { ArtifactsPanelBody, type ArtifactsPanelPayload } from '@/components/agent-chat/artifacts-panel';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { cn } from '@/lib/utils';
 import type { AgentCapabilities } from '@/types';
@@ -28,13 +31,20 @@ export interface AgentsWorkspaceRailProps {
   capabilityAgentId?: string | null;
   capabilities?: AgentCapabilities;
   onCapabilitiesUpdated?: (next: AgentCapabilities) => void;
+  /** 简单浏览器是否以 Portal 铺满 Agents 页（顶栏以下）；由页面包容器 */
+  simpleBrowserWorkspaceFill?: boolean;
+  onSimpleBrowserWorkspaceFillChange?: (expanded: boolean) => void;
 }
 
-const NUM_TABS = 4;
+const NUM_TABS = 6;
 const ACTIVE_TAB_KEY = 'pp.agentsRail.activeTab';
 
-/** 一级活动栏外宽 72px（与左侧迷你栏一致）；水平内边距 `px-2` 为原 `px-4` 的一半 */
-const ACTIVITY_BAR_WIDTH_CLASS = 'w-[72px]';
+/** 一级活动栏外宽 52px；水平内边距 `px-1.5`；图标钮 `w-10` 与左侧迷你栏按钮同宽 */
+const ACTIVITY_BAR_WIDTH_CLASS = 'w-[52px]';
+
+/** 活动栏图标未选中态：hover 与轨道 `bg-muted/25` 拉开对比 */
+const ACTIVITY_BTN_IDLE =
+  'text-muted-foreground hover:bg-muted hover:text-foreground hover:shadow-sm hover:ring-1 hover:ring-border/70 dark:hover:bg-muted/80 dark:hover:ring-border/50';
 
 function readStoredActiveTab(): number {
   try {
@@ -44,6 +54,11 @@ function readStoredActiveTab(): number {
     if (Number.isFinite(n) && n >= 0 && n < NUM_TABS) return n;
   } catch { /* ignore */ }
   return 0;
+}
+
+function initialLastDetailTabIndex(): number {
+  const s = readStoredActiveTab();
+  return s >= 1 && s <= 3 ? s : 1;
 }
 
 export function AgentsWorkspaceRail({
@@ -56,16 +71,15 @@ export function AgentsWorkspaceRail({
   capabilityAgentId,
   capabilities: capabilitiesProp,
   onCapabilitiesUpdated,
+  simpleBrowserWorkspaceFill = false,
+  onSimpleBrowserWorkspaceFillChange,
 }: AgentsWorkspaceRailProps) {
   const t = useTranslations('agentsWorkspace');
   const tCap = useTranslations('agentsWorkspace.capabilities');
   const lgUp = useMediaQuery('(min-width: 1024px)');
 
   const [activeTab, setActiveTab] = useState(readStoredActiveTab);
-  const lastDetailTabRef = useRef<number>(() => {
-    const s = readStoredActiveTab();
-    return s >= 1 && s <= 3 ? s : 1;
-  });
+  const lastDetailTabRef = useRef<number>(initialLastDetailTabIndex());
 
   const isDetailTab = activeTab >= 1 && activeTab <= 3;
 
@@ -76,6 +90,34 @@ export function AgentsWorkspaceRail({
       localStorage.setItem(ACTIVE_TAB_KEY, String(idx));
     } catch { /* ignore */ }
   }, []);
+
+  /** 与 `AgentChatPanel`（workspaceMode）通过 `pp:artifacts-payload` 同步，避免聊天区内再嵌一层产物栏 */
+  const [railArtifactsPayload, setRailArtifactsPayload] = useState<ArtifactsPanelPayload | null>(null);
+
+  useEffect(() => {
+    const onPayload = (e: Event) => {
+      const d = (e as CustomEvent<{ payload: ArtifactsPanelPayload | null }>).detail;
+      setRailArtifactsPayload(d?.payload ?? null);
+    };
+    window.addEventListener('pp:artifacts-payload', onPayload);
+    return () => window.removeEventListener('pp:artifacts-payload', onPayload);
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 4) onSimpleBrowserWorkspaceFillChange?.(false);
+  }, [activeTab, onSimpleBrowserWorkspaceFillChange]);
+
+  useEffect(() => {
+    const focusArtifactsTab = () => setTab(5);
+    window.addEventListener('pp:artifacts-rail-focus', focusArtifactsTab);
+    window.addEventListener('open-artifacts-panel', focusArtifactsTab);
+    window.addEventListener('open-distiller-panel', focusArtifactsTab);
+    return () => {
+      window.removeEventListener('pp:artifacts-rail-focus', focusArtifactsTab);
+      window.removeEventListener('open-artifacts-panel', focusArtifactsTab);
+      window.removeEventListener('open-distiller-panel', focusArtifactsTab);
+    };
+  }, [setTab]);
 
   const [capabilitySavingKey, setCapabilitySavingKey] = useState<keyof AgentCapabilities | null>(null);
 
@@ -111,6 +153,8 @@ export function AgentsWorkspaceRail({
       t('projectWorkspace.title'),
       t('promptStack.title'),
       t('capabilities.title'),
+      t('simpleBrowser.title'),
+      t('workspaceRail.artifactsActivityTitle'),
     ],
     [t],
   );
@@ -121,6 +165,8 @@ export function AgentsWorkspaceRail({
       t('workspaceRail.tabAgentData'),
       t('workspaceRail.tabPromptStack'),
       t('workspaceRail.tabCapabilities'),
+      t('workspaceRail.tabBrowser'),
+      t('workspaceRail.tabArtifacts'),
     ],
     [t],
   );
@@ -131,6 +177,8 @@ export function AgentsWorkspaceRail({
       <Folder key="i1" className="h-3.5 w-3.5 shrink-0" aria-hidden />,
       <Layers key="i2" className="h-3.5 w-3.5 shrink-0" aria-hidden />,
       <ListTodo key="i3" className="h-3.5 w-3.5 shrink-0" aria-hidden />,
+      <Globe key="i4" className="h-3.5 w-3.5 shrink-0" aria-hidden />,
+      <Package key="i5" className="h-3.5 w-3.5 shrink-0" aria-hidden />,
     ],
     [],
   );
@@ -143,7 +191,13 @@ export function AgentsWorkspaceRail({
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none]"
             data-rail-panel-body="project-root"
           >
-            <FolderExplorerPanel key={`proj:${projectRootPath}`} embedded onClose={() => {}} initialPath={projectRootPath} />
+            <FolderExplorerPanel
+              key={`proj:${projectRootPath}`}
+              embedded
+              hideFolderSummaryBar
+              onClose={() => {}}
+              initialPath={projectRootPath}
+            />
           </div>
         ) : (
           <div className="flex min-h-[72px] flex-1 items-center justify-center px-4 py-4 text-center text-[11px] leading-snug text-muted-foreground">
@@ -159,6 +213,7 @@ export function AgentsWorkspaceRail({
             <FolderExplorerPanel
               key={workspaceAgentDataPath}
               embedded
+              hideFolderSummaryBar
               lockToInitialDataPath
               onClose={() => {}}
               initialPath={workspaceAgentDataPath}
@@ -177,7 +232,6 @@ export function AgentsWorkspaceRail({
           </div>
         );
       case 3:
-      default:
         return (
           <div
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 pb-2 pt-1 [overflow-anchor:none]"
@@ -213,6 +267,25 @@ export function AgentsWorkspaceRail({
             </div>
           </div>
         );
+      case 4:
+        return (
+          <AgentsWorkspaceSimpleBrowser
+            className="min-h-0 flex-1"
+            workspaceFill={simpleBrowserWorkspaceFill}
+            onWorkspaceFillChange={onSimpleBrowserWorkspaceFillChange}
+          />
+        );
+      case 5:
+        return (
+          <div
+            className="flex min-h-0 flex-1 flex-col overflow-hidden border-border/40 bg-muted/5 dark:bg-muted/10"
+            data-rail-panel-body="artifacts"
+          >
+            <ArtifactsPanelBody payload={railArtifactsPayload} />
+          </div>
+        );
+      default:
+        return null;
     }
   };
 
@@ -229,7 +302,7 @@ export function AgentsWorkspaceRail({
   return (
     <div className={cn('flex min-h-0 flex-1 flex-row overflow-hidden [overflow-anchor:none]', className)}>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        {/* 窄屏：顶栏四个入口（项目 / 数据 / 提示词 / 能力），扁平 */}
+        {/* 窄屏：顶栏入口（项目 / 数据 / 提示词 / 能力 / 浏览器），扁平 */}
         <div
           role="tablist"
           aria-label={t('workspaceRail.tablistAria')}
@@ -246,7 +319,12 @@ export function AgentsWorkspaceRail({
                 aria-selected={selected}
                 aria-controls="agents-rail-main-panel"
                 title={fullTitles[i]}
-                onClick={() => setTab(i)}
+                onClick={() => {
+                  setTab(i);
+                  if (i === 5) {
+                    window.dispatchEvent(new CustomEvent('open-artifacts-panel'));
+                  }
+                }}
                 className={cn(
                   'flex min-h-8 max-w-[min(11rem,42vw)] shrink-0 items-center gap-1.5 rounded-t-md border border-transparent px-2.5 py-1 text-left text-[11px] font-medium transition-colors',
                   selected
@@ -260,6 +338,18 @@ export function AgentsWorkspaceRail({
             );
           })}
         </div>
+
+        {/* Agent 数据 / 提示词 / 能力：共用顶栏标题，位于二级标签之上（桌面与窄屏一致） */}
+        {isDetailTab ? (
+          <header className="shrink-0 border-b border-border/80 bg-muted/30 px-3 py-2 dark:bg-muted/20">
+            <h2
+              id="agents-rail-panel-title"
+              className="truncate text-xs font-semibold leading-tight tracking-tight text-foreground"
+            >
+              {t('workspaceRail.agentControlCenterTitle')}
+            </h2>
+          </header>
+        ) : null}
 
         {/* 桌面：二级横排标签（Agent 数据 / 提示词 / 能力），仅一级选中「Agent 配置」时显示 */}
         {isDetailTab && (
@@ -300,20 +390,28 @@ export function AgentsWorkspaceRail({
           id="agents-rail-main-panel"
           aria-labelledby={
             lgUp
-              ? (activeTab === 0 ? 'agents-rail-activity-project' : `agents-rail-detail-${activeTab}`)
+              ? (activeTab === 0
+                  ? 'agents-rail-activity-project'
+                  : activeTab === 4
+                    ? 'agents-rail-activity-browser'
+                    : activeTab === 5
+                      ? 'agents-rail-activity-artifacts'
+                      : `agents-rail-detail-${activeTab}`)
               : `agents-rail-tab-${activeTab}`
           }
           className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
         >
-          {renderActivePanel()}
+          <AgentsRailPanelFrame title={fullTitles[activeTab] ?? ''} hideHeader={isDetailTab}>
+            {renderActivePanel()}
+          </AgentsRailPanelFrame>
         </div>
       </div>
 
-      {/* 桌面：一级入口（项目工作区 / Agent 配置），尺寸对齐左侧 SidebarNavRow 迷你态 */}
+      {/* 桌面：一级入口（项目 / Agent 配置 / 简单浏览器），尺寸对齐左侧 SidebarNavRow 迷你态 */}
       <nav
         aria-label={t('workspaceRail.activityBarAria')}
         className={cn(
-          'hidden shrink-0 flex-col items-center gap-2 border-l border-border/80 bg-muted/25 px-2 py-3 dark:bg-muted/15 lg:flex',
+          'hidden shrink-0 flex-col items-center gap-2 border-l border-border/80 bg-muted/25 px-1.5 py-3 dark:bg-muted/15 lg:flex',
           ACTIVITY_BAR_WIDTH_CLASS,
         )}
       >
@@ -326,10 +424,10 @@ export function AgentsWorkspaceRail({
           aria-controls="agents-rail-main-panel"
           onClick={() => handleActivityClick('project')}
           className={cn(
-            'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors',
+            'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-all duration-150',
             activeTab === 0
               ? 'bg-background text-foreground shadow-sm ring-1 ring-border dark:bg-card'
-              : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
+              : ACTIVITY_BTN_IDLE,
           )}
         >
           <span className="flex h-10 w-10 shrink-0 items-center justify-center" aria-hidden>
@@ -345,14 +443,55 @@ export function AgentsWorkspaceRail({
           aria-controls="agents-rail-main-panel"
           onClick={() => handleActivityClick('agent')}
           className={cn(
-            'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors',
+            'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-all duration-150',
             isDetailTab
               ? 'bg-background text-foreground shadow-sm ring-1 ring-border dark:bg-card'
-              : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
+              : ACTIVITY_BTN_IDLE,
           )}
         >
           <span className="flex h-10 w-10 shrink-0 items-center justify-center" aria-hidden>
             <Bot className="h-5 w-5 shrink-0" />
+          </span>
+        </button>
+        <button
+          type="button"
+          id="agents-rail-activity-artifacts"
+          title={t('workspaceRail.artifactsActivityTitle')}
+          aria-label={t('workspaceRail.tabArtifacts')}
+          aria-pressed={activeTab === 5}
+          aria-controls="agents-rail-main-panel"
+          onClick={() => {
+            setTab(5);
+            window.dispatchEvent(new CustomEvent('open-artifacts-panel'));
+          }}
+          className={cn(
+            'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-all duration-150',
+            activeTab === 5
+              ? 'bg-background text-foreground shadow-sm ring-1 ring-border dark:bg-card'
+              : ACTIVITY_BTN_IDLE,
+          )}
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center" aria-hidden>
+            <Package className="h-5 w-5 shrink-0" />
+          </span>
+        </button>
+        <button
+          type="button"
+          id="agents-rail-activity-browser"
+          title={fullTitles[4]}
+          aria-label={fullTitles[4]}
+          aria-pressed={activeTab === 4}
+          aria-controls="agents-rail-main-panel"
+          onClick={() => setTab(4)}
+          className={cn(
+            'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-all duration-150',
+            activeTab === 4
+              ? 'bg-background text-foreground shadow-sm ring-1 ring-border dark:bg-card'
+              : ACTIVITY_BTN_IDLE,
+          )}
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center" aria-hidden>
+            <Globe className="h-5 w-5 shrink-0" />
           </span>
         </button>
       </nav>

@@ -154,3 +154,41 @@
 .dark .miller-scroll::-webkit-scrollbar-thumb:hover {
   background-color: oklch(0.55 0 0);
 }
+
+/**
+ * Agent 聊天消息列表：滚动条默认不占视觉权重，鼠标悬停容器或内部可聚焦元素时显示。
+ * 仅对「能悬停」的指针设备启用，避免触控端误伤。
+ */
+@media (hover: hover) and (pointer: fine) {
+  .pp-scrollbar-hover-chat {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  .pp-scrollbar-hover-chat:hover,
+  .pp-scrollbar-hover-chat:focus-within {
+    scrollbar-color: oklch(0.55 0 0 / 0.42) transparent;
+  }
+  .dark .pp-scrollbar-hover-chat:hover,
+  .dark .pp-scrollbar-hover-chat:focus-within {
+    scrollbar-color: oklch(0.72 0 0 / 0.35) transparent;
+  }
+
+  .pp-scrollbar-hover-chat::-webkit-scrollbar {
+    width: 8px;
+  }
+  .pp-scrollbar-hover-chat::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .pp-scrollbar-hover-chat::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 9999px;
+  }
+  .pp-scrollbar-hover-chat:hover::-webkit-scrollbar-thumb,
+  .pp-scrollbar-hover-chat:focus-within::-webkit-scrollbar-thumb {
+    background-color: oklch(0.55 0 0 / 0.42);
+  }
+  .dark .pp-scrollbar-hover-chat:hover::-webkit-scrollbar-thumb,
+  .dark .pp-scrollbar-hover-chat:focus-within::-webkit-scrollbar-thumb {
+    background-color: oklch(0.72 0 0 / 0.35);
+  }
+}

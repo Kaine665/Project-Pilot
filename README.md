@@ -1,6 +1,6 @@
 # ProjectPilot
 
-> Not another AI chatbox. A work system for humans and Agents to move tasks forward together.
+> Builder's AI workbench — AI understands your project over time, not from scratch every turn; across engineering, product, design, business, growth, and ops — not only code.
 
 <p align="center">
   <img src="docs/images/projectpilot-chat-workspace.png" alt="ProjectPilot chat workspace" width="1200" />
@@ -19,48 +19,27 @@
 
 ### ProjectPilot 是什么
 
-ProjectPilot 不是一个单纯的聊天助手，也不只是一个项目管理工具。
+**一句话**：Builder 的 AI 工作台 — 让 AI 对项目越来越懂，而不是每次从零开始；覆盖 Builder 多维度工作（不止代码）。
 
-它的定位是：
+**产品叙事**：五模块飞轮（**Memory → Loader → Runtime → Distiller → Dashboard**）+ **六维项目结构**（工程 / 产品 / 设计 / 商业 / 增长 / 运营；大维度固定、小板块可演进）+ **Dashboard**（一屏总览与行动入口；设计稿与建设状态见 [`docs/design/product-direction-and-dashboard.md`](docs/design/product-direction-and-dashboard.md)）。
 
-> **一个面向人和 Agent 协作的任务推进系统。**
+### 为什么存在
 
-今天的大多数 AI 产品擅长回答问题、生成内容、完成一次性操作，但真实工作并不是一次问答。
-
-真实工作是持续的：
-
-- 要发现问题
-- 要拆解任务
-- 要调度不同 Agent
-- 要沉淀上下文和文档
-- 要跨会话持续推进
-- 要知道谁在做、做到哪、为什么卡住
-
-ProjectPilot 要解决的就是这层问题：  
-**把“会聊天的 AI”变成“能协作、能执行、能追踪、能交付的工作力量”。**
+单次问答装不下真实 Builder 节奏：工程、产品、设计、商业、增长、运营会交织在一起。PP 用**本地优先**的编排与数据，把这些维度的上下文、执行与沉淀接进同一工作台，而不是让你每一轮对话都从零写背景。
 
 ### 一句话理解
 
-- 对用户：**不只是陪你聊天，而是陪你把事做完。**
-- 对团队：**让人和多个 Agent 在同一套工作系统里协作。**
-- 对产品：**以 Task 为主轴，以 Project 为工作域，以 Context / Docs / Resources 为底座。**
+- 对用户：**AI 记得你的项目**，少重复解释，多把时间花在决策与落地。
+- 对产品：**Memory / Loader 负责懂**，**Runtime 负责做**，**Distiller 负责沉淀**，**Dashboard 负责看见全局**（实现进度以 [`docs/roadmap.md`](docs/roadmap.md) 为准）。
 
-### 核心能力
+### 当前侧重的能力
 
-- **多 Agent 协作**
-  - 支持自定义 Agent、Guest Agent、Butler、任务执行型 Agent
-- **任务推进**
-  - 支持待办、任务拆解、任务状态流转、持续跟踪
-- **会话驱动执行**
-  - 不只是记录聊天，而是把会话变成实际工作入口
-- **上下文系统**
-  - 为 Agent 注入用户信息、项目上下文、资源、知识卡片
-- **知识与文档沉淀**
-  - 自动提取知识草稿、设计文档、执行产物
-- **Claude Code 集成**
-  - 直接驱动 Claude Code / CLI 执行复杂任务
-- **项目级工作视图**
-  - 支持从 Flow、Project、Todo、Session 等不同视角观察工作
+- **多 Agent 与会话执行**：自定义 Agent、Guest、Butler；Claude / Codex 等运行时接入。
+- **Loader 与 Resource**：对话前自动拼装项目、文档、技能与约束（ResourceRegistry）。
+- **任务、触发与定时**：待办 / 事件触发 / Cron 与调度恢复（成熟度见路线图）。
+- **文档与知识**：统一 `documents/` 与设计/知识形态；为 Distiller 铺路。
+- **Claude Code 等 CLI 集成**：把重度编码工作交给外部工具链，PP 保持编排与上下文。
+- **工作区与 Flow 视图**：从壳、项目、任务与会话多入口观察进展（Dashboard 目标态见设计文档）。
 
 ### 它适合什么场景
 
@@ -73,25 +52,13 @@ ProjectPilot 要解决的就是这层问题：
 4. **知识型工作**
    - 研究、写作、设计、产品规划、问题诊断
 
-### 为什么不是普通聊天产品
+### 不是什么
 
-普通聊天产品解决的是：
+- 不是「聊天框即产品」的通用对话工具。
+- 不是全功能 Jira/Notion 替代品。
+- 不是默认把项目数据全量托管上云的 SaaS。
 
-- “问一个问题，拿一个回答”
-
-ProjectPilot 解决的是：
-
-- “一件事怎么被持续推进，直到真正完成”
-
-所以它关心的不是单条消息本身，而是这些东西如何连起来：
-
-- `Project`
-- `Task`
-- `Session`
-- `Context`
-- `Resource`
-- `Document`
-- `Agent`
+能力边界见 [`docs/design/product-boundary.md`](docs/design/product-boundary.md)。编排落盘仍围绕 `Project`、`Session`、`Task`、`Resource`、`Document`、`Agent` 等对象；领域模型以 [`docs/领域与数据.md`](docs/领域与数据.md) 为准。
 
 ### 快速开始
 
@@ -158,47 +125,35 @@ MIT，见 [LICENSE](LICENSE)。
 
 ### What is ProjectPilot
 
-ProjectPilot is not just an AI assistant, and not just a project management tool.
+**One-liner**: A **Builder's AI workbench** — AI understands your project over time, not from scratch every turn; across engineering, product, design, business, growth, and operations — **not only code**.
 
-Its positioning is:
+**Product story**: A five-module flywheel (**Memory → Loader → Runtime → Distiller → Dashboard**) + a **six-dimension project map** (same six pillars as above; top-level dimensions are fixed, sub-areas evolve) + **Dashboard** (single-screen overview and action surface; design and build status in [`docs/design/product-direction-and-dashboard.md`](docs/design/product-direction-and-dashboard.md)).
 
-> **A task execution and coordination system for humans and Agents.**
+### Why it exists
 
-Most AI products today are good at answering questions, generating content, or completing one-off requests.  
-Real work is different. Real work is ongoing:
+One-off Q&A cannot carry a real builder cadence: engineering, product, design, business, growth, and ops interleave. PP connects context, execution, and capture across those dimensions in one **local-first** workbench, instead of rewriting background every session.
 
-- finding issues
-- breaking work into tasks
-- coordinating multiple agents
-- preserving context and documents
-- continuing across sessions
-- tracking who is doing what and where things are blocked
+### In one sentence
 
-ProjectPilot is built for that layer.  
-It turns AI from a chat interface into a collaborative work force that can execute, coordinate, and deliver.
+- For users: **The system remembers your project** — less re-explaining, more deciding and shipping.
+- For the product: **Memory / Loader to understand**, **Runtime to act**, **Distiller to capture**, **Dashboard to see the whole** (delivery status: [`docs/roadmap.md`](docs/roadmap.md)).
 
-### In One Sentence
+### Current capability focus
 
-- For users: **Not just chat with AI. Get work done with AI.**
-- For teams: **Coordinate humans and multiple agents in one work system.**
-- For the product: **Task-centric, project-scoped, context-backed collaboration.**
+- **Multi-agent and session execution**: custom agents, guests, butlers; Claude / Codex and related runtimes.
+- **Loader and resources**: assemble project, docs, skills, and constraints before each run (ResourceRegistry).
+- **Tasks, triggers, and schedules**: todos / event triggers / cron with scheduler recovery (maturity in the roadmap).
+- **Documents and knowledge**: unified `documents/` for design + knowledge shapes; groundwork for Distiller.
+- **Claude Code and CLI integration**: heavy coding stays in external toolchains; PP keeps orchestration and context.
+- **Workspace and flow views**: shell, project, tasks, and sessions as entry points (Dashboard target in the design doc).
 
-### Core Capabilities
+### What it is not
 
-- **Multi-agent collaboration**
-  - Custom agents, guest agents, butlers, task workers
-- **Task progression**
-  - Todo tracking, task decomposition, status transitions, ongoing follow-through
-- **Session-driven execution**
-  - Sessions are not just transcripts; they are work entry points
-- **Context system**
-  - Inject user info, project knowledge, resources, and reusable context into agents
-- **Knowledge and document capture**
-  - Extract knowledge drafts, design docs, and execution artifacts
-- **Claude Code integration**
-  - Drive complex coding workflows through Claude Code / CLI
-- **Project-level work views**
-  - Observe work via flows, projects, todos, sessions, and related resources
+- Not a generic “chat box first” assistant.
+- Not a full Jira/Notion replacement.
+- Not a SaaS that defaults to shipping all project data to the cloud.
+
+See [`docs/design/product-boundary.md`](docs/design/product-boundary.md). Persistence still centers on `Project`, `Session`, `Task`, `Resource`, `Document`, `Agent`; domain truth in [`docs/领域与数据.md`](docs/领域与数据.md).
 
 ### Use Cases
 
@@ -210,26 +165,6 @@ It turns AI from a chat interface into a collaborative work force that can execu
    - Analysis, execution, review, coordination
 4. **Knowledge work**
    - Research, writing, design, product planning, diagnosis
-
-### Why It Is Not Just Another Chat Product
-
-Typical AI chat products solve:
-
-- “Ask once, get one answer.”
-
-ProjectPilot solves:
-
-- “How does work keep moving until it is actually done?”
-
-That is why its center of gravity is not a single message, but the system around work:
-
-- `Project`
-- `Task`
-- `Session`
-- `Context`
-- `Resource`
-- `Document`
-- `Agent`
 
 ### Quick Start
 

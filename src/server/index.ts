@@ -21,11 +21,19 @@ import { errorHandler } from './middleware/error-handler';
 import { lazyApiRoute } from './lazy-route';
 
 import { ensureDataDirV2Migrated } from '@/lib/file-store';
+import {
+  ensureDefaultMcpMarketSeeded,
+  readMcpMarketFile,
+  removeMcpServerFromMarket,
+  setMcpServerEnabledInMarket,
+  updateMcpServerInMarket,
+} from '@/lib/mcp-market-store';
 import { materializeAllBuiltinPromptSeeds } from '@/lib/builtin-prompt-materialize';
 import { ensureGlobalAgentsMigratedToPresets } from '@/lib/migrations/migrate-global-agents-to-presets';
 import { schedulerManager } from '@/lib/scheduler-manager';
 import { eventTriggerManager } from '@/lib/event-trigger-manager';
 import { initInboxRouting } from '@/lib/inbox-manager';
+import { initDistiller } from '@/lib/distiller';
 
 const app = new Hono();
 
@@ -88,8 +96,56 @@ const api = {
   eventTriggers: '/api/event-triggers',
   community: '/api/community',
   agentInbox: '/api/agent-inbox',
+  distiller: '/api/distiller',
   googleAuth: '/api/auth/google',
 } as const;
+
+/**
+ * MCP 市场快照：挂在主 Hono 实例上（勿仅放在 `/api/data` 懒子树），避免部分环境下子应用路径未命中导致纯文本 404。
+ */
+app.get(`${api.data}/mcp-market`, async (c) => {
+  try {
+    return c.json(await readMcpMarketFile());
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  }
+});
+
+/** 须先于 `PATCH .../mcp-market/:key`，避免 `:key` 吞掉 `xxx/enabled`。 */
+app.patch(`${api.data}/mcp-market/:key/enabled`, async (c) => {
+  try {
+    const key = decodeURIComponent(c.req.param('key') ?? '');
+    const body = (await c.req.json()) as { enabled?: unknown };
+    if (typeof body.enabled !== 'boolean') {
+      return c.json({ error: 'enabled_boolean_required' }, 400);
+    }
+    await setMcpServerEnabledInMarket(key, body.enabled);
+    return c.json({ ok: true });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+  }
+});
+
+app.patch(`${api.data}/mcp-market/:key`, async (c) => {
+  try {
+    const key = decodeURIComponent(c.req.param('key') ?? '');
+    const body = await c.req.json();
+    await updateMcpServerInMarket(key, body);
+    return c.json({ ok: true });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+  }
+});
+
+app.delete(`${api.data}/mcp-market/:key`, async (c) => {
+  try {
+    const key = decodeURIComponent(c.req.param('key') ?? '');
+    await removeMcpServerFromMarket(key);
+    return c.json({ ok: true });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+  }
+});
 
 app.route(api.agents, lazyApiRoute(api.agents, () => import('./routes/agents')));
 app.route(api.settings, lazyApiRoute(api.settings, () => import('./routes/settings')));
@@ -109,6 +165,7 @@ app.route(api.schedules, lazyApiRoute(api.schedules, () => import('./routes/sche
 app.route(api.eventTriggers, lazyApiRoute(api.eventTriggers, () => import('./routes/event-triggers')));
 app.route(api.community, lazyApiRoute(api.community, () => import('./routes/community')));
 app.route(api.agentInbox, lazyApiRoute(api.agentInbox, () => import('./routes/agent-inbox')));
+app.route(api.distiller, lazyApiRoute(api.distiller, () => import('./routes/distiller')));
 app.route(api.googleAuth, lazyApiRoute(api.googleAuth, () => import('./routes/google-auth')));
 /** 须挂在所有其它 `/api/...` 子树之后，否则会吞掉 `/api/auth/google` 等路径并 404 */
 app.route(api.root, lazyApiRoute(api.root, () => import('./routes/prompts')));
@@ -139,12 +196,18 @@ const port = parseInt(
 async function startServer(): Promise<void> {
   await ensureDataDirV2Migrated();
   try {
+    await ensureDefaultMcpMarketSeeded();
+  } catch (e) {
+    console.warn('[server] ensureDefaultMcpMarketSeeded:', e);
+  }
+  try {
     await materializeAllBuiltinPromptSeeds();
   } catch (e) {
     console.warn('[server] materializeAllBuiltinPromptSeeds:', e);
   }
   await ensureGlobalAgentsMigratedToPresets();
   initInboxRouting();
+  initDistiller();
   await schedulerManager.init();
   await eventTriggerManager.init();
   console.log(`[server] Starting Hono backend on http://127.0.0.1:${port}`);

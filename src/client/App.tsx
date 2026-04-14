@@ -1,9 +1,43 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, Component, type ErrorInfo, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router';
 import { I18nextProvider } from 'react-i18next';
 import i18next from './i18n/config';
 import { ThemeProvider } from '@/components/theme-provider';
 import { ProjectProvider } from '@/components/project-context';
+
+/* ── 全局错误边界：崩溃时把错误信息显示到屏幕上而非白屏 ── */
+interface EBState { error: Error | null; info: ErrorInfo | null }
+class RootErrorBoundary extends Component<{ children: ReactNode }, EBState> {
+  state: EBState = { error: null, info: null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    this.setState({ info });
+    console.error('[RootErrorBoundary]', error, info);
+  }
+  render() {
+    if (this.state.error) {
+      const { error, info } = this.state;
+      return (
+        <div style={{ padding: 32, fontFamily: 'monospace', fontSize: 13, lineHeight: 1.6, color: '#dc2626', background: '#fef2f2', minHeight: '100vh', overflow: 'auto' }}>
+          <h1 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>ProjectPilot crashed</h1>
+          <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{error.message}</pre>
+          <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', marginTop: 12, color: '#991b1b', fontSize: 11 }}>{error.stack}</pre>
+          {info?.componentStack && (
+            <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', marginTop: 12, color: '#9a3412', fontSize: 11 }}>{info.componentStack}</pre>
+          )}
+          <button
+            type="button"
+            onClick={() => { this.setState({ error: null, info: null }); window.location.reload(); }}
+            style={{ marginTop: 20, padding: '8px 20px', border: '1px solid #dc2626', borderRadius: 6, cursor: 'pointer', background: '#fff', color: '#dc2626', fontWeight: 600 }}
+          >
+            Reload
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const WorkspaceShell = lazy(() => import('./routes/workspace-shell'));
 const SettingsPage = lazy(() => import('@/app/[locale]/settings/page'));
@@ -111,20 +145,22 @@ function AppRoutes() {
 
 export function App() {
   return (
-    <I18nextProvider i18n={i18next}>
-      <BrowserRouter>
-        <ThemeProvider>
-          <ProjectProvider>
-            <Routes>
-              <Route path="/" element={<Navigate to="/workspace/projects" replace />} />
-              <Route path="/oauth/google/callback" element={<Suspense fallback={<Loading />}><OAuthGoogleCallback /></Suspense>} />
-              <Route path="/oauth/google/browser-sync" element={<Suspense fallback={<Loading />}><OAuthGoogleBrowserSync /></Suspense>} />
-              <Route path="/en/*" element={<AppRoutes />} />
-              <Route path="/*" element={<AppRoutes />} />
-            </Routes>
-          </ProjectProvider>
-        </ThemeProvider>
-      </BrowserRouter>
-    </I18nextProvider>
+    <RootErrorBoundary>
+      <I18nextProvider i18n={i18next}>
+        <BrowserRouter>
+          <ThemeProvider>
+            <ProjectProvider>
+              <Routes>
+                <Route path="/" element={<Navigate to="/workspace/projects" replace />} />
+                <Route path="/oauth/google/callback" element={<Suspense fallback={<Loading />}><OAuthGoogleCallback /></Suspense>} />
+                <Route path="/oauth/google/browser-sync" element={<Suspense fallback={<Loading />}><OAuthGoogleBrowserSync /></Suspense>} />
+                <Route path="/en/*" element={<AppRoutes />} />
+                <Route path="/*" element={<AppRoutes />} />
+              </Routes>
+            </ProjectProvider>
+          </ThemeProvider>
+        </BrowserRouter>
+      </I18nextProvider>
+    </RootErrorBoundary>
   );
 }

@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { useLocale, useTranslations } from '@/client/i18n/use-translations';
+import { useTranslations } from '@/client/i18n/use-translations';
+import { useRouter } from '@/client/i18n/routing';
 import {
   Archive,
   ChevronDown,
@@ -100,24 +101,12 @@ function hasRepoRunInfo(p: ProjectEntry) {
   );
 }
 
-function hasTagsSection(p: ProjectEntry) {
-  return (p.tags?.length ?? 0) > 0;
-}
-
-function activityTimestamp(p: ProjectEntry) {
-  return p.updatedAt?.trim() || p.createdAt?.trim() || '';
-}
-
-function hasActivitySection(p: ProjectEntry) {
-  return Boolean(activityTimestamp(p));
-}
-
 export function ProjectsManagementHub() {
   const { projects, activeKey, setActiveKey, fetchProjects } = useProject();
+  const router = useRouter();
   const t = useTranslations('projects');
   const tActions = useTranslations('actions');
   const tStatus = useTranslations('status');
-  const locale = useLocale();
 
   const soleBuiltInPlaceholder = useMemo(() => {
     const act = projects.filter(p => !p.archived);
@@ -159,23 +148,6 @@ export function ProjectsManagementHub() {
     const picked = await pickLocalFolderPath();
     if (picked) setFormPath(picked);
   }, []);
-
-  const formatDate = useCallback(
-    (value?: string) => {
-      if (!value) return '—';
-      try {
-        return new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'zh-CN', {
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        }).format(new Date(value));
-      } catch {
-        return value;
-      }
-    },
-    [locale],
-  );
 
   useEffect(() => {
     if (statusFilter !== 'archived') return;
@@ -825,7 +797,6 @@ export function ProjectsManagementHub() {
                             </Badge>
                           )}
                         </div>
-                        <p className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-400">{activeProject.key}</p>
                       </div>
                     </div>
 
@@ -912,35 +883,6 @@ export function ProjectsManagementHub() {
                         </details>
                       </section>
                     ) : null}
-
-                    {hasTagsSection(activeProject) ? (
-                      <section className="mb-8 space-y-3 md:mb-10">
-                        <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{t('detailTags')}</h3>
-                        <div className="flex flex-wrap gap-2">
-                          {activeProject.tags!.map(tag => (
-                            <Badge key={tag} variant="outline" className="rounded-lg text-xs">
-                              {tag}
-                            </Badge>
-                          ))}
-                        </div>
-                      </section>
-                    ) : null}
-
-                    {hasActivitySection(activeProject) ? (
-                      <section className="mb-8 space-y-4 md:mb-10">
-                        <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{t('detailActivity')}</h3>
-                        <div className="space-y-4 border-l-2 border-zinc-100 pl-5 dark:border-zinc-800">
-                          <div className="relative">
-                            <div className="absolute -left-[26px] top-1.5 h-3 w-3 rounded-full border-2 border-white bg-blue-500 dark:border-zinc-950" />
-                            <div className="text-xs text-zinc-400">
-                              {formatDate(activityTimestamp(activeProject))}
-                            </div>
-                            <div className="mt-1 text-sm font-medium text-zinc-900 dark:text-zinc-200">{t('detailActivityRecord')}</div>
-                          </div>
-                        </div>
-                        <p className="text-xs leading-5 text-zinc-400">{t('detailActivityMoreHint')}</p>
-                      </section>
-                    ) : null}
                   </div>
                 </div>
 
@@ -969,7 +911,13 @@ export function ProjectsManagementHub() {
                   ) : (
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div className="flex flex-wrap items-center gap-2">
-                        <Button className="rounded-lg" onClick={() => setActiveKey(activeProject.key)}>
+                        <Button
+                          className="rounded-lg"
+                          onClick={() => {
+                            setActiveKey(activeProject.key);
+                            router.push('/workspace/agents');
+                          }}
+                        >
                           <ExternalLink className="h-4 w-4" />
                           {t('openProject')}
                         </Button>

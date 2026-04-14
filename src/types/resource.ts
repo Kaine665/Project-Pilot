@@ -10,6 +10,7 @@
 
 export type ResourceType =
   | 'design-docs-index'           // Design docs index table (AI cats on demand)
+  | 'distiller-knowledge'         // 会话产物：提炼知识（knowledge + distiller tag，按项目）
   | 'active-tasks'                // 并行执行看板 agents/active-tasks.json（非用户 Todo）
   | 'available-agents'            // Callable PP agents + call-agent CLI（全体 Agent 注入）
   | 'system-prompt'               // Agent system prompt text
@@ -40,6 +41,7 @@ export interface ResourceRef {
    * - inline-text: arbitrary key
    * - doc-save-instructions / session-title-instructions: '_static'
    * - design-docs-index: '_all'
+   * - distiller-knowledge: '_project'（按 LoaderContext.projectKey 过滤）
    * - active-tasks: '_running'（并行执行看板）
    * - available-agents: '_callable'
    * - shared-memory: '_shared'

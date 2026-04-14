@@ -9,6 +9,7 @@ import { RuntimePanel } from '@/components/runtime-panel';
 import { FolderExplorerPanel } from '@/components/folder-explorer-panel';
 import { PlanViewerPanel } from '@/components/plan-viewer-panel';
 import { ActionContentPanel } from '@/components/action-content-panel';
+import { ArtifactsPanel, type ArtifactsPanelPayload } from '@/components/agent-chat/artifacts-panel';
 import type { Agent } from '@/types';
 import type { SessionConfig } from '@/types/agent-chat';
 import type { ParsedActionTag } from '@/lib/action-tag-parser';
@@ -124,6 +125,28 @@ export function RuntimeDrawerSection({
           onSaveConfig={onSaveConfig}
           onClose={onClose}
         />
+      </div>
+    </div>
+  );
+}
+
+export function ArtifactsDrawerSection({
+  isOpen,
+  payload,
+  onClose,
+}: {
+  isOpen: boolean;
+  payload: ArtifactsPanelPayload | null;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className={`shrink-0 overflow-hidden border-l border-zinc-200 transition-[width] duration-200 ease-in-out dark:border-zinc-800 ${
+        isOpen ? 'w-[320px]' : 'w-0 border-l-0'
+      }`}
+    >
+      <div className="h-full w-[320px]">
+        <ArtifactsPanel payload={payload} onClose={onClose} />
       </div>
     </div>
   );
@@ -262,11 +285,11 @@ export function ProjectInputSection({
   isFull: boolean;
 }) {
   return (
-    <div className="border-t border-zinc-100 p-2 dark:border-zinc-800">
+    <div className="p-3 bg-zinc-50/30 dark:bg-zinc-900/30">
       <ChatInput
         {...chatInputProps}
         placeholder={workspaceMode ? `继续向 ${agentDisplayName} 发送消息...` : plannerPlaceholder}
-        minHeight={isFull ? '120px' : '200px'}
+        minHeight={isFull ? '96px' : '200px'}
         fullWidth
       />
     </div>
