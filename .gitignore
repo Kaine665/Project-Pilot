@@ -21,6 +21,12 @@
 /build
 /dist
 
+# 本地桌面 / 发布试验输出目录（勿提交）
+/build-electron-latest/
+/build-next-release/
+/build-pp-release/
+/build-pp-v4/
+
 # misc
 .mcp-stdin-null
 .DS_Store
