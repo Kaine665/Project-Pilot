@@ -12,6 +12,10 @@ concurrency:
   group: pr-desktop-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
+# 官方 JS Actions 迁 Node 24：https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   windows:
     name: Windows
@@ -21,7 +25,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -29,7 +33,7 @@ jobs:
           bun-version: latest
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -55,7 +59,7 @@ jobs:
         run: npx electron-builder --win --publish never --config.extraMetadata.version=${{ steps.ci_ver.outputs.version }}
 
       - name: Upload Windows artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pr-${{ github.event.pull_request.number }}-windows
           path: build/*.exe
@@ -70,7 +74,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -78,7 +82,7 @@ jobs:
           bun-version: latest
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -106,7 +110,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
       - name: Upload macOS artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pr-${{ github.event.pull_request.number }}-macos
           path: |
@@ -129,7 +133,7 @@ jobs:
 
       - name: Checkout merge commit (same ref as Windows/macOS build)
         if: github.event.pull_request.head.repo.full_name == github.repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Compute PR desktop app version (same as build jobs)
         if: github.event.pull_request.head.repo.full_name == github.repository
@@ -154,23 +158,17 @@ jobs:
             gh api --method DELETE "repos/${{ github.repository }}/git/refs/tags/${tag}" 2>/dev/null || true
           done
 
-      - name: Download Windows package
+      - name: Download Windows + macOS artifacts
         if: github.event.pull_request.head.repo.full_name == github.repository
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
-          name: pr-${{ github.event.pull_request.number }}-windows
+          pattern: pr-${{ github.event.pull_request.number }}-*
           path: release-assets
-
-      - name: Download macOS packages
-        if: github.event.pull_request.head.repo.full_name == github.repository
-        uses: actions/download-artifact@v4
-        with:
-          name: pr-${{ github.event.pull_request.number }}-macos
-          path: release-assets
+          merge-multiple: true
 
       - name: Create prerelease (title & tag = patch+1 semver + -pr.<N>)
         if: github.event.pull_request.head.repo.full_name == github.repository
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.appver.outputs.version }}
           name: ${{ steps.appver.outputs.version }}
