@@ -399,7 +399,7 @@ googleAuth.post('/browser-sync-start', async (c) => {
   const ticket = crypto.randomBytes(32).toString('base64url');
   await writeBrowserSyncTicket(ticket, payload.sub as string, (payload.email as string) || '');
   const origin =
-    process.env.PP_FRONTEND_ORIGIN?.trim().replace(/\/$/, '') || 'http://127.0.0.1:4287';
+    process.env.PP_FRONTEND_ORIGIN?.trim().replace(/\/$/, '') || 'http://127.0.0.1:4000';
   const url = `${origin}/oauth/google/browser-sync?ticket=${encodeURIComponent(ticket)}`;
   return c.json({ ok: true, url });
 });

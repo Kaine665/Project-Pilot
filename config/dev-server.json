@@ -1,6 +1,6 @@
 {
   "client": {
-    "port": 4287,
+    "port": 4000,
     "host": "127.0.0.1",
     "probeHost": "localhost"
   },

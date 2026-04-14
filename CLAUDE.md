@@ -57,7 +57,7 @@
 - **AI**: Claude Agent SDK, OpenAI Codex SDK, MCP SDK
 - **桌面**: Electron 40
 - **包管理**: Bun (运行时 + 包管理器)
-- **开发端口**: 默认前端 4287、API 4500（`config/dev-server.json`）；`npm run dev` / `electron-dev` 会先 **检测占用并自动换端口**，把结果写入环境变量与项目根 **`.pp-dev-ports.json`**，Vite 代理与 Hono 使用同一组端口
+- **开发端口**: 默认前端 **4000**、API **4500**（`config/dev-server.json`）；`npm run dev` / `electron-dev` 会先 **检测占用并自动换端口**，把结果写入环境变量与项目根 **`.pp-dev-ports.json`**，Vite 代理与 Hono 使用同一组端口。**打包桌面应用** 内嵌 Hono 首选 **4287**（`electron/main.ts` + `port-finder`）
 
 ## 文档驱动开发（必须遵循）
 
@@ -99,7 +99,7 @@
 ## 开发命令
 
 ```bash
-bun run dev            # 同时启动 Vite (4287) + Hono (4500)
+bun run dev            # 同时启动 Vite (4000) + Hono (4500)
 bun run dev:client     # 仅 Vite 前端
 bun run dev:server     # 仅 Hono 后端
 bun run build          # 生产构建（Vite + Bun bundle）
