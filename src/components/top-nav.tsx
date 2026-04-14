@@ -2,7 +2,6 @@
 
 import type { CSSProperties } from 'react';
 import { useTranslations } from '@/client/i18n/use-translations';
-import { LanguageSwitcher } from '@/components/language-switcher';
 import { ProjectSwitcher } from '@/components/project-switcher';
 import { cn } from '@/lib/utils';
 
@@ -74,7 +73,6 @@ export function TopNav({
         <ProjectSwitcher />
       </div>
       <div className="relative z-10 flex min-w-0 items-center justify-end gap-3" style={noDragStyle}>
-        <LanguageSwitcher />
         {children}
       </div>
     </header>
