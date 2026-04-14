@@ -132,5 +132,6 @@
 | 2026-04-14 | **对话与 Agent 系统八层对标**：Claude Code harness / Hermes / OpenHarness 与 PP 映射；`AI_AGENT_KNOWLEDGE_MAP` 入口、`CLAUDE.md` 域索引、`MEMORY.md` 速记、`docs/design/README` | [`docs/design/conversation-agent-system-lens.md`](./design/conversation-agent-system-lens.md)、`docs/AI_AGENT_KNOWLEDGE_MAP.md`、`CLAUDE.md`、`MEMORY.md`、`docs/design/README.md`、`docs/README.md` |
 | 2026-04-14 | **PR 桌面双平台**：针对 `next` 的 PR 跑 `pr-desktop-build.yml`；预发布版本为 **基线 patch+1 + `-pr.<PR>`**（`scripts/ci-compute-pr-desktop-version.mjs` + `extraMetadata.version`），Release 标题与 tag 同该串；fork 仅 Artifact；正式发版 `release:desktop:bump` + `release.yml`（`v*`）— 见 `github-branch-policy.md` §3.6 | `pr-desktop-build.yml`、`ci-compute-pr-desktop-version.mjs`、`github-branch-policy.md`、本文件 |
 | 2026-04-15 | **Windows 未签名桌面包与 SmartScreen**：说明「无法确认发布者」原因、用户侧解除锁定/仍要运行步骤、正式发版需 Authenticode 签名；README 文档入口 | [`docs/desktop-windows-smartscreen-unsigned.md`](./desktop-windows-smartscreen-unsigned.md)、`README.md`、本文件 |
+| 2026-04-16 | **智能应用控制**：补充安装后运行被「智能应用控制系统」拦截与 SmartScreen 区别、设置路径与评估/关闭说明 | [`docs/desktop-windows-smartscreen-unsigned.md`](./desktop-windows-smartscreen-unsigned.md)、本文件 |
 
 （后续变更请继续追加表格行，勿删历史。）
