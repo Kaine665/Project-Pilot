@@ -2,7 +2,7 @@
 
 ## 这是什么
 
-这是 ProjectPilot 的**稳定运行目录**，用户正在使用此目录的实例（开发默认前端端口 4287，见 `config/dev-server.json`）。
+这是 ProjectPilot 的**稳定运行目录**，用户正在使用此目录的实例（开发默认前端端口 4000，见 `config/dev-server.json`；打包桌面应用内嵌服务首选 4287）。
 HMR 会让任何源码改动立即生效并触发 UI 刷新，**影响用户正在进行的工作**。
 
 ## 铁律：不要直接在这里修改源码
@@ -43,12 +43,12 @@ git branch -d "$BRANCH_NAME"
 - 国际化：next-intl (中/英)
 - AI：Codex CLI (`Codex` 命令) 通过子进程调用，流式 JSON 输出
 - 包管理：npm
-- 主实例端口：4287（`PROJECT_PILOT_CLIENT_PORT` / `config/dev-server.json` 可覆盖）
+- 主实例端口：4000（`PROJECT_PILOT_CLIENT_PORT` / `config/dev-server.json` 可覆盖；打包版 Electron 内嵌 Hono 首选 4287）
 
 ## 开发命令
 
 ```bash
-npm run dev          # 开发服务器（Vite 默认端口见 dev-server.json，当前 4287）
+npm run dev          # 开发服务器（Vite 默认端口见 dev-server.json，当前 4000）
 npm run build        # 生产构建（提交前必须通过）
 npm run lint         # ESLint 检查
 ```

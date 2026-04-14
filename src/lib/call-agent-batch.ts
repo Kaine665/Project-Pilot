@@ -12,7 +12,7 @@
  *   --timeout          Optional. 单个任务超时秒数（默认 300）
  *   --poll-interval    Optional. 轮询间隔毫秒（默认 2000）
  *   --concurrency      Optional. 最大并发数（默认 10，防止资源耗尽）
- *   --port             Optional. 服务端口（默认 4287 或 PROJECT_PILOT_PORT）
+ *   --port             Optional. 服务端口（默认 4000 或 PROJECT_PILOT_PORT）
  *   --depth            Optional. 调用深度（默认 0，上限 3）
  *
  * tasks.json 格式:
@@ -44,7 +44,7 @@ const MAX_DEPTH = 3;
 const DEFAULT_TIMEOUT_S = 300;
 const DEFAULT_POLL_INTERVAL_MS = 2000;
 const DEFAULT_CONCURRENCY = 10;
-const DEFAULT_PORT = 4287;
+const DEFAULT_PORT = 4000;
 const POST_TIMEOUT_MS = 15_000;
 
 // ── Types ──
@@ -448,7 +448,7 @@ async function main() {
       '  --timeout          Optional. Timeout per task in seconds (default: 300)\n' +
       '  --poll-interval    Optional. Poll interval in ms (default: 2000)\n' +
       '  --concurrency      Optional. Max concurrent tasks (default: 10)\n' +
-      '  --port             Optional. Server port (default: 4287)\n' +
+      '  --port             Optional. Server port (default: 4000)\n' +
       '  --depth            Optional. Call depth (default: 0)\n',
     );
     process.exit(1);

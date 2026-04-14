@@ -20,7 +20,7 @@
 - **代码主目录**：仓库内 **`develop-static/`**（若整体是 monorepo，先 `cd develop-static` 再执行下述命令）
 - **主 worktree（稳定版）**：用户正在使用的分支，绝对不能干扰
 - **开发 worktree**：每次任务动态创建，与主 worktree 同级
-- **开发时端口（默认）**：**Vite 前端 :4287**，**Hono API :4500**（`bun run dev`）；同一机器多 worktree 时用 **端口注册表** 错开，而非单一固定端口
+- **开发时端口（默认）**：**Vite 前端 :4000**，**Hono API :4500**（`bun run dev`）；打包桌面应用内嵌 Hono 首选 **:4287**；同一机器多 worktree 时用 **端口注册表** 错开，而非单一固定端口
 - **技术栈**：**React + Vite + Hono + TypeScript + Tailwind**；桌面为 **Electron**；路由为 **React Router** SPA（**不是** Next.js App Router）
 - **包管理与运行**：优先 **Bun**（`bun install`、`bun run dev`）；若无 Bun，可用 npm 等价命令
 

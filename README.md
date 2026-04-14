@@ -78,7 +78,7 @@ npm install -g @anthropic-ai/claude-code
 npm run dev
 ```
 
-打开 `http://localhost:4287`
+打开 `http://localhost:4000`
 
 #### 数据目录
 
@@ -185,7 +185,7 @@ npm install -g @anthropic-ai/claude-code
 npm run dev
 ```
 
-Open `http://localhost:4287`
+Open `http://localhost:4000`
 
 #### Data Directory
 

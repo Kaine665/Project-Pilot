@@ -12,8 +12,10 @@ if (process.env.PROJECT_PILOT_DISABLE_GPU === '1') {
 
 const isDev = !!process.env.ELECTRON_DEV;
 const APP_ENTRY_PATH = '/workspace/projects';
-/** 与 `config/dev-server.json` 默认前端端口一致；占用时见 `port-finder` 回退 */
-const DEFAULT_PORT = 4287;
+/** 本地 `npm run dev` / `electron-dev` 与 `config/dev-server.json` 一致；`loadDevConfig` 失败时的回退 */
+const DEV_CLIENT_FALLBACK_PORT = 4000;
+/** 打包后内嵌 Hono 首选端口（与生产 bundle 约定一致；占用时由 `port-finder` 回退） */
+const PACKAGED_EMBEDDED_PORT = 4287;
 
 /** 开发态 Vite 偶发未就绪或连接被重置时首屏白屏；限次自动重载 */
 let devMainLoadAttempts = 0;
@@ -58,15 +60,18 @@ function loadDevConfig(): { clientPort: number; clientLoadOrigin: string } {
     )) as { loadDevServerConfig: (root: string) => { clientPort: number; clientLoadOrigin: string } };
     return loadDevServerConfig(projectRoot);
   } catch {
-    return { clientPort: DEFAULT_PORT, clientLoadOrigin: `http://127.0.0.1:${DEFAULT_PORT}` };
+    return {
+      clientPort: DEV_CLIENT_FALLBACK_PORT,
+      clientLoadOrigin: `http://127.0.0.1:${DEV_CLIENT_FALLBACK_PORT}`,
+    };
   }
 }
 
 let mainWindow: BrowserWindow | null = null;
 let serverProcess: ChildProcess | null = null;
 let backendShutdownDone = false;
-let serverPort = DEFAULT_PORT;
-let windowLoadOrigin = `http://127.0.0.1:${DEFAULT_PORT}`;
+let serverPort = PACKAGED_EMBEDDED_PORT;
+let windowLoadOrigin = `http://127.0.0.1:${PACKAGED_EMBEDDED_PORT}`;
 
 function bringMainWindowFromBrowserOAuth(): void {
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -96,29 +101,33 @@ function argvHasOAuthReturnProtocol(argv: string[]): boolean {
   return argv.some((a) => OAUTH_RETURN_PROTOCOL.test(a));
 }
 
-// ── 单实例锁 ──────────────────────────────────────────
-const gotLock = app.requestSingleInstanceLock();
-if (!gotLock) {
-  app.quit();
-  process.exit(0);
-}
+// ── 单实例锁（仅生产 / 打包）─────────────────────────────
+// 开发与安装版共用 `appId`（package.json `build.appId`），若此处对 `electron-dev` 也加锁，
+// 则安装版已运行时 `npm run electron:dev` 会拿不到锁并立刻退出，用户误以为「没启动」。
+if (!isDev) {
+  const gotLock = app.requestSingleInstanceLock();
+  if (!gotLock) {
+    app.quit();
+    process.exit(0);
+  }
 
-app.on('second-instance', (_event, commandLine) => {
-  const argv = Array.isArray(commandLine)
-    ? commandLine
-    : String(commandLine)
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean);
-  if (argv.some((a) => OAUTH_RETURN_PROTOCOL.test(a))) {
-    bringMainWindowFromBrowserOAuth();
-    return;
-  }
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
-  }
-});
+  app.on('second-instance', (_event, commandLine) => {
+    const argv = Array.isArray(commandLine)
+      ? commandLine
+      : String(commandLine)
+          .trim()
+          .split(/\s+/)
+          .filter(Boolean);
+    if (argv.some((a) => OAUTH_RETURN_PROTOCOL.test(a))) {
+      bringMainWindowFromBrowserOAuth();
+      return;
+    }
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
 
 if (process.platform === 'darwin') {
   app.on('open-url', (event, url) => {
@@ -511,7 +520,7 @@ app.whenReady().then(async () => {
     });
     splash.loadFile(path.join(__dirname, '..', 'splash.html'));
 
-    serverPort = await findAvailablePort(DEFAULT_PORT);
+    serverPort = await findAvailablePort(PACKAGED_EMBEDDED_PORT);
 
     serverProcess = await startBackendServer(serverPort);
     wireBackendProcessExit(serverProcess);
