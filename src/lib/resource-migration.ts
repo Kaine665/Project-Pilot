@@ -43,6 +43,14 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
     label: '设计文档索引',
   });
 
+  // Distiller 提炼知识（有 projectKey 时 loader 才输出内容）
+  refs.push({
+    type: 'distiller-knowledge',
+    id: '_project',
+    priority: 26,
+    label: '产物 · 提炼知识摘要',
+  });
+
   // 并行执行看板（agents/active-tasks.json）— always present
   refs.push({
     type: 'active-tasks',

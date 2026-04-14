@@ -8,6 +8,7 @@
 
 import { resourceRegistry } from '../resource-registry';
 import { DesignDocsIndexLoader } from './design-docs-index-loader';
+import { DistillerKnowledgeLoader } from './distiller-knowledge-loader';
 import { ActiveTasksLoader } from './active-tasks-loader';
 import { AvailableAgentsLoader } from './available-agents-loader';
 import { SystemPromptLoader } from './system-prompt-loader';
@@ -27,6 +28,7 @@ import { LegacyContextLoader } from './legacy-context-loader';
 import { InboxDigestLoader } from './inbox-digest-loader';
 
 resourceRegistry.register(new DesignDocsIndexLoader());
+resourceRegistry.register(new DistillerKnowledgeLoader());
 resourceRegistry.register(new ActiveTasksLoader());
 resourceRegistry.register(new AvailableAgentsLoader());
 resourceRegistry.register(new SystemPromptLoader());

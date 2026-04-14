@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "pp-bundled-memory": {
+      "enabled": true,
+      "description": "本地结构化记忆：用知识图谱方式存实体与关系，适合跨会话记住约定与事实。",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    },
+    "pp-bundled-sequential-thinking": {
+      "enabled": true,
+      "description": "分步推理：把复杂问题拆成多步思考链，便于梳理逻辑再执行。",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    },
+    "pp-bundled-playwright": {
+      "enabled": true,
+      "description": "浏览器自动化：可驱动页面操作与验证；首次运行 npx 可能下载浏览器，体积较大。",
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp"]
+    }
+  }
+}
