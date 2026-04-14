@@ -17,6 +17,7 @@ import { lazy, Suspense } from 'react';
 import type { Agent, AgentCapabilities, AgentPreset, OpenAIReasoningEffort } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import { AgentsWorkspaceRail } from '@/components/agents-workspace-rail';
+import { ProjectSwitcher } from '@/components/project-switcher';
 import { type PromptStackSeedItem } from '@/components/agent-session-prompt-stack';
 
 const AgentChatPanelLazy = lazy(() =>
@@ -53,19 +54,25 @@ import type {
 } from '@/lib/agents-workspace-ui-shared';
 import {
   agentsWorkspaceStorageKey,
+  AGENTS_PAGE_AGENT_LIST_COLLAPSE_SNAP_PX,
   AGENTS_PAGE_AGENT_LIST_WIDTH_MIN,
   AGENTS_PAGE_AGENT_LIST_WIDTH_MAX,
-  AGENTS_PAGE_AGENT_LIST_COLLAPSE_SNAP_PX,
-  PP_AGENTS_LIST_EXPAND_EVENT,
+  AGENTS_PAGE_MAIN_CHAT_MIN_WIDTH_PX,
+  AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_MAX,
+  AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_MIN,
+  PP_AGENTS_LIST_TOGGLE_EVENT,
   readAgentsPageAgentListCollapsed,
   readAgentsPageAgentListWidth,
   readAgentsPageWorkspaceRailVisible,
+  readAgentsPageWorkspaceRailWidth,
   writeAgentsPageAgentListCollapsed,
   writeAgentsPageAgentListWidth,
   writeAgentsPageWorkspaceRailVisible,
+  writeAgentsPageWorkspaceRailWidth,
 } from '@/lib/agents-workspace-ui-shared';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { cn } from '@/lib/utils';
+import { dispatchWorkspaceImmersive } from '@/lib/workspace-immersive-bus';
 
 const WORKSPACE_UI_LS_PREFIX = 'pp.agentsWorkspaceUi.v1.';
 function workspaceUiLocalStorageKey(projectKey: string | null): string {
@@ -101,6 +108,14 @@ function displayText(value: string | undefined, fallback = '--'): string {
   return repairTextIfNeeded(value) ?? value ?? fallback;
 }
 
+/** 侧栏 Agent 搜索：合并可检索字段（小写，子串匹配） */
+function agentSidebarSearchText(a: Agent): string {
+  return [a.name, a.id, a.slug, a.description, a.projectKey]
+    .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+    .join(' ')
+    .toLowerCase();
+}
+
 /** 同一 Agent 下至多保留一条草稿（sessionId === null），避免重复「新会话」或历史 blob 堆叠多条。 */
 function dedupeDraftTabsByAgent<T extends { agentId: string; sessionId: string | null }>(tabs: T[]): T[] {
   const seenDraftAgent = new Set<string>();
@@ -127,7 +142,6 @@ function formatAgentRuntimeCaption(agent: Agent): string {
 export default function AgentsPage() {
   const { projects, activeKey } = useProject();
   const t = useTranslations('agentsWorkspace');
-  const tAgents = useTranslations('agents');
   const tPresets = useTranslations('presets');
   const tActions = useTranslations('actions');
 
@@ -234,6 +248,12 @@ export default function AgentsPage() {
   const pinFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [mobileAgentsListOpen, setMobileAgentsListOpen] = useState(false);
   const [mobileWorkspaceRailOpen, setMobileWorkspaceRailOpen] = useState(false);
+  /** 简单浏览器「工作区放大」：覆盖本页顶栏以下区域，不使用系统全屏（Electron 顶栏按钮不受影响） */
+  const [simpleBrowserWorkspaceFill, setSimpleBrowserWorkspaceFill] = useState(false);
+  useEffect(() => {
+    dispatchWorkspaceImmersive(simpleBrowserWorkspaceFill);
+    return () => dispatchWorkspaceImmersive(false);
+  }, [simpleBrowserWorkspaceFill]);
   /** 桌面（lg+）右侧 AgentsWorkspaceRail 显隐；默认收起，localStorage 整页缓存 3 小时内有效 */
   const [workspaceRailVisible, setWorkspaceRailVisible] = useState(() =>
     readAgentsPageWorkspaceRailVisible(),
@@ -246,24 +266,100 @@ export default function AgentsPage() {
     });
   }, []);
 
+  /** >= lg：右侧工作区 Rail 与主内容区分界可拖（与左侧列表一致，持久化整页级） */
+  const [workspaceRailWidthPx, setWorkspaceRailWidthPx] = useState(() => readAgentsPageWorkspaceRailWidth());
+  const workspaceRailWidthRef = useRef(workspaceRailWidthPx);
+  workspaceRailWidthRef.current = workspaceRailWidthPx;
+  const workspaceRailResizeDragRef = useRef<{ startX: number; startW: number } | null>(null);
+
   /** >= md：左侧列表与主区并排，可拖改列宽；<md 为抽屉，宽度类名单独控制 */
   const mdUpAgents = useMediaQuery('(min-width: 768px)');
+  const mdUpAgentsRef = useRef(mdUpAgents);
+  mdUpAgentsRef.current = mdUpAgents;
+  const lgUpAgents = useMediaQuery('(min-width: 1024px)');
   const [agentListCollapsed, setAgentListCollapsed] = useState(() => readAgentsPageAgentListCollapsed());
   const [agentListWidthPx, setAgentListWidthPx] = useState(() => readAgentsPageAgentListWidth());
-  const persistedExpandedWidthRef = useRef(agentListWidthPx);
   const agentListWidthRef = useRef(agentListWidthPx);
   agentListWidthRef.current = agentListWidthPx;
   const agentListResizeDragRef = useRef<{ startX: number; startW: number } | null>(null);
 
   useEffect(() => {
-    const onExpand = () => {
-      setAgentListCollapsed(false);
-      writeAgentsPageAgentListCollapsed(false);
+    const onToggleFromRail = () => {
+      if (mdUpAgentsRef.current) {
+        setAgentListCollapsed((c) => {
+          const next = !c;
+          writeAgentsPageAgentListCollapsed(next);
+          return next;
+        });
+      } else {
+        setMobileAgentsListOpen((o) => !o);
+      }
     };
-    window.addEventListener(PP_AGENTS_LIST_EXPAND_EVENT, onExpand);
-    return () => window.removeEventListener(PP_AGENTS_LIST_EXPAND_EVENT, onExpand);
+    window.addEventListener(PP_AGENTS_LIST_TOGGLE_EVENT, onToggleFromRail);
+    return () => window.removeEventListener(PP_AGENTS_LIST_TOGGLE_EVENT, onToggleFromRail);
   }, []);
 
+  useEffect(() => {
+    if (!mdUpAgents || agentListCollapsed) return;
+    const clampToViewport = () => {
+      const reserveCenter =
+        AGENTS_PAGE_MAIN_CHAT_MIN_WIDTH_PX +
+        (lgUpAgents && workspaceRailVisible ? AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_MIN : 0);
+      const maxW = Math.min(
+        AGENTS_PAGE_AGENT_LIST_WIDTH_MAX,
+        Math.max(AGENTS_PAGE_AGENT_LIST_WIDTH_MIN, window.innerWidth - reserveCenter),
+      );
+      setAgentListWidthPx((w) => {
+        const next = Math.min(w, maxW);
+        if (next !== w) writeAgentsPageAgentListWidth(next);
+        return next;
+      });
+    };
+    clampToViewport();
+    window.addEventListener('resize', clampToViewport);
+    return () => window.removeEventListener('resize', clampToViewport);
+  }, [mdUpAgents, agentListCollapsed, lgUpAgents, workspaceRailVisible]);
+
+  const onWorkspaceRailResizePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!lgUpAgents || !workspaceRailVisible) return;
+      e.preventDefault();
+      workspaceRailResizeDragRef.current = { startX: e.clientX, startW: workspaceRailWidthRef.current };
+      e.currentTarget.setPointerCapture(e.pointerId);
+    },
+    [lgUpAgents, workspaceRailVisible],
+  );
+
+  const onWorkspaceRailResizePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = workspaceRailResizeDragRef.current;
+    if (!drag) return;
+    const leftW = mdUpAgents && !agentListCollapsed ? agentListWidthRef.current : 0;
+    const maxW = Math.min(
+      AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_MAX,
+      Math.max(
+        AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_MIN,
+        window.innerWidth - leftW - AGENTS_PAGE_MAIN_CHAT_MIN_WIDTH_PX,
+      ),
+    );
+    /** 分割条在侧栏左缘：指针左移则侧栏变宽（与 VS Code 拉左侧沿一致） */
+    const raw = drag.startW - (e.clientX - drag.startX);
+    const next = Math.min(maxW, Math.max(AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_MIN, raw));
+    setWorkspaceRailWidthPx(next);
+  }, [mdUpAgents, agentListCollapsed]);
+
+  const onWorkspaceRailResizePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (workspaceRailResizeDragRef.current) {
+      workspaceRailResizeDragRef.current = null;
+      writeAgentsPageWorkspaceRailWidth(workspaceRailWidthRef.current);
+    }
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
+  }, []);
+
+  /** md+：左侧 Agent 列表右缘可拖改宽；拖过窄则收起（与右侧 Rail 左缘分割条方向对称） */
   const onAgentListResizePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (!mdUpAgents || agentListCollapsed) return;
@@ -274,63 +370,69 @@ export default function AgentsPage() {
     [mdUpAgents, agentListCollapsed],
   );
 
-  const onAgentListResizePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    const drag = agentListResizeDragRef.current;
-    if (!drag) return;
-    const roomForMain = 320;
-    const maxW = Math.min(
-      AGENTS_PAGE_AGENT_LIST_WIDTH_MAX,
-      Math.max(AGENTS_PAGE_AGENT_LIST_WIDTH_MIN, window.innerWidth - roomForMain),
-    );
-    const raw = drag.startW + (e.clientX - drag.startX);
-    const next = Math.min(maxW, Math.max(0, raw));
-    setAgentListWidthPx(next);
-  }, []);
-
-  const onAgentListResizePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (agentListResizeDragRef.current) {
-      agentListResizeDragRef.current = null;
-      const w = agentListWidthRef.current;
-      if (w < AGENTS_PAGE_AGENT_LIST_COLLAPSE_SNAP_PX) {
+  const onAgentListResizePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const drag = agentListResizeDragRef.current;
+      if (!drag) return;
+      const reserveCenter =
+        AGENTS_PAGE_MAIN_CHAT_MIN_WIDTH_PX +
+        (lgUpAgents && workspaceRailVisible ? AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_MIN : 0);
+      const maxW = Math.min(
+        AGENTS_PAGE_AGENT_LIST_WIDTH_MAX,
+        Math.max(AGENTS_PAGE_AGENT_LIST_WIDTH_MIN, window.innerWidth - reserveCenter),
+      );
+      const raw = drag.startW + (e.clientX - drag.startX);
+      if (raw < AGENTS_PAGE_AGENT_LIST_COLLAPSE_SNAP_PX) {
         setAgentListCollapsed(true);
         writeAgentsPageAgentListCollapsed(true);
-        setAgentListWidthPx(persistedExpandedWidthRef.current);
-      } else {
-        setAgentListCollapsed(false);
-        writeAgentsPageAgentListCollapsed(false);
-        persistedExpandedWidthRef.current = w;
-        writeAgentsPageAgentListWidth(w);
+        agentListResizeDragRef.current = null;
+        try {
+          (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
+        } catch {
+          /* noop */
+        }
+        return;
       }
+      const next = Math.min(maxW, Math.max(AGENTS_PAGE_AGENT_LIST_WIDTH_MIN, raw));
+      setAgentListWidthPx(next);
+    },
+    [mdUpAgents, lgUpAgents, workspaceRailVisible],
+  );
+
+  const onAgentListResizePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const wasDragging = agentListResizeDragRef.current !== null;
+    agentListResizeDragRef.current = null;
+    if (wasDragging && !readAgentsPageAgentListCollapsed()) {
+      writeAgentsPageAgentListWidth(agentListWidthRef.current);
     }
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {
-      /* already released */
+      /* noop */
     }
   }, []);
 
   useEffect(() => {
-    if (!mdUpAgents || agentListCollapsed) return;
+    if (!lgUpAgents || !workspaceRailVisible) return;
     const clampToViewport = () => {
+      const leftW = mdUpAgents && !agentListCollapsed ? agentListWidthRef.current : 0;
       const maxW = Math.min(
-        AGENTS_PAGE_AGENT_LIST_WIDTH_MAX,
-        Math.max(AGENTS_PAGE_AGENT_LIST_WIDTH_MIN, window.innerWidth - 320),
+        AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_MAX,
+        Math.max(
+          AGENTS_PAGE_WORKSPACE_RAIL_WIDTH_MIN,
+          window.innerWidth - leftW - AGENTS_PAGE_MAIN_CHAT_MIN_WIDTH_PX,
+        ),
       );
-      setAgentListWidthPx((w) => {
+      setWorkspaceRailWidthPx((w) => {
         const next = Math.min(w, maxW);
-        if (next !== w) {
-          persistedExpandedWidthRef.current = next;
-          writeAgentsPageAgentListWidth(next);
-        }
+        if (next !== w) writeAgentsPageWorkspaceRailWidth(next);
         return next;
       });
     };
     clampToViewport();
     window.addEventListener('resize', clampToViewport);
     return () => window.removeEventListener('resize', clampToViewport);
-  }, [mdUpAgents, agentListCollapsed]);
-
-  const lgUpAgents = useMediaQuery('(min-width: 1024px)');
+  }, [lgUpAgents, workspaceRailVisible, mdUpAgents, agentListCollapsed]);
 
   useEffect(() => {
     if (lgUpAgents) setMobileAgentsListOpen(false);
@@ -871,15 +973,11 @@ export default function AgentsPage() {
     });
   }, [agents, effectiveProjectKey, agentLatestNonArchivedSession]);
 
-  /** 侧栏搜索过滤后的 Agent（与列表展示一致） */
+  /** 侧栏搜索过滤后的 Agent（名称 / ID / slug / 描述 / 项目 Key） */
   const sidebarAgentsSearchFiltered = useMemo(() => {
     const q = sessionQuery.trim().toLowerCase();
     if (!q) return filteredAgents;
-    return filteredAgents.filter(
-      (a) =>
-        (a.name ?? '').toLowerCase().includes(q) ||
-        (a.id ?? '').toLowerCase().includes(q),
-    );
+    return filteredAgents.filter((a) => agentSidebarSearchText(a).includes(q));
   }, [filteredAgents, sessionQuery]);
 
   /**
@@ -1555,20 +1653,6 @@ export default function AgentsPage() {
     };
   }), [allSessions, agentLookup]);
 
-  const projectScopedSessions = useMemo(() => {
-    if (!effectiveProjectKey) return resolvedSessions;
-    return resolvedSessions.filter((session) => session.projectKey === effectiveProjectKey);
-  }, [resolvedSessions, effectiveProjectKey]);
-
-  const visibleSessions = useMemo(() => {
-    const query = sessionQuery.trim().toLowerCase();
-    if (!query) return projectScopedSessions;
-    return projectScopedSessions.filter((session) => {
-      const haystack = `${session.title} ${session.agentName}`.toLowerCase();
-      return haystack.includes(query);
-    });
-  }, [projectScopedSessions, sessionQuery]);
-
   useEffect(() => {
     if (agents.length === 0) return;
     setAllSessions(prev => prev.map((session) => {
@@ -1945,7 +2029,15 @@ export default function AgentsPage() {
   }, [effectiveProjectKey, fetchAllSessions]);
 
   return (
-    <div className="flex h-full min-h-0 w-full min-w-0 overflow-hidden bg-background text-foreground">
+    <div className="relative flex h-full min-h-0 w-full min-w-0 overflow-hidden bg-background text-foreground">
+      <div
+        id="pp-agents-workspace-browser-fill"
+        className={cn(
+          'absolute inset-0 z-[70] flex min-h-0 min-w-0 flex-col overflow-hidden',
+          simpleBrowserWorkspaceFill ? 'pointer-events-auto bg-background' : 'pointer-events-none',
+        )}
+        aria-hidden={!simpleBrowserWorkspaceFill}
+      />
       {mobileAgentsListOpen && (
         <button
           type="button"
@@ -1954,35 +2046,45 @@ export default function AgentsPage() {
           onClick={() => setMobileAgentsListOpen(false)}
         />
       )}
-      <aside
-        aria-hidden={mdUpAgents && agentListCollapsed ? true : undefined}
+      <div
         className={cn(
-          'relative z-50 flex shrink-0 flex-col border-r border-border bg-muted/20',
-          mdUpAgents ? '' : 'w-[292px]',
-          mdUpAgents && agentListCollapsed && 'min-w-0 max-w-0 overflow-hidden border-r-0 p-0',
-          'md:z-auto',
-          'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:h-full max-md:w-[min(100%,300px)] max-md:max-w-[90vw] max-md:shadow-xl',
-          'max-md:transition-transform max-md:duration-200 max-md:ease-out',
-          mobileAgentsListOpen ? 'max-md:translate-x-0' : 'max-md:pointer-events-none max-md:-translate-x-full',
+          'relative flex h-full shrink-0 flex-col overflow-visible',
+          !mdUpAgents && 'shrink-0',
         )}
         style={mdUpAgents ? { width: agentListCollapsed ? 0 : agentListWidthPx } : undefined}
       >
-        <div className="border-b border-border/80 bg-card/40 px-4 pb-3 pt-4 backdrop-blur-sm">
-          <div className="mb-3 flex items-start justify-between gap-2">
-            <div className="flex min-w-0 items-start gap-2.5">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15">
-                <Bot className="h-4 w-4" aria-hidden />
-              </span>
-              <div className="min-w-0 pt-0.5">
-                <h2 className="truncate text-sm font-semibold tracking-tight text-foreground">
-                  {tAgents('title')}
-                </h2>
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {t('workspace.label')}
-                </p>
-              </div>
+        <aside
+          aria-hidden={mdUpAgents && agentListCollapsed ? true : undefined}
+          className={cn(
+            'relative z-50 flex min-h-0 flex-1 flex-col border-b border-r border-border/80 bg-muted/25 dark:bg-muted/10',
+            mdUpAgents ? 'min-w-0 md:h-full md:w-full' : 'h-full w-[292px]',
+            mdUpAgents && agentListCollapsed && 'min-w-0 max-w-0 overflow-hidden border-r-0 p-0',
+            'md:z-auto',
+            'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:h-full max-md:w-[min(100%,300px)] max-md:max-w-[90vw] max-md:shadow-xl',
+            'max-md:transition-transform max-md:duration-200 max-md:ease-out',
+            mobileAgentsListOpen ? 'max-md:translate-x-0' : 'max-md:pointer-events-none max-md:-translate-x-full',
+          )}
+          style={mdUpAgents ? { width: agentListCollapsed ? 0 : '100%' } : undefined}
+        >
+        <div className="border-b border-border/70 bg-card/50 px-4 pb-3 pt-4 backdrop-blur-sm dark:bg-card/35">
+          <div className="mb-3 min-w-0">
+            <ProjectSwitcher variant="sidebar" />
+          </div>
+          <label className="sr-only" htmlFor="agents-sidebar-search">
+            {t('workspace.agentSearchPlaceholder')}
+          </label>
+          <div className="flex items-stretch gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-border/70 bg-background/95 px-3 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition-shadow focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/35 dark:border-border dark:bg-background/90 dark:shadow-[0_1px_2px_rgba(0,0,0,0.35)]">
+              <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+              <input
+                id="agents-sidebar-search"
+                value={sessionQuery}
+                onChange={(e) => setSessionQuery(e.target.value)}
+                placeholder={t('workspace.agentSearchPlaceholder')}
+                className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/80"
+              />
             </div>
-            <div ref={newAgentMenuRef} className="relative flex shrink-0 items-center gap-0.5">
+            <div ref={newAgentMenuRef} className="relative flex shrink-0 items-center self-center">
               <button
                 type="button"
                 onClick={() => setNewAgentMenuOpen((o) => !o)}
@@ -1990,9 +2092,9 @@ export default function AgentsPage() {
                 aria-expanded={newAgentMenuOpen}
                 aria-label={t('agent.newAgentMenuAria')}
                 title={t('agent.createButton')}
-                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/80 bg-background text-foreground/85 shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition-colors hover:border-border hover:bg-accent hover:text-foreground hover:shadow-sm dark:border-border dark:bg-background/95 dark:text-foreground/90 dark:shadow-[0_1px_2px_rgba(0,0,0,0.35)] dark:hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <Plus className="h-4 w-4" />
+                <Plus className="h-[18px] w-[18px]" strokeWidth={2.5} aria-hidden />
               </button>
               {newAgentMenuOpen ? (
                 <div
@@ -2033,39 +2135,24 @@ export default function AgentsPage() {
               ) : null}
             </div>
           </div>
-          <label className="sr-only" htmlFor="agents-sidebar-search">
-            {t('workspace.searchPlaceholder')}
-          </label>
-          <div className="flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2 shadow-sm transition-shadow focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30">
-            <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-            <input
-              id="agents-sidebar-search"
-              value={sessionQuery}
-              onChange={(e) => setSessionQuery(e.target.value)}
-              placeholder={t('workspace.searchPlaceholder')}
-              className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-            />
-          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-2 py-2">
           {sidebarAgentsSearchFiltered.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border bg-muted/30 px-4 py-12 text-center">
-              <MessageSquare className="mx-auto mb-3 h-8 w-8 text-muted-foreground/50" aria-hidden />
-              <p className="text-sm text-muted-foreground">
-                {sessionQuery ? t('session.emptyFiltered') : t('picker.empty')}
+            <div className="rounded-xl border border-dashed border-border/80 bg-muted/35 px-4 py-12 text-center dark:bg-muted/20">
+              <MessageSquare className="mx-auto mb-3 h-8 w-8 text-muted-foreground/55 dark:text-muted-foreground/50" aria-hidden />
+              <p className="text-sm leading-snug text-muted-foreground">
+                {sessionQuery ? t('workspace.agentSearchEmpty') : t('picker.empty')}
               </p>
             </div>
           ) : (
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2">
               {sidebarAgentsGrouped.map((group) => (
-                <section key={group.id} aria-label={t(`picker.group.${group.id}`)}>
-                  <h3 className="mb-1.5 px-1">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      {t(`picker.group.${group.id}`)}
-                    </span>
-                  </h3>
-                  <div className="flex flex-col gap-1">
+                <section
+                  key={group.id}
+                  aria-label={t(`picker.group.${group.id}`)}
+                  className="flex flex-col gap-1"
+                >
                     {group.agents.map((agent) => {
                       const isActive = activeWorkspaceAgent?.id === agent.id;
                       const agentSessions = allSessions.filter((s) => s.agentId === agent.id && !s.archived);
@@ -2090,8 +2177,8 @@ export default function AgentsPage() {
                             className={cn(
                               'group/agent flex cursor-pointer items-start gap-3 rounded-xl px-2.5 py-2.5 transition-colors',
                               isActive
-                                ? 'bg-card shadow-sm ring-1 ring-border'
-                                : 'hover:bg-muted/70',
+                                ? 'bg-card shadow-sm ring-1 ring-border/80 dark:ring-border'
+                                : 'hover:bg-muted/65 dark:hover:bg-muted/30',
                             )}
                           >
                             <div
@@ -2099,7 +2186,7 @@ export default function AgentsPage() {
                                 'mt-0.5 h-10 w-10 shrink-0 overflow-hidden rounded-xl ring-1 ring-inset',
                                 isActive
                                   ? 'bg-primary/10 text-primary ring-primary/15'
-                                  : 'bg-muted/80 text-muted-foreground ring-border/60',
+                                  : 'bg-muted/85 text-muted-foreground ring-border/70 dark:bg-muted/50',
                               )}
                             >
                               <AgentAvatar
@@ -2115,15 +2202,15 @@ export default function AgentsPage() {
                               <div className="mb-0.5 min-w-0">
                                 <span
                                   className={cn(
-                                    'block truncate text-sm',
-                                    isActive ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
+                                    'block truncate text-sm leading-tight',
+                                    isActive ? 'font-semibold tracking-tight text-foreground' : 'font-medium text-foreground',
                                   )}
                                 >
                                   {agent.name}
                                 </span>
                               </div>
                               <div
-                                className="flex min-w-0 items-start gap-1.5 text-xs text-muted-foreground"
+                                className="flex min-w-0 items-start gap-1.5 text-[13px] leading-snug text-muted-foreground/95 dark:text-muted-foreground"
                                 title={displayText(
                                   agent.description?.trim() ? agent.description : undefined,
                                   t('workspace.defaultAgentDescription', { agentName: agent.name }),
@@ -2143,29 +2230,33 @@ export default function AgentsPage() {
                                 </span>
                               </div>
                             </div>
-                            <div className="flex shrink-0 items-center gap-1.5 self-start pt-0.5">
+                            <div className="flex min-w-0 shrink-0 flex-col items-end gap-1 self-start pt-0.5">
                               {lastSession ? (
-                                <span className="text-[10px] font-medium tabular-nums text-muted-foreground">
+                                <span className="block w-full text-right text-[11px] font-medium tabular-nums text-muted-foreground/90">
                                   {formatSessionTimestamp(lastSession.updatedAt, Date.now(), t('session.yesterday'))}
                                 </span>
                               ) : null}
-                              {totalUnread > 0 && !isActive ? (
-                                <span className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
-                                  {totalUnread > 99 ? '99+' : totalUnread}
-                                </span>
-                              ) : null}
-                              {agentSessions.length > 0 ? (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleAgentHistoryExpanded(agent.id);
-                                  }}
-                                  className="shrink-0 rounded-md bg-muted/80 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/agent:opacity-100 hover:bg-muted"
-                                  title={isHistoryExpanded ? tActions('collapse') : tActions('expand')}
-                                >
-                                  {isHistoryExpanded ? '−' : '+'} {agentSessions.length}
-                                </button>
+                              {(totalUnread > 0 && !isActive) || agentSessions.length > 0 ? (
+                                <div className="flex shrink-0 items-center justify-end gap-1.5">
+                                  {totalUnread > 0 && !isActive ? (
+                                    <span className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
+                                      {totalUnread > 99 ? '99+' : totalUnread}
+                                    </span>
+                                  ) : null}
+                                  {agentSessions.length > 0 ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleAgentHistoryExpanded(agent.id);
+                                      }}
+                                      className="shrink-0 rounded-md bg-muted/80 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground hover:bg-muted"
+                                      title={isHistoryExpanded ? tActions('collapse') : tActions('expand')}
+                                    >
+                                      {isHistoryExpanded ? '−' : '+'} {agentSessions.length}
+                                    </button>
+                                  ) : null}
+                                </div>
                               ) : null}
                             </div>
                           </div>
@@ -2326,7 +2417,7 @@ export default function AgentsPage() {
                                         )}
                                       </button>
                                       <span className="flex shrink-0 items-center gap-1">
-                                        <span className="text-[9px] text-muted-foreground/70 tabular-nums">
+                                        <span className="text-[10px] font-medium tabular-nums text-muted-foreground/85">
                                           {formatSessionTimestamp(
                                             session.updatedAt,
                                             Date.now(),
@@ -2356,31 +2447,28 @@ export default function AgentsPage() {
                         </div>
                       );
                     })}
-                  </div>
                 </section>
               ))}
             </div>
           )}
         </div>
-
-        {mdUpAgents && !agentListCollapsed ? (
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label={t('workspace.resizeAgentListAria')}
-            onPointerDown={onAgentListResizePointerDown}
-            onPointerMove={onAgentListResizePointerMove}
-            onPointerUp={onAgentListResizePointerUp}
-            onPointerCancel={onAgentListResizePointerUp}
-            className="group absolute inset-y-0 right-0 z-30 w-2 shrink-0 cursor-col-resize touch-none select-none hover:bg-accent/25"
-          >
-            <span
-              className="pointer-events-none absolute inset-y-0 right-1 w-px bg-transparent group-hover:bg-border"
-              aria-hidden
+          {mdUpAgents && !agentListCollapsed ? (
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={t('workspace.resizeAgentListAria')}
+              onPointerDown={onAgentListResizePointerDown}
+              onPointerMove={onAgentListResizePointerMove}
+              onPointerUp={onAgentListResizePointerUp}
+              onPointerCancel={onAgentListResizePointerUp}
+              className={cn(
+                'absolute inset-y-0 right-0 z-30 hidden w-2 translate-x-1/2 cursor-ew-resize touch-none select-none',
+                'hover:bg-muted/35 dark:hover:bg-muted/25 md:block',
+              )}
             />
-          </div>
-        ) : null}
-      </aside>
+          ) : null}
+        </aside>
+      </div>
 
       {sessionContextMenu ? (
         <>
@@ -2475,8 +2563,8 @@ export default function AgentsPage() {
         </>
       ) : null}
 
-      <div className="relative flex min-h-0 min-w-0 flex-1">
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
+      <div className="relative flex min-h-0 min-w-0 flex-1 bg-muted/20 dark:bg-muted/10">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background shadow-[-4px_0_24px_rgba(0,0,0,0.03)] border-l border-border/50 dark:shadow-none dark:border-border/60 z-10 ring-1 ring-border/5">
         {activePanel?.type === 'agent' && selectedAgent && agentViewMode === 'settings' ? (
           expandedPrompt ? (
             <div className="flex flex-1 flex-col p-4 gap-3 overflow-hidden">
@@ -2619,11 +2707,11 @@ export default function AgentsPage() {
             </>
           )
         ) : (
-          <div className="flex flex-1 flex-col overflow-hidden bg-linear-to-b from-background via-background to-muted/20">
+          <div className="flex flex-1 flex-col overflow-hidden bg-linear-to-b from-background via-background/95 to-muted/28 dark:to-muted/15">
             {activeWorkspaceAgent ? (
               <>
                 {/* ── Top: Agent identity & configuration ── */}
-                <div className="relative shrink-0 border-b border-border bg-card/30 px-4 py-3 backdrop-blur-sm sm:px-5">
+                <div className="relative shrink-0 border-b border-border/80 bg-card/45 px-4 py-1 backdrop-blur-sm sm:px-5 dark:border-border dark:bg-card/30">
                   <div className="mx-auto flex max-w-6xl flex-col gap-3">
                     <section
                       aria-label={activeWorkspaceAgent.name}
@@ -2640,29 +2728,29 @@ export default function AgentsPage() {
                         </button>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                            <span className="truncate text-base font-semibold tracking-tight text-foreground">
+                            <span className="truncate text-base font-semibold tracking-tight text-foreground antialiased">
                               {activeWorkspaceAgent.name}
                             </span>
                             {activeWorkspaceAgent.builtIn ? (
-                              <span className="shrink-0 rounded-md border border-border bg-muted/50 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                              <span className="shrink-0 rounded-md border border-border/80 bg-muted/60 px-2 py-0.5 text-[11px] font-semibold tracking-wide text-muted-foreground dark:border-border">
                                 {t('agent.builtInBadge')}
                               </span>
                             ) : null}
                           </div>
                           {activeWorkspaceRuntimeCaption ? (
-                            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                            <p className="mt-1.5 text-xs font-medium leading-snug text-muted-foreground/90 dark:text-muted-foreground">
                               {activeWorkspaceRuntimeCaption}
                             </p>
                           ) : null}
                         </div>
                       </div>
-                      <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border/60 pt-3 sm:border-t-0 sm:pt-0">
+                      <div className="flex shrink-0 flex-wrap items-center gap-0.5 rounded-lg border border-border/80 bg-card px-1 py-0.5 shadow-xs ml-auto">
                         <button
                           type="button"
                           onClick={() => setMobileWorkspaceRailOpen((o) => !o)}
                           aria-expanded={mobileWorkspaceRailOpen}
                           aria-controls="agents-workspace-rail-aside"
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background text-foreground shadow-sm transition-colors hover:bg-muted/80 lg:hidden"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-transparent text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:hidden"
                           aria-label={t('workspace.openWorkspaceRailAria')}
                         >
                           <PanelRight className="h-4 w-4" aria-hidden />
@@ -2670,14 +2758,14 @@ export default function AgentsPage() {
                         <button
                           type="button"
                           onClick={() => handleAgentSettingsClick(activeWorkspaceAgent)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+                          className="inline-flex items-center gap-1.5 rounded-md bg-transparent px-3 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:bg-accent dark:border-border"
                         >
                           <Settings className="h-3.5 w-3.5" />
                           {t('workspace.configureAgent')}
                         </button>
                         <button
                           type="button"
-                          className="hidden h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:inline-flex"
+                          className="hidden h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:inline-flex"
                           title={t('workspace.more')}
                           aria-label={t('workspace.more')}
                         >
@@ -2687,7 +2775,7 @@ export default function AgentsPage() {
                           type="button"
                           onClick={toggleWorkspaceRailVisible}
                           className={cn(
-                            'hidden h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-accent hover:text-foreground lg:inline-flex',
+                            'hidden h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-foreground lg:inline-flex',
                             workspaceRailVisible ? 'text-foreground' : 'text-muted-foreground',
                           )}
                           title={t('workspace.toggleSidebar')}
@@ -2727,10 +2815,10 @@ export default function AgentsPage() {
               </>
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-                  <Bot className="h-7 w-7" />
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/90 text-muted-foreground ring-1 ring-border/60 dark:bg-muted/50">
+                  <Bot className="h-7 w-7 opacity-90" />
                 </div>
-                <p className="max-w-sm text-sm text-muted-foreground">{t('workspace.noAgentsInWorkspace')}</p>
+                <p className="max-w-sm text-sm leading-relaxed text-muted-foreground/95">{t('workspace.noAgentsInWorkspace')}</p>
               </div>
             )}
           </div>
@@ -2964,8 +3052,8 @@ export default function AgentsPage() {
         <aside
           id="agents-workspace-rail-aside"
           className={cn(
-            'flex h-full min-h-0 w-[min(100%,288px)] flex-col border-l border-border bg-muted/10 sm:w-[292px] lg:w-[340px]',
-            'lg:relative lg:shrink-0',
+            'relative flex h-full min-h-0 flex-col border-l border-border/80 bg-muted/25 dark:bg-muted/10',
+            'lg:shrink-0',
             !workspaceRailVisible && 'lg:hidden',
             'max-lg:absolute max-lg:right-0 max-lg:top-0 max-lg:z-50 max-lg:w-[min(100vw,320px)] max-lg:max-w-[90vw] max-lg:shadow-xl',
             'max-lg:transition-transform max-lg:duration-200 max-lg:ease-out',
@@ -2973,7 +3061,23 @@ export default function AgentsPage() {
               ? 'max-lg:translate-x-0'
               : 'max-lg:pointer-events-none max-lg:translate-x-full',
           )}
+          style={lgUpAgents && workspaceRailVisible ? { width: workspaceRailWidthPx } : undefined}
         >
+          {lgUpAgents && workspaceRailVisible ? (
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={t('workspace.resizeWorkspaceRailAria')}
+              onPointerDown={onWorkspaceRailResizePointerDown}
+              onPointerMove={onWorkspaceRailResizePointerMove}
+              onPointerUp={onWorkspaceRailResizePointerUp}
+              onPointerCancel={onWorkspaceRailResizePointerUp}
+              className={cn(
+                'absolute inset-y-0 left-0 z-30 w-2 -translate-x-1/2 cursor-ew-resize touch-none select-none',
+                'hover:bg-muted/35 dark:hover:bg-muted/25',
+              )}
+            />
+          ) : null}
           <AgentsWorkspaceRail
             projectRootPath={projectRootPath}
             workspaceAgentDataPath={workspaceAgentDataPath}
@@ -2983,6 +3087,8 @@ export default function AgentsPage() {
             capabilityAgentId={workspaceAgentId}
             capabilities={workspaceAgent?.capabilities}
             onCapabilitiesUpdated={handleRailCapabilitiesUpdated}
+            simpleBrowserWorkspaceFill={simpleBrowserWorkspaceFill}
+            onSimpleBrowserWorkspaceFillChange={setSimpleBrowserWorkspaceFill}
           />
         </aside>
       </div>
