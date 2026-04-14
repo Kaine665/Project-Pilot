@@ -1,5 +1,6 @@
 # PR 针对 next：并行构建 Windows + macOS → 本仓库 PR 自动建 **预发布 Release**。
-# 版本号：`ci-compute-pr-desktop-version.mjs` — 合并基线 **patch+1** + `-pr.<PR>` + 可选 **.<GITHUB_RUN_NUMBER>**（每次 workflow 跑递增）；Release 标题与 tag 同该串。多附件 + Artifact。
+# 版本号：`ci-compute-pr-desktop-version.mjs` — 合并基线 **patch+1** + `-pr.<PR>` + 可选 **.<GITHUB_RUN_NUMBER>**（写入应用 `version`，Release 标题/tag 同该串）。
+# 安装包**文件名**另用简短 ASCII：`ProjectPilot-PR<n>-b<run>.exe|.dmg|.zip`（避免默认 `Setup 0.1.6-pr…` 过长、空格与多段点号带来的观感/策略启发式问题）。
 # 每个新 PR 一条新 Release；同一 PR 反复推送会先删掉 `*-pr.<N>` 旧预发布再重建。正式发版仍走 release.yml。Fork PR 不写 Release。
 name: PR Desktop Build
 
@@ -58,7 +59,11 @@ jobs:
         run: npm run electron:compile
 
       - name: Package Windows
-        run: npx electron-builder --win --publish never --config.extraMetadata.version=${{ steps.ci_ver.outputs.version }}
+        shell: bash
+        run: >
+          npx electron-builder --win --publish never
+          --config.extraMetadata.version=${{ steps.ci_ver.outputs.version }}
+          --config.artifactName='ProjectPilot-PR${{ github.event.pull_request.number }}-b${{ github.run_number }}.${ext}'
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v7
@@ -109,7 +114,11 @@ jobs:
         run: npm run electron:compile
 
       - name: Package macOS (unsigned)
-        run: npx electron-builder --mac --publish never --config.extraMetadata.version=${{ steps.ci_ver.outputs.version }}
+        shell: bash
+        run: >
+          npx electron-builder --mac --publish never
+          --config.extraMetadata.version=${{ steps.ci_ver.outputs.version }}
+          --config.artifactName='ProjectPilot-PR${{ github.event.pull_request.number }}-b${{ github.run_number }}.${ext}'
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
