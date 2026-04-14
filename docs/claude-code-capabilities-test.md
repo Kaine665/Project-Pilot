@@ -12,7 +12,7 @@
 claude --version
 
 # 确保项目开发服务器运行
-npm run dev   # localhost:4000
+npm run dev   # localhost:4287
 ```
 
 ### 测试任务创建

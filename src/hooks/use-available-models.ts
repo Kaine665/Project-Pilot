@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AggregateLiveModelItem } from '@/lib/aggregate-models-live';
 
-const TTL_MS = 60_000;
+/** 与后端 GET /aggregate-models 缓存窗口大致对齐，减少多面板重复拉全量模型列表 */
+const TTL_MS = 180_000;
 
 type CacheEntry = { items: AggregateLiveModelItem[]; at: number };
 

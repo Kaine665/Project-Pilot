@@ -167,12 +167,12 @@
 ProjectPilot 支持中英文切换（通过右上角语言切换器）
 
 **中文版录制**：
-1. 访问 http://localhost:4000/zh
+1. 访问 http://localhost:4287/zh
 2. 确认界面为中文
 3. 开始录制
 
 **英文版录制**：
-1. 访问 http://localhost:4000/en
+1. 访问 http://localhost:4287/en
 2. 确认界面为英文
 3. 开始录制
 

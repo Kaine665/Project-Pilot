@@ -3,7 +3,7 @@ import net from 'net';
 /**
  * 查找可用端口。优先尝试 preferred，被占用则由 OS 分配随机端口。
  */
-export function findAvailablePort(preferred: number = 4000): Promise<number> {
+export function findAvailablePort(preferred: number = 4287): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
     server.listen(preferred, '127.0.0.1', () => {

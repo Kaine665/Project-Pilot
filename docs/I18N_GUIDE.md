@@ -192,7 +192,7 @@ npm run dev
 ```
 
 访问：
-- 中文：http://localhost:4000/zh
-- 英文：http://localhost:4000/en
+- 中文：http://localhost:4287/zh
+- 英文：http://localhost:4287/en
 
 点击右上角语言切换按钮测试切换功能。

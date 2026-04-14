@@ -9,12 +9,12 @@ info:
     to read and write agent definitions. It sits on top of the internal `agents-store` module,
     so callers never need to touch `agents.json` or prompt files directly.
 
-    **Base URL**: `http://localhost:{port}` (default port: 4000)
+    **Base URL**: `http://localhost:{port}` (default port: 4287)
 
     **Authentication**: None (local-only service, not exposed to the internet)
 
 servers:
-  - url: http://localhost:4000
+  - url: http://localhost:4287
     description: Default local instance
 
 paths:

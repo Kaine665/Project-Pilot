@@ -573,8 +573,12 @@ export default function SettingsPage() {
     };
   }, []);
 
-  /** 进入供应商子页时：仅在尚无聚合数据时跑一轮 */
+  /**
+   * 进入供应商子页时的兜底：仅当聚合已成功但 availability 仍为空（异常响应）才逐供应商 probe。
+   * 不在 idle/loading 下执行，避免与 getAggregateLiveModels 并行重复命中上游导致限流。
+   */
   const flushAllSupplierProbes = useCallback(() => {
+    if (aggregateLiveStatus !== 'success') return;
     if (supplierAvailability.length > 0) return;
     for (const p of PROVIDER_REGISTRY) {
       void executeSupplierProbe(p.id as ProviderId);
@@ -582,7 +586,7 @@ export default function SettingsPage() {
     for (const c of customProvidersRef.current) {
       void executeSupplierProbe(c.id);
     }
-  }, [executeSupplierProbe, supplierAvailability.length]);
+  }, [aggregateLiveStatus, executeSupplierProbe, supplierAvailability.length]);
 
   /** 显式「重新检测全部」：清空旧探测 → 聚合 + 逐个探测 */
   const recheckAllSuppliers = useCallback(() => {

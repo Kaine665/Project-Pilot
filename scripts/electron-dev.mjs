@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
 const require = createRequire(import.meta.url);
-const { loadDevServerConfig, isDevStackReady } = require(
+const { loadDevServerConfig, isDevStackReady, allocateDevStackPorts } = require(
   path.join(root, "config", "load-dev-server.cjs"),
 );
 
@@ -78,8 +78,6 @@ function resolveElectronExecutable() {
 /** 直接指向 Electron 可执行文件，避免 Windows 上依赖 .cmd / shell 拼接 */
 const electronExe = resolveElectronExecutable();
 
-const cfg = loadDevServerConfig(root);
-
 /** Cursor 等环境可能注入 ELECTRON_RUN_AS_NODE=1，子进程会以 Node 模式跑、无 `app`。 */
 function envForElectronChild() {
   const env = { ...process.env, ELECTRON_DEV: "1" };
@@ -107,7 +105,7 @@ function compileElectronMain() {
  * Windows 上 concurrently 里 `wait-on ... && cross-env ... electron .` 常无法可靠执行，
  * 导致只起了 Vite/Hono、Electron 从未启动。这里用 Node 直接拉起子进程并等待端口。
  */
-async function startDevStackWithElectron() {
+async function startDevStackWithElectron(cfg) {
   const { default: waitOn } = await import("wait-on");
 
   const viteScript = path.join(root, "node_modules", "vite", "bin", "vite.js");
@@ -231,6 +229,7 @@ compileElectronMain();
 const reuseExisting = await isDevStackReady(root);
 
 if (reuseExisting) {
+  const cfg = loadDevServerConfig(root);
   console.log(
     `[electron-dev] Reusing existing dev stack (${cfg.clientProbeOrigin} + ${cfg.apiHealthUrl})`,
   );
@@ -254,8 +253,10 @@ if (reuseExisting) {
     process.exit(code ?? 1);
   });
 } else {
+  await allocateDevStackPorts(root);
+  const cfg = loadDevServerConfig(root);
   console.log(
-    `[electron-dev] No reusable dev stack (${cfg.clientProbeOrigin} + ${cfg.apiHealthUrl}), starting Vite + Hono and Electron together`,
+    `[electron-dev] Allocated dev ports → ${cfg.clientProbeOrigin} + ${cfg.apiHealthUrl} (see .pp-dev-ports.json); starting Vite + Hono and Electron`,
   );
-  await startDevStackWithElectron();
+  await startDevStackWithElectron(cfg);
 }

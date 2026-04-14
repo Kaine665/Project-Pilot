@@ -60,7 +60,7 @@ console.log(`   - Language: ${langName}`);
 
 console.log('\n🎯 Next steps:');
 console.log('   1. Start app: npm run dev');
-console.log(`   2. Visit: http://localhost:4000/${lang}`);
+console.log(`   2. Visit: http://localhost:4287/${lang}`);
 console.log(`   3. View "${demoData.flow.name}" Flow`);
 console.log('   4. Start recording your demo!\n');
 

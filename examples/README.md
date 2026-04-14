@@ -29,7 +29,7 @@ npm run demo:load
 # 启动应用
 npm run dev
 
-# 访问 http://localhost:4000，查看 "个人技术博客开发" Flow
+# 访问 http://localhost:4287，查看 "个人技术博客开发" Flow
 ```
 
 ### 方法 2: 手动复制

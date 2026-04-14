@@ -2,22 +2,22 @@
 
 > Machine-oriented REST API for managing ProjectPilot agents from external systems.
 
-Base URL: `http://localhost:4000` (or your configured port)
+Base URL: `http://localhost:4287` (or your configured port)
 
 ## Quick Start
 
 ```bash
 # List all agents
-curl http://localhost:4000/api/agents/official
+curl http://localhost:4287/api/agents/official
 
 # Get a specific agent by slug
-curl "http://localhost:4000/api/agents/official?slug=butler&includePrompt=true"
+curl "http://localhost:4287/api/agents/official?slug=butler&includePrompt=true"
 
 # Get a specific agent by ID
-curl "http://localhost:4000/api/agents/official?id=agent-1772179200000-chat"
+curl "http://localhost:4287/api/agents/official?id=agent-1772179200000-chat"
 
 # Create a new agent
-curl -X POST http://localhost:4000/api/agents/official \
+curl -X POST http://localhost:4287/api/agents/official \
   -H "Content-Type: application/json" \
   -d '{
     "action": "upsert",
@@ -30,7 +30,7 @@ curl -X POST http://localhost:4000/api/agents/official \
   }'
 
 # Update an existing agent (match by slug)
-curl -X POST http://localhost:4000/api/agents/official \
+curl -X POST http://localhost:4287/api/agents/official \
   -H "Content-Type: application/json" \
   -d '{
     "action": "upsert",
@@ -39,7 +39,7 @@ curl -X POST http://localhost:4000/api/agents/official \
   }'
 
 # Archive (soft-delete) an agent
-curl -X POST http://localhost:4000/api/agents/official \
+curl -X POST http://localhost:4287/api/agents/official \
   -H "Content-Type: application/json" \
   -d '{
     "action": "archive",
@@ -129,7 +129,7 @@ Soft-delete an agent. Built-in agents cannot be archived (returns 403).
 Download an agent as a `.ppagent` JSON package (includes prompt, context refs).
 
 ```bash
-curl -o my-agent.ppagent http://localhost:4000/api/agents/export/agent-xxx
+curl -o my-agent.ppagent http://localhost:4287/api/agents/export/agent-xxx
 ```
 
 ### `POST /api/agents/import`
@@ -137,7 +137,7 @@ curl -o my-agent.ppagent http://localhost:4000/api/agents/export/agent-xxx
 Import a `.ppagent` package to create a new agent.
 
 ```bash
-curl -X POST http://localhost:4000/api/agents/import \
+curl -X POST http://localhost:4287/api/agents/import \
   -H "Content-Type: application/json" \
   -d @my-agent.ppagent
 ```
