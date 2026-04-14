@@ -1,5 +1,5 @@
 # PR 针对 next：并行构建 Windows + macOS → 本仓库 PR 自动建 **预发布 Release**。
-# 版本号：合并基线 `package.json` 的 **patch + 1** 再拼 **-pr.<PR号>**（脚本 `scripts/ci-compute-pr-desktop-version.mjs`），写入 electron-builder；Release **标题与 tag 同该字符串**（与正式 `v*` 区分）。多附件 + Artifact。
+# 版本号：`ci-compute-pr-desktop-version.mjs` — 合并基线 **patch+1** + `-pr.<PR>` + 可选 **.<GITHUB_RUN_NUMBER>**（每次 workflow 跑递增）；Release 标题与 tag 同该串。多附件 + Artifact。
 # 每个新 PR 一条新 Release；同一 PR 反复推送会先删掉 `*-pr.<N>` 旧预发布再重建。正式发版仍走 release.yml。Fork PR 不写 Release。
 name: PR Desktop Build
 
@@ -38,9 +38,11 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Compute PR desktop app version (patch +1 + -pr.<N>)
+      - name: Compute PR desktop app version (patch +1 + -pr.<N>.<run>)
         id: ci_ver
         shell: bash
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
           V=$(node scripts/ci-compute-pr-desktop-version.mjs "${{ github.event.pull_request.number }}")
           echo "version=$V" >> "$GITHUB_OUTPUT"
@@ -87,9 +89,11 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Compute PR desktop app version (patch +1 + -pr.<N>)
+      - name: Compute PR desktop app version (patch +1 + -pr.<N>.<run>)
         id: ci_ver
         shell: bash
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
           V=$(node scripts/ci-compute-pr-desktop-version.mjs "${{ github.event.pull_request.number }}")
           echo "version=$V" >> "$GITHUB_OUTPUT"
@@ -138,6 +142,8 @@ jobs:
       - name: Compute PR desktop app version (same as build jobs)
         if: github.event.pull_request.head.repo.full_name == github.repository
         id: appver
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
           V=$(node scripts/ci-compute-pr-desktop-version.mjs "${{ github.event.pull_request.number }}")
           echo "version=$V" >> "$GITHUB_OUTPUT"
@@ -149,14 +155,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PR="${{ github.event.pull_request.number }}"
-          TAGS=$(gh release list --limit 200 --json tagName | jq -r --arg pr "$PR" '.[] | .tagName | select(endswith("-pr." + $pr))')
-          if [ -z "$TAGS" ]; then echo "No prior PR prereleases for #${PR}"; exit 0; fi
-          echo "$TAGS" | while IFS= read -r tag; do
+          found=0
+          while IFS= read -r tag; do
             [ -z "$tag" ] && continue
+            [[ "$tag" =~ -pr\.${PR}(\.[0-9]+)*$ ]] || continue
+            found=1
             echo "Deleting release/tag: ${tag}"
             gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
             gh api --method DELETE "repos/${{ github.repository }}/git/refs/tags/${tag}" 2>/dev/null || true
-          done
+          done < <(gh release list --limit 200 --json tagName | jq -r '.[].tagName')
+          [ "$found" -eq 0 ] && echo "No prior PR prereleases for #${PR}"
 
       - name: Download Windows + macOS artifacts
         if: github.event.pull_request.head.repo.full_name == github.repository
@@ -175,7 +183,7 @@ jobs:
           body: |
             **PR #${{ github.event.pull_request.number }}** 自动桌面构建（**预发布**，非正式版本）。
 
-            - **软件版本**（合并基线 `package.json` 的 **patch + 1** 并加 `-pr.<PR>`）：`${{ steps.appver.outputs.version }}`
+            - **软件版本**（基线 **patch+1** + `-pr.<PR>.<run>`，见 `ci-compute-pr-desktop-version.mjs`）：`${{ steps.appver.outputs.version }}`
             - **Git tag** 同上（与正式发版 `v*` tag 区分）
             - **合并验证提交**：`${{ github.sha }}`（`pull_request` 默认 merge commit）
             - 工作流：[`.github/workflows/pr-desktop-build.yml`](${{ github.server_url }}/${{ github.repository }}/blob/${{ github.event.pull_request.base.ref }}/.github/workflows/pr-desktop-build.yml)

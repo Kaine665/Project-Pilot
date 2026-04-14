@@ -171,9 +171,18 @@ app.route(api.googleAuth, lazyApiRoute(api.googleAuth, () => import('./routes/go
 app.route(api.root, lazyApiRoute(api.root, () => import('./routes/prompts')));
 
 // --- Static file serving (production) ---
-// Electron asar：`dist/server` 与 `dist/client` 须同处 unpacked，见 package.json `asarUnpack`。
-// 开发：`bun ./src/server/index.ts` 时 __dirname 为 `src/server`，须回退到仓库根下 `dist/client`。
+// Electron 子进程：由 `electron/server.ts` 注入 `PROJECT_PILOT_CLIENT_DIST`（resourcesPath 下 unpacked/asar），
+// 避免单文件 bundle 内 `__dirname` 与安装目录不一致导致找不到 `dist/client` → 浏览器 404。
+// 其它启动方式仍用候选路径探测。
 function resolveClientDistDir(): string | null {
+  const fromEnv = process.env.PROJECT_PILOT_CLIENT_DIST?.trim();
+  if (fromEnv) {
+    try {
+      if (fs.existsSync(path.join(fromEnv, 'index.html'))) return path.normalize(fromEnv);
+    } catch {
+      /* ignore */
+    }
+  }
   const candidates = [
     path.join(__dirname, '..', 'client'),
     path.resolve(__dirname, '..', '..', 'dist', 'client'),
@@ -188,6 +197,11 @@ function resolveClientDistDir(): string | null {
   return null;
 }
 const clientDistPath = resolveClientDistDir();
+if (!clientDistPath && process.env.NODE_ENV === 'production') {
+  console.error(
+    '[server] No client static root (no index.html). Set PROJECT_PILOT_CLIENT_DIST or run from dist/server with dist/client present.',
+  );
+}
 if (clientDistPath) {
   app.use('/*', serveStatic({ root: clientDistPath }));
   app.get('*', async (c) => {
