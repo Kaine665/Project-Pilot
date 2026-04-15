@@ -1492,7 +1492,12 @@ async function testConversationConnection(
     };
   }
 
-  const effectiveBaseUrl = userProvidedUrl || savedProviderUrl || customBaseUrl;
+  const effectiveBaseUrl =
+    userProvidedUrl
+    || savedProviderUrl
+    || customBaseUrl
+    || preset.baseUrl
+    || (provider === 'anthropic' ? 'https://api.anthropic.com' : undefined);
   if (effectiveBaseUrl) {
     const result = await runSingleTest(provider, key, modelId, effectiveBaseUrl, current);
     if (result.ok) {
