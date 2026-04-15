@@ -17,7 +17,7 @@
 
 > 以下路径因用户环境而异，实际值由系统在运行时注入。
 
-- **代码主目录**：仓库内 **`develop-static/`**（若整体是 monorepo，先 `cd develop-static` 再执行下述命令）
+- **代码主目录**：仓库内 **本仓库根目录**（含 `package.json` 与 `src/`；若整体是 monorepo，请先进入该主应用目录再执行下述命令）
 - **主 worktree（稳定版）**：用户正在使用的分支，绝对不能干扰
 - **开发 worktree**：每次任务动态创建，与主 worktree 同级
 - **开发时端口（默认）**：**Vite 前端 :4000**，**Hono API :4500**（`bun run dev`）；打包桌面应用内嵌 Hono 首选 **:4287**；同一机器多 worktree 时用 **端口注册表** 错开，而非单一固定端口
@@ -163,7 +163,7 @@ git worktree list
 - 改动前先理解现有代码
 - 遇到不确定的技术/架构决策时，向用户确认
 - 不要过度工程化，保持简单直接
-- 非琐碎改动遵循 **文档驱动**：见 `develop-static/CLAUDE.md`「文档驱动开发」与 `docs/as-is/`、`docs/design/`
+- 非琐碎改动遵循 **文档驱动**：见 `CLAUDE.md`「文档驱动开发」与 `docs/as-is/`、`docs/design/`
 
 ---
 

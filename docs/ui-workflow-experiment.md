@@ -17,13 +17,13 @@
 
 ### 1.1 对照（Baseline）
 
-- **分支**：`develop-static`（主工作区 `develop-static/`，无 `exp-ui-wf*` 类名）。
+- **分支**：本地主开发分支（如 `next`；主工作区在**仓库根**，无 `exp-ui-wf*` 类名）。
 - **叙事**：当前产品默认实现，不作为某条「实验流程」的变体。
 
 ### 1.2 流程 A（技能先行 → token）
 
 - **分支**：`exp/ui-workflow-a-agents`
-- **Worktree 路径**：`../exp-ui-workflow-a-agents`（相对仓库内 `develop-static` 的同级目录）
+- **Worktree 路径**：`../exp-ui-workflow-a-agents`（相对**仓库根**的同级目录）
 - **叙事**：先检索设计技能（如 ui-ux-pro-max `--design-system`），将推荐色板收敛为 **primary / accent / muted** 等 token，再实现。
 - **代码标记**：根容器 `exp-ui-wfa`，样式见该分支 `workflow-experiment-a.css`。
 
@@ -49,18 +49,18 @@
 
 ## 2. Worktree 操作（已创建时如何同步 / 清理）
 
-在 **`develop-static` 目录** 下：
+在**仓库根目录**下：
 
 ```bash
 # 列出 worktree
 git worktree list
 
 # 若尚未创建（仅需执行一次时）
-git worktree add -b exp/ui-workflow-a-agents ../exp-ui-workflow-a-agents develop-static
-git worktree add -b exp/ui-workflow-b-agents ../exp-ui-workflow-b-agents develop-static
+git worktree add -b exp/ui-workflow-a-agents ../exp-ui-workflow-a-agents next
+git worktree add -b exp/ui-workflow-b-agents ../exp-ui-workflow-b-agents next
 ```
 
-**依赖安装**：每个实验 worktree 有**独立目录**，首次训练前需分别进入 `exp-ui-workflow-a-agents`、`exp-ui-workflow-b-agents` 执行 `npm install`。`dev` 脚本应与主 `develop-static` 一致（当前后端为 `bun ./src/server/index.ts`；错误的 `bun run --tsconfig tsconfig.json …` 会导致 Bun 报错且 Vite 找不到本地 `vite`）。
+**依赖安装**：每个实验 worktree 有**独立目录**，首次训练前需分别进入 `exp-ui-workflow-a-agents`、`exp-ui-workflow-b-agents` 执行 `npm install`。`dev` 脚本应与主仓库根一致（当前后端为 `bun ./src/server/index.ts`；错误的 `bun run --tsconfig tsconfig.json …` 会导致 Bun 报错且 Vite 找不到本地 `vite`）。
 
 **结束实验后移除**（先合并或丢弃分支上的改动，再执行）：
 
@@ -77,12 +77,12 @@ git branch -D exp/ui-workflow-b-agents
 
 1. 同一时间只在一个 worktree 里 `npm run dev`（默认端口 **4287**，见 `config/dev-server.json`）；换分支对比时 **停掉上一进程** 再起，避免端口冲突。
 2. 浏览器打开 Agents：**Vite 当前栈** 为 `http://127.0.0.1:4287/workspace/agents`；英文界面可为 `http://127.0.0.1:4287/en/workspace/agents`。截图脚本默认前者，可传第 4 参数或环境变量 `PP_UI_CAPTURE_PATH` 覆盖。
-3. 建议输出目录：`develop-static/tmp/ui-workflow-experiment/`；命名：`baseline.png`、`workflow-a.png`、`workflow-b.png`。
+3. 建议输出目录：`tmp/ui-workflow-experiment/`；命名：`baseline.png`、`workflow-a.png`、`workflow-b.png`。
 
 自动化（依赖已安装的 Playwright）：
 
 ```bash
-cd develop-static
+# 在仓库根目录
 # 一键顺序跑 baseline + workflow-a + workflow-b（须在能访问本机 127.0.0.1 的终端执行，例如本机 PowerShell）
 npm run ui-workflow:train
 ```
@@ -165,9 +165,9 @@ npm run ui-workflow:capture -- 4287 baseline
 
 若在系统浏览器或「资源管理器地址栏」里打开，可用本机 **`file:///`** 地址（盘符与路径需与你的磁盘一致；以下为当前仓库常见绝对路径）：
 
-- 文档：`file:///D:/Desktop/ProgrammingProjects/personal-projects/03-In-Development/project-pilot/develop-static/docs/ui-workflow-experiment.md`
-- 对照图：`file:///D:/Desktop/ProgrammingProjects/personal-projects/03-In-Development/project-pilot/develop-static/tmp/ui-workflow-experiment/baseline.png`
-- 流程 A：`file:///D:/Desktop/ProgrammingProjects/personal-projects/03-In-Development/project-pilot/develop-static/tmp/ui-workflow-experiment/workflow-a.png`
-- 流程 B：`file:///D:/Desktop/ProgrammingProjects/personal-projects/03-In-Development/project-pilot/develop-static/tmp/ui-workflow-experiment/workflow-b.png`
+- 文档：`file:///D:/Desktop/ProgrammingProjects/personal-projects/03-In-Development/project-pilot/docs/ui-workflow-experiment.md`
+- 对照图：`file:///D:/Desktop/ProgrammingProjects/personal-projects/03-In-Development/project-pilot/tmp/ui-workflow-experiment/baseline.png`
+- 流程 A：`file:///D:/Desktop/ProgrammingProjects/personal-projects/03-In-Development/project-pilot/tmp/ui-workflow-experiment/workflow-a.png`
+- 流程 B：`file:///D:/Desktop/ProgrammingProjects/personal-projects/03-In-Development/project-pilot/tmp/ui-workflow-experiment/workflow-b.png`
 
 > **说明**：`file://` 链接在部分 Markdown 预览里会被安全策略拦截；优先用表格里的相对链接，或在资源管理器中粘贴上述路径（去掉 `file:///` 后把 `/` 改成 `\` 也可）。

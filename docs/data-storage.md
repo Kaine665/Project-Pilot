@@ -4,7 +4,7 @@
 > - **本机目标结构**：`~/.project-pilot/README.md`  
 > - **本机迁移与现实**：`~/.project-pilot/数据文件夹现状.md`  
 > - **代码中的路径**：[`src/lib/file-store.ts`](../src/lib/file-store.ts)（`PROJECT_PILOT_DATA_DIR` 未设置时默认 `path.join(os.homedir(), '.project-pilot')`）  
-> - **本文**：与当前 `develop-static` 实现一致的目录树与主要 getter 索引，便于人类与 Agent 对齐认知。  
+> - **本文**：与当前仓库根实现一致的目录树与主要 getter 索引，便于人类与 Agent 对齐认知。  
 > **对齐日期**：2026-04-09。  
 > **给 AI**：多厂商入口（Cursor / Claude / 内置提示词）如何一起更新，见 [`AI_AGENT_KNOWLEDGE_MAP.md`](./AI_AGENT_KNOWLEDGE_MAP.md)。
 
@@ -135,10 +135,10 @@ export PROJECT_PILOT_DATA_DIR=/path/to/custom-root
 
 ## 运行时迁移
 
-当前 **`develop-static` 不在启动时执行**旧版「扁平根 → 分域」等一次性迁移；磁盘布局应已通过历史版本或手工整理完成。离线可做布局检查：
+当前**应用**不在启动时执行旧版「扁平根 → 分域」等一次性迁移；磁盘布局应已通过历史版本或手工整理完成。离线可做布局检查：
 
 ```bash
-cd develop-static
+# 在仓库根目录
 npx tsx scripts/run-layout-migrations.ts
 ```
 

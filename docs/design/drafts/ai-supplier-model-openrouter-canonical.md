@@ -195,4 +195,4 @@ interface DefaultModelSelection {
 | AI 供应商（侧栏独立入口） | [打开预览](https://p.superdesign.dev/draft/9bf28dd8-8a5b-4830-b8db-155bce41d6f1) |
 | AI 模型（侧栏独立入口） | [打开预览](https://p.superdesign.dev/draft/9ea881a1-97dd-4219-9258-d80e79e7e08b) |
 
-设计说明见 `develop-static/.superdesign/design-brief-ai-two-pages.md`；统一标题切换提示词见 `prompt-ai-unified-header.txt`、`prompt-ai-unified-supplier-tab.txt`。
+设计说明见 `.superdesign/design-brief-ai-two-pages.md`；统一标题切换提示词见 `prompt-ai-unified-header.txt`、`prompt-ai-unified-supplier-tab.txt`。

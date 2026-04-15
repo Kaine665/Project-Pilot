@@ -7,7 +7,7 @@
  * 目录树的目标形态与迁移进度不在此文件定义；见本机：
  *   ~/.project-pilot/README.md
  *   ~/.project-pilot/数据文件夹现状.md
- * 仓库内索引：develop-static/docs/data-storage.md（与路径函数对齐）
+ * 仓库内索引：docs/data-storage.md（与路径函数对齐）
  *
  * 技能相关：
  *   - 生效中的技能：`{DATA_DIR}/skills/_global|_projects|_agents/`

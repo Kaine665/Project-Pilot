@@ -1,0 +1,20 @@
+---
+description: 更新项目级 AI 可见事实时同步多入口（路径/架构/工作流）
+globs:
+  - src/lib/file-store.ts
+  - docs/data-storage.md
+  - MEMORY.md
+  - CLAUDE.md
+  - src/data/defaults/builtin-prompts.ts
+  - CONTRIBUTING.md
+  - docs/github-branch-policy.md
+---
+
+# 多入口一致性
+
+编辑上述 glob 内文件或修改「数据根、目录树、架构栈、文档驱动流程、**Git 分支与 GitHub 保护**」等项目级事实时：
+
+1. 打开 **[docs/AI_AGENT_KNOWLEDGE_MAP.md](docs/AI_AGENT_KNOWLEDGE_MAP.md)**，按文中 **变更时同步检查清单** 更新所有相关入口（含 `builtin-prompts.ts`、本机 `~/.project-pilot/README.md` 等若适用）。
+2. 在该地图文末 **变更记录** 表追加一行，便于其它 AI / 人类下次发现最近变动。
+
+仓库根 **[AGENTS.md](AGENTS.md)** 为 Cursor 等工具的短入口，勿与 `docs/`、`CLAUDE.md` 等权威文档矛盾。

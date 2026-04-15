@@ -1,0 +1,30 @@
+---
+description: 供应商/模型/SDK 支持关系，修改 provider、settings、agent-chat 时必读
+globs: ["**/{provider-registry,settings-manager,agent-chat-manager,codex-cli,claude-cli}.ts", "**/api/settings/**/*.ts"]
+alwaysApply: false
+---
+
+# 供应商 / 模型 / SDK 支持
+
+修改 provider、认证、Agent Chat 相关代码时，请先阅读 `docs/provider-model-support.md`。
+
+## 核心约束（必记）
+
+1. **Agent Chat 仅支持 Anthropic 生态**：使用 Claude Agent SDK → Claude Code CLI，不支持 OpenAI 模型。
+2. **OpenAI 需阻断**：`agent-chat-manager.ts` 在 `provider === 'openai'` 时抛出明确错误，勿移除。
+3. **auth-status / test-connection 按 provider 分支**：OpenAI 用 `execCodex(['login', 'status'])`，Anthropic 用 `execClaude(['auth', 'status'])`。
+
+## 支持矩阵速查
+
+| 供应商 | Agent Chat | auth-status | test-connection |
+|--------|------------|-------------|-----------------|
+| Anthropic | ✅ | ✅ | ✅ |
+| OpenAI | ❌ | ✅ (codex) | ✅ (codex) |
+| DeepSeek/Qwen/... | ✅ | N/A | ✅ |
+
+## 关键文件
+
+- `provider-registry.ts` — 供应商预设
+- `settings-manager.ts` — buildClaudeEnv、buildSdkQueryOptions
+- `agent-chat-manager.ts` — OpenAI 阻断逻辑
+- `api/settings/auth-status`、`test-connection` — 按 provider 选择 CLI

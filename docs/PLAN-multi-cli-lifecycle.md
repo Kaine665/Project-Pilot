@@ -11,7 +11,7 @@
 ## 现状
 
 `BaseChatManager.spawnAndManage()` 硬编码了 `spawnClaude` 和 `ClaudeStreamParser`。
-develop-static 在此基础上实现了 ActionRegistry、HealthGuard、SessionConfig 等增强，
+本仓库在此基础上实现了 ActionRegistry、HealthGuard、SessionConfig 等增强，
 这些增强必须对所有 CLI 后端生效。
 
 ## 核心结论

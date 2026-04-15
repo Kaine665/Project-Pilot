@@ -42,6 +42,14 @@ import { DEFAULT_DANGER_SETTINGS, DEFAULT_TITLE_GENERATION } from '@/types';
 const INITIAL_PROVIDER: ProviderId = 'anthropic';
 const INITIAL_MODEL = getProviderPreset(INITIAL_PROVIDER).models[0]?.id ?? '';
 
+function sortAggregateLiveItems(items: AggregateLiveModelItem[]): AggregateLiveModelItem[] {
+  return [...items].sort((a, b) => {
+    const c = a.providerId.localeCompare(b.providerId);
+    if (c !== 0) return c;
+    return a.label.localeCompare(b.label, undefined, { sensitivity: 'base' });
+  });
+}
+
 /** 根据加载的数据应用模型选择状态，供 fetchSettings 使用，避免闭包依赖 */
 function applyProviderModelStateFromData(
   providerId: ProviderId,
@@ -389,7 +397,7 @@ export default function SettingsPage() {
     setAggregateLiveStatus('loading');
     setAggregateLiveErrorDetail('');
     try {
-      const res = await fetch(apiUrl('/api/settings/aggregate-models'), { cache: 'no-store' });
+      const res = await fetch(apiUrl('/api/settings/aggregate-models?refresh=1'), { cache: 'no-store' });
       const text = await res.text();
       let data: {
         ok?: boolean;
@@ -463,12 +471,17 @@ export default function SettingsPage() {
     return `${pid}|${key}`;
   }, []);
 
-  const executeSupplierProbe = useCallback(async (pid: ProviderId, opts?: { force?: boolean }) => {
+  const executeSupplierProbe = useCallback(async (
+    pid: ProviderId,
+    opts?: { force?: boolean; includeModels?: boolean },
+  ) => {
     const force = opts?.force === true;
+    const includeModels = opts?.includeModels === true;
     const fingerprint = getProbeFingerprint(pid);
     const cached = probeCacheRef.current[pid];
     if (
       !force &&
+      !includeModels &&
       cached &&
       cached.fingerprint === fingerprint &&
       Date.now() - cached.at < SUPPLIER_PROBE_COOLDOWN_MS
@@ -508,7 +521,12 @@ export default function SettingsPage() {
 
     setSupplierProbeLoading((prev) => ({ ...prev, [pid]: true }));
     try {
-      const body: { providerId: ProviderId; apiKey?: string; ollamaBaseUrl?: string } = { providerId: pid };
+      const body: { providerId: ProviderId; apiKey?: string; ollamaBaseUrl?: string; includeModels?: boolean } = {
+        providerId: pid,
+      };
+      if (includeModels) {
+        body.includeModels = true;
+      }
       if (pid === 'ollama') {
         body.ollamaBaseUrl = (providerBaseUrlsRef.current.ollama ?? '').trim();
       } else {
@@ -525,11 +543,33 @@ export default function SettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const data = (await res.json()) as { ok?: boolean; row?: SupplierAvailabilityRow; error?: string };
+      const data = (await res.json()) as {
+        ok?: boolean;
+        row?: SupplierAvailabilityRow;
+        modelItems?: AggregateLiveModelItem[];
+        error?: string;
+      };
       if (data.ok && data.row) {
         const row = data.row as SupplierAvailabilityRow;
         setSupplierProbeRow((prev) => ({ ...prev, [pid]: row }));
         probeCacheRef.current[pid] = { fingerprint, at: Date.now(), row };
+        if (includeModels && Array.isArray(data.modelItems)) {
+          const items = data.modelItems;
+          setSupplierAvailability((prev) => {
+            const next = prev.filter((r) => r.providerId !== pid);
+            next.push(row);
+            next.sort((a, b) => a.providerId.localeCompare(b.providerId));
+            return next;
+          });
+          setAggregateLiveModels((prev) => {
+            const stripped = prev.filter((m) => m.providerId !== pid);
+            const merged =
+              row.status === 'ok' && items.length > 0 ? [...stripped, ...items] : stripped;
+            return sortAggregateLiveItems(merged);
+          });
+          setAggregateLiveErrorDetail('');
+          setAggregateLiveStatus('success');
+        }
       } else {
         const row: SupplierAvailabilityRow = { providerId: pid, status: 'error', reasonKey: 'generic' };
         setSupplierProbeRow((prev) => ({
@@ -537,6 +577,17 @@ export default function SettingsPage() {
           [pid]: row,
         }));
         probeCacheRef.current[pid] = { fingerprint, at: Date.now(), row };
+        if (includeModels) {
+          setSupplierAvailability((prev) => {
+            const next = prev.filter((r) => r.providerId !== pid);
+            next.push(row);
+            next.sort((a, b) => a.providerId.localeCompare(b.providerId));
+            return next;
+          });
+          setAggregateLiveModels((prev) => sortAggregateLiveItems(prev.filter((m) => m.providerId !== pid)));
+          setAggregateLiveErrorDetail('');
+          setAggregateLiveStatus('success');
+        }
       }
     } catch {
       const row: SupplierAvailabilityRow = { providerId: pid, status: 'error', reasonKey: 'generic' };
@@ -545,6 +596,17 @@ export default function SettingsPage() {
         [pid]: row,
       }));
       probeCacheRef.current[pid] = { fingerprint, at: Date.now(), row };
+      if (includeModels) {
+        setSupplierAvailability((prev) => {
+          const next = prev.filter((r) => r.providerId !== pid);
+          next.push(row);
+          next.sort((a, b) => a.providerId.localeCompare(b.providerId));
+          return next;
+        });
+        setAggregateLiveModels((prev) => sortAggregateLiveItems(prev.filter((m) => m.providerId !== pid)));
+        setAggregateLiveErrorDetail('');
+        setAggregateLiveStatus('success');
+      }
     } finally {
       setSupplierProbeLoading((prev) => ({ ...prev, [pid]: false }));
     }
@@ -601,6 +663,13 @@ export default function SettingsPage() {
       void executeSupplierProbe(c.id, { force: true });
     }
   }, [refreshAggregateModels, executeSupplierProbe]);
+
+  const refreshSingleSupplier = useCallback(
+    (pid: ProviderId) => {
+      void executeSupplierProbe(pid, { force: true, includeModels: true });
+    },
+    [executeSupplierProbe],
+  );
 
   // 初始加载完成后跑一次聚合；后续仅由 autosave 指纹变化 或 按钮触发
   const initialAggregateRef = useRef(false);
@@ -1042,6 +1111,7 @@ export default function SettingsPage() {
                 onSupplierTabProbes={flushAllSupplierProbes}
                 aggregateLiveErrorDetail={aggregateLiveErrorDetail}
                 onRefreshAggregateLiveModels={recheckAllSuppliers}
+                onRefreshSingleSupplier={refreshSingleSupplier}
                 onProviderApiKeyChange={handleProviderApiKeyChange}
                 providerBaseUrls={providerBaseUrls}
                 onProviderBaseUrlChange={handleProviderBaseUrlChange}

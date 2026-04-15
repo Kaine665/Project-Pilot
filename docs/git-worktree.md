@@ -78,7 +78,7 @@ ProjectPilot 的 `removeWorktreeDirectory()`（`src/lib/worktree-ports.ts`）采
 2. **逐个击破**：递归遍历每个文件/子目录，能删就删，被锁就跳过，继续删下一个
 3. **移到垃圾桶**：把删不掉的残留（此时只剩被锁的少量文件）整体 rename 到 `_trashs/`
 
-`_trashs/` 位于项目根目录（与 `develop-static/` 同级），在每次 cleanup 时尝试清理。
+`_trashs/` 位于仓库根目录（与 `src/` 等同级），在每次 cleanup 时尝试清理。
 
 ### 完整生命周期
 

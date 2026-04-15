@@ -68,7 +68,9 @@ export function classifySupplierReasonKey(provider: ProviderId, raw: string): st
   if (/\b401\b/.test(raw) || /\b403\b/.test(raw) || l.includes('unauthorized') || l.includes('forbidden')) {
     return 'auth_failed';
   }
-  if (/\b429\b/.test(raw) || l.includes('rate limit')) return 'rate_limited';
+  if (/\b429\b/.test(raw) || /\b529\b/.test(raw) || l.includes('rate limit') || l.includes('overloaded')) {
+    return 'rate_limited';
+  }
   if (l.includes('timeout') || l.includes('timed out') || l.includes('etimedout')) return 'timeout';
   if (raw.includes('No base URL')) return 'no_base_url';
   return 'generic';
@@ -174,6 +176,40 @@ function resolveAuthMethod(preset: ProviderPreset, provider: ProviderId): 'API_K
   return 'AUTH_TOKEN';
 }
 
+/** 从 Anthropic 兼容根 URL 推出 OpenAI 式模型列表的 origin（…/anthropic → https://host） */
+function originForOpenAiModelsList(anthropicChatBase: string): string {
+  try {
+    const u = new URL(anthropicChatBase.replace(/\/+$/, ''));
+    return u.origin;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * 多 Anthropic 兼容根地址（MiniMax 国内/国际、智谱 open.bigmodel / Z.AI）：自定义 Base 优先，再试注册表候选。
+ */
+function anthropicChatBaseUrlCandidates(
+  preset: ProviderPreset,
+  scopedBase: string | undefined,
+): string[] {
+  const rawPool = preset.candidateBaseUrls?.length ? preset.candidateBaseUrls : [preset.baseUrl];
+  const pool = rawPool.filter((u): u is string => typeof u === 'string' && u.trim().length > 0);
+  const norm = (u: string) => u.replace(/\/+$/, '');
+  const uniq = [...new Set(pool.map(norm))];
+  const scoped = scopedBase?.trim() ? norm(scopedBase.trim()) : '';
+  if (!scoped) return uniq;
+  const rest = uniq.filter((u) => u !== scoped);
+  // 用户自定义 Base 放首位；失败时继续尝试注册表候选
+  return [scoped, ...rest];
+}
+
+/** GET OpenAI 式 /v1/models 的鉴权：智谱 PaaS 与聊天一致用 x-api-key；OpenRouter/DeepSeek 等仍 Bearer */
+function openAiModelsListAuthMethod(provider: ProviderId): 'API_KEY' | 'AUTH_TOKEN' {
+  if (provider === 'zhipu') return 'API_KEY';
+  return 'AUTH_TOKEN';
+}
+
 function resolveBaseUrl(
   preset: ProviderPreset,
   provider: ProviderId,
@@ -218,15 +254,16 @@ async function fetchOpenAiCompatibleAtBase(
   baseRoot: string,
   apiKey: string,
   modelsListRelativePath?: string,
+  listAuth: 'API_KEY' | 'AUTH_TOKEN' = 'AUTH_TOKEN',
 ): Promise<{ items: { id: string; label: string }[]; error?: string }> {
   const url = buildOpenAiCompatibleModelsListUrl(baseRoot, modelsListRelativePath ?? 'v1/models');
+  const headers: Record<string, string> = { accept: 'application/json' };
+  if (listAuth === 'API_KEY') headers['x-api-key'] = apiKey;
+  else headers['authorization'] = `Bearer ${apiKey}`;
   try {
     const res = await fetch(url, {
       method: 'GET',
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        accept: 'application/json',
-      },
+      headers,
       signal: AbortSignal.timeout(LIST_TIMEOUT_MS),
     });
     const text = await res.text().catch(() => '');
@@ -323,25 +360,42 @@ async function probeAnthropicMessages(
   if (authMethod === 'API_KEY') headers['x-api-key'] = apiKey;
   else headers['authorization'] = `Bearer ${apiKey}`;
 
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model,
-        max_tokens: 8,
-        messages: [{ role: 'user', content: 'ok' }],
-      }),
-      signal: AbortSignal.timeout(LIST_TIMEOUT_MS),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 160)}` };
+  const body = JSON.stringify({
+    model,
+    max_tokens: 8,
+    // MiniMax 等网关的示例均为 block 形态；字符串简写偶发不兼容
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'ok' }] }],
+  });
+
+  /** 上游偶发 429 / 529（限流或过载）；短重试后仍失败再判不可用 */
+  const maxTransientAttempts = 8;
+  let lastTransientError: string | undefined;
+
+  for (let attempt = 0; attempt < maxTransientAttempts; attempt++) {
+    if (attempt > 0) {
+      const backoffMs = Math.min(6000, 600 * 2 ** (attempt - 1));
+      await new Promise((r) => setTimeout(r, backoffMs));
     }
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body,
+        signal: AbortSignal.timeout(LIST_TIMEOUT_MS),
+      });
+      const text = await res.text().catch(() => '');
+      if (res.ok) return { ok: true };
+      const retryable = res.status === 529 || res.status === 429 || res.status === 503;
+      if (retryable && attempt < maxTransientAttempts - 1) {
+        lastTransientError = `HTTP ${res.status}: ${text.slice(0, 160)}`;
+        continue;
+      }
+      return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 160)}` };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
   }
+  return { ok: false, error: lastTransientError || 'Chat probe failed' };
 }
 
 /** 设置页「部分供应商失败」时的可读说明（非程序 bug，多为环境或账号侧） */
@@ -460,7 +514,12 @@ async function collectBuiltInProvider(
     if (!apiKey) return { items: [] };
     const base = resolveBaseUrl(preset, provider, baseUrls, claude.providerModels) || preset.baseUrl;
     if (!base) return { items: [], error: 'No base URL' };
-    const { items, error } = await fetchOpenAiCompatibleAtBase(base, apiKey, preset.modelsListRelativePath);
+    const { items, error } = await fetchOpenAiCompatibleAtBase(
+      base,
+      apiKey,
+      preset.modelsListRelativePath,
+      openAiModelsListAuthMethod(provider),
+    );
     if (error && items.length === 0) return { items: [], error };
     return { items: items.map((m) => ({ providerId: provider, value: m.id, label: m.label })) };
   }
@@ -480,20 +539,37 @@ async function collectBuiltInProvider(
   // 部分供应商聊天走 Anthropic 协议，但模型列表走 OpenAI 协议（如 DeepSeek、智谱、MiniMax）
   if (preset.modelsListProtocol === 'openai') {
     // 先按“聊天同链路”探测：与 Runner 一致，避免“能聊但显示不可用”。
-    const chatBase = resolveBaseUrl(preset, provider, baseUrls, claude.providerModels) || preset.baseUrl;
-    if (!chatBase) return { items: [], error: 'No base URL' };
+    const scopedChat = resolveBaseUrl(preset, provider, baseUrls, claude.providerModels);
+    const chatCandidates =
+      provider === 'minimax' || provider === 'zhipu'
+        ? anthropicChatBaseUrlCandidates(preset, scopedChat)
+        : ([scopedChat || preset.baseUrl].filter(Boolean) as string[]);
+    if (chatCandidates.length === 0) return { items: [], error: 'No base URL' };
     if (!selectedModel) return { items: [], error: 'No model configured' };
-    const chatProbe = await probeAnthropicMessages(chatBase, apiKey, selectedModel, authMethod);
+
+    let chatProbe: { ok: boolean; error?: string } = { ok: false, error: 'Chat probe failed' };
+    let winningChatBase = '';
+    for (const chatBase of chatCandidates) {
+      chatProbe = await probeAnthropicMessages(chatBase, apiKey, selectedModel, authMethod);
+      if (chatProbe.ok) {
+        winningChatBase = chatBase;
+        break;
+      }
+    }
     if (!chatProbe.ok) {
       return { items: [], error: chatProbe.error || 'Chat probe failed' };
     }
 
-    const modelsBase = preset.modelsListBaseUrl || preset.baseUrl;
+    const modelsBase =
+      provider === 'minimax' && winningChatBase
+        ? originForOpenAiModelsList(winningChatBase) || preset.modelsListBaseUrl || preset.baseUrl
+        : preset.modelsListBaseUrl || preset.baseUrl;
     if (!modelsBase) return { items: [], error: 'No base URL for models listing' };
     const { items, error } = await fetchOpenAiCompatibleAtBase(
       modelsBase,
       apiKey,
       preset.modelsListRelativePath,
+      openAiModelsListAuthMethod(provider),
     );
     if (error && items.length === 0) {
       return { items: presetItems };
@@ -570,7 +646,8 @@ async function collectCustomProvider(cp: CustomProviderConfig): Promise<{ items:
   const preset = getProviderPreset(cp.id, [cp]);
   const protocol = cp.apiProtocol ?? 'anthropic';
   if (protocol === 'openai') {
-    const { items, error } = await fetchOpenAiCompatibleAtBase(cp.baseUrl, cp.apiKey.trim());
+    const listAuth = resolveAuthMethod(preset, cp.id);
+    const { items, error } = await fetchOpenAiCompatibleAtBase(cp.baseUrl, cp.apiKey.trim(), undefined, listAuth);
     if (error && items.length === 0) return { items: [], error };
     return { items: items.map((m) => ({ providerId: cp.id, value: m.id, label: m.label })) };
   }
@@ -584,6 +661,12 @@ function isMaskedKeyPlaceholder(k: string | null | undefined): boolean {
   return typeof k === 'string' && k.startsWith('••');
 }
 
+/** 单供应商探测结果：状态行 + 与整表聚合同源的模型条目（仅 status=ok 时非空） */
+export interface ProbeSupplierLiveResult {
+  row: SupplierAvailabilityRow;
+  modelItems: AggregateLiveModelItem[];
+}
+
 /**
  * 单供应商拉取模型列表以判断可用性（供设置页输入框旁自动检测）。
  * - apiKey 不传或 masked：使用磁盘已保存凭据
@@ -594,14 +677,17 @@ export async function probeSupplierLive(
   providerId: ProviderId,
   apiKeyFromClient?: string | null,
   options?: { ollamaBaseUrl?: string | null },
-): Promise<SupplierAvailabilityRow> {
+): Promise<ProbeSupplierLiveResult> {
   const settings = await getSettings();
   const claude = settings.claude;
 
   if (providerId.startsWith('custom-')) {
     const cp = claude.customProviders?.find((c) => c.id === providerId);
     if (!cp) {
-      return { providerId, status: 'skipped', reasonKey: 'no_credential' };
+      return {
+        row: { providerId, status: 'skipped', reasonKey: 'no_credential' },
+        modelItems: [],
+      };
     }
     let effectiveKey = '';
     if (apiKeyFromClient != null) {
@@ -617,19 +703,26 @@ export async function probeSupplierLive(
       effectiveKey = (getCredential(claude, providerId).apiKey ?? cp.apiKey ?? '').trim();
     }
     if (!effectiveKey) {
-      return { providerId, status: 'skipped', reasonKey: 'no_credential' };
+      return {
+        row: { providerId, status: 'skipped', reasonKey: 'no_credential' },
+        modelItems: [],
+      };
     }
     const { items: part, error } = await collectCustomProvider({ ...cp, apiKey: effectiveKey });
     const claudeForRow: ClaudeSettings = {
       ...claude,
       providerApiKeys: { ...claude.providerApiKeys, [providerId]: effectiveKey },
     };
-    return buildSupplierAvailabilityRows([{ pid: providerId, part, error }], claudeForRow)[0]!;
+    const row = buildSupplierAvailabilityRows([{ pid: providerId, part, error }], claudeForRow)[0]!;
+    return { row, modelItems: row.status === 'ok' ? part : [] };
   }
 
   const preset = PROVIDER_REGISTRY.find((p) => p.id === providerId);
   if (!preset) {
-    return { providerId, status: 'skipped', reasonKey: 'not_applicable' };
+    return {
+      row: { providerId, status: 'skipped', reasonKey: 'not_applicable' },
+      modelItems: [],
+    };
   }
 
   let claudeProbe = claude;
@@ -642,16 +735,29 @@ export async function probeSupplierLive(
       };
     }
     if (!claudeProbe.providerBaseUrls?.ollama?.trim()) {
-      return { providerId, status: 'skipped', reasonKey: 'ollama_not_enabled' };
+      return {
+        row: { providerId, status: 'skipped', reasonKey: 'ollama_not_enabled' },
+        modelItems: [],
+      };
     }
   }
 
   if (apiKeyFromClient !== undefined && apiKeyFromClient !== null && providerId !== 'ollama') {
     const v = String(apiKeyFromClient).trim();
     if (v && !isMaskedKeyPlaceholder(v)) {
+      const prevCred = claude.providerCredentials?.[providerId];
       claudeProbe = {
         ...claude,
         providerApiKeys: { ...claude.providerApiKeys, [providerId]: v },
+        // getCredential 优先读 providerCredentials；仅合并 providerApiKeys 会导致「设置页/脚本传入的新 Key」被忽略
+        providerCredentials: {
+          ...claude.providerCredentials,
+          [providerId]: {
+            ...(prevCred && typeof prevCred === 'object' ? prevCred : {}),
+            authMode: 'api_key',
+            apiKey: v,
+          },
+        },
       };
     } else if (v === '') {
       const nk: Partial<Record<ProviderId, string>> = { ...claude.providerApiKeys };
@@ -664,7 +770,8 @@ export async function probeSupplierLive(
   }
 
   const { items: part, error } = await collectBuiltInProvider(providerId, preset, claudeProbe);
-  return buildSupplierAvailabilityRows([{ pid: providerId, part, error }], claudeProbe)[0]!;
+  const row = buildSupplierAvailabilityRows([{ pid: providerId, part, error }], claudeProbe)[0]!;
+  return { row, modelItems: row.status === 'ok' ? part : [] };
 }
 
 /**

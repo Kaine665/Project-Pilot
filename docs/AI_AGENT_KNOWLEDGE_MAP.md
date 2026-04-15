@@ -15,17 +15,17 @@
 
 | 入口                        | 路径                                                                                                                                                                     | 主要读者                    | 作用                                                                          | 必须与谁对齐                                  |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------- | --------------------------------------- |
-| **本知识地图**                 | `develop-static/docs/AI_AGENT_KNOWLEDGE_MAP.md`                                                                                                                        | 所有 AI                   | 索引 + 同步协议 + 变更记录                                                            | `file-store`、下文各入口                      |
-| **Cursor / 通用 Agent**     | 仓库根 `AGENTS.md`                                                                                                                                                        | Cursor 等                | 短入口，指向 `develop-static`                                                     | 本文                                      |
-| **Claude Code**           | `develop-static/CLAUDE.md`                                                                                                                                             | Claude                  | 架构、文档驱动开发、命令                                                                | `MEMORY.md`、本文、`data-storage.md`        |
-| **短记忆**                   | `develop-static/MEMORY.md`                                                                                                                                             | Claude Code 等           | 高密度结论                                                                       | `data-storage.md`、本文                    |
+| **本知识地图**                 | `docs/AI_AGENT_KNOWLEDGE_MAP.md`                                                                                                                        | 所有 AI                   | 索引 + 同步协议 + 变更记录                                                            | `file-store`、下文各入口                      |
+| **Cursor / 通用 Agent**     | 仓库根 `AGENTS.md`                                                                                                                                                        | Cursor 等                | 短入口，指向 `docs/`、`CLAUDE.md` 等主文档                                                     | 本文                                      |
+| **Claude Code**           | `CLAUDE.md`                                                                                                                                             | Claude                  | 架构、文档驱动开发、命令                                                                | `MEMORY.md`、本文、`data-storage.md`        |
+| **短记忆**                   | `MEMORY.md`                                                                                                                                             | Claude Code 等           | 高密度结论                                                                       | `data-storage.md`、本文                    |
 | **Cursor 规则**             | `.cursor/rules/*.mdc`                                                                                                                                                  | Cursor Agent            | 沙箱、终端等                                                                      | 若涉及数据路径则对齐 `data-storage.md`            |
-| **Cursor MCP（PP stdio + Paper）**  | 仓库根 `.cursor/mcp.json` + `docs/cursor-mcp-project-pilot.md`                                                                                                            | Cursor Agent            | **project-pilot**：PP 数据；路径与 `TSX_TSCONFIG_PATH`（根目录 vs `develop-static/` 嵌套）。**paper**：`mcp-remote` → 本机 Paper Desktop（须先打开设计文件）；见 `cursor-mcp-project-pilot.md` §Paper | `mcp-server/index.ts`、[Paper MCP 文档](https://paper.design/docs/mcp)、本文                |
+| **Cursor MCP（PP stdio + Paper）**  | 仓库根 `.cursor/mcp.json` + `docs/cursor-mcp-project-pilot.md`                                                                                                            | Cursor Agent            | **project-pilot**：PP 数据；路径与 `TSX_TSCONFIG_PATH`（根目录 vs `develop-static/` 等子目录嵌套）。**paper**：`mcp-remote` → 本机 Paper Desktop（须先打开设计文件）；见 `cursor-mcp-project-pilot.md` §Paper | `mcp-server/index.ts`、[Paper MCP 文档](https://paper.design/docs/mcp)、本文                |
 | **Cursor 仓库技能（SKILL.md）** | `skills/*`、`.agents/skills/*`                                                                                                                                          | Cursor / 各 Agent 宿主     | 随仓库分发的技能包（如 `superdesign`、`frontend-design`）；`.agents/skills/` 便于 Cursor 发现 | 各 Skill 上游仓库 LICENSE；**变更时登记本文件底部变更记录** |
 | **内置 Agent 提示词**          | 仓库种子 `src/data/defaults/prompts/builtin/`（`manifest.json` 递增触发覆盖）；运行时 `{DATA_DIR}/prompts/builtin/` + `.applied-builtin-prompts.json`（`builtin-prompt-materialize.ts`） | 产品内 Butler / Self-Dev 等 | 用户数据路径、能力描述                                                                 | **`docs/data-storage.md`（路径事实必须一致）**    |
-| **人类 docs 总入口**           | `develop-static/docs/README.md`                                                                                                                                        | 人类 + AI                 | `docs/` 分层与权威关系                                                             | `data-storage.md`                       |
-| **Git 分支与 GitHub 保护**     | `develop-static/docs/github-branch-policy.md`                                                                                                                          | 维护者 + 贡献者               | `main` / `next` / `feature/*` / `hotfix/*`；Rulesets 清单                      | `CONTRIBUTING.md`                       |
-| **数据路径（代码对齐）**            | `develop-static/docs/data-storage.md`                                                                                                                                  | 所有                      | 与 `get*Path` 一致的树与表                                                         | `src/lib/file-store.ts`                 |
+| **人类 docs 总入口**           | `docs/README.md`                                                                                                                                        | 人类 + AI                 | `docs/` 分层与权威关系                                                             | `data-storage.md`                       |
+| **Git 分支与 GitHub 保护**     | `docs/github-branch-policy.md`                                                                                                                          | 维护者 + 贡献者               | `main` / `next` / `feature/*` / `hotfix/*`；Rulesets 清单                      | `CONTRIBUTING.md`                       |
+| **数据路径（代码对齐）**            | `docs/data-storage.md`                                                                                                                                  | 所有                      | 与 `get*Path` 一致的树与表                                                         | `src/lib/file-store.ts`                 |
 | **本机磁盘规范（不在 Git）**        | `~/.project-pilot/README.md`、`数据文件夹现状.md`                                                                                                                              | 人类排错、迁移                 | 真实目录与进度                                                                     | 由 `data-storage.md` 引用，重大变更时人工同步        |
 
 
@@ -51,39 +51,44 @@
 
 ### A. 数据目录 / 默认根 / 路径函数
 
-- `develop-static/src/lib/file-store.ts`
-- `develop-static/docs/data-storage.md`
-- `develop-static/MEMORY.md`（「数据存储」节）
-- `develop-static/CLAUDE.md`（「数据层」相关段落）
+- `src/lib/file-store.ts`
+- `docs/data-storage.md`
+- `MEMORY.md`（「数据存储」节）
+- `CLAUDE.md`（「数据层」相关段落）
 - `src/data/defaults/prompts/builtin/**/*.md` 与 **`manifest.json` version**（凡出现 `~/.project-pilot`、域名的段落）
 - 本机 `~/.project-pilot/README.md` / `数据文件夹现状.md`（若影响用户可见规范）
-- `develop-static/scripts/data-layout-migration.md` 或 `run-layout-migrations.ts` 头注释（若影响离线行为）
+- `scripts/data-layout-migration.md` 或 `run-layout-migrations.ts` 头注释（若影响离线行为）
 
 ### B. 技术栈 / 端口 / 开发命令
 
-- `develop-static/CLAUDE.md`
-- `develop-static/MEMORY.md`（若有对应条）
-- `develop-static/README.md`（快速开始）
+- `CLAUDE.md`
+- `MEMORY.md`（若有对应条）
+- `README.md`（快速开始）
 
 ### C. 文档驱动开发 — 新能力域
 
-- `develop-static/CLAUDE.md` 中「域索引」表
-- `develop-static/docs/as-is/` 与 `docs/design/` 新页或更新
+- `CLAUDE.md` 中「域索引」表
+- `docs/as-is/` 与 `docs/design/` 新页或更新
 - 视需要在 `MEMORY.md` 增加一行索引
 
 ### D. Git 分支策略 / 贡献流程 / GitHub 保护规则
 
-- `develop-static/CONTRIBUTING.md`（分支表、PR base）
-- `develop-static/docs/github-branch-policy.md`（维护者权限清单）
-- `develop-static/.github/PULL_REQUEST_TEMPLATE.md`（base 分支勾选）
-- `develop-static/docs/README.md`（docs 速查表链接，若新增独立文档）
-- `develop-static/MEMORY.md`（若需 AI 一句速记）
-- `develop-static/CLAUDE.md`（若贡献流程与文档驱动并列时加一句索引）
+- `CONTRIBUTING.md`（分支表、PR base）
+- `docs/github-branch-policy.md`（维护者权限清单）
+- `.github/PULL_REQUEST_TEMPLATE.md`（base 分支勾选）
+- `docs/README.md`（docs 速查表链接，若新增独立文档）
+- `MEMORY.md`（若需 AI 一句速记）
+- `CLAUDE.md`（若贡献流程与文档驱动并列时加一句索引）
 
 ### E. 完成后的「多工具可见性」
 
 - 在本文件底部 **变更记录** 表追加一行（日期、摘要、已更新的入口文件）
 - 若某入口文件被删或重命名，**同步更新本文件「多入口一览」表**
+
+### F. 供应商可用性 / 聚合探测（真实上游）
+
+- `src/lib/aggregate-models-live.ts`、`src/server/routes/settings.ts`（`probe-supplier` / `aggregate-models`）、`src/lib/settings-manager.ts`（`buildClaudeEnv` / `getCredential`）、`src/data/providers-registry.json`、`src/lib/provider-registry.ts`、`src/lib/model-health-check.ts`
+- 变更后应能通过 **`npm run test:provider-smoke`**（本地 `provider-test.env` 或 CI Secrets `PP_PROVIDER_TEST_*`）；必要时同步 `scripts/provider-availability-smoke.ts`、`.github/workflows/provider-availability-smoke.yml`、`provider-test.env.example`
 
 ## 变更记录
 
@@ -117,7 +122,7 @@
 | 2026-04-07 | **Hono API 懒挂载**：`src/server/lazy-route.ts` + `index.ts` 对 `/api/*` 子树首包 `import()`（`tsx` 开发态冷启动更快） | `src/server/lazy-route.ts`、`src/server/index.ts`、`MEMORY.md`、本文件 |
 | 2026-04-07 | **社区市场 UI 对标 LobeHub canary**：左侧商店导航（发现/助手/Skills/MCP/模型/服务商）、顶栏搜索（URL `q`）、助手页分类侧栏+排序+卡片网格、`/workspace/community/agent/:identifier` 详情 + `GET /api/community/item/:id`；非助手 Tab 占位；种子条目扩展 `category/author/updatedAt` 等元数据 | `components/community-store/*`、`flows/community/layout.tsx` 与子路由、`App.tsx` 嵌套 `community/*`、`community-catalog-seed.json`、`routes/community.ts`、`messages/zh.json` & `en.json`、`docs/community-marketplace-lobechat-okr.md`、本文件 |
 | 2026-04-07 | **社区商店 Skills + MCP 实装**：`community-skills-seed.json` + `GET/POST /api/community/skills/*`（安装调用 `writeSkillFile`）；`community-mcp-seed.json` + `GET/POST /api/community/mcp/*` 与 `config/mcp-market.json`；`BaseChatManager` 合并市场 MCP 与 `.mcp.json`；发现页与 `/workspace/community/skill|mcp` 列表/详情/安装 | `mcp-market-store.ts`、`base-chat-manager.ts`、`routes/community.ts`、`community-skill-*`、`community-mcp-*`、`data-storage.md`、本文件 |
-| 2026-04-08 | **Cursor 外部 MCP**：`.cursor/mcp.json` 改为 `node` + `tsx/dist/cli.mjs` + `TSX_TSCONFIG_PATH`；文档 `docs/cursor-mcp-project-pilot.md`（根目录布局与 `develop-static/` 嵌套、禁止 `npm run` 污染 stdout） | `.cursor/mcp.json`、`docs/cursor-mcp-project-pilot.md`、`docs/README.md`、`mcp-server/index.ts` 头注释、`MEMORY.md`、本文件 |
+| 2026-04-08 | **Cursor 外部 MCP**：`.cursor/mcp.json` 改为 `node` + `tsx/dist/cli.mjs` + `TSX_TSCONFIG_PATH`；文档 `docs/cursor-mcp-project-pilot.md`（根目录布局与 `develop-static/` 子目录嵌套、禁止 `npm run` 污染 stdout） | `.cursor/mcp.json`、`docs/cursor-mcp-project-pilot.md`、`docs/README.md`、`mcp-server/index.ts` 头注释、`MEMORY.md`、本文件 |
 | 2026-04-08 | **Skills 与 AgentSkills/OpenClaw 对齐**：绑定 `type: skill` 时注入完整 `SKILL.md` 正文（非仅摘要）+ `scripts|references|assets` 清单与小文本内联；支持 `disable-model-invocation`；提示词树 Skill 块估算/预览与注入一致 | `skill-loader.ts`、`skill-store.ts`、`routes/prompts.ts`、`types/resource.ts`、`data-storage.md`、`领域与数据.md`、`MEMORY.md`、本文件 |
 | 2026-04-08 | **Skill 包三目录贯通导入/统计**：列表与详情带 `bundle` 汇总；`POST /api/skills/import-zip`；社区目录 `bundleFiles`；`skill-zip-import.ts`、`parseSkillBundleRelativePath` | `routes/skills.ts`、`routes/community.ts`、`community-catalog.ts`、`mcp-server/index.ts`、`skill-zip-import.ts`、`skill-store.ts`、`data-storage.md`、`MEMORY.md`、本文件 |
 | 2026-04-09 | **frontend-design**：自 Every [compound-engineering-plugin](https://github.com/EveryInc/compound-engineering-plugin) vendored 至 `skills/frontend-design/SKILL.md` 与 `.agents/skills/frontend-design/SKILL.md`（与 Cursor Marketplace 条目同源；定期 diff 上游） | 上述两路径、本文件「多入口一览」表 |
@@ -131,10 +136,12 @@
 | 2026-04-12 | **Cursor Paper MCP**：`.cursor/mcp.json` 增加 `paper`（`npx -y mcp-remote http://127.0.0.1:29979/mcp`）；`docs/cursor-mcp-project-pilot.md` 增补前置条件与排错；知识地图 Cursor MCP 行合并 Paper 说明 | `.cursor/mcp.json`、`docs/cursor-mcp-project-pilot.md`、本文件「多入口一览」表 |
 | 2026-04-14 | **对话与 Agent 系统八层对标**：Claude Code harness / Hermes / OpenHarness 与 PP 映射；`AI_AGENT_KNOWLEDGE_MAP` 入口、`CLAUDE.md` 域索引、`MEMORY.md` 速记、`docs/design/README` | [`docs/design/conversation-agent-system-lens.md`](./design/conversation-agent-system-lens.md)、`docs/AI_AGENT_KNOWLEDGE_MAP.md`、`CLAUDE.md`、`MEMORY.md`、`docs/design/README.md`、`docs/README.md` |
 | 2026-04-14 | **PR 桌面双平台**：针对 `next` 的 PR 跑 `pr-desktop-build.yml`；预发布版本为 **基线 patch+1 + `-pr.<PR>`**（`scripts/ci-compute-pr-desktop-version.mjs` + `extraMetadata.version`），Release 标题与 tag 同该串；fork 仅 Artifact；正式发版 `release:desktop:bump` + `release.yml`（`v*`）— 见 `github-branch-policy.md` §3.6 | `pr-desktop-build.yml`、`ci-compute-pr-desktop-version.mjs`、`github-branch-policy.md`、本文件 |
+| 2026-04-14 | **主应用迁至仓库根**：删除嵌套 `develop-static/` 目录布局；`.cursor/mcp.json` 与 `AGENTS.md` 等入口改为根路径；`docs/cursor-mcp-project-pilot.md` 以「根布局」为主、子目录为布局 B 示例；内置提示词与贡献文档同步 | 仓库目录结构、`AGENTS.md`、`.cursor/mcp.json`、`docs/**/*.md`、`CONTRIBUTING.md`、内置 Agent 提示词、本文件 |
 | 2026-04-15 | **Windows 未签名桌面包与 SmartScreen**：说明「无法确认发布者」原因、用户侧解除锁定/仍要运行步骤、正式发版需 Authenticode 签名；README 文档入口 | [`docs/desktop-windows-smartscreen-unsigned.md`](./desktop-windows-smartscreen-unsigned.md)、`README.md`、本文件 |
 | 2026-04-16 | **智能应用控制**：补充安装后运行被「智能应用控制系统」拦截与 SmartScreen 区别、设置路径与评估/关闭说明 | [`docs/desktop-windows-smartscreen-unsigned.md`](./desktop-windows-smartscreen-unsigned.md)、本文件 |
 | 2026-04-16 | **开发默认前端端口**：`4000` → **`4287`**（`config/dev-server.json`、`electron` 默认、`CORS` 仍以 `PP_ALLOWED_ORIGINS` 兼容 4000）；API 默认仍为 **4500** | `config/dev-server.json`、`electron/main.ts`、`electron/port-finder.ts`、`src/server/index.ts`、`worktree-ports.ts`、`google-auth.ts`、`.env.example`、`call-agent*.ts`、`README.md`、`CLAUDE.md`、`AGENTS.md`、内置 Agent 提示词、`public/api-docs/*`、`scripts/load-demo-data.js`、本文件 |
 | 2026-04-16 | **端口口径再分**：**本地开发**（`npm run dev` / `electron-dev`）前端默认回 **`4000`**（`dev-server.json`、`find-available-port.cjs` 回退、`worktree-ports` 主端口、`google-auth` / `call-agent*` 默认）；**打包后 Electron** 内嵌 Hono 仍首选 **`4287`**（`electron/main.ts` `PACKAGED_EMBEDDED_PORT`、`electron/port-finder.ts`）；`CORS` 仍同时允许 4000 / 4287 | `config/dev-server.json`、`config/find-available-port.cjs`、`electron/main.ts`、`worktree-ports.ts`、`google-auth.ts`、`call-agent*.ts`、`.env.example`、`CLAUDE.md`、`AGENTS.md`、本文件 |
 | 2026-04-16 | **开发栈端口协商**：`find-available-port.cjs` + `allocateDevStackPorts`（`load-dev-server.cjs`）；`dev-web.mjs` / `electron-dev.mjs` 启动前分配 client+API、写 `.pp-dev-ports.json`；`isDevStackReady` 优先按该文件探测；`loadDevServerConfig` 在无对应环境变量时读文件（15min 内） | `config/find-available-port.cjs`、`config/load-dev-server.cjs`、`scripts/dev-web.mjs`、`scripts/electron-dev.mjs`、`.gitignore`、`CLAUDE.md`、本文件 |
+| 2026-04-15 | **供应商真实探测 CI**：`provider-test.env`（gitignore）+ `provider-test.env.example`；`scripts/provider-availability-smoke.ts` 调用 `probeSupplierLive`；`test:provider-smoke`；PR path 触发 `provider-availability-smoke.yml`（非 fork + Actions Secrets） | `scripts/provider-availability-smoke.ts`、`.github/workflows/provider-availability-smoke.yml`、`provider-test.env.example`、`.gitignore`、`package.json`、本文件 §F |
 
 （后续变更请继续追加表格行，勿删历史。）

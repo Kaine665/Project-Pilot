@@ -116,11 +116,11 @@ Closes #123
 
 ### 开发环境
 
-在 **`develop-static/`** 目录下（本仓库主应用）：
+在**仓库根目录**（本仓库主应用）：
 
 ```bash
 git clone https://github.com/YOUR_ORG/project-pilot.git
-cd project-pilot/develop-static
+cd project-pilot
 
 bun install
 
@@ -277,11 +277,11 @@ Closes #123
 
 ### Development setup
 
-From **`develop-static/`** (main app in this repo):
+From the **repository root** (main app in this repo):
 
 ```bash
 git clone https://github.com/YOUR_ORG/project-pilot.git
-cd project-pilot/develop-static
+cd project-pilot
 
 bun install
 bun run dev

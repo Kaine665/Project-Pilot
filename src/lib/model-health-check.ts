@@ -155,16 +155,17 @@ async function fetchModelsListOpenAiStyle(
   baseRoot: string,
   apiKey: string,
   listRelativePath?: string,
+  listAuth: 'API_KEY' | 'AUTH_TOKEN' = 'AUTH_TOKEN',
 ): Promise<ApiCallResult> {
   const url = buildOpenAiModelsListUrl(baseRoot, listRelativePath ?? 'v1/models');
+  const headers: Record<string, string> = { accept: 'application/json' };
+  if (listAuth === 'API_KEY') headers['x-api-key'] = apiKey;
+  else headers['authorization'] = `Bearer ${apiKey}`;
   const start = Date.now();
   try {
     const res = await fetch(url, {
       method: 'GET',
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        accept: 'application/json',
-      },
+      headers,
       signal: AbortSignal.timeout(LIST_PROBE_TIMEOUT_MS),
     });
     const latencyMs = Date.now() - start;
@@ -304,10 +305,12 @@ async function probeProviderOnce(
   // 聊天走 Anthropic 兼容、模型列表走 OpenAI 兼容（如 DeepSeek）
   if (preset.modelsListProtocol === 'openai') {
     const modelsBase = preset.modelsListBaseUrl || baseUrl;
+    const listAuth = provider === 'zhipu' ? 'API_KEY' : 'AUTH_TOKEN';
     const list = await fetchModelsListOpenAiStyle(
       modelsBase,
       apiKey,
       preset.modelsListRelativePath,
+      listAuth,
     );
     if (list.ok) return { kind: 'list_ok', latencyMs: list.latencyMs };
     const chat = await testAnthropicProtocol(baseUrl, firstModelId, apiKey, authMethod);

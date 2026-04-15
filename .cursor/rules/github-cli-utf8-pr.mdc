@@ -1,0 +1,33 @@
+---
+description: Windows 上 gh/GitHub API 提交含中文的 PR 标题/正文时避免乱码（UTF-8 陷阱）
+alwaysApply: true
+---
+
+# GitHub CLI / API 与非 ASCII 标题（Windows）
+
+## 现象
+
+在 **PowerShell** 中执行 `gh pr create --title "含中文的标题"` 或把中文放进 `gh api` 的请求体字符串时，终端常用 **系统代码页** 传参，GitHub 收到的是 **错误字节序列**，页面上会变成 **「鑱氬悎…」** 类乱码（典型为 UTF-8 被当成 Latin-1/CP1252 再解码）。
+
+`ConvertTo-Json` 等 PowerShell 管道若再经错误编码写出，同样会破坏 Unicode。
+
+## 正确做法（Agent 应优先采用）
+
+1. **纯英文标题**  
+   若无需中文，直接用 ASCII 标题，最省事、最稳。
+
+2. **必须用中文时：用 UTF-8 文件 + `gh api --input`**  
+   - 在工作区用编辑器写入 **UTF-8** 的 JSON，例如：  
+     `{"title":"fix(scope)：中文说明"}`  
+   - 执行：  
+     `gh api repos/<owner>/<repo>/pulls/<number> -X PATCH --input path/to/patch.json`  
+   - 创建 PR 时同理：把 `title`、`body` 放进 UTF-8 JSON，用 `gh api` POST `repos/.../pulls` 或 `gh pr create` 仅在使用 **ASCII** 标题时再用 `--title`。
+
+3. **不要用**  
+   - PowerShell 里直接拼很长中文的 `-e "..."` 给 **Node**，除非能 100% 确认脚本源文件本身是 UTF-8 且 shell 未改写。  
+   - 依赖 `ConvertTo-Json` 管道到 `gh` 传 **中文**（易二次编码错误）。
+
+## 小结
+
+**非 ASCII 的 PR 元数据 → 写入 UTF-8 文件 → `gh api ... --input <file>`。**  
+若用户未要求中文标题，默认用 **英文 Conventional 标题** 即可。

@@ -1272,11 +1272,19 @@ let aggregateModelsHttpCache: { at: number; data: AggregateLiveModelsResult } | 
 /** 全供应商聚合拉取成本高；短时缓存减轻多标签/设置页+聊天同时命中上游导致的限流 */
 const AGGREGATE_MODELS_HTTP_CACHE_MS = 180_000;
 const PROBE_SUPPLIER_HTTP_CACHE_MS = 180_000;
-const probeSupplierHttpCache = new Map<string, { at: number; row: Awaited<ReturnType<typeof probeSupplierLive>> }>();
+const probeSupplierHttpCache = new Map<
+  string,
+  { at: number; row: Awaited<ReturnType<typeof probeSupplierLive>>['row'] }
+>();
 
 app.get('/aggregate-models', async (c) => {
   const now = Date.now();
+  const bypassCache =
+    c.req.query('refresh') === '1' ||
+    c.req.query('nocache') === '1' ||
+    c.req.header('cache-control') === 'no-cache';
   if (
+    !bypassCache &&
     aggregateModelsHttpCache &&
     now - aggregateModelsHttpCache.at < AGGREGATE_MODELS_HTTP_CACHE_MS
   ) {
@@ -1290,7 +1298,13 @@ app.get('/aggregate-models', async (c) => {
 // ─── POST /probe-supplier — 单供应商可用性（输入框旁自动检测） ──
 
 app.post('/probe-supplier', async (c) => {
-  let body: { providerId?: string; apiKey?: string | null; ollamaBaseUrl?: string | null };
+  let body: {
+    providerId?: string;
+    apiKey?: string | null;
+    ollamaBaseUrl?: string | null;
+    /** 为 true 时在响应中附带 modelItems，供设置页单供应商刷新模型列表（不走 HTTP 缓存） */
+    includeModels?: boolean;
+  };
   try {
     body = await c.req.json();
   } catch {
@@ -1300,6 +1314,7 @@ app.post('/probe-supplier', async (c) => {
   if (!pid || typeof pid !== 'string') {
     return c.json({ ok: false, error: 'providerId required' }, 400);
   }
+  const includeModels = body.includeModels === true;
   // 供应商可用性探测缓存（2 分钟），避免前端频繁输入时重复命中上游 API。
   // key 不记录明文用途，仅在本进程内做短期去重。
   const keyApi = typeof body.apiKey === 'string'
@@ -1309,15 +1324,24 @@ app.post('/probe-supplier', async (c) => {
   const cacheKey = `${pid}|${keyApi}|${keyBase}`;
   const cached = probeSupplierHttpCache.get(cacheKey);
   const now = Date.now();
-  if (cached && now - cached.at < PROBE_SUPPLIER_HTTP_CACHE_MS) {
+  // 失败结果不应长期缓存：否则用户改 Key / 我们改默认域名后，前端仍拿到 3 分钟前的 error
+  if (
+    !includeModels &&
+    cached &&
+    cached.row.status === 'ok' &&
+    now - cached.at < PROBE_SUPPLIER_HTTP_CACHE_MS
+  ) {
     return c.json({ ok: true, row: cached.row });
   }
   try {
-    const row = await probeSupplierLive(pid, body.apiKey, {
+    const result = await probeSupplierLive(pid, body.apiKey, {
       ollamaBaseUrl: typeof body.ollamaBaseUrl === 'string' ? body.ollamaBaseUrl : undefined,
     });
-    probeSupplierHttpCache.set(cacheKey, { at: now, row });
-    return c.json({ ok: true, row });
+    probeSupplierHttpCache.set(cacheKey, { at: now, row: result.row });
+    if (includeModels) {
+      return c.json({ ok: true, row: result.row, modelItems: result.modelItems });
+    }
+    return c.json({ ok: true, row: result.row });
   } catch (err) {
     return c.json(
       {

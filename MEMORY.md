@@ -2,7 +2,7 @@
 
 > 本文件供 AI（Claude Code 等）进入项目时快速获取关键结论。不要写细节，只写「必须知道」的东西。
 
-> **多厂商入口与同步协议**（改路径/架构时请联动更新）：[`docs/AI_AGENT_KNOWLEDGE_MAP.md`](docs/AI_AGENT_KNOWLEDGE_MAP.md)。仓库根 [`AGENTS.md`](../AGENTS.md) 供 Cursor 等跳转。
+> **多厂商入口与同步协议**（改路径/架构时请联动更新）：[`docs/AI_AGENT_KNOWLEDGE_MAP.md`](docs/AI_AGENT_KNOWLEDGE_MAP.md)。仓库根 [`AGENTS.md`](AGENTS.md) 供 Cursor 等跳转。
 
 **产品定位（唯一口径）**：Builder 的 AI 工作台 — 让 AI 对项目越来越懂，而不是每次从零开始；覆盖 Builder 多维度工作（不止代码）。叙事为五模块飞轮（Memory → Loader → Runtime → Distiller → Dashboard）+ 六维度（工程 / 产品 / 设计 / 商业 / 增长 / 运营）+ Dashboard；详见 [`docs/design/product-direction-and-dashboard.md`](docs/design/product-direction-and-dashboard.md)，边界对照见 [`docs/design/product-boundary.md`](docs/design/product-boundary.md)。
 
@@ -48,7 +48,7 @@
 
 ## Cursor MCP（外部）
 
-- 仓库根 **`.cursor/mcp.json`** 启动 **`project-pilot`** stdio MCP：用 **`node`** + **`node_modules/tsx/dist/cli.mjs`**，并设 **`TSX_TSCONFIG_PATH=tsconfig.json`**（否则 `@/` 解析失败）。若应用仅在 **`develop-static/`** 子目录，路径前缀与 tsconfig 见 **[`docs/cursor-mcp-project-pilot.md`](docs/cursor-mcp-project-pilot.md)**。
+- 仓库根 **`.cursor/mcp.json`** 启动 **`project-pilot`** stdio MCP：用 **`node`** + **`node_modules/tsx/dist/cli.mjs`**，并设 **`TSX_TSCONFIG_PATH=tsconfig.json`**（否则 `@/` 解析失败）。若主应用被放在**子目录**（monorepo 常见），`args` 与 `TSX_TSCONFIG_PATH` 需加相对前缀，见 **[`docs/cursor-mcp-project-pilot.md`](docs/cursor-mcp-project-pilot.md)** 布局 B。
 
 ## 数据存储
 

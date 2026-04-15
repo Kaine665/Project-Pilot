@@ -13,7 +13,8 @@
       "editableBaseUrl": false,
       "editableModel": true,
       "apiKeyPlaceholder": "sk-ant-api03-...",
-      "useApiKeyForAuth": true
+      "useApiKeyForAuth": true,
+      "apiPortalUrl": "https://console.anthropic.com/settings/keys"
     },
     {
       "id": "openai",
@@ -53,7 +54,8 @@
       "extraEnv": {
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
         "API_TIMEOUT_MS": "600000"
-      }
+      },
+      "apiPortalUrl": "https://platform.deepseek.com/api_keys"
     },
     {
       "id": "qwen",
@@ -76,14 +78,19 @@
       "apiKeyPlaceholder": "sk-...",
       "extraEnv": {
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
-      }
+      },
+      "apiPortalUrl": "https://help.aliyun.com/zh/model-studio/get-api-key"
     },
     {
       "id": "zhipu",
+      "_comment": "聊天 Anthropic 兼容用 x-api-key；PaaS 模型列表 GET 亦用 x-api-key（勿用 Bearer）。可依次尝试 open.bigmodel / api.z.ai。",
       "nameKey": "settings.providers.zhipu",
       "baseUrl": "https://open.bigmodel.cn/api/anthropic",
       "openaiBaseUrl": "https://open.bigmodel.cn/api/paas/v4",
-      "candidateBaseUrls": ["https://open.bigmodel.cn/api/anthropic"],
+      "candidateBaseUrls": [
+        "https://open.bigmodel.cn/api/anthropic",
+        "https://api.z.ai/api/anthropic"
+      ],
       "modelsListBaseUrl": "https://open.bigmodel.cn/api/paas",
       "modelsListProtocol": "openai",
       "models": [
@@ -102,19 +109,22 @@
       "extraEnv": {
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
         "API_TIMEOUT_MS": "3000000"
-      }
+      },
+      "apiPortalUrl": "https://open.bigmodel.cn/dev/api"
     },
     {
       "id": "minimax",
+      "_comment": "国内控制台密钥常仅对 api.minimaxi.com 有效；默认 api.minimax.io 会 invalid api key。聊天探测用 x-api-key（见 aggregate-models-live 对 minimaxi 的实测）。未填自定义 Base URL 时按 candidateBaseUrls 依次探测。",
+      "authMethod": "API_KEY",
       "nameKey": "settings.providers.minimax",
-      "baseUrl": "https://api.minimax.io/anthropic",
-      "openaiBaseUrl": "https://api.minimax.io",
+      "baseUrl": "https://api.minimaxi.com/anthropic",
+      "openaiBaseUrl": "https://api.minimaxi.com",
       "candidateBaseUrls": [
-        "https://api.minimax.io/anthropic",
         "https://api.minimaxi.com/anthropic",
+        "https://api.minimax.io/anthropic",
         "https://api.minimax.chat/anthropic"
       ],
-      "modelsListBaseUrl": "https://api.minimax.io",
+      "modelsListBaseUrl": "https://api.minimaxi.com",
       "modelsListProtocol": "openai",
       "models": [
         { "id": "MiniMax-M2.7", "label": "MiniMax M2.7", "contextWindow": 204800 },
@@ -129,10 +139,10 @@
       "editableBaseUrl": true,
       "editableModel": true,
       "apiKeyPlaceholder": "your-minimax-api-key",
-      "useApiKeyForAuth": true,
       "extraEnv": {
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
-      }
+      },
+      "apiPortalUrl": "https://platform.minimaxi.com/document/guides/chat-model/chat"
     },
     {
       "id": "kimi",
@@ -157,7 +167,8 @@
       "extraEnv": {
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
         "ENABLE_TOOL_SEARCH": "FALSE"
-      }
+      },
+      "apiPortalUrl": "https://platform.moonshot.cn/docs/api/chat"
     },
     {
       "id": "moonshot",
@@ -179,7 +190,8 @@
       "apiKeyPlaceholder": "sk-...",
       "extraEnv": {
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
-      }
+      },
+      "apiPortalUrl": "https://platform.moonshot.cn/docs/api/chat"
     },
     {
       "id": "siliconflow",
@@ -198,7 +210,8 @@
       "authMethod": "API_KEY",
       "extraEnv": {
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
-      }
+      },
+      "apiPortalUrl": "https://docs.siliconflow.cn/cn/userguide/introduction"
     },
     {
       "id": "zenmux",
@@ -216,7 +229,8 @@
       "apiKeyPlaceholder": "sk-...",
       "extraEnv": {
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
-      }
+      },
+      "apiPortalUrl": "https://zenmux.ai/docs"
     },
     {
       "id": "volcengine",
@@ -232,7 +246,8 @@
       "apiKeyPlaceholder": "ARK API Key",
       "extraEnv": {
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
-      }
+      },
+      "apiPortalUrl": "https://www.volcengine.com/docs/82379/1216506"
     },
     {
       "id": "arkcoding",
@@ -248,7 +263,8 @@
       "apiKeyPlaceholder": "Coding Plan API Key",
       "extraEnv": {
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
-      }
+      },
+      "apiPortalUrl": "https://www.volcengine.com/docs/82379/1567538"
     },
     {
       "id": "openrouter",
@@ -268,7 +284,8 @@
       "apiKeyPlaceholder": "sk-or-v1-...",
       "extraEnv": {
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
-      }
+      },
+      "apiPortalUrl": "https://openrouter.ai/docs/quick-start"
     },
     {
       "id": "ollama",
