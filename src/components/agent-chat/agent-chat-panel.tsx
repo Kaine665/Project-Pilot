@@ -1381,7 +1381,7 @@ export function AgentChatPanel({
             message: messageToSend,
             sessionId: targetSessionId,
             projectKey: projectKey ?? undefined,
-            providerOverride: chatProvider,
+            providerOverride: chatProvider || undefined,
             modelOverride: chatModel || undefined,
             effortOverride: chatProvider === 'openai' ? chatEffort : undefined,
             fastModeOverride: chatProvider === 'openai' ? chatFastMode : undefined,
@@ -1390,7 +1390,7 @@ export function AgentChatPanel({
             config: (() => {
               const configWithModel = {
                 ...sessionConfig,
-                provider: chatProvider,
+                provider: chatProvider || undefined,
                 model: chatModel || undefined,
                 openaiReasoningEffort: chatProvider === 'openai' ? chatEffort : undefined,
                 openaiFastMode: chatProvider === 'openai' ? chatFastMode : undefined,
