@@ -32,7 +32,7 @@
 
 ## 改动范围
 
-- `develop-static/docs/领域与数据.md` §6
+- `docs/领域与数据.md` §6
 - 可能涉及 `src/types/index.ts`（如果决定改名）
 - 可能涉及 UI 文案
 

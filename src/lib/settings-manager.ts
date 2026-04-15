@@ -327,7 +327,7 @@ export function getProviderScopedBaseUrl(
  *
  * 第三方供应商（deepseek/qwen/zhipu/minimax/openrouter/ollama/custom）:
  *   - ANTHROPIC_BASE_URL: 从 preset 或用户自定义中取
- *   - ANTHROPIC_AUTH_TOKEN: 用 apiKey 注入（第三方用 auth token 而非 api key）
+ *   - ANTHROPIC_AUTH_TOKEN: 用 apiKey 注入（Bearer；多数第三方）
  *   - ANTHROPIC_API_KEY: 设为空字符串，防止 Claude CLI 回落到 Anthropic
  *   - 额外 env: 从 preset.extraEnv 注入（如 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC）
  *
@@ -366,7 +366,7 @@ export async function buildClaudeEnv(
       env.ANTHROPIC_BASE_URL = baseUrl;
     }
 
-    // Kimi、自定义 API_KEY 模式：用 ANTHROPIC_API_KEY；其他第三方用 AUTH_TOKEN。
+    // Kimi、registry authMethod=API_KEY / useApiKeyForAuth：用 ANTHROPIC_API_KEY（x-api-key，含 MiniMax 国内站）；其余第三方用 AUTH_TOKEN（Bearer）。
     // 必须强制覆盖（不检查 process.env），并删除对立变量，
     // 因为 Claude Code SDK 用 ?? 选择 token——空字符串不会穿透。
     if (cred.apiKey) {

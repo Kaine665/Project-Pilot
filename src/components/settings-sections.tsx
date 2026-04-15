@@ -9,7 +9,7 @@ import {
   Shield, Brain, Wrench, Check, X, Loader2, ExternalLink, Copy,
   Gauge, RotateCw, Eye, Sun, Moon, Monitor,
   Download, Upload, Trash2, FolderOpen, Info, Github, ShieldAlert,
-  Sparkles, Plus, Minus, Zap, Timer, Search, Star,
+  Sparkles, Plus, Minus, Zap, Timer, Search, Star, AlertCircle,
 } from 'lucide-react';
 import type { DangerCategory, DangerActionLevel, DangerDetectorSettings, TitleGenerationChainEntry } from '@/types';
 import { PROVIDER_REGISTRY, getProviderPreset } from '@/lib/provider-registry';
@@ -71,6 +71,8 @@ interface AIConfigSectionProps extends TranslationProps {
   /** 整次拉取失败时的可读原因（HTTP/JSON/服务端 fatalError） */
   aggregateLiveErrorDetail?: string;
   onRefreshAggregateLiveModels: () => void;
+  /** 单供应商：重新拉取模型列表并更新可用性（不走全量聚合） */
+  onRefreshSingleSupplier: (pid: ProviderId) => void;
   /** 从聚合模型列表选择模型（自动切换供应商） */
   onModelSelectFromAggregate: (pid: ProviderId, mid: string) => void;
 }
@@ -92,6 +94,7 @@ export function SettingsAISection({
   onSupplierTabProbes,
   aggregateLiveErrorDetail = '',
   onRefreshAggregateLiveModels,
+  onRefreshSingleSupplier,
   onProviderApiKeyChange,
   providerBaseUrls,
   onProviderBaseUrlChange,
@@ -99,6 +102,10 @@ export function SettingsAISection({
 }: AIConfigSectionProps) {
   const [aiPanel, setAiPanel] = useState<'supplier' | 'model'>('model');
   const [modelSearch, setModelSearch] = useState('');
+  const [supplierErrorDialog, setSupplierErrorDialog] = useState<{
+    title: string;
+    lines: string[];
+  } | null>(null);
 
   useEffect(() => {
     if (aiPanel !== 'supplier') return;
@@ -140,6 +147,105 @@ export function SettingsAISection({
     [supplierAvailability],
   );
 
+  /** 与卡片「已配置」徽标同源：输入框里已有内容即视为已填，勿再显示「未填写凭据」类文案 */
+  function isSupplierLocallyConfigured(pid: ProviderId): boolean {
+    if (pid === 'ollama') {
+      return !!(providerBaseUrls.ollama ?? '').trim();
+    }
+    return !!(providerApiKeys[pid] ?? '').trim();
+  }
+
+  type SupplierHeaderStatus =
+    | { kind: 'checking' }
+    | { kind: 'ok' }
+    | { kind: 'bad'; lines: string[] };
+
+  function resolveSupplierHeaderStatus(pid: ProviderId): SupplierHeaderStatus {
+    const probing = supplierProbeLoading[pid] === true;
+    const row = supplierProbeRow[pid] ?? availabilityById.get(pid);
+    if (probing) return { kind: 'checking' };
+    if (!row) {
+      if (listLoading) return { kind: 'checking' };
+      return { kind: 'bad', lines: [t('supplierAvailabilityUnknown')] };
+    }
+    if (row.status === 'ok') return { kind: 'ok' };
+    if (row.status === 'skipped') {
+      if (row.reasonKey === 'not_applicable') return { kind: 'ok' };
+      if (row.reasonKey === 'ollama_not_enabled') {
+        return { kind: 'bad', lines: [t('supplierAvailabilityReasons.ollama_not_enabled')] };
+      }
+      if (isSupplierLocallyConfigured(pid)) {
+        return { kind: 'bad', lines: [t('supplierStatusStaleHint')] };
+      }
+      return { kind: 'bad', lines: [t('supplierAvailabilityNotConfigured')] };
+    }
+    const rk = row.reasonKey ?? 'generic';
+    return { kind: 'bad', lines: [t(`supplierAvailabilityReasons.${rk}` as never)] };
+  }
+
+  function renderSupplierHeaderAvailability(
+    pid: ProviderId,
+    dialogTitle: string,
+    opts?: { showRefresh?: boolean },
+  ) {
+    const showRefresh = opts?.showRefresh !== false;
+    const st = resolveSupplierHeaderStatus(pid);
+    const openErrorDialog = () => {
+      if (st.kind !== 'bad') return;
+      setSupplierErrorDialog({ title: dialogTitle, lines: st.lines });
+    };
+
+    return (
+      <div className="mt-0.5 flex shrink-0 items-center gap-1">
+        {st.kind === 'bad' && (
+          <button
+            type="button"
+            onClick={openErrorDialog}
+            className="rounded-md p-1 text-amber-600 transition hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/40"
+            title={t('supplierViewErrorDetails')}
+            aria-label={t('supplierViewErrorDetails')}
+          >
+            <AlertCircle className="h-4 w-4 shrink-0" aria-hidden />
+          </button>
+        )}
+        <span
+          className={cn(
+            'flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium',
+            st.kind === 'ok' &&
+              'bg-green-50 text-green-600 dark:bg-green-900/20 dark:text-green-400',
+            st.kind === 'checking' &&
+              'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300',
+            st.kind === 'bad' &&
+              'bg-rose-50 text-rose-700 dark:bg-rose-950/35 dark:text-rose-300',
+          )}
+        >
+          {st.kind === 'checking' && (
+            <Loader2 className="h-3 w-3 shrink-0 animate-spin text-zinc-500" aria-hidden />
+          )}
+          {st.kind === 'ok' && <Check className="h-3 w-3 shrink-0" aria-hidden />}
+          {st.kind === 'bad' && <X className="h-3 w-3 shrink-0" aria-hidden />}
+          {st.kind === 'checking' ? t('supplierChecking') : st.kind === 'ok' ? t('supplierAvailable') : t('supplierUnavailable')}
+        </span>
+        {showRefresh && (
+          <button
+            type="button"
+            onClick={() => onRefreshSingleSupplier(pid)}
+            disabled={supplierProbeLoading[pid] === true}
+            className="rounded-md p-1 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 disabled:pointer-events-none disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+            title={t('supplierRefreshOne')}
+            aria-label={t('supplierRefreshOne')}
+          >
+            {supplierProbeLoading[pid] ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            ) : (
+              <RotateCw className="h-3.5 w-3.5" aria-hidden />
+            )}
+          </button>
+        )}
+      </div>
+    );
+  }
+
   function renderSupplierHealthLine(pid: ProviderId) {
     const probing = supplierProbeLoading[pid] === true;
     const row = supplierProbeRow[pid] ?? availabilityById.get(pid);
@@ -173,17 +279,18 @@ export function SettingsAISection({
           </p>
         );
       }
+      if (isSupplierLocallyConfigured(pid)) {
+        return null;
+      }
       return (
         <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">{t('supplierAvailabilityNotConfigured')}</p>
       );
     }
     if (row.status === 'ok') {
-      return (
-        <p className="mt-2 flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
-          <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />
-          {t('supplierAvailabilityOk')}
-        </p>
-      );
+      return null;
+    }
+    if (row.status === 'error' && isSupplierLocallyConfigured(pid)) {
+      return null;
     }
     const rk = row.reasonKey ?? 'generic';
     const reason = t(`supplierAvailabilityReasons.${rk}` as never);
@@ -200,6 +307,40 @@ export function SettingsAISection({
 
   return (
     <>
+      {supplierErrorDialog && (
+        <div
+          className="fixed inset-0 z-100 flex items-center justify-center bg-black/45 p-4"
+          role="presentation"
+          onClick={() => setSupplierErrorDialog(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="supplier-error-dialog-title"
+            className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-xl border border-zinc-200 bg-white p-5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3
+              id="supplier-error-dialog-title"
+              className="text-base font-semibold text-zinc-900 dark:text-zinc-100"
+            >
+              {t('supplierErrorDialogTitle')}
+            </h3>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{supplierErrorDialog.title}</p>
+            <div className="mt-4 space-y-2 rounded-lg bg-zinc-50 px-3 py-3 text-sm leading-relaxed text-zinc-800 dark:bg-zinc-950/60 dark:text-zinc-200">
+              {supplierErrorDialog.lines.map((line, i) => (
+                <p key={i}>{line}</p>
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">{t('supplierErrorDialogFooter')}</p>
+            <div className="mt-5 flex justify-end">
+              <Button type="button" variant="outline" size="sm" onClick={() => setSupplierErrorDialog(null)}>
+                {t('supplierErrorDialogClose')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="mb-6 border-b border-zinc-200 dark:border-zinc-800">
         <h2 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
           {t('modelAndSuppliersTitle')}
@@ -262,6 +403,8 @@ export function SettingsAISection({
               const keyVal = providerApiKeys[p.id as ProviderId] || '';
               const configured = !!keyVal.trim();
               const isOllama = p.id === 'ollama';
+              const showHeaderAvailability =
+                (!isOllama && configured) || (isOllama && isSupplierLocallyConfigured('ollama'));
               return (
                 <div
                   key={p.id}
@@ -269,19 +412,30 @@ export function SettingsAISection({
                 >
                   <div className="flex items-start gap-3 px-4 py-3.5">
                     <div className="min-w-0 flex-1">
-                      <div className="text-[15px] font-medium leading-snug text-zinc-900 dark:text-zinc-100">
-                        {t(`providers.${p.id}`)}
+                      <div className="flex flex-wrap items-center gap-1.5 text-[15px] font-medium leading-snug text-zinc-900 dark:text-zinc-100">
+                        <span>{t(`providers.${p.id}`)}</span>
+                        {p.apiPortalUrl ? (
+                          <a
+                            href={p.apiPortalUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex shrink-0 items-center rounded p-0.5 text-zinc-400 transition-colors hover:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-200"
+                            aria-label={t('providerApiPortalAria')}
+                            title={t('providerApiPortalAria')}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                          </a>
+                        ) : null}
                       </div>
                       <p className="mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                         {t(`providerHints.${p.id}`)}
                       </p>
                     </div>
-                    {configured && !isOllama && (
-                      <span className="mt-0.5 flex shrink-0 items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-medium text-green-600 dark:bg-green-900/20 dark:text-green-400">
-                        <Check className="h-3 w-3" />
-                        {t('supplierConfigured')}
-                      </span>
-                    )}
+                    {showHeaderAvailability &&
+                      renderSupplierHeaderAvailability(
+                        isOllama ? 'ollama' : (p.id as ProviderId),
+                        t(`providers.${p.id}`),
+                      )}
                   </div>
                   {isOllama ? (
                     <div className="border-t border-zinc-100 px-4 py-3 dark:border-zinc-800">
@@ -341,19 +495,27 @@ export function SettingsAISection({
                 >
                   <div className="flex items-start gap-3 px-4 py-3.5">
                     <div className="min-w-0 flex-1">
-                      <div className="text-[15px] font-medium leading-snug text-zinc-900 dark:text-zinc-100">
-                        {t(`providers.${p.id}`)}
+                      <div className="flex flex-wrap items-center gap-1.5 text-[15px] font-medium leading-snug text-zinc-900 dark:text-zinc-100">
+                        <span>{t(`providers.${p.id}`)}</span>
+                        {p.apiPortalUrl ? (
+                          <a
+                            href={p.apiPortalUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex shrink-0 items-center rounded p-0.5 text-zinc-400 transition-colors hover:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-200"
+                            aria-label={t('providerApiPortalAria')}
+                            title={t('providerApiPortalAria')}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                          </a>
+                        ) : null}
                       </div>
                       <p className="mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                         {t(`providerHints.${p.id}`)}
                       </p>
                     </div>
-                    {configured && (
-                      <span className="mt-0.5 flex shrink-0 items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-medium text-green-600 dark:bg-green-900/20 dark:text-green-400">
-                        <Check className="h-3 w-3" />
-                        {t('supplierConfigured')}
-                      </span>
-                    )}
+                    {configured &&
+                      renderSupplierHeaderAvailability(p.id as ProviderId, t(`providers.${p.id}`))}
                   </div>
                   <div className="border-t border-zinc-100 px-4 py-3 dark:border-zinc-800">
                     <Input
@@ -392,12 +554,11 @@ export function SettingsAISection({
                       {t(`providerHints.${builtInCustom.id}`)}
                     </p>
                   </div>
-                  {!!(providerApiKeys[builtInCustom.id as ProviderId] || '').trim() && (
-                    <span className="mt-0.5 flex shrink-0 items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-medium text-green-600 dark:bg-green-900/20 dark:text-green-400">
-                      <Check className="h-3 w-3" />
-                      {t('supplierConfigured')}
-                    </span>
-                  )}
+                  {!!(providerApiKeys[builtInCustom.id as ProviderId] || '').trim() &&
+                    renderSupplierHeaderAvailability(
+                      builtInCustom.id as ProviderId,
+                      t(`providers.${builtInCustom.id}`),
+                    )}
                 </div>
                 <div className="border-t border-zinc-100 px-4 py-3 dark:border-zinc-800">
                   <Input
@@ -432,12 +593,7 @@ export function SettingsAISection({
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
-                      {configured && (
-                        <span className="flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-medium text-green-600 dark:bg-green-900/20 dark:text-green-400">
-                          <Check className="h-3 w-3" />
-                          {t('supplierConfigured')}
-                        </span>
-                      )}
+                      {configured && renderSupplierHeaderAvailability(cp.id, cp.name)}
                       {onDeleteCustomProvider && (
                         <button
                           type="button"

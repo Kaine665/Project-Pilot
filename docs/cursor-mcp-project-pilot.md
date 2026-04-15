@@ -8,7 +8,7 @@
 
 `.cursor/mcp.json`
 
-（勿与 `develop-static/.gitignore` 所忽略的 **`develop-static/.mcp.json`** 混淆——若你使用带 `develop-static/` 子目录的派生布局，该文件用于可能含密钥的本地 MCP，默认不入库。）
+（勿与 `.gitignore` 所忽略的 **`.mcp.json`** 混淆——若你把主应用放在**子目录**（例如历史上曾用 `develop-static/`），该文件用于可能含密钥的本地 MCP，默认不入库。）
 
 ## 布局 A：官方仓库（应用与依赖在仓库根）
 
@@ -36,12 +36,12 @@ Cursor 对工作区 MCP 的 `args` 路径常以 **`${workspaceFolder}`** 为基�
 }
 ```
 
-## 布局 B：嵌套 `develop-static/`（应用只在子目录）
+## 布局 B：嵌套子目录（主应用在 monorepo 子包）
 
-若你以**外层 monorepo 根**打开 Cursor，而 Node 依赖与 `mcp-server` 在 **`develop-static/`** 下：
+若你以**外层 monorepo 根**打开 Cursor，而 Node 依赖与 `mcp-server` 在子目录 **`develop-static/`**（路径名可按你的仓库调整）下：
 
-- **`args`** 中凡相对仓库根的路径须加前缀 **`develop-static/`**（否则 Cursor 会解析到 **`仓库根/node_modules`**，找不到 `tsx`）。
-- **`TSX_TSCONFIG_PATH`** 设为 **`develop-static/tsconfig.json`**（相对仓库根）。
+- **`args`** 中凡相对**工作区根**的路径须加前缀 **`develop-static/`**（否则 Cursor 会解析到 **`仓库根/node_modules`**，找不到 `tsx`）。
+- **`TSX_TSCONFIG_PATH`** 设为 **`develop-static/tsconfig.json`**（相对工作区根）。
 
 ```json
 {
@@ -67,7 +67,7 @@ Cursor 对工作区 MCP 的 `args` 路径常以 **`${workspaceFolder}`** 为基�
 
 | 现象 | 可能原因 | 处理 |
 |------|----------|------|
-| `Cannot find module '...\Project-Pilot\node_modules\tsx\...'` 且实际装在子目录 | `args` 用了 `./node_modules/...`，被解析到错误根 | 布局 B：改为 `develop-static/node_modules/...` |
+| `Cannot find module '...\Project-Pilot\node_modules\tsx\...'` 且实际装在子目录 | `args` 用了 `./node_modules/...`，被解析到错误根 | 布局 B：改为 `develop-static/node_modules/...`（前缀与真实子目录名一致） |
 | `Cannot find module '@/lib/file-store'` | 未加载正确的 `tsconfig.json`，`@/*` 未解析 | 设置 `TSX_TSCONFIG_PATH`（见上表两布局） |
 | MCP 面板无 `project-pilot` | 打开的不是含 `.cursor/mcp.json` 的工作区根 | 用**含该文件的目录**作为 Cursor 文件夹 |
 | 不要用 `npm run mcp` 作为 Cursor 的启动命令 | npm 会把 `> project-pilot@...` 等打到 **stdout**，污染 MCP 的 JSON-RPC | 使用 `node` + `tsx/dist/cli.mjs`，或等价的无 npm 横幅启动方式 |

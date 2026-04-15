@@ -40,6 +40,8 @@ const ProviderEntrySchema = z.object({
   modelsListBaseUrl: z.string().url().optional(),
   modelsListProtocol: z.enum(['anthropic', 'openai']).optional(),
   modelsListRelativePath: z.string().min(1).optional(),
+  /** 设置页「申请 API / 文档与计费」外链；OAuth 或纯本地供应商不写 */
+  apiPortalUrl: z.string().url().optional(),
 });
 
 const FallbackRuleSchema = z.object({
@@ -137,6 +139,8 @@ export interface ProviderPreset {
   modelsListProtocol?: 'anthropic' | 'openai';
   /** OpenAI 式列表在 origin 下的路径段（默认 v1/models；DeepSeek 官方为 models） */
   modelsListRelativePath?: string;
+  /** 官方 API 文档或控制台（密钥/计费）；仅 API Key 类供应商配置 */
+  apiPortalUrl?: string;
 }
 
 // ─── 从 JSON 数据构建 PROVIDER_REGISTRY ─────────────────────────

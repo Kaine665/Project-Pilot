@@ -1,0 +1,53 @@
+# 当「供应商可用性 / 聚合探测 / 注册表」相关代码变更时，对真实上游跑一次 probeSupplierLive。
+# 需在仓库 Settings → Secrets and variables → Actions 中配置至少一个 PP_PROVIDER_TEST_*（与 provider-test.env.example 同名）。
+# Fork 发起的 PR 不注入 base 仓库 Secrets，本 job 跳过（避免假绿/误失败）。
+name: Provider availability smoke
+
+on:
+  pull_request:
+    paths:
+      - 'src/lib/aggregate-models-live.ts'
+      - 'src/server/routes/settings.ts'
+      - 'src/lib/settings-manager.ts'
+      - 'src/data/providers-registry.json'
+      - 'src/lib/provider-registry.ts'
+      - 'src/lib/model-health-check.ts'
+      - 'scripts/provider-availability-smoke.ts'
+      - 'provider-test.env.example'
+
+jobs:
+  smoke:
+    name: Real API probe (probeSupplierLive)
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.fork == false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run provider smoke (secrets → env)
+        env:
+          REQUIRE_PROVIDER_SMOKE: '1'
+          PP_PROVIDER_TEST_ANTHROPIC: ${{ secrets.PP_PROVIDER_TEST_ANTHROPIC }}
+          PP_PROVIDER_TEST_OPENAI: ${{ secrets.PP_PROVIDER_TEST_OPENAI }}
+          PP_PROVIDER_TEST_DEEPSEEK: ${{ secrets.PP_PROVIDER_TEST_DEEPSEEK }}
+          PP_PROVIDER_TEST_QWEN: ${{ secrets.PP_PROVIDER_TEST_QWEN }}
+          PP_PROVIDER_TEST_ZHIPU: ${{ secrets.PP_PROVIDER_TEST_ZHIPU }}
+          PP_PROVIDER_TEST_MINIMAX: ${{ secrets.PP_PROVIDER_TEST_MINIMAX }}
+          PP_PROVIDER_TEST_KIMI: ${{ secrets.PP_PROVIDER_TEST_KIMI }}
+          PP_PROVIDER_TEST_MOONSHOT: ${{ secrets.PP_PROVIDER_TEST_MOONSHOT }}
+          PP_PROVIDER_TEST_SILICONFLOW: ${{ secrets.PP_PROVIDER_TEST_SILICONFLOW }}
+          PP_PROVIDER_TEST_ZENMUX: ${{ secrets.PP_PROVIDER_TEST_ZENMUX }}
+          PP_PROVIDER_TEST_VOLCENGINE: ${{ secrets.PP_PROVIDER_TEST_VOLCENGINE }}
+          PP_PROVIDER_TEST_ARKCODING: ${{ secrets.PP_PROVIDER_TEST_ARKCODING }}
+          PP_PROVIDER_TEST_OPENROUTER: ${{ secrets.PP_PROVIDER_TEST_OPENROUTER }}
+          PP_PROVIDER_TEST_OLLAMA_BASE_URL: ${{ secrets.PP_PROVIDER_TEST_OLLAMA_BASE_URL }}
+          PP_PROVIDER_TEST_CUSTOM: ${{ secrets.PP_PROVIDER_TEST_CUSTOM }}
+        run: npm run test:provider-smoke

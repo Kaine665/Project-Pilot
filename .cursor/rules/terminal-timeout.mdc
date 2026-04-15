@@ -1,0 +1,23 @@
+---
+description: 终端命令沙箱限制与超时，避免文件操作被自动打断
+alwaysApply: true
+---
+
+# 终端命令：沙箱与超时
+
+## 根因：沙箱对路径的限制
+
+Cursor Agent 默认在沙箱中运行命令，**只能读写工作区目录**。当执行 `cp`、`Copy-Item` 等到**工作区外**的路径时，会被沙箱拦截，命令表现为「自动停了」。
+
+典型场景：复制到用户持久化目录（默认代码根常为 `~/.project-pilot/data/`；本机实际树见 `~/.project-pilot/数据文件夹现状.md`；分层说明见工作区根 `README.md` 锚点 `pp-data-directory`），源和目标都在工作区外 → 被拦截。
+
+## 已配置
+
+项目已添加 `.cursor/sandbox.json`，将 `~/.project-pilot` 和桌面加入可访问路径。若仍被拦截，检查：
+
+- **Settings > Agents > Protection**：`External-File Protection` 若开启，会阻止工作区外写入，可临时关闭或把命令加入 Allowlist
+- 命令失败时选择 **Add to allowlist**，下次可自动通过
+
+## 超时（次要）
+
+默认 30 秒超时。大文件复制时建议加 `timeout: 60000`。

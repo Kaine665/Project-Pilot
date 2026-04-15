@@ -10,6 +10,10 @@
       "env": {
         "TSX_TSCONFIG_PATH": "tsconfig.json"
       }
+    },
+    "paper": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://127.0.0.1:29979/mcp"]
     }
   }
 }

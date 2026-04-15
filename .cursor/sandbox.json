@@ -1,0 +1,13 @@
+{
+  "additionalReadwritePaths": [
+    "~/.project-pilot",
+    "/mnt/c/Users/17130/.project-pilot",
+    "C:\\Users\\17130\\.project-pilot"
+  ],
+  "additionalReadonlyPaths": [
+    "D:\\Desktop",
+    "/mnt/d/Desktop",
+    "~\\Desktop",
+    "C:\\Users\\17130\\Desktop"
+  ]
+}
