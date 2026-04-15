@@ -83,3 +83,9 @@ openclaw/
 
 # 本地 API 密钥测试文件（含明文密钥，绝不可提交）
 .api-test-keys.mjs
+
+# 各供应商本地测试用 Key（见 provider-test.env.example；勿提交明文）
+provider-test.env
+
+# 竞品
+/竞品/

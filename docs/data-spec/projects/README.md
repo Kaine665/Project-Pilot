@@ -105,7 +105,7 @@
 
 - **index.json**：项目注册表；每条项目用字段 **id**（即应用内的 project key），不要依赖已废弃的 per-project Flow JSON。
 
-仓库内完整说明见项目源码：develop-static/docs/data-spec/projects/README.md
+仓库内完整说明见项目源码：docs/data-spec/projects/README.md
 ```
 
 ---

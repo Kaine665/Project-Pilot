@@ -15,7 +15,7 @@ import { getAgentsPath, readJsonFile } from '@/lib/file-store';
 import type { AgentsData, Agent, AgentCapabilities } from '@/types';
 import { mergeAndRepairAgentsData } from '@/lib/agent-metadata-repair';
 
-/** develop-static 根目录（含 src/lib/call-agent.ts），与当前 Agent Bash cwd（常为业务仓库根）解耦 */
+/** 仓库根目录（含 src/lib/call-agent.ts），与当前 Agent Bash cwd（常为业务仓库根）解耦 */
 const PP_APP_CODE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
 export class AvailableAgentsLoader implements ResourceLoader {

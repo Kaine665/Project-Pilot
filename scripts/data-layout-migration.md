@@ -10,7 +10,7 @@
 2. 调用 **`ensureDataDirV2Migrated()`**（当前实现等价于：确保目录存在 + **`ensureProjectsMigrated()`**，合并 `projects/index.json` 与旧 `workflows/legacy-board/_index.json`（或 `workflows/flows/_index.json`）、根级 `projects.json` 等）。
 3. 运行 **`verifyLayout()`**：检查遗留 `chat/`、会话索引与 `messages/*.jsonl` 一致性等。
 
-**不再**在运行时自动执行：usage 迁入 config、worktree-ports 从 workflows 迁入、chat→sessions、todos 从 tasks、V2 扁平文件复制、知识树迁入 documents 等（相关一次性逻辑已从 `develop-static` 移除）。若磁盘上仍有这些遗留路径，需**手工**或使用自建脚本搬迁。
+**不再**在运行时自动执行：usage 迁入 config、worktree-ports 从 workflows 迁入、chat→sessions、todos 从 tasks、V2 扁平文件复制、知识树迁入 documents 等（相关一次性逻辑已从应用运行时移除）。若磁盘上仍有这些遗留路径，需**手工**或使用自建脚本搬迁。
 
 ## 验收标准（与 `verifyLayout` 一致）
 
@@ -34,7 +34,7 @@
 ## 执行方式
 
 ```bash
-cd develop-static
+# 在仓库根目录
 npx tsx scripts/run-layout-migrations.ts
 # 或指定目录：
 npx tsx scripts/run-layout-migrations.ts "D:\path\to\.project-pilot"

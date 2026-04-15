@@ -27,6 +27,7 @@
     "gen:dev-community": "node scripts/gen-community-dev-bulk.mjs",
     "patch:community-skills-sources": "node scripts/patch-community-skills-sources.mjs",
     "check:env": "node scripts/check-env.js",
+    "test:provider-smoke": "bun scripts/provider-availability-smoke.ts",
     "clean:desktop": "node scripts/clean-desktop-artifacts.js",
     "prepare:desktop-bundle": "node scripts/prepare-desktop-bundle.js",
     "preelectron:start": "npm run electron:compile",

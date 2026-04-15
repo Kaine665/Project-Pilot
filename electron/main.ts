@@ -21,7 +21,7 @@ const PACKAGED_EMBEDDED_PORT = 4287;
 let devMainLoadAttempts = 0;
 const DEV_MAIN_LOAD_MAX = 30;
 
-/** develop-static 根目录（main 编译在 electron/dist 下） */
+/** 仓库根目录（main 编译在 electron/dist 下） */
 const projectRoot = path.join(__dirname, '..', '..');
 
 /** 浏览器 OAuth 结束页可打开此 URL，将已运行的应用置前（须注册为协议客户端） */

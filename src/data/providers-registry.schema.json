@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "IDE 辅助；完整校验由 src/lib/provider-registry.ts 的 Zod 负责。",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "providers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "apiPortalUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "设置页供应商卡片：官方 API 文档或控制台（密钥/计费）。OAuth 或本地不写。"
+          }
+        }
+      }
+    }
+  }
+}
