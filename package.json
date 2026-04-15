@@ -31,7 +31,10 @@
     "clean:desktop": "node scripts/clean-desktop-artifacts.js",
     "prepare:desktop-bundle": "node scripts/prepare-desktop-bundle.js",
     "preelectron:start": "npm run electron:compile",
-    "electron:start": "electron ."
+    "electron:start": "electron .",
+    "site:dev": "npm run dev --prefix public-site",
+    "site:build": "npm run build --prefix public-site",
+    "site:preview": "npm run preview --prefix public-site"
   },
   "build": {
     "appId": "com.projectpilot.app",
