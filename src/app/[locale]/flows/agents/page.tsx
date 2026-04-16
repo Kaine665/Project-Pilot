@@ -73,6 +73,7 @@ import {
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { cn } from '@/lib/utils';
 import { dispatchWorkspaceImmersive } from '@/lib/workspace-immersive-bus';
+import { getProjectWorkMaterialsRelativePath } from '@/lib/project-work-materials-path';
 
 const WORKSPACE_UI_LS_PREFIX = 'pp.agentsWorkspaceUi.v1.';
 function workspaceUiLocalStorageKey(projectKey: string | null): string {
@@ -142,6 +143,9 @@ function formatAgentRuntimeCaption(agent: Agent): string {
 export default function AgentsPage() {
   const { projects, activeKey } = useProject();
   const t = useTranslations('agentsWorkspace');
+  /** 与 project-switcher 一致：单独 useTranslations('agentsWorkspace.workspace')，避免嵌套键解析失败 */
+  const tWorkspace = useTranslations('agentsWorkspace.workspace');
+  const tAgent = useTranslations('agentsWorkspace.agent');
   const tPresets = useTranslations('presets');
   const tActions = useTranslations('actions');
 
@@ -535,6 +539,12 @@ export default function AgentsPage() {
     const raw = entry?.path?.trim();
     return raw && raw.length > 0 ? raw : null;
   }, [effectiveProjectKey, projects]);
+
+  /** 数据根下 `projects/workspaces/<key>`，与 `agents/workspaces/<id>` 一样由应用分配 */
+  const projectWorkMaterialsRelativePath = useMemo(() => {
+    if (!effectiveProjectKey) return null;
+    return getProjectWorkMaterialsRelativePath(effectiveProjectKey);
+  }, [effectiveProjectKey]);
 
   const currentProject = useMemo(
     () => (activeKey ? projects.find((p) => p.key === activeKey) : undefined),
@@ -1422,7 +1432,7 @@ export default function AgentsPage() {
     const name = form.name.trim();
     if (!name) return;
     if (creating && !form.projectKey?.trim()) {
-      alert(t('agent.saveNeedsProject'));
+      alert(tAgent('saveNeedsProject'));
       return;
     }
     setSaving(true);
@@ -1466,9 +1476,9 @@ export default function AgentsPage() {
         } else {
           try {
             const err = await res.json() as { error?: string };
-            alert(t('agent.saveErrorWithReason', { reason: err.error ?? String(res.status) }));
+            alert(tAgent('saveErrorWithReason', { reason: err.error ?? String(res.status) }));
           } catch {
-            alert(t('agent.saveErrorWithReason', { reason: String(res.status) }));
+            alert(tAgent('saveErrorWithReason', { reason: String(res.status) }));
           }
         }
       } else if (selectedAgentId) {
@@ -1503,9 +1513,9 @@ export default function AgentsPage() {
         } else {
           try {
             const err = await res.json() as { error?: string };
-            alert(t('agent.saveErrorWithReason', { reason: err.error ?? String(res.status) }));
+            alert(tAgent('saveErrorWithReason', { reason: err.error ?? String(res.status) }));
           } catch {
-            alert(t('agent.saveErrorWithReason', { reason: String(res.status) }));
+            alert(tAgent('saveErrorWithReason', { reason: String(res.status) }));
           }
         }
       }
@@ -1515,7 +1525,7 @@ export default function AgentsPage() {
 
   const handleDelete = async (id: string) => {
     const agent = agents.find(a => a.id === id);
-    if (!confirm(t('agent.deleteConfirm', { name: agent?.name ?? id }))) return;
+    if (!confirm(tAgent('deleteConfirm', { name: agent?.name ?? id }))) return;
     try {
       const res = await fetch('/api/agents', {
         method: 'DELETE',
@@ -1563,7 +1573,7 @@ export default function AgentsPage() {
         const pkg = JSON.parse(text) as Record<string, unknown>;
         const importTargetKey = (activeKey?.trim() || projects[0]?.key || '').trim();
         if (!importTargetKey) {
-          alert(t('agent.importNeedsProject'));
+          alert(tAgent('importNeedsProject'));
           return;
         }
         const res = await fetch('/api/agents/import', {
@@ -1577,15 +1587,15 @@ export default function AgentsPage() {
           handleSelect(data.agent);
           setNewAgentModal('closed');
           const msg = data.contextsImported > 0
-            ? t('agent.importSuccessWithContexts', { name: data.agent.name, count: data.contextsImported })
-            : t('agent.importSuccess', { name: data.agent.name });
+            ? tAgent('importSuccessWithContexts', { name: data.agent.name, count: data.contextsImported })
+            : tAgent('importSuccess', { name: data.agent.name });
           alert(msg);
         } else {
           const err = await res.json() as { error?: string };
-          alert(t('agent.importErrorWithReason', { reason: err.error ?? String(res.status) }));
+          alert(tAgent('importErrorWithReason', { reason: err.error ?? String(res.status) }));
         }
       } catch {
-        alert(t('agent.importErrorInvalidFile'));
+        alert(tAgent('importErrorInvalidFile'));
       }
     };
     input.click();
@@ -1686,7 +1696,7 @@ export default function AgentsPage() {
   const workspaceTitle = activeSessionInfo?.title ?? t('session.new');
   const workspaceDisplayTitle = repairTextIfNeeded(workspaceTitle) ?? workspaceTitle;
   const workspaceAgentCapabilities = workspaceAgent?.capabilities ?? DEFAULT_AGENT_CAPABILITIES;
-  const workspaceAgentName = displayText(workspaceAgent?.name, t('workspace.defaultAgentName'));
+  const workspaceAgentName = displayText(workspaceAgent?.name, tWorkspace('defaultAgentName'));
   const workspaceAgentId = workspaceAgent?.id ?? 'agent-builtin-self-dev';
 
   const handleRailCapabilitiesUpdated = useCallback((next: AgentCapabilities) => {
@@ -1698,7 +1708,7 @@ export default function AgentsPage() {
   const workspaceAgentDataPath = `agents/workspaces/${workspaceAgentId}`;
   const workspaceAgentDescription = displayText(
     workspaceAgent?.description,
-    t('workspace.defaultAgentDescription', { agentName: workspaceAgentName }),
+    tWorkspace('defaultAgentDescription', { agentName: workspaceAgentName }),
   );
   const projectPromptLabel = effectiveProjectKey ? `${effectiveProjectKey}.md` : 'project-pilot.md';
   const projectPromptPath = effectiveProjectKey
@@ -2054,7 +2064,7 @@ export default function AgentsPage() {
         <button
           type="button"
           className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-          aria-label={t('workspace.closeOverlayAria')}
+          aria-label={tWorkspace('closeOverlayAria')}
           onClick={() => setMobileAgentsListOpen(false)}
         />
       )}
@@ -2083,7 +2093,7 @@ export default function AgentsPage() {
             <ProjectSwitcher variant="sidebar" />
           </div>
           <label className="sr-only" htmlFor="agents-sidebar-search">
-            {t('workspace.agentSearchPlaceholder')}
+            {tWorkspace('agentSearchPlaceholder')}
           </label>
           <div className="flex items-stretch gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-border/70 bg-background/95 px-3 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition-shadow focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/35 dark:border-border dark:bg-background/90 dark:shadow-[0_1px_2px_rgba(0,0,0,0.35)]">
@@ -2092,7 +2102,7 @@ export default function AgentsPage() {
                 id="agents-sidebar-search"
                 value={sessionQuery}
                 onChange={(e) => setSessionQuery(e.target.value)}
-                placeholder={t('workspace.agentSearchPlaceholder')}
+                placeholder={tWorkspace('agentSearchPlaceholder')}
                 className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/80"
               />
             </div>
@@ -2102,8 +2112,8 @@ export default function AgentsPage() {
                 onClick={() => setNewAgentMenuOpen((o) => !o)}
                 aria-haspopup="menu"
                 aria-expanded={newAgentMenuOpen}
-                aria-label={t('agent.newAgentMenuAria')}
-                title={t('agent.createButton')}
+                aria-label={tAgent('newAgentMenuAria')}
+                title={tAgent('createButton')}
                 className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/80 bg-background text-foreground/85 shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition-colors hover:border-border hover:bg-accent hover:text-foreground hover:shadow-sm dark:border-border dark:bg-background/95 dark:text-foreground/90 dark:shadow-[0_1px_2px_rgba(0,0,0,0.35)] dark:hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <Plus className="h-[18px] w-[18px]" strokeWidth={2.5} aria-hidden />
@@ -2121,7 +2131,7 @@ export default function AgentsPage() {
                       openNewAgentImportModal();
                     }}
                   >
-                    {t('agent.menuImportExternal')}
+                    {tAgent('menuImportExternal')}
                   </button>
                   <button
                     type="button"
@@ -2131,7 +2141,7 @@ export default function AgentsPage() {
                       openNewAgentManual();
                     }}
                   >
-                    {t('agent.menuManualEntry')}
+                    {tAgent('menuManualEntry')}
                   </button>
                   <button
                     type="button"
@@ -2141,7 +2151,7 @@ export default function AgentsPage() {
                       openNewAgentPresetPicker();
                     }}
                   >
-                    {t('agent.menuFromPreset')}
+                    {tAgent('menuFromPreset')}
                   </button>
                 </div>
               ) : null}
@@ -2154,7 +2164,7 @@ export default function AgentsPage() {
             <div className="rounded-xl border border-dashed border-border/80 bg-muted/35 px-4 py-12 text-center dark:bg-muted/20">
               <MessageSquare className="mx-auto mb-3 h-8 w-8 text-muted-foreground/55 dark:text-muted-foreground/50" aria-hidden />
               <p className="text-sm leading-snug text-muted-foreground">
-                {sessionQuery ? t('workspace.agentSearchEmpty') : t('picker.empty')}
+                {sessionQuery ? tWorkspace('agentSearchEmpty') : t('picker.empty')}
               </p>
             </div>
           ) : (
@@ -2225,7 +2235,7 @@ export default function AgentsPage() {
                                 className="flex min-w-0 items-start gap-1.5 text-[13px] leading-snug text-muted-foreground/95 dark:text-muted-foreground"
                                 title={displayText(
                                   agent.description?.trim() ? agent.description : undefined,
-                                  t('workspace.defaultAgentDescription', { agentName: agent.name }),
+                                  tWorkspace('defaultAgentDescription', { agentName: agent.name }),
                                 )}
                               >
                                 {hasRunning && (
@@ -2237,7 +2247,7 @@ export default function AgentsPage() {
                                 <span className="line-clamp-2 min-w-0 flex-1 break-words leading-snug">
                                   {displayText(
                                     agent.description?.trim() ? agent.description : undefined,
-                                    t('workspace.defaultAgentDescription', { agentName: agent.name }),
+                                    tWorkspace('defaultAgentDescription', { agentName: agent.name }),
                                   )}
                                 </span>
                               </div>
@@ -2303,7 +2313,7 @@ export default function AgentsPage() {
                                     )}
                                   >
                                     <MessageSquare className="h-3 w-3 shrink-0 text-primary/60" aria-hidden />
-                                    <span className="min-w-0 flex-1 truncate italic">{t('workspace.draftSessionLabel')}</span>
+                                    <span className="min-w-0 flex-1 truncate italic">{tWorkspace('draftSessionLabel')}</span>
                                   </button>
                                 );
                               })}
@@ -2339,7 +2349,7 @@ export default function AgentsPage() {
                                     )}
                                   >
                                     <MessageSquare className="h-3 w-3 shrink-0 text-primary/60" aria-hidden />
-                                    <span className="min-w-0 flex-1 truncate italic">{t('workspace.draftSessionLabel')}</span>
+                                    <span className="min-w-0 flex-1 truncate italic">{tWorkspace('draftSessionLabel')}</span>
                                   </button>
                                 );
                               })}
@@ -2414,7 +2424,7 @@ export default function AgentsPage() {
                                         onClick={() => handleSessionClick(session)}
                                         onContextMenu={(e) => handleSessionContextMenu(e, session)}
                                         onMouseDown={(e) => handleSessionRowMouseDown(e, session)}
-                                        title={displayText(session.title, t('workspace.sessionFallbackTitle'))}
+                                        title={displayText(session.title, tWorkspace('sessionFallbackTitle'))}
                                       >
                                         {session.pinned ? (
                                           <Pin className="h-3 w-3 shrink-0 text-primary" aria-hidden />
@@ -2422,7 +2432,7 @@ export default function AgentsPage() {
                                           <Clock className="h-3 w-3 shrink-0" aria-hidden />
                                         )}
                                         <span className="min-w-0 flex-1 truncate">
-                                          {displayText(session.title, t('workspace.sessionFallbackTitle'))}
+                                          {displayText(session.title, tWorkspace('sessionFallbackTitle'))}
                                         </span>
                                         {(session.unreadCount ?? 0) > 0 && (
                                           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
@@ -2468,7 +2478,7 @@ export default function AgentsPage() {
             <div
               role="separator"
               aria-orientation="vertical"
-              aria-label={t('workspace.resizeAgentListAria')}
+              aria-label={tWorkspace('resizeAgentListAria')}
               onPointerDown={onAgentListResizePointerDown}
               onPointerMove={onAgentListResizePointerMove}
               onPointerUp={onAgentListResizePointerUp}
@@ -2563,12 +2573,12 @@ export default function AgentsPage() {
                 type="button"
                 role="menuitem"
                 className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/80"
-                title={t('workspace.sessionTabCloseTitle')}
+                title={tWorkspace('sessionTabCloseTitle')}
                 onClick={() =>
                   handleRemoveDraftFromOpenedList(sessionContextMenu.key, sessionContextMenu.agentId)}
               >
                 <X className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                {t('workspace.sessionTabCloseLabel')}
+                {tWorkspace('sessionTabCloseLabel')}
               </button>
             )}
           </div>
@@ -2619,13 +2629,13 @@ export default function AgentsPage() {
                       <span className="truncate text-base font-semibold tracking-tight text-foreground">{selectedAgent.name}</span>
                       {selectedAgent.builtIn && (
                         <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                          {t('agent.builtInBadge')}
+                          {tAgent('builtInBadge')}
                         </span>
                       )}
                     </div>
                     <div className="mt-1 truncate font-mono text-xs text-muted-foreground">{selectedAgent.id}</div>
                     <div className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                      {selectedAgent.description || t('workspace.defaultAgentDescription', { agentName: selectedAgent.name })}
+                      {selectedAgent.description || tWorkspace('defaultAgentDescription', { agentName: selectedAgent.name })}
                     </div>
                   </div>
                 </div>
@@ -2634,7 +2644,7 @@ export default function AgentsPage() {
                     type="button"
                     onClick={() => setMobileAgentsListOpen(true)}
                     className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
-                    aria-label={t('workspace.openAgentListAria')}
+                    aria-label={tWorkspace('openAgentListAria')}
                   >
                     <PanelLeft className="h-4 w-4" aria-hidden />
                   </button>
@@ -2644,15 +2654,15 @@ export default function AgentsPage() {
                     aria-expanded={mobileWorkspaceRailOpen}
                     aria-controls="agents-workspace-rail-aside"
                     className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
-                    aria-label={t('workspace.openWorkspaceRailAria')}
+                    aria-label={tWorkspace('openWorkspaceRailAria')}
                   >
                     <PanelRight className="h-4 w-4" aria-hidden />
                   </button>
                   <button
                     type="button"
                     className="hidden rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:inline-flex"
-                    title={t('workspace.more')}
-                    aria-label={t('workspace.more')}
+                    title={tWorkspace('more')}
+                    aria-label={tWorkspace('more')}
                   >
                     <Ellipsis className="h-4 w-4" aria-hidden />
                   </button>
@@ -2663,8 +2673,8 @@ export default function AgentsPage() {
                       'hidden rounded-lg p-2 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:inline-flex',
                       workspaceRailVisible ? 'text-foreground' : 'text-muted-foreground',
                     )}
-                    title={t('workspace.toggleSidebar')}
-                    aria-label={t('workspace.toggleSidebar')}
+                    title={tWorkspace('toggleSidebar')}
+                    aria-label={tWorkspace('toggleSidebar')}
                     aria-pressed={workspaceRailVisible}
                   >
                     <PanelRight className="h-4 w-4" aria-hidden />
@@ -2734,7 +2744,7 @@ export default function AgentsPage() {
                           type="button"
                           onClick={() => setMobileAgentsListOpen(true)}
                           className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground shadow-sm transition-colors hover:bg-muted/80 lg:hidden"
-                          aria-label={t('workspace.openAgentListAria')}
+                          aria-label={tWorkspace('openAgentListAria')}
                         >
                           <PanelLeft className="h-4 w-4" aria-hidden />
                         </button>
@@ -2745,7 +2755,7 @@ export default function AgentsPage() {
                             </span>
                             {activeWorkspaceAgent.builtIn ? (
                               <span className="shrink-0 rounded-md border border-border/80 bg-muted/60 px-2 py-0.5 text-[11px] font-semibold tracking-wide text-muted-foreground dark:border-border">
-                                {t('agent.builtInBadge')}
+                                {tAgent('builtInBadge')}
                               </span>
                             ) : null}
                           </div>
@@ -2763,7 +2773,7 @@ export default function AgentsPage() {
                           aria-expanded={mobileWorkspaceRailOpen}
                           aria-controls="agents-workspace-rail-aside"
                           className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-transparent text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:hidden"
-                          aria-label={t('workspace.openWorkspaceRailAria')}
+                          aria-label={tWorkspace('openWorkspaceRailAria')}
                         >
                           <PanelRight className="h-4 w-4" aria-hidden />
                         </button>
@@ -2773,13 +2783,13 @@ export default function AgentsPage() {
                           className="inline-flex items-center gap-1.5 rounded-md bg-transparent px-3 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:bg-accent dark:border-border"
                         >
                           <Settings className="h-3.5 w-3.5" />
-                          {t('workspace.configureAgent')}
+                          {tWorkspace('configureAgent')}
                         </button>
                         <button
                           type="button"
                           className="hidden h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:inline-flex"
-                          title={t('workspace.more')}
-                          aria-label={t('workspace.more')}
+                          title={tWorkspace('more')}
+                          aria-label={tWorkspace('more')}
                         >
                           <Ellipsis className="h-4 w-4" aria-hidden />
                         </button>
@@ -2790,8 +2800,8 @@ export default function AgentsPage() {
                             'hidden h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-foreground lg:inline-flex',
                             workspaceRailVisible ? 'text-foreground' : 'text-muted-foreground',
                           )}
-                          title={t('workspace.toggleSidebar')}
-                          aria-label={t('workspace.toggleSidebar')}
+                          title={tWorkspace('toggleSidebar')}
+                          aria-label={tWorkspace('toggleSidebar')}
                           aria-pressed={workspaceRailVisible}
                         >
                           <PanelRight className="h-4 w-4" aria-hidden />
@@ -2830,7 +2840,7 @@ export default function AgentsPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/90 text-muted-foreground ring-1 ring-border/60 dark:bg-muted/50">
                   <Bot className="h-7 w-7 opacity-90" />
                 </div>
-                <p className="max-w-sm text-sm leading-relaxed text-muted-foreground/95">{t('workspace.noAgentsInWorkspace')}</p>
+                <p className="max-w-sm text-sm leading-relaxed text-muted-foreground/95">{tWorkspace('noAgentsInWorkspace')}</p>
               </div>
             )}
           </div>
@@ -3057,7 +3067,7 @@ export default function AgentsPage() {
           <button
             type="button"
             className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-            aria-label={t('workspace.closeOverlayAria')}
+            aria-label={tWorkspace('closeOverlayAria')}
             onClick={() => setMobileWorkspaceRailOpen(false)}
           />
         )}
@@ -3079,7 +3089,7 @@ export default function AgentsPage() {
             <div
               role="separator"
               aria-orientation="vertical"
-              aria-label={t('workspace.resizeWorkspaceRailAria')}
+              aria-label={tWorkspace('resizeWorkspaceRailAria')}
               onPointerDown={onWorkspaceRailResizePointerDown}
               onPointerMove={onWorkspaceRailResizePointerMove}
               onPointerUp={onWorkspaceRailResizePointerUp}
@@ -3092,6 +3102,7 @@ export default function AgentsPage() {
           ) : null}
           <AgentsWorkspaceRail
             projectRootPath={projectRootPath}
+            projectWorkMaterialsRelativePath={projectWorkMaterialsRelativePath}
             workspaceAgentDataPath={workspaceAgentDataPath}
             promptStackItems={promptStackItems}
             promptStackKey={promptStackItems.map((item) => `${item.scope}:${item.label}:${item.path}`).join('|')}
@@ -3122,7 +3133,7 @@ export default function AgentsPage() {
           >
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <h2 id="new-agent-import-title" className="text-sm font-semibold">
-                {t('agent.modalImportTitle')}
+                {tAgent('modalImportTitle')}
               </h2>
               <button
                 type="button"
@@ -3134,14 +3145,14 @@ export default function AgentsPage() {
               </button>
             </div>
             <div className="space-y-4 px-4 py-4">
-              <p className="text-sm leading-relaxed text-muted-foreground">{t('agent.modalImportDescription')}</p>
+              <p className="text-sm leading-relaxed text-muted-foreground">{tAgent('modalImportDescription')}</p>
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => runAgentPackageImportFilePicker()}
                   className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                 >
-                  {t('agent.modalImportChooseFile')}
+                  {tAgent('modalImportChooseFile')}
                 </button>
                 <button
                   type="button"
@@ -3173,7 +3184,7 @@ export default function AgentsPage() {
           >
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <h2 id="new-agent-preset-title" className="text-sm font-semibold">
-                {t('agent.modalPresetTitle')}
+                {tAgent('modalPresetTitle')}
               </h2>
               <button
                 type="button"
@@ -3185,18 +3196,18 @@ export default function AgentsPage() {
               </button>
             </div>
             <p className="border-b border-border/60 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-              {t('agent.modalPresetDescription')}
+              {tAgent('modalPresetDescription')}
             </p>
             <div className="min-h-0 flex-1 overflow-y-auto p-2">
               {agentPresets.length === 0 ? (
                 <div className="px-2 py-8 text-center text-sm text-muted-foreground">
-                  <p>{t('agent.modalPresetEmpty')}</p>
+                  <p>{tAgent('modalPresetEmpty')}</p>
                   <Link
                     href="/workspace/presets"
                     className="mt-3 inline-block text-sm font-medium text-primary underline-offset-2 hover:underline"
                     onClick={() => setNewAgentModal('closed')}
                   >
-                    {t('agent.modalPresetManage')}
+                    {tAgent('modalPresetManage')}
                   </Link>
                 </div>
               ) : (
@@ -3240,7 +3251,7 @@ export default function AgentsPage() {
           >
             <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
               <h2 id="new-agent-create-title" className="text-sm font-semibold">
-                {t('agent.modalCreateTitle')}
+                {tAgent('modalCreateTitle')}
               </h2>
               <button
                 type="button"
@@ -3278,11 +3289,11 @@ export default function AgentsPage() {
               ) : (
                 <div className="flex h-full min-h-[320px] flex-col overflow-hidden">
                   <p className="shrink-0 border-b border-border/60 bg-muted/20 px-4 py-2.5 text-center text-[11px] leading-relaxed text-muted-foreground">
-                    {t('workspace.createAgentPresetHintBefore')}
+                    {tWorkspace('createAgentPresetHintBefore')}
                     <Link href="/workspace/presets" className="mx-0.5 font-medium text-primary underline-offset-2 hover:underline">
                       {tPresets('title')}
                     </Link>
-                    {t('workspace.createAgentPresetHintAfter')}
+                    {tWorkspace('createAgentPresetHintAfter')}
                   </p>
                   <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
                     <SettingsForm

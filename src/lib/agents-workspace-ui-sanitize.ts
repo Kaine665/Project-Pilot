@@ -4,7 +4,7 @@
 
 import { listAgents } from '@/lib/agents-store';
 import { listAllSessions } from '@/lib/chat-managers/agent-chat-session-store';
-import { isValidSessionId } from '@/lib/security';
+import { isValidSessionId } from '@/lib/security-validation';
 import type {
   AgentsWorkspaceActivePersist,
   AgentsWorkspacePerAgentFocusPersist,

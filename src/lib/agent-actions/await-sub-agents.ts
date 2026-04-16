@@ -10,6 +10,7 @@
  */
 
 import { subAgentWatcher, WATCHER_DEFAULT_TIMEOUT_MS } from '@/lib/chat-managers/sub-agent-watcher';
+import { PROMPT_PRIORITY } from '@/lib/prompt-priorities';
 import type { AgentAction, ActionContext } from './types';
 
 // ── Parsed tag data ──
@@ -30,7 +31,7 @@ export const awaitSubAgentsAction: AgentAction<AwaitSubAgentsTagData> = {
   id: 'await-sub-agents',
   resourceType: 'await-sub-agents-instructions',
   sectionTitle: 'Sub Agent 等待',
-  priority: 10, // Execute early — must register watcher before finalizeRun checks the flag
+  priority: PROMPT_PRIORITY.AWAIT_SUB_AGENTS_INSTRUCTIONS, // Execute early — must register watcher before finalizeRun checks the flag
 
   // No instructions injected into prompt — this is an internal mechanism,
   // the agent prompt (self-dev etc.) already knows to use this tag via its own docs.

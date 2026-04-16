@@ -7,6 +7,7 @@ import { assertDocumentTextWritable } from '@/lib/document-text-write-guard';
 import { getDocumentContentPath, getDocumentsContentDir } from '@/lib/file-store';
 import { readDocsIndexFromDocuments, saveDocsIndexToDocuments } from '@/lib/documents-store';
 import type { DocEntry } from '@/types';
+import { PROMPT_PRIORITY } from '@/lib/prompt-priorities';
 import type { AgentAction, ActionContext } from './types';
 
 // ── Parsed tag data ──
@@ -26,7 +27,7 @@ export const saveDocAction: AgentAction<DocTagData> = {
   id: 'save-doc',
   resourceType: 'doc-save-instructions',
   sectionTitle: '设计文档保存',
-  priority: 85,
+  priority: PROMPT_PRIORITY.DOC_SAVE_OR_CHECKPOINT,
 
   instructions: `当你在工作中产出了**设计决策、架构约束、规范文档**等需要长期遵守的内容时，你可以将其保存为项目设计文档。系统会自动将其保存到对应项目下，供所有 Agent 按需读取：
 

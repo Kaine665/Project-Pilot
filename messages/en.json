@@ -897,7 +897,10 @@
     },
     "repoWorkspace": {
       "title": "Project workspace",
-      "empty": "No local path is set for this project. Add a folder path in Project / Flow project settings."
+      "empty": "No project selected. Pick one in the sidebar or Project management. “Work materials” is allocated automatically under the data root at projects/workspaces/<projectKey>/ (like agents/workspaces/<agentId>/).",
+      "codeSection": "Code repository",
+      "workSection": "Work materials",
+      "workFolderUnset": "Work materials live under projects/workspaces/ in the data root; the folder is created on first open."
     },
     "projectWorkspace": {
       "title": "Agent data workspace",
