@@ -497,7 +497,10 @@ function createMainWindow() {
 // ── 启动流程 ──────────────────────────────────────────
 app.whenReady().then(async () => {
   if (isDev) {
+    // 开发：BrowserWindow 加载独立 Vite（clientLoadOrigin）；API 由 Vite 代理到 Hono。
+    // 端口来自 config/load-dev-server.cjs（ELECTRON_DEV 时优先 .pp-dev-ports.json），与 scripts/electron-dev.mjs 注入的 env 对齐。
     const devCfg = loadDevConfig();
+    // 与 windowLoadOrigin 同源；prod 下 serverPort 才是内嵌 Hono 监听端口（见 else 分支）。
     serverPort = devCfg.clientPort;
     windowLoadOrigin = devCfg.clientLoadOrigin;
     createMainWindow();
@@ -507,6 +510,7 @@ app.whenReady().then(async () => {
     return;
   }
 
+  // 生产：内嵌 Hono 子进程在 electron/server.ts 中显式设置 PORT，与 findAvailablePort 结果一致；不读 dev-server.json / .pp-dev-ports.json。
   let splash: BrowserWindow | null = null;
 
   try {

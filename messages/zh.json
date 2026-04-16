@@ -23,7 +23,6 @@
     "taskTriggers": "任务触发",
     "schedules": "定时运行",
     "tasks": "任务",
-    "tasksHubSubtitle": "待办、事件触发与定时运行集中在一处。",
     "tasksNavAria": "任务子页面",
     "mcp": "MCP",
     "artifacts": "产物",
@@ -942,6 +941,10 @@
           "labelWithTitle": "{title}（运行时）",
           "description": "会话启动后将生成 runtime prompt 副本。",
           "descriptionActive": "当前会话的运行时提示词副本与瞬时记忆状态。"
+        },
+        "resolved": {
+          "label": "合并 System 提示词",
+          "description": "由全局、项目、Agent、会话配置与技能等资源合并后的 System 提示词（系统侧注入）。不包含多轮对话历史，也不包含当前用户输入；与 API 中的 system/instructions 侧一致，不是整段聊天内容。"
         }
       }
     },

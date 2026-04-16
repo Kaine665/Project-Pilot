@@ -36,6 +36,7 @@ import '@/lib/agent-actions';    // side-effect: registers actions + their loade
 import { actionRegistry } from '@/lib/agent-actions';
 import { estimateTokens } from '@/lib/token-estimate';
 import { appendLocalAgentSdkToolingNotice } from '@/lib/agent-provider-capabilities';
+import { appendAgentWorkspacePathNotice } from '@/lib/agent-provider-workspace-notice';
 import { CALLABLE_AGENTS_RESOURCE_REF, migrateAgentToResources } from '@/lib/resource-migration';
 import { updateAgentStatus } from '@/lib/agents-store';
 import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
@@ -1433,7 +1434,8 @@ async function buildResourcePrompt(
 
   const resolvedResources = await resourceRegistry.resolveAll(allRefs, ctx);
   const formatted = resourceRegistry.formatAsPrompt(resolvedResources);
-  return appendLocalAgentSdkToolingNotice(formatted, effectiveCaps);
+  const withSdkNotice = appendLocalAgentSdkToolingNotice(formatted, effectiveCaps);
+  return appendAgentWorkspacePathNotice(withSdkNotice, agent.id, effectiveCaps);
 }
 
 // ── Prompt Builders (powered by Resource Registry) ──
@@ -1515,8 +1517,9 @@ async function buildGuestAgentPrompt(
 // ── Prompt Preview ──
 
 /**
- * 构建 Agent 的完整系统提示词（不含用户消息），返回字符数和估算 token 数。
- * 供 /api/agent-chat/prompt-info 端点调用，用于在 UI 中展示提示词大小。
+ * 构建发往模型的 **System 提示词**（`buildResourcePrompt`：资源合并 + 运行时说明等）。
+ * **不含**多轮对话历史，也**不含**单轮用户消息包装（见 `buildAgentChatPrompt`）。
+ * 供 /api/agent-chat/prompt-info 端点调用，用于 UI 展示与体积估算。
  *
  * @param agentId    Agent ID
  * @param sessionId  会话 ID（可选，用于运行时提示词副本路径）
@@ -1528,13 +1531,20 @@ export async function buildPromptPreview(
   sessionId?: string,
   projectKey?: string,
   config?: import('@/types/agent-chat').SessionConfig,
-): Promise<{ charCount: number; estimatedTokens: number }> {
+  options?: { includeText?: boolean },
+): Promise<{ charCount: number; estimatedTokens: number; text?: string }> {
   const agent = await loadAgent(agentId);
-  const promptText = await buildResourcePrompt(agent, undefined, config, sessionId, projectKey);
-  return {
-    charCount: promptText.length,
-    estimatedTokens: estimateTokens(promptText),
-  };
+  let promptText = await buildResourcePrompt(agent, undefined, config, sessionId, projectKey);
+  const charCount = promptText.length;
+  const estimatedTokens = estimateTokens(promptText);
+  if (options?.includeText) {
+    if (!promptText.trim()) {
+      promptText =
+        '[ProjectPilot] 合并后的 System 提示词长度为 0（异常）。请检查：资源加载器是否注册、global/project/agent 提示是否可读，或查看服务端日志中的 ResourceRegistry 警告。（本预览不含对话历史与用户消息。）';
+    }
+    return { charCount, estimatedTokens, text: promptText };
+  }
+  return { charCount, estimatedTokens };
 }
 
 // ── Singleton ──

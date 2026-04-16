@@ -3,13 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslations } from '@/client/i18n/use-translations';
 import type { LucideIcon } from 'lucide-react';
-import { Bot, Folder, FolderOpen, Globe, Layers, ListTodo, Package } from 'lucide-react';
+import { Bot, ChevronDown, ChevronRight, Folder, FolderOpen, Globe, Layers, ListTodo, Package } from 'lucide-react';
 import { AgentsRailPanelFrame } from '@/components/agents-rail-panel-frame';
 import { FolderExplorerPanel } from '@/components/folder-explorer-panel';
 import { AgentSessionPromptStack, type PromptStackSeedItem } from '@/components/agent-session-prompt-stack';
 import { AgentsWorkspaceSimpleBrowser } from '@/components/agents-workspace-simple-browser';
 import { ArtifactsPanelBody, type ArtifactsPanelPayload } from '@/components/agent-chat/artifacts-panel';
 import { useMediaQuery } from '@/hooks/use-media-query';
+import {
+  readAgentsRailDetailPanelFractions,
+  writeAgentsRailDetailPanelFractions,
+} from '@/lib/agents-workspace-ui-shared';
 import { cn } from '@/lib/utils';
 import type { AgentCapabilities } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
@@ -38,6 +42,10 @@ export interface AgentsWorkspaceRailProps {
 
 const NUM_TABS = 6;
 const ACTIVE_TAB_KEY = 'pp.agentsRail.activeTab';
+/** 桌面「Agent 数据 / 提示词 / 能力」竖向分栏：各段是否收起 `[数据, 提示词, 能力]` */
+const DETAIL_PANELS_COLLAPSED_KEY = 'pp.agentsRail.detailPanelsCollapsed.v1';
+
+const DETAIL_PANEL_MIN_PX = 72;
 
 /** 一级活动栏外宽 52px；水平内边距 `px-1.5`；图标钮 `w-10` 与左侧迷你栏按钮同宽 */
 const ACTIVITY_BAR_WIDTH_CLASS = 'w-[52px]';
@@ -61,6 +69,18 @@ function initialLastDetailTabIndex(): number {
   return s >= 1 && s <= 3 ? s : 1;
 }
 
+function readDetailPanelsCollapsed(): [boolean, boolean, boolean] {
+  try {
+    const raw = localStorage.getItem(DETAIL_PANELS_COLLAPSED_KEY);
+    if (!raw) return [false, false, false];
+    const a = JSON.parse(raw) as unknown;
+    if (Array.isArray(a) && a.length === 3 && a.every((x) => typeof x === 'boolean')) {
+      return [a[0], a[1], a[2]];
+    }
+  } catch { /* ignore */ }
+  return [false, false, false];
+}
+
 export function AgentsWorkspaceRail({
   className,
   projectRootPath,
@@ -80,6 +100,121 @@ export function AgentsWorkspaceRail({
 
   const [activeTab, setActiveTab] = useState(readStoredActiveTab);
   const lastDetailTabRef = useRef<number>(initialLastDetailTabIndex());
+
+  /** 桌面竖向三分栏：各段是否收起；默认全展开，持久化到 localStorage */
+  const [detailPanelsCollapsed, setDetailPanelsCollapsed] = useState<[boolean, boolean, boolean]>([
+    false,
+    false,
+    false,
+  ]);
+  useEffect(() => {
+    setDetailPanelsCollapsed(readDetailPanelsCollapsed());
+  }, []);
+
+  const toggleDetailPanel = useCallback((slot: 0 | 1 | 2) => {
+    setDetailPanelsCollapsed((prev) => {
+      const next: [boolean, boolean, boolean] = [prev[0], prev[1], prev[2]];
+      next[slot] = !next[slot];
+      try {
+        localStorage.setItem(DETAIL_PANELS_COLLAPSED_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  const [detailPanelFractions, setDetailPanelFractions] = useState(() => readAgentsRailDetailPanelFractions());
+
+  const detailStackRef = useRef<HTMLDivElement | null>(null);
+  const detailFractionsLiveRef = useRef<[number, number, number]>([1 / 3, 1 / 3, 1 / 3]);
+  detailFractionsLiveRef.current = detailPanelFractions;
+
+  const dragSessionRef = useRef<{
+    which: 0 | 1;
+    pointerId: number;
+    startClientY: number;
+    startFractions: [number, number, number];
+    containerHeight: number;
+  } | null>(null);
+
+  const allDetailPanelsExpanded =
+    !detailPanelsCollapsed[0] && !detailPanelsCollapsed[1] && !detailPanelsCollapsed[2];
+
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const sess = dragSessionRef.current;
+      if (!sess || e.pointerId !== sess.pointerId) return;
+      const dy = e.clientY - sess.startClientY;
+      const H = sess.containerHeight;
+      if (H < DETAIL_PANEL_MIN_PX * 3 + 4) return;
+      const [f0, f1, f2] = sess.startFractions;
+      const h0 = H * f0;
+      const h1 = H * f1;
+      const h2 = H * f2;
+      const MIN = DETAIL_PANEL_MIN_PX;
+      let nf0 = f0;
+      let nf1 = f1;
+      let nf2 = f2;
+      if (sess.which === 0) {
+        let nh0 = h0 + dy;
+        nh0 = Math.max(MIN, Math.min(nh0, H - h2 - MIN));
+        const nh1 = H - h2 - nh0;
+        nf0 = nh0 / H;
+        nf1 = nh1 / H;
+        nf2 = f2;
+      } else {
+        let nh1 = h1 + dy;
+        nh1 = Math.max(MIN, Math.min(nh1, H - h0 - MIN));
+        const nh2 = H - h0 - nh1;
+        nf0 = f0;
+        nf1 = nh1 / H;
+        nf2 = nh2 / H;
+      }
+      const sum = nf0 + nf1 + nf2;
+      if (sum <= 0) return;
+      const next: [number, number, number] = [nf0 / sum, nf1 / sum, nf2 / sum];
+      detailFractionsLiveRef.current = next;
+      setDetailPanelFractions(next);
+    };
+    const onUp = (e: PointerEvent) => {
+      const sess = dragSessionRef.current;
+      if (!sess || e.pointerId !== sess.pointerId) return;
+      dragSessionRef.current = null;
+      writeAgentsRailDetailPanelFractions(detailFractionsLiveRef.current);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, []);
+
+  const onDetailResizePointerDown = useCallback(
+    (which: 0 | 1) => (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!detailStackRef.current || !allDetailPanelsExpanded) return;
+      e.preventDefault();
+      const rect = detailStackRef.current.getBoundingClientRect();
+      const H = Math.max(0, rect.height);
+      if (H < DETAIL_PANEL_MIN_PX * 3 + 4) return;
+      dragSessionRef.current = {
+        which,
+        pointerId: e.pointerId,
+        startClientY: e.clientY,
+        startFractions: [...detailFractionsLiveRef.current] as [number, number, number],
+        containerHeight: H,
+      };
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+    },
+    [allDetailPanelsExpanded],
+  );
 
   const isDetailTab = activeTab >= 1 && activeTab <= 3;
 
@@ -183,6 +318,70 @@ export function AgentsWorkspaceRail({
     [],
   );
 
+  const renderDetailAgentDataBody = () =>
+    workspaceAgentDataPath ? (
+      <div
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none]"
+        data-rail-panel-body="folder"
+      >
+        <FolderExplorerPanel
+          key={workspaceAgentDataPath}
+          embedded
+          hideFolderSummaryBar
+          lockToInitialDataPath
+          onClose={() => {}}
+          initialPath={workspaceAgentDataPath}
+          initialResolveMode="data"
+        />
+      </div>
+    ) : (
+      <div className="flex min-h-[120px] flex-1 items-center justify-center px-4 py-6 text-center text-[11px] leading-snug text-muted-foreground">
+        {t('projectWorkspace.empty')}
+      </div>
+    );
+
+  const renderDetailPromptBody = () => (
+    <div className="min-h-0 flex-1 overflow-hidden [overflow-anchor:none]" data-rail-panel-body="prompt">
+      <AgentSessionPromptStack key={promptStackKey} items={promptStackItems} hideHeader />
+    </div>
+  );
+
+  const renderDetailCapabilitiesBody = () => (
+    <div
+      className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 pb-2 pt-1 [overflow-anchor:none]"
+      data-rail-panel-body="capabilities"
+    >
+      <div className="grid grid-cols-2 gap-1.5" role="list">
+        {capabilityCards.map((item) => {
+          const Icon = item.icon;
+          const canToggle = Boolean(capabilityAgentId && onCapabilitiesUpdated);
+          const busy = capabilitySavingKey === item.capabilityKey;
+          const on = effectiveCapabilities[item.capabilityKey];
+          return (
+            <div
+              key={item.capabilityKey}
+              role="listitem"
+              className={cn(
+                'flex items-center gap-1.5 rounded-lg border border-border/30 bg-card/50 px-1.5 py-1.5',
+                !on && 'opacity-80',
+              )}
+              title={item.hint}
+            >
+              <Icon className={cn('h-3.5 w-3.5 shrink-0', on ? 'text-muted-foreground' : 'text-muted-foreground/35')} />
+              <span className="min-w-0 flex-1 truncate text-[10px] font-medium leading-tight">{item.label}</span>
+              <RailCapabilitySwitch
+                checked={on}
+                disabled={!canToggle || busy}
+                ariaLabel={on ? tCap('enabledAria', { label: item.label }) : tCap('disabledAria', { label: item.label })}
+                onCheckedChange={(next) => patchCapability(item.capabilityKey, next)}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   const renderActivePanel = () => {
     switch (activeTab) {
       case 0:
@@ -205,68 +404,11 @@ export function AgentsWorkspaceRail({
           </div>
         );
       case 1:
-        return workspaceAgentDataPath ? (
-          <div
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none]"
-            data-rail-panel-body="folder"
-          >
-            <FolderExplorerPanel
-              key={workspaceAgentDataPath}
-              embedded
-              hideFolderSummaryBar
-              lockToInitialDataPath
-              onClose={() => {}}
-              initialPath={workspaceAgentDataPath}
-              initialResolveMode="data"
-            />
-          </div>
-        ) : (
-          <div className="flex min-h-[120px] flex-1 items-center justify-center px-4 py-6 text-center text-[11px] leading-snug text-muted-foreground">
-            {t('projectWorkspace.empty')}
-          </div>
-        );
+        return renderDetailAgentDataBody();
       case 2:
-        return (
-          <div className="min-h-0 flex-1 overflow-hidden [overflow-anchor:none]" data-rail-panel-body="prompt">
-            <AgentSessionPromptStack key={promptStackKey} items={promptStackItems} hideHeader />
-          </div>
-        );
+        return renderDetailPromptBody();
       case 3:
-        return (
-          <div
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 pb-2 pt-1 [overflow-anchor:none]"
-            data-rail-panel-body="capabilities"
-          >
-            <div className="grid grid-cols-2 gap-1.5" role="list">
-              {capabilityCards.map((item) => {
-                const Icon = item.icon;
-                const canToggle = Boolean(capabilityAgentId && onCapabilitiesUpdated);
-                const busy = capabilitySavingKey === item.capabilityKey;
-                const on = effectiveCapabilities[item.capabilityKey];
-                return (
-                  <div
-                    key={item.capabilityKey}
-                    role="listitem"
-                    className={cn(
-                      'flex items-center gap-1.5 rounded-lg border border-border/30 bg-card/50 px-1.5 py-1.5',
-                      !on && 'opacity-80',
-                    )}
-                    title={item.hint}
-                  >
-                    <Icon className={cn('h-3.5 w-3.5 shrink-0', on ? 'text-muted-foreground' : 'text-muted-foreground/35')} />
-                    <span className="min-w-0 flex-1 truncate text-[10px] font-medium leading-tight">{item.label}</span>
-                    <RailCapabilitySwitch
-                      checked={on}
-                      disabled={!canToggle || busy}
-                      ariaLabel={on ? tCap('enabledAria', { label: item.label }) : tCap('disabledAria', { label: item.label })}
-                      onCheckedChange={(next) => patchCapability(item.capabilityKey, next)}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
+        return renderDetailCapabilitiesBody();
       case 4:
         return (
           <AgentsWorkspaceSimpleBrowser
@@ -288,8 +430,6 @@ export function AgentsWorkspaceRail({
         return null;
     }
   };
-
-  const detailTabIndices = [1, 2, 3] as const;
 
   const handleActivityClick = useCallback((group: 'project' | 'agent') => {
     if (group === 'project') {
@@ -351,60 +491,170 @@ export function AgentsWorkspaceRail({
           </header>
         ) : null}
 
-        {/* 桌面：二级横排标签（Agent 数据 / 提示词 / 能力），仅一级选中「Agent 配置」时显示 */}
-        {isDetailTab && (
+        {/* 桌面（lg+）：Agent 数据 / 提示词 / 能力 → VS Code 式竖向分栏；全展开时可拖动分隔条调比例 */}
+        {isDetailTab && lgUp ? (
           <div
-            role="tablist"
-            aria-label={t('workspaceRail.detailTabsAria')}
-            className="hidden h-8 shrink-0 items-stretch gap-0.5 border-b border-border/80 bg-muted/30 px-1.5 dark:bg-muted/20 lg:flex"
+            ref={detailStackRef}
+            role="region"
+            id="agents-rail-main-panel"
+            aria-labelledby="agents-rail-panel-title"
+            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
           >
-            {detailTabIndices.map((idx) => {
-              const selected = activeTab === idx;
-              return (
-                <button
-                  key={idx}
-                  type="button"
-                  role="tab"
-                  id={`agents-rail-detail-${idx}`}
-                  aria-selected={selected}
-                  aria-controls="agents-rail-main-panel"
-                  title={fullTitles[idx]}
-                  onClick={() => setTab(idx)}
-                  className={cn(
-                    'flex min-h-7 min-w-0 flex-1 items-center justify-center gap-1 rounded-md border border-transparent px-2 text-[11px] font-medium transition-colors',
-                    selected
-                      ? 'border-border bg-background text-foreground shadow-sm dark:border-border dark:bg-card'
-                      : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
-                  )}
+            {allDetailPanelsExpanded ? (
+              <>
+                {/* 1 Agent 数据 */}
+                <section
+                  data-rail-detail-section={1}
+                  className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+                  style={{ flex: `${detailPanelFractions[0]} 1 0%`, minHeight: 0 }}
                 >
-                  <span className="text-muted-foreground/80">{tabIcons[idx]}</span>
-                  <span className="min-w-0 truncate">{tabLabels[idx]}</span>
-                </button>
-              );
-            })}
+                  <button
+                    type="button"
+                    id="agents-rail-detail-1"
+                    aria-expanded
+                    title={fullTitles[1]}
+                    onClick={() => toggleDetailPanel(0)}
+                    className="flex h-8 shrink-0 items-center gap-1.5 border-b border-border/50 bg-muted/35 px-2 text-left text-[11px] font-medium text-foreground transition-colors hover:bg-muted/55 dark:bg-muted/25 dark:hover:bg-muted/40"
+                  >
+                    <span className="text-muted-foreground" aria-hidden>
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                    </span>
+                    <span className="text-muted-foreground/80">{tabIcons[1]}</span>
+                    <span className="min-w-0 flex-1 truncate">{tabLabels[1]}</span>
+                  </button>
+                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{renderDetailAgentDataBody()}</div>
+                </section>
+                {/* 接缝处零占位，透明层跨缝接收拖动，界面上无任何可见「条」 */}
+                <div className="pointer-events-none relative z-[5] h-0 shrink-0 overflow-visible">
+                  <div
+                    role="presentation"
+                    aria-hidden
+                    className="pointer-events-auto absolute inset-x-0 top-0 z-[5] h-10 -translate-y-1/2 cursor-ns-resize touch-none select-none"
+                    onPointerDown={onDetailResizePointerDown(0)}
+                  />
+                </div>
+                {/* 2 提示词 */}
+                <section
+                  data-rail-detail-section={2}
+                  className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+                  style={{ flex: `${detailPanelFractions[1]} 1 0%`, minHeight: 0 }}
+                >
+                  <button
+                    type="button"
+                    id="agents-rail-detail-2"
+                    aria-expanded
+                    title={fullTitles[2]}
+                    onClick={() => toggleDetailPanel(1)}
+                    className="flex h-8 shrink-0 items-center gap-1.5 border-b border-border/50 bg-muted/35 px-2 text-left text-[11px] font-medium text-foreground transition-colors hover:bg-muted/55 dark:bg-muted/25 dark:hover:bg-muted/40"
+                  >
+                    <span className="text-muted-foreground" aria-hidden>
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                    </span>
+                    <span className="text-muted-foreground/80">{tabIcons[2]}</span>
+                    <span className="min-w-0 flex-1 truncate">{tabLabels[2]}</span>
+                  </button>
+                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{renderDetailPromptBody()}</div>
+                </section>
+                <div className="pointer-events-none relative z-[5] h-0 shrink-0 overflow-visible">
+                  <div
+                    role="presentation"
+                    aria-hidden
+                    className="pointer-events-auto absolute inset-x-0 top-0 z-[5] h-10 -translate-y-1/2 cursor-ns-resize touch-none select-none"
+                    onPointerDown={onDetailResizePointerDown(1)}
+                  />
+                </div>
+                {/* 3 能力 */}
+                <section
+                  data-rail-detail-section={3}
+                  className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+                  style={{ flex: `${detailPanelFractions[2]} 1 0%`, minHeight: 0 }}
+                >
+                  <button
+                    type="button"
+                    id="agents-rail-detail-3"
+                    aria-expanded
+                    title={fullTitles[3]}
+                    onClick={() => toggleDetailPanel(2)}
+                    className="flex h-8 shrink-0 items-center gap-1.5 border-b border-border/50 bg-muted/35 px-2 text-left text-[11px] font-medium text-foreground transition-colors hover:bg-muted/55 dark:bg-muted/25 dark:hover:bg-muted/40"
+                  >
+                    <span className="text-muted-foreground" aria-hidden>
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                    </span>
+                    <span className="text-muted-foreground/80">{tabIcons[3]}</span>
+                    <span className="min-w-0 flex-1 truncate">{tabLabels[3]}</span>
+                  </button>
+                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{renderDetailCapabilitiesBody()}</div>
+                </section>
+              </>
+            ) : (
+              (
+                [
+                  { slot: 0 as const, tabIdx: 1 as const, body: renderDetailAgentDataBody },
+                  { slot: 1 as const, tabIdx: 2 as const, body: renderDetailPromptBody },
+                  { slot: 2 as const, tabIdx: 3 as const, body: renderDetailCapabilitiesBody },
+                ] as const
+              ).map(({ slot, tabIdx, body }) => {
+                const collapsed = detailPanelsCollapsed[slot];
+                return (
+                  <section
+                    key={tabIdx}
+                    data-rail-detail-section={tabIdx}
+                    className={cn(
+                      'flex min-h-0 flex-col border-b border-border/60 last:border-b-0 dark:border-border/50',
+                      collapsed ? 'shrink-0' : 'min-h-[72px] flex-1',
+                    )}
+                  >
+                    <button
+                      type="button"
+                      id={`agents-rail-detail-${tabIdx}`}
+                      aria-expanded={!collapsed}
+                      title={fullTitles[tabIdx]}
+                      onClick={() => toggleDetailPanel(slot)}
+                      className={cn(
+                        'flex h-8 shrink-0 items-center gap-1.5 border-b border-border/50 bg-muted/35 px-2 text-left text-[11px] font-medium text-foreground transition-colors hover:bg-muted/55 dark:bg-muted/25 dark:hover:bg-muted/40',
+                        collapsed && 'border-transparent',
+                      )}
+                    >
+                      <span className="text-muted-foreground" aria-hidden>
+                        {collapsed ? (
+                          <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                        ) : (
+                          <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                        )}
+                      </span>
+                      <span className="text-muted-foreground/80">{tabIcons[tabIdx]}</span>
+                      <span className="min-w-0 flex-1 truncate">{tabLabels[tabIdx]}</span>
+                    </button>
+                    {!collapsed ? (
+                      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{body()}</div>
+                    ) : null}
+                  </section>
+                );
+              })
+            )}
+          </div>
+        ) : (
+          <div
+            role="tabpanel"
+            id="agents-rail-main-panel"
+            aria-labelledby={
+              lgUp
+                ? (activeTab === 0
+                    ? 'agents-rail-activity-project'
+                    : activeTab === 4
+                      ? 'agents-rail-activity-browser'
+                      : activeTab === 5
+                        ? 'agents-rail-activity-artifacts'
+                        : 'agents-rail-activity-agent')
+                : `agents-rail-tab-${activeTab}`
+            }
+            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+          >
+            <AgentsRailPanelFrame title={fullTitles[activeTab] ?? ''} hideHeader={isDetailTab}>
+              {renderActivePanel()}
+            </AgentsRailPanelFrame>
           </div>
         )}
-
-        <div
-          role="tabpanel"
-          id="agents-rail-main-panel"
-          aria-labelledby={
-            lgUp
-              ? (activeTab === 0
-                  ? 'agents-rail-activity-project'
-                  : activeTab === 4
-                    ? 'agents-rail-activity-browser'
-                    : activeTab === 5
-                      ? 'agents-rail-activity-artifacts'
-                      : `agents-rail-detail-${activeTab}`)
-              : `agents-rail-tab-${activeTab}`
-          }
-          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-        >
-          <AgentsRailPanelFrame title={fullTitles[activeTab] ?? ''} hideHeader={isDetailTab}>
-            {renderActivePanel()}
-          </AgentsRailPanelFrame>
-        </div>
       </div>
 
       {/* 桌面：一级入口（项目 / Agent 配置 / 简单浏览器），尺寸对齐左侧 SidebarNavRow 迷你态 */}

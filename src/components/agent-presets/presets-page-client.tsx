@@ -103,7 +103,7 @@ export function PresetsPageClient() {
         <button
           type="button"
           onClick={openCreate}
-          className="flex min-h-[140px] flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-zinc-300 bg-zinc-50/50 text-zinc-500 transition-colors hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900/30 dark:hover:border-zinc-500 dark:hover:bg-zinc-900/50"
+          className="flex h-full min-h-0 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-zinc-300 bg-zinc-50/50 p-4 text-zinc-500 transition-colors hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900/30 dark:hover:border-zinc-500 dark:hover:bg-zinc-900/50"
         >
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-200/80 dark:bg-zinc-800">
             <Plus className="h-6 w-6" />

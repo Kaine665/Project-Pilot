@@ -17,7 +17,6 @@ import {
   readJsonFile,
   getDataDir,
   getAgentDataPath,
-  getLegacyAgentDataPath,
   findAgentCustomAvatarAbsPath,
   writeAgentCustomAvatarFile,
 } from '@/lib/file-store';
@@ -139,35 +138,8 @@ async function fileExists(p: string): Promise<boolean> {
   }
 }
 
-function extractLegacyDataDirName(systemPrompt?: string): string | null {
-  if (!systemPrompt) return null;
-  const match = systemPrompt.match(/agent-data[\\/]+([a-zA-Z0-9_-]+)/);
-  return match?.[1] ?? null;
-}
-
-async function resolveAgentDataStoreDir(agentId: string): Promise<string> {
-  const agent = await getAgentById(agentId, { includeArchived: true, includePrompt: true });
-  const legacyDataDirName = extractLegacyDataDirName(agent?.systemPrompt);
-  const canonical = getAgentDataPath(agentId);
-  const candidates = [
-    canonical,
-    agent?.slug && agent.slug !== agentId ? getAgentDataPath(agent.slug) : null,
-    agent?.slug && agent.slug !== agentId ? getLegacyAgentDataPath(agent.slug) : null,
-    legacyDataDirName ? getAgentDataPath(legacyDataDirName) : null,
-    legacyDataDirName ? getLegacyAgentDataPath(legacyDataDirName) : null,
-    getLegacyAgentDataPath(agentId),
-  ].filter((value): value is string => !!value);
-
-  const unique = [...new Set(candidates)];
-
-  for (const candidate of unique) {
-    if (await fileExists(candidate)) return candidate;
-  }
-
-  return canonical;
-}
-
-async function ensureAgentDataStoreDir(dirPath: string): Promise<void> {
+/** Workspace 根即 agents/workspaces/<agentId>/；其下默认有子目录 data/（与 UI、bash 白名单习惯一致）。 */
+async function ensureAgentWorkspaceWithDefaultDataSubdir(dirPath: string): Promise<void> {
   await fs.mkdir(dirPath, { recursive: true });
   await fs.mkdir(path.join(dirPath, 'data'), { recursive: true });
 }
@@ -590,15 +562,15 @@ app.get('/files', async (c) => {
     exists: await fileExists(skillsDir),
   });
 
-  // 4. Agent data store
-  const dataStoreDir = await resolveAgentDataStoreDir(agentId);
-  await ensureAgentDataStoreDir(dataStoreDir);
+  // 4. Agent 工作区根（canonical）
+  const workspaceDir = getAgentDataPath(agentId);
+  await ensureAgentWorkspaceWithDefaultDataSubdir(workspaceDir);
   entries.push({
     name: '私有工作空间',
-    path: dataStoreDir,
+    path: workspaceDir,
     isDirectory: true,
     category: 'data',
-    exists: await fileExists(dataStoreDir),
+    exists: await fileExists(workspaceDir),
   });
 
   return c.json(

@@ -23,7 +23,6 @@
     "taskTriggers": "Task triggers",
     "schedules": "Schedules",
     "tasks": "Tasks",
-    "tasksHubSubtitle": "Todos, event triggers, and scheduled runs in one place.",
     "tasksNavAria": "Task sections",
     "mcp": "MCP",
     "artifacts": "Artifacts",
@@ -941,6 +940,10 @@
           "labelWithTitle": "{title} (Runtime)",
           "description": "A runtime prompt copy will be generated after the session starts.",
           "descriptionActive": "Runtime prompt copy and transient memory state for the current session."
+        },
+        "resolved": {
+          "label": "Merged system prompt",
+          "description": "The system prompt merged from global, project, agent, session config, skills, and other injected resources. Does not include conversation history or the current user message—this matches the system/instructions side of the API, not the chat transcript."
         }
       }
     },

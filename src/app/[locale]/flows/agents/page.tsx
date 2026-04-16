@@ -1694,7 +1694,7 @@ export default function AgentsPage() {
     setForm((f) => (selectedAgentId === workspaceAgentId ? { ...f, capabilities: next } : f));
   }, [workspaceAgentId, selectedAgentId]);
 
-  /** 与 ~/.project-pilot/agents/README.md 一致：agents/workspaces/<agentId>/ */
+  /** 相对数据根：仅 canonical workspace；其下默认有子目录 data/（见后端 ensure） */
   const workspaceAgentDataPath = `agents/workspaces/${workspaceAgentId}`;
   const workspaceAgentDescription = displayText(
     workspaceAgent?.description,
@@ -1720,6 +1720,18 @@ export default function AgentsPage() {
   const combinedPromptTokens = (promptMetrics.global ?? 0) + (promptMetrics.project ?? 0) + agentPromptTokens;
   const promptUsagePercent = Math.min(100, Math.round((combinedPromptTokens / 128000) * 100));
   const promptStackItems: PromptStackSeedItem[] = [
+    {
+      scope: 'Resolved',
+      accent: 'bg-rose-50 text-rose-800 border-rose-100',
+      label: t('promptStack.items.resolved.label'),
+      path: '—',
+      tokens: null,
+      description: t('promptStack.items.resolved.description'),
+      target: 'resolved',
+      agentId: workspaceAgentId,
+      sessionId: workspaceSessionId,
+      projectKey: effectiveProjectKey ?? undefined,
+    },
     {
       scope: 'Global',
       accent: 'bg-blue-50 text-blue-700 border-blue-100',
