@@ -195,11 +195,11 @@ app.post('/', async (c) => {
   }
 
   const normalizedProvider = (typeof providerOverride === 'string' ? providerOverride.trim() : '') as ProviderId;
-  if (providerOverride !== undefined && !isAllowedChatProvider(normalizedProvider)) {
+  if (normalizedProvider && !isAllowedChatProvider(normalizedProvider)) {
     return c.json({ error: 'Invalid providerOverride' }, 400);
   }
   const normalizedModel = typeof modelOverride === 'string' ? modelOverride.trim() : '';
-  if (modelOverride !== undefined && (!normalizedModel || normalizedModel.length > 200)) {
+  if (normalizedModel && normalizedModel.length > 200) {
     return c.json({ error: 'Invalid modelOverride (1-200 chars)' }, 400);
   }
   const normalizedEffort = normalizeOpenAIReasoningEffort(
