@@ -18,3 +18,4 @@
 | [superdesign-agents-workspace-chat.md](./superdesign-agents-workspace-chat.md) | Superdesign 整页聊天布局稿（含会话条焦点） |
 | [google-account-cloud-sync-scope.md](./google-account-cloud-sync-scope.md) | Google 账号：云端同步**按类可选**（推荐最小云范围 **仅 AI 凭据**）；**实现参考 [PR #39](https://github.com/Kaine665/Project-Pilot/pull/39)**（本机 `accounts/<sub>/` 隔离） |
 | [product-boundary.md](./product-boundary.md) | 产品与能力边界（与 `product-direction-and-dashboard` 同一叙事）：上下文图、界内/相邻/界外、与 roadmap 五段流水线对照 |
+| [prompt-system-architecture.md](./prompt-system-architecture.md) | **提示词系统架构重设计**：双层架构（代码级系统层 + scope 文件系统）、concern 注册表、四阶段路线图 |
