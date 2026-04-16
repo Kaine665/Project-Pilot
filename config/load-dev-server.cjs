@@ -12,10 +12,15 @@ const DEV_PORTS_FILE_MAX_AGE_MS = 15 * 60 * 1000;
 /**
  * 开发态端口与 URL 的单一来源：config/dev-server.json
  *
- * 环境变量覆盖（可选，优先级最高）：
+ * 环境变量覆盖（可选；**默认**优先级最高）：
  * - PROJECT_PILOT_CLIENT_PORT — Vite / Electron 加载页端口
  * - PROJECT_PILOT_API_PORT — Hono 端口（优先于 PORT）
  * - PORT — 未设置 PROJECT_PILOT_API_PORT 时作为 API 端口（兼容常见宿主）
+ *
+ * **例外（仅开发、且不影响生产打包）**：`ELECTRON_DEV=1` 且存在未过期的 `.pp-dev-ports.json` 时，
+ * client/api 端口**以该文件为准**，忽略上述环境变量。避免 Electron 主进程继承父 shell 里残留的
+ * `PROJECT_PILOT_*` / `PORT` 与 `allocateDevStackPorts` 协商结果不一致 → 白屏。
+ * 生产安装包不会设置 `ELECTRON_DEV`，也不会走本文件的该分支。
  *
  * 其次：项目根 `.pp-dev-ports.json`（由 `allocateDevStackPorts` 写入，便于第二终端 / Electron 发现实际端口）
  *
@@ -44,6 +49,10 @@ function loadDevServerConfig(projectRoot) {
   const raw = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
 
   const fromFile = readDevPortsFileSync(projectRoot);
+  /** Electron 开发主进程：端口文件由 dev-web / electron-dev 与 Vite+Hono 对齐，优先于易陈旧的 shell env */
+  const electronDevPortsFileAuthoritative =
+    process.env.ELECTRON_DEV === "1" && fromFile != null;
+
   const useFileClient =
     process.env.PROJECT_PILOT_CLIENT_PORT == null || process.env.PROJECT_PILOT_CLIENT_PORT === "";
   const useFileApi =
@@ -51,14 +60,18 @@ function loadDevServerConfig(projectRoot) {
     (process.env.PORT == null || process.env.PORT === "");
 
   const clientPort = parseInt(
-    process.env.PROJECT_PILOT_CLIENT_PORT ??
-      (useFileClient && fromFile ? String(fromFile.clientPort) : String(raw.client.port)),
+    electronDevPortsFileAuthoritative
+      ? String(fromFile.clientPort)
+      : (process.env.PROJECT_PILOT_CLIENT_PORT ??
+          (useFileClient && fromFile ? String(fromFile.clientPort) : String(raw.client.port))),
     10,
   );
   const apiPort = parseInt(
-    process.env.PROJECT_PILOT_API_PORT ??
-      process.env.PORT ??
-      (useFileApi && fromFile ? String(fromFile.apiPort) : String(raw.api.port)),
+    electronDevPortsFileAuthoritative
+      ? String(fromFile.apiPort)
+      : (process.env.PROJECT_PILOT_API_PORT ??
+          process.env.PORT ??
+          (useFileApi && fromFile ? String(fromFile.apiPort) : String(raw.api.port))),
     10,
   );
 

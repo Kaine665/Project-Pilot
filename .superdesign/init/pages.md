@@ -1,11 +1,12 @@
-## /settings (Settings Page)
-Entry: `src/app/[locale]/settings/page.tsx`
+# Page dependency tree — ProjectPilot 官网 `/`
+
+## / (Landing)
+
+Entry: `public-site/src/main.tsx`
+
 Dependencies:
-- `src/components/top-nav.tsx`
-- `src/components/settings-sections.tsx` (SettingsAISection, etc.)
-- `src/components/ui/button.tsx`
-- `src/components/ui/card.tsx`
-- `src/components/ui/input.tsx`
-- `src/components/ui/select.tsx`
-- `src/components/add-custom-provider-dialog.tsx` (modal, optional in draft)
-- `src/app/globals.css`
+
+- `public-site/src/App.tsx`
+- `public-site/src/index.css`
+
+**说明**：`main.tsx` 仅挂载 `App` 与引入全局 CSS；设计任务须同时传入 `App.tsx` 与 `index.css`。

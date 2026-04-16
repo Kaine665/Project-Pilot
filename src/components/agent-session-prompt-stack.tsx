@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from '@/client/i18n/use-translations';
 import {
   Check,
@@ -9,6 +9,7 @@ import {
   Eye,
   FileText,
   FolderOpen,
+  Layers,
   LoaderCircle,
   Pencil,
   Plus,
@@ -25,10 +26,10 @@ import type { PromptSegment, PromptSegmentScope } from '@/types';
 
 // ── Types ──
 
-type PromptTarget = 'global' | 'project' | 'agent' | 'session';
+type PromptTarget = 'resolved' | 'global' | 'project' | 'agent' | 'session';
 
 export interface PromptStackSeedItem {
-  scope: 'Global' | 'Project' | 'Agent' | 'Session';
+  scope: 'Resolved' | 'Global' | 'Project' | 'Agent' | 'Session';
   accent: string;
   label: string;
   path: string;
@@ -61,6 +62,16 @@ function formatTokenLabel(tokens: number | null): string {
 }
 
 function getScopeTone(target: PromptTarget) {
+  if (target === 'resolved') {
+    return {
+      rail: 'border-rose-200',
+      token: 'text-rose-700',
+      title: 'text-slate-900',
+      card: 'border-rose-200 bg-rose-50/40 hover:border-rose-300 hover:ring-rose-100',
+      panel: 'border-rose-100 bg-rose-50/70',
+      badge: 'bg-rose-50 text-rose-800 border-rose-100',
+    };
+  }
   if (target === 'global') {
     return {
       rail: 'border-sky-200',
@@ -103,6 +114,7 @@ function getScopeTone(target: PromptTarget) {
 
 function getScopeLabel(target: PromptTarget): string {
   switch (target) {
+    case 'resolved': return '实际';
     case 'global': return '全局';
     case 'project': return '项目';
     case 'agent': return 'Agent';
@@ -112,6 +124,8 @@ function getScopeLabel(target: PromptTarget): string {
 
 function buildSegmentScope(item: PromptStackSeedItem): PromptSegmentScope | null {
   switch (item.target) {
+    case 'resolved':
+      return null;
     case 'global':
       return { type: 'global' };
     case 'project':
@@ -190,6 +204,162 @@ function PromptModal({
         ) : null}
       </div>
     </div>
+  );
+}
+
+// ── Resolved prompt (server-assembled full system prompt) ──
+
+function ResolvedPromptScopeGroup({
+  item,
+  defaultOpen,
+}: {
+  item: PromptStackSeedItem;
+  defaultOpen: boolean;
+}) {
+  const t = useTranslations('agentsWorkspace');
+  const tone = getScopeTone('resolved');
+  const [collapsed, setCollapsed] = useState(!defaultOpen);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [resolvedText, setResolvedText] = useState('');
+  const [tokenEstimate, setTokenEstimate] = useState<number | null>(null);
+  const [viewOpen, setViewOpen] = useState(false);
+  const fetchSeqRef = useRef(0);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    let cancelled = false;
+    (async () => {
+      if (!item.agentId) {
+        setLoading(false);
+        setError('缺少 Agent');
+        return;
+      }
+      const seq = ++fetchSeqRef.current;
+      setLoading(true);
+      setError(null);
+      try {
+        const params = new URLSearchParams({ agentId: item.agentId, includeText: '1' });
+        if (item.sessionId) params.set('sessionId', item.sessionId);
+        if (item.projectKey) params.set('projectKey', item.projectKey);
+        const res = await fetch(`/api/agent-chat/prompt-info?${params}`, {
+          cache: 'no-store',
+          signal: ac.signal,
+          headers: { 'X-PP-Include-Prompt-Text': '1' },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled || seq !== fetchSeqRef.current) return;
+        if (!res.ok) {
+          throw new Error(typeof data.error === 'string' ? data.error : '请求失败');
+        }
+        const raw =
+          typeof data.text === 'string'
+            ? data.text
+            : typeof (data as { fullText?: unknown }).fullText === 'string'
+              ? (data as { fullText: string }).fullText
+              : '';
+        setResolvedText(raw);
+        setTokenEstimate(typeof data.estimatedTokens === 'number' ? data.estimatedTokens : null);
+        if (
+          !raw &&
+          typeof data.charCount === 'number' &&
+          data.charCount > 0 &&
+          typeof data.estimatedTokens === 'number' &&
+          data.estimatedTokens > 0
+        ) {
+          setError('正文未返回（可能为代理或旧版 API）。请硬刷新页面并确认 Hono 已重启。');
+        }
+      } catch (e) {
+        if (cancelled || seq !== fetchSeqRef.current) return;
+        if (e instanceof Error && e.name === 'AbortError') return;
+        setError(e instanceof Error ? e.message : '加载失败');
+        setResolvedText('');
+        setTokenEstimate(null);
+      } finally {
+        if (!cancelled && seq === fetchSeqRef.current) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      ac.abort();
+    };
+  }, [item.agentId, item.sessionId, item.projectKey]);
+
+  const displayTokens = tokenEstimate != null ? Math.max(1, Math.round(tokenEstimate)) : null;
+
+  return (
+    <section>
+      <WorkspaceRailPanelHeader
+        variant="group"
+        title={item.label}
+        icon={<Layers className="h-3 w-3 text-rose-600/90" />}
+        collapsed={collapsed}
+        onToggleCollapsed={() => setCollapsed((v) => !v)}
+        toggleTitle={collapsed ? t('workspaceRail.expandSection') : t('workspaceRail.collapseSection')}
+        actions={
+          <div className="flex items-center gap-1.5">
+            <span className={`text-[9px] font-medium ${tone.token}`}>
+              {loading ? '…' : formatTokenLabel(displayTokens)}
+            </span>
+          </div>
+        }
+      />
+
+      {!collapsed ? (
+        <div className="space-y-0.5 px-1.5 pb-1.5 pt-0.5">
+          {loading ? (
+            <div className="flex items-center justify-center gap-1.5 py-3 text-[10px] text-muted-foreground">
+              <LoaderCircle className="h-3 w-3 animate-spin" />
+              加载中...
+            </div>
+          ) : error ? (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-2 py-2 text-[10px] text-destructive">
+              {error}
+            </div>
+          ) : (
+            <article
+              className={`rounded-lg border bg-card p-2 shadow-sm transition-all hover:ring-1 hover:ring-ring/30 ${tone.card}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="line-clamp-3 pl-0 text-[10px] leading-4 text-muted-foreground">
+                    {item.description}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => setViewOpen(true)}
+                  className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                  title={t('promptStack.viewDetailAria')}
+                >
+                  <Eye className="h-3 w-3" />
+                </button>
+              </div>
+            </article>
+          )}
+        </div>
+      ) : null}
+
+      {viewOpen ? (
+        <PromptModal
+          title={item.label}
+          subtitle={t('promptStack.items.resolved.description')}
+          onClose={() => setViewOpen(false)}
+        >
+          {loading ? (
+            <div className="flex min-h-[200px] items-center justify-center gap-2 text-sm text-muted-foreground">
+              <LoaderCircle className="h-5 w-5 animate-spin" />
+              正在拉取完整提示词…
+            </div>
+          ) : (
+            <pre className="min-h-[200px] whitespace-pre-wrap break-words rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-7 text-slate-700">
+              {resolvedText || '（空）'}
+            </pre>
+          )}
+        </PromptModal>
+      ) : null}
+    </section>
   );
 }
 
@@ -690,13 +860,13 @@ export function AgentSessionPromptStack({
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-0.5 py-1">
         <div className="space-y-0.5">
-          {items.map((item) => (
-            <ScopeGroup
-              key={item.target}
-              item={item}
-              defaultOpen
-            />
-          ))}
+          {items.map((item) =>
+            item.target === 'resolved' ? (
+              <ResolvedPromptScopeGroup key="prompt-resolved" item={item} defaultOpen />
+            ) : (
+              <ScopeGroup key={item.target} item={item} defaultOpen />
+            ),
+          )}
         </div>
       </div>
     </div>
