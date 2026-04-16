@@ -138,6 +138,47 @@ export function writeAgentsPageWorkspaceRailWidth(px: number): void {
   }
 }
 
+/**
+ * 桌面端 Agents 右侧「Agent 数据 / 提示词 / 能力」三栏竖向高度比例（三者之和归一为 1）。
+ *
+ * **范围**：整应用全局一条记录（不按项目 / Agent 区分），与 `workspaceRailWidth` 同属布局偏好。
+ *
+ * **存储**：`localStorage`。浏览器与 **Electron 渲染进程**一致：由 Chromium 按源（开发态多为 `http://127.0.0.1:端口`、
+ * 生产为内嵌同源）持久化到本机，无需主进程 IPC；与 `file-store` 数据目录无关。
+ */
+export const AGENTS_RAIL_DETAIL_PANEL_FRACTIONS_KEY = 'pp.agentsRail.detailPanelFractions.v1';
+
+const DEFAULT_AGENTS_RAIL_DETAIL_FRACTIONS: [number, number, number] = [1 / 3, 1 / 3, 1 / 3];
+
+export function readAgentsRailDetailPanelFractions(): [number, number, number] {
+  if (typeof window === 'undefined') return [...DEFAULT_AGENTS_RAIL_DETAIL_FRACTIONS];
+  try {
+    const raw = localStorage.getItem(AGENTS_RAIL_DETAIL_PANEL_FRACTIONS_KEY);
+    if (!raw) return [...DEFAULT_AGENTS_RAIL_DETAIL_FRACTIONS];
+    const a = JSON.parse(raw) as unknown;
+    if (!Array.isArray(a) || a.length !== 3 || !a.every((x) => typeof x === 'number' && Number.isFinite(x))) {
+      return [...DEFAULT_AGENTS_RAIL_DETAIL_FRACTIONS];
+    }
+    const s = a[0] + a[1] + a[2];
+    if (s <= 0) return [...DEFAULT_AGENTS_RAIL_DETAIL_FRACTIONS];
+    return [a[0] / s, a[1] / s, a[2] / s];
+  } catch {
+    return [...DEFAULT_AGENTS_RAIL_DETAIL_FRACTIONS];
+  }
+}
+
+export function writeAgentsRailDetailPanelFractions(fr: [number, number, number]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const s = fr[0] + fr[1] + fr[2];
+    if (!(s > 0) || !fr.every((x) => Number.isFinite(x))) return;
+    const n: [number, number, number] = [fr[0] / s, fr[1] / s, fr[2] / s];
+    localStorage.setItem(AGENTS_RAIL_DETAIL_PANEL_FRACTIONS_KEY, JSON.stringify(n));
+  } catch {
+    /* quota / private mode */
+  }
+}
+
 /** 左轨点击「Agents」且已在 Agents 页时派发，用于切换 Agent 列表（桌面：并排列收起/展开；窄屏：抽屉开关） */
 export const PP_AGENTS_LIST_TOGGLE_EVENT = 'pp:agents-list-toggle';
 

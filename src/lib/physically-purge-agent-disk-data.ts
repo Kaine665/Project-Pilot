@@ -8,7 +8,6 @@ import path from 'path';
 import { deletePromptFile } from '@/lib/agent-prompt-store';
 import {
   getAgentDataPath,
-  getLegacyAgentDataPath,
   getPromptsDir,
   getSkillsDir,
 } from '@/lib/file-store';
@@ -44,7 +43,6 @@ export async function physicallyPurgeAgentDiskData(agentId: string): Promise<voi
     path.join(promptsDir, `${safe}.md`),
     path.join(promptsDir, `${safe}.runtime`),
     getAgentDataPath(agentId),
-    getLegacyAgentDataPath(agentId),
     path.join(getSkillsDir(), '_agents', safe),
   ];
 

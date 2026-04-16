@@ -78,10 +78,17 @@ function resolveElectronExecutable() {
 /** 直接指向 Electron 可执行文件，避免 Windows 上依赖 .cmd / shell 拼接 */
 const electronExe = resolveElectronExecutable();
 
-/** Cursor 等环境可能注入 ELECTRON_RUN_AS_NODE=1，子进程会以 Node 模式跑、无 `app`。 */
-function envForElectronChild() {
+/**
+ * Cursor 等环境可能注入 ELECTRON_RUN_AS_NODE=1，子进程会以 Node 模式跑、无 `app`。
+ * 必须注入与当前 dev 栈一致的 client/api 端口：父 shell 若残留旧的 PROJECT_PILOT_CLIENT_PORT / PORT，
+ * 会与 `.pp-dev-ports.json` 及 Vite 实际监听错位 → Electron 连错端口、整页白屏或 API 永久挂起。
+ */
+function envForElectronChild(cfg) {
   const env = { ...process.env, ELECTRON_DEV: "1" };
   delete env.ELECTRON_RUN_AS_NODE;
+  env.PROJECT_PILOT_CLIENT_PORT = String(cfg.clientPort);
+  env.PROJECT_PILOT_API_PORT = String(cfg.apiPort);
+  env.PORT = String(cfg.apiPort);
   return env;
 }
 
@@ -202,7 +209,7 @@ async function startDevStackWithElectron(cfg) {
   const electron = spawn(electronExe, ["."], {
     cwd: root,
     stdio: "inherit",
-    env: envForElectronChild(),
+    env: envForElectronChild(cfg),
   });
   children.push(electron);
 
@@ -236,7 +243,7 @@ if (reuseExisting) {
   const child = spawn(electronExe, ["."], {
     cwd: root,
     stdio: "inherit",
-    env: envForElectronChild(),
+    env: envForElectronChild(cfg),
   });
   const forwardSignal = (signal) => {
     if (!child.killed) child.kill(signal);

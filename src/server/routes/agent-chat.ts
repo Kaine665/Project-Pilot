@@ -572,12 +572,26 @@ app.get('/prompt-info', async (c) => {
   }
 
   try {
-    const { charCount, estimatedTokens } = await buildPromptPreview(agentId, sessionId, projectKey);
+    const q = (c.req.query('includeText') ?? '').toLowerCase();
+    const includeText =
+      q === '1' ||
+      q === 'true' ||
+      q === 'yes' ||
+      c.req.header('x-pp-include-prompt-text') === '1' ||
+      c.req.header('x-pp-include-prompt-text')?.toLowerCase() === 'true';
+    const session = sessionId ? await loadSession(sessionId) : null;
+    const preview = await buildPromptPreview(
+      agentId,
+      sessionId,
+      projectKey,
+      session?.config,
+      { includeText },
+    );
+    const charCount = preview.charCount;
+    const estimatedTokens = preview.estimatedTokens;
+    const fullText = includeText ? (preview.text ?? '') : undefined;
     const settings = await getSettings();
-    const [agent, session] = await Promise.all([
-      getAgentById(agentId),
-      sessionId ? loadSession(sessionId) : Promise.resolve(null),
-    ]);
+    const agent = await getAgentById(agentId);
     const resolvedProvider =
       session?.config?.provider
       || agent?.defaultProvider
@@ -590,7 +604,19 @@ app.get('/prompt-info', async (c) => {
       || getProviderScopedModel(settings.claude, resolvedProvider);
     const contextWindow = getModelContextWindow(resolvedModel);
 
-    return c.json({ charCount, estimatedTokens, contextWindow });
+    if (includeText) {
+      return c.json({
+        charCount,
+        estimatedTokens,
+        contextWindow,
+        text: fullText,
+      });
+    }
+    return c.json({
+      charCount,
+      estimatedTokens,
+      contextWindow,
+    });
   } catch (err) {
     return c.json({ error: (err as Error).message }, 500);
   }

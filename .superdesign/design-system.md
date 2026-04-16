@@ -1,123 +1,74 @@
-# ProjectPilot Dashboard — Design System
+# ProjectPilot 官网 — Superdesign 设计简报（非文案稿）
 
-## Product Context
+> **重要**：下列内容是 **给设计师 / 生成稿用的产品与叙事约束**，**禁止**把《产品方案》全文或段落原样当作页面正文。页面上只用 **短标题、短句、要点**；语气像对 Builder 说话，不要像内部全员会纪要。
 
-ProjectPilot is an AI project advancement system. Its core value: **AI gets smarter about YOUR project over time, so each interaction builds on the last.**
+## 一句话
 
-The Dashboard is the "home screen" — the first thing a developer sees when they open PP. It must answer in <5 seconds: "Where is my project? What happened? What's next?"
+ProjectPilot：让 AI **越来越懂你的项目**，而不是每次聊天都像第一次见面 —— Builder 用的 **AI 工作台**（项目上下文 + 推进感）。
 
-### Key Pages & Architecture
-- **Dashboard (this design)**: Project overview, recent memory, progress, next steps
-- **Agent Chat**: Where actual AI coding work happens
-- **Memory/Knowledge**: Browse accumulated project understanding
+## 要解决的事（可视觉化，不要长论文）
 
-### Target User
-Solo developers or small teams using AI to build software projects. Technical, value efficiency, hate visual noise.
+- **痛点**：对话一关，背景、决定、约定容易散；下次从头讲或 AI 自相矛盾。
+- **承诺**：把这些变成 **可持续积累在项目里** 的东西 → 少重复解释、少踩说过的坑。
+- **呈现建议**：用「前后对比」「碎片收拢为一处」等 **隐喻式图形/示意**，不要堆长段落。
 
-### Key Features (Dashboard)
-1. **Yesterday Summary**: What was accomplished, decisions made, issues resolved
-2. **Project Progress**: Task status, completion %, blockers
-3. **Recent Memory**: Auto-accumulated knowledge entries (decisions, conventions, pitfalls)
-4. **Next Steps**: AI-recommended next actions based on progress + priority
-5. **Active Sessions**: Currently running or paused agent sessions
-6. **Knowledge Growth**: Visual indicator of how much the AI "knows" about the project
+## 为谁
 
-## Branding & Visual Direction
+- **一个人或小团队**，同时推进很多事：**不只写代码**，还有产品、设计、增长、日常运营等。
+- **不是**「只服务程序员」的叙事；视觉与举例要 **多元 Builder**，避免满屏终端截图刻板印象。
 
-### Philosophy
-"Functional elegance" — feels like a well-designed developer tool, not a marketing page. Every pixel earns its place. Information density is high but never cluttered.
+## 用户感受（三个词 → 三块短内容）
 
-### Color Palette
+1. **更省事** — 不必每次先讲项目故事。  
+2. **更一致** — AI 知道你们定了什么、在做什么。  
+3. **更清楚** — 有一个地方看清 **推进到哪、哪些事在进行中**（不是散落聊天窗）。
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--bg-primary` | `#0F1117` | Main background (dark) |
-| `--bg-secondary` | `#161922` | Card/panel backgrounds |
-| `--bg-tertiary` | `#1C2030` | Hover states, elevated surfaces |
-| `--border` | `#2A2E3B` | Default borders |
-| `--border-subtle` | `#1E2231` | Subtle dividers |
-| `--text-primary` | `#E8EAED` | Primary text |
-| `--text-secondary` | `#8B8FA3` | Secondary/muted text |
-| `--text-tertiary` | `#5C6070` | Timestamps, metadata |
-| `--accent-blue` | `#3B82F6` | Primary actions, active states |
-| `--accent-green` | `#22C55E` | Success, completed, growth |
-| `--accent-amber` | `#F59E0B` | Warnings, in-progress |
-| `--accent-red` | `#EF4444` | Errors, blockers |
-| `--accent-purple` | `#A855F7` | AI/memory related elements |
+版式：三块并列或三步横条即可，**每块一句主标 + 一句副标**，不要展开成白皮书。
 
-### Typography
+## 我们不是什么（建立信任，短）
 
-| Element | Font | Size | Weight | Tracking |
-|---------|------|------|--------|----------|
-| Page title | Inter | 24px | 600 | -0.02em |
-| Section header | Inter | 14px | 600 | 0 |
-| Card title | Inter | 13px | 500 | 0 |
-| Body text | Inter | 13px | 400 | 0 |
-| Metadata/label | Inter | 11px | 500 | 0.02em |
-| Code/mono | JetBrains Mono | 12px | 400 | 0 |
-| Stat number | Inter | 28px | 700 | -0.02em |
+- 不是又一个 **通用聊天机器人平台**。  
+- **不替代**现有写代码工具或办公软件。  
+- **不承诺**替公司管完所有项目流程；聚焦 **「项目上下文 + 推进感」**。
 
-### Spacing & Layout
+呈现：可用 **划掉的错误标签**、**对照表「PP / 不是」** 等轻量组件；仍要短。
 
-- Base unit: 4px
-- Card padding: 16px (compact) / 20px (standard)
-- Card gap: 12px
-- Section gap: 24px
-- Border radius: 8px (cards), 6px (buttons/badges), 4px (tags)
-- Max content width: 1200px
+## 与市面 AI 工具的关系
 
-### Component Patterns
+- 各类 AI 产品像 **能干活的帮手**；PP 更偏 **帮帮手记住项目、对齐进度** —— **互补，非二选一**。
+- 可用 **简图：外环工具、内环「项目记忆 / 装载 / 推进视图」**；不要写竞品清单长表。
 
-#### Cards
-- Background: `--bg-secondary`
-- Border: 1px solid `--border`
-- Border-radius: 8px
-- Subtle glow on hover: 0 0 0 1px `--accent-blue` at 20% opacity
-- No drop shadows
+## 「对公司自身的意义」
 
-#### Status Badges
-- Completed: green bg at 10% opacity, green text
-- In Progress: amber bg at 10% opacity, amber text
-- Blocked: red bg at 10% opacity, red text
-- Pending: gray bg at 10% opacity, gray text
+- **不要**把内部价值论述长段放上官网。
+- 若出现，**最多一句**带过开源/本地/可审计等 **用户可感知** 的点，且与 Builder 利益挂钩。
 
-#### Progress Indicators
-- Thin horizontal bars (4px height, rounded)
-- Track: `--bg-tertiary`
-- Fill: gradient from `--accent-blue` to `--accent-purple`
+---
 
-#### Memory Entries
-- Left color bar (3px width) indicating type:
-  - Decision: blue
-  - Convention: purple
-  - Pitfall: amber
-  - Change: green
-- Compact list items with timestamp + one-line summary
+## 字体
 
-#### Stat Cards
-- Large number prominently displayed
-- Small label above
-- Optional sparkline or trend indicator
-- Subtle icon in top-right corner
+- 标题/正文：**DM Sans** 或同等几何无衬线；避免装饰性书法体。  
+- 辅助：**JetBrains Mono** 仅用于标签、技术 pill、小字标注。
 
-### Motion & Animation
-- Transitions: 150ms ease-out
-- No decorative animations
-- Subtle fade-in for newly loaded content
-- Progress bars animate on initial load (600ms ease-out)
+---
 
-### Layout Structure (Dashboard)
-- Top bar: minimal, project name + project switcher + settings
-- Main area: responsive grid layout
-  - Left column (2/3): Summary + Progress + Next Steps
-  - Right column (1/3): Memory + Knowledge Stats + Sessions
-- No sidebar navigation on dashboard (it's the landing page)
+## 视觉方向探索（Superdesign 分支用）
 
-### Icons
-- Lucide icon set
-- Size: 16px default, 14px for compact contexts
-- Stroke width: 1.5px
-- Color inherits from text color
+### 主题 M — 严格黑白
 
-### Dark Mode Only
-This design is dark-mode only. The dark palette reduces eye strain for developers who spend hours in code editors.
+无彩色：仅黑、白与灰阶；高编辑感、强对比；适合强调「清晰、严肃、可信赖」。
+
+### 主题 P — 米色纸感
+
+暖米白底、墨褐灰字、纸感弱纹理或极轻噪点；适合强调「沉淀、可读、像工作台笔记」。
+
+### 禁止
+
+- 霓虹渐变营销风铺满屏。  
+- 把内部产品方案 **整段粘贴** 为 Hero 或 Section 正文。
+
+---
+
+## 页面类型
+
+单屏或略可滚动的 **营销落地**：顶栏 + Hero + 若干短区块 + 轻量 CTA（如 GitHub）+ 极简页脚。信息密度 **克制**。
