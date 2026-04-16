@@ -16,7 +16,7 @@ import { promises as fs } from 'fs';
 import { getAppWorkingDir } from '@/lib/app-paths';
 import { getPromptFilePath, getDocumentsContentDir, readJsonFile, readProjectIndex } from '@/lib/file-store';
 import { readDocsIndexFromDocuments } from '@/lib/documents-store';
-import { isValidWorkingDir } from '@/lib/security';
+import { isValidWorkingDir } from '@/lib/security-validation';
 import { readTodosMerged } from '@/lib/todo-file-store';
 import { matchCodeCards, buildCodeCardIndex } from '@/lib/code-card-matcher';
 import { listRunningTasks } from '@/lib/active-tasks';
@@ -35,12 +35,13 @@ import '@/lib/resource-loaders'; // side-effect: registers non-action loaders
 import '@/lib/agent-actions';    // side-effect: registers actions + their loaders
 import { actionRegistry } from '@/lib/agent-actions';
 import { estimateTokens } from '@/lib/token-estimate';
-import { appendLocalAgentSdkToolingNotice } from '@/lib/agent-provider-capabilities';
-import { appendAgentWorkspacePathNotice } from '@/lib/agent-provider-workspace-notice';
+import { buildSystemLevelPrompt } from '@/lib/system-level-prompt';
 import { CALLABLE_AGENTS_RESOURCE_REF, migrateAgentToResources } from '@/lib/resource-migration';
 import { updateAgentStatus } from '@/lib/agents-store';
 import type { SystemPromptLoaderContext } from '@/lib/resource-loaders/system-prompt-loader';
 import { repairStoredTextIfNeeded } from '@/lib/text-repair-server';
+import { PROMPT_PRIORITY } from '@/lib/prompt-priorities';
+import { normalizePathsForPromptGlobs } from '@/lib/prompt-rule-files';
 import type { RunStatus, RunStatusInfo, SessionExecution } from './types';
 import { appendUsageRecord } from '@/lib/usage-store';
 import { normalizeOpenAIFastMode } from '@/lib/openai-fast-mode';
@@ -489,6 +490,13 @@ class AgentChatManager {
           fastModeOverride: resolvedOpenAIFastMode,
           resumeSessionId,
           cwd,
+          systemLevelInput: {
+            agentId,
+            capabilities: effectiveCaps,
+            projectKey: sessionProjectKey,
+            model: resolvedModel,
+            provider: resolvedProvider ?? 'anthropic',
+          },
         });
       })();
 
@@ -605,14 +613,22 @@ class AgentChatManager {
 
     // ── Launch runner（provider 无关）──
     try {
-      const guestProjectKey = diskSession?.projectKey ?? hostSession.projectKey;
-      const cwd = await resolveAgentChatCwd(undefined, guestProjectKey);
+    const guestProjectKey = diskSession?.projectKey ?? hostSession.projectKey;
+    const cwd = await resolveAgentChatCwd(undefined, guestProjectKey);
+    const guestCaps = mergeCapabilities(agent.capabilities, diskSession?.config?.capabilities);
       const runner = await createAgentRunner({
         provider: resolvedProvider,
-        capabilities: agent.capabilities,
+        capabilities: guestCaps,
         model: agent.defaultModel,
         resumeSessionId: isResume ? (existingRun?.claudeSessionId ?? diskSession?.claudeSessionId) : undefined,
         cwd,
+        systemLevelInput: {
+          agentId,
+          capabilities: guestCaps,
+          projectKey: guestProjectKey,
+          model: agent.defaultModel,
+          provider: resolvedProvider,
+        },
       });
       run.runner = runner;
 
@@ -1240,6 +1256,38 @@ class AgentChatManager {
 
 // ── Capability Merge Helper ──
 
+async function collectPromptGlobMatchPaths(
+  sessionId: string | undefined,
+  projectKey: string | undefined,
+): Promise<string[]> {
+  let projectRoot: string | undefined;
+  if (projectKey) {
+    try {
+      const index = await readProjectIndex();
+      projectRoot = index.projects.find(p => p.key === projectKey)?.path;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const raw: string[] = [];
+  if (sessionId) {
+    try {
+      const runningTasks = await listRunningTasks();
+      const myTask = runningTasks.find(t => t.sessionId === sessionId);
+      if (myTask?.scope?.length) raw.push(...myTask.scope);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (raw.length === 0 && projectRoot) {
+    raw.push(projectRoot);
+  }
+
+  return normalizePathsForPromptGlobs(raw, projectRoot);
+}
+
 function mergeCapabilities(
   agentCaps?: AgentCapabilities,
   sessionCaps?: Partial<AgentCapabilities>,
@@ -1263,6 +1311,8 @@ async function buildResourcePrompt(
   sessionId?: string,
   projectKey?: string,
 ): Promise<string> {
+  const promptGlobMatchPaths = await collectPromptGlobMatchPaths(sessionId, projectKey);
+
   const baseRefs = agent.defaultResources ?? migrateAgentToResources(agent);
   const merged: Array<ResourceRef | InlineTextRef> = [...baseRefs];
 
@@ -1273,17 +1323,17 @@ async function buildResourcePrompt(
     merged.push(CALLABLE_AGENTS_RESOURCE_REF);
   }
 
-  merged.push({ type: 'global-prompt', id: '_global', priority: 1 });
-  merged.push({ type: 'inbox-digest', id: '_inbox', priority: 4 });
+  merged.push({ type: 'global-prompt', id: '_global', priority: PROMPT_PRIORITY.GLOBAL_PROMPT });
+  merged.push({ type: 'inbox-digest', id: '_inbox', priority: PROMPT_PRIORITY.INBOX_DIGEST });
 
   if (projectKey) {
-    merged.push({ type: 'project-prompt', id: '_project', priority: 2 });
+    merged.push({ type: 'project-prompt', id: '_project', priority: PROMPT_PRIORITY.PROJECT_PROMPT });
   }
 
   // Inject prompt blocks referenced by agent.promptRefs
   if (agent.promptRefs?.length) {
     for (const blockId of agent.promptRefs) {
-      merged.push({ type: 'prompt-block', id: blockId, priority: 3 });
+      merged.push({ type: 'prompt-block', id: blockId, priority: PROMPT_PRIORITY.PROMPT_BLOCK });
     }
   }
 
@@ -1327,7 +1377,7 @@ async function buildResourcePrompt(
           merged.push({
             type: 'inline-text',
             id: `_code-card-${card.id}`,
-            priority: 15,
+            priority: PROMPT_PRIORITY.CODE_CARD_MATCHED,
             label: `Code Card: ${card.title}`,
             inlineContent,
           });
@@ -1338,7 +1388,7 @@ async function buildResourcePrompt(
           merged.push({
             type: 'inline-text',
             id: '_code-card-index',
-            priority: 40,
+            priority: PROMPT_PRIORITY.TODO_LIST_OR_CODE_CARD_INDEX,
             label: 'Code Cards 索引',
             inlineContent: indexTable,
           });
@@ -1348,7 +1398,7 @@ async function buildResourcePrompt(
       merged.push({
         type: 'inline-text',
         id: '_code-card-update-reminder',
-        priority: 90,
+        priority: PROMPT_PRIORITY.CODE_CARD_REMINDER,
         label: 'Code Card 维护提醒',
         inlineContent:
           '任务完成后，若修改了 Code Card 覆盖范围内的代码，请更新对应知识文档正文。使用 PATCH /api/docs/[id] 更新内容。',
@@ -1368,7 +1418,7 @@ async function buildResourcePrompt(
     );
     for (const todo of activeTodos) {
       for (const ref of todo.contextRefs!) {
-        merged.push({ ...ref, priority: ref.priority ?? 33 });
+        merged.push({ ...ref, priority: ref.priority ?? PROMPT_PRIORITY.TODO_CONTEXT_REF });
       }
     }
   }
@@ -1383,7 +1433,7 @@ async function buildResourcePrompt(
     for (const rs of resolved) {
       // Session-level explicit skills override; skip duplicates
       if (sessionSkillNames.has(rs.name) || sessionSkillNames.has(rs.qualifiedId)) continue;
-      merged.push({ type: 'skill', id: rs.qualifiedId, priority: 50 });
+      merged.push({ type: 'skill', id: rs.qualifiedId, priority: PROMPT_PRIORITY.SKILL_AUTO });
     }
   }
 
@@ -1394,14 +1444,14 @@ async function buildResourcePrompt(
     }
     if (sessionConfig.skillNames?.length) {
       for (const name of sessionConfig.skillNames) {
-        merged.push({ type: 'skill', id: name, priority: 52 });
+        merged.push({ type: 'skill', id: name, priority: PROMPT_PRIORITY.SKILL_SESSION });
       }
     }
     if (sessionConfig.supplementaryPrompt?.trim()) {
       const promptRef: InlineTextRef = {
         type: 'inline-text',
         id: '_session-supplementary',
-        priority: 5,
+        priority: PROMPT_PRIORITY.SESSION_SUPPLEMENTARY,
         label: '会话补充提示词',
         inlineContent: sessionConfig.supplementaryPrompt.trim(),
       };
@@ -1430,12 +1480,11 @@ async function buildResourcePrompt(
     systemPromptText,
     promptFilePath: effectiveCaps.exposePromptPath ? getPromptFilePath(agent.id) : undefined,
     runtimePromptPath,
+    promptGlobMatchPaths,
   };
 
   const resolvedResources = await resourceRegistry.resolveAll(allRefs, ctx);
-  const formatted = resourceRegistry.formatAsPrompt(resolvedResources);
-  const withSdkNotice = appendLocalAgentSdkToolingNotice(formatted, effectiveCaps);
-  return appendAgentWorkspacePathNotice(withSdkNotice, agent.id, effectiveCaps);
+  return resourceRegistry.formatAsPrompt(resolvedResources);
 }
 
 // ── Prompt Builders (powered by Resource Registry) ──
@@ -1466,7 +1515,7 @@ async function buildAgentChatPromptWithFlowContext(
   const flowRef: FlowContextRef = {
     type: 'flow-context',
     id: '_snapshot',
-    priority: 70,
+    priority: PROMPT_PRIORITY.FLOW_CONTEXT,
     label: '项目上下文',
     projectKey,
     projectName,
@@ -1497,7 +1546,7 @@ async function buildGuestAgentPrompt(
     const turnsRef: ReferenceTurnsRef = {
       type: 'reference-turns',
       id: '_imported',
-      priority: 60,
+      priority: PROMPT_PRIORITY.REFERENCE_TURNS,
       label: '参考对话',
       turns: importedTurns,
     };
@@ -1517,7 +1566,8 @@ async function buildGuestAgentPrompt(
 // ── Prompt Preview ──
 
 /**
- * 构建发往模型的 **System 提示词**（`buildResourcePrompt`：资源合并 + 运行时说明等）。
+ * 构建发往模型的 **用户侧资源提示词**（`buildResourcePrompt`：ResourceRegistry 合并）。
+ * 平台级安全/工具策略在 SDK `systemPrompt`（`buildSystemLevelPrompt`），不在此字符串中。
  * **不含**多轮对话历史，也**不含**单轮用户消息包装（见 `buildAgentChatPrompt`）。
  * 供 /api/agent-chat/prompt-info 端点调用，用于 UI 展示与体积估算。
  *
@@ -1534,15 +1584,29 @@ export async function buildPromptPreview(
   options?: { includeText?: boolean },
 ): Promise<{ charCount: number; estimatedTokens: number; text?: string }> {
   const agent = await loadAgent(agentId);
-  let promptText = await buildResourcePrompt(agent, undefined, config, sessionId, projectKey);
-  const charCount = promptText.length;
-  const estimatedTokens = estimateTokens(promptText);
+  const effectiveCaps = mergeCapabilities(agent.capabilities, config?.capabilities);
+  const provider = config?.provider ?? agent.defaultProvider ?? 'anthropic';
+  const systemText = await buildSystemLevelPrompt({
+    agentId,
+    capabilities: effectiveCaps,
+    projectKey,
+    model: config?.model ?? agent.defaultModel,
+    provider,
+  });
+  let userResourceText = await buildResourcePrompt(agent, undefined, config, sessionId, projectKey);
+  const combined = `${systemText}\n\n---\n\n${userResourceText}`;
+  const charCount = combined.length;
+  const estimatedTokens = estimateTokens(combined);
   if (options?.includeText) {
-    if (!promptText.trim()) {
-      promptText =
-        '[ProjectPilot] 合并后的 System 提示词长度为 0（异常）。请检查：资源加载器是否注册、global/project/agent 提示是否可读，或查看服务端日志中的 ResourceRegistry 警告。（本预览不含对话历史与用户消息。）';
+    if (!userResourceText.trim()) {
+      userResourceText =
+        '[ProjectPilot] 合并后的用户侧资源提示词长度为 0（异常）。请检查：资源加载器是否注册、global/project/agent 提示是否可读，或查看服务端日志中的 ResourceRegistry 警告。（本预览另含上方「SDK systemPrompt」块；不含对话历史与用户消息。）';
     }
-    return { charCount, estimatedTokens, text: promptText };
+    return {
+      charCount,
+      estimatedTokens,
+      text: `${systemText}\n\n---\n\n${userResourceText}`,
+    };
   }
   return { charCount, estimatedTokens };
 }

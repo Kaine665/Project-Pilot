@@ -3,7 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
-import { isValidProjectKey, isValidWorkingDir } from '@/lib/security';
+import { isValidProjectKey, isValidWorkingDir } from '@/lib/security-validation';
 import { getDataDir, readProjectIndex } from '@/lib/file-store';
 
 const execAsync = promisify(exec);
@@ -35,16 +35,6 @@ function isPathInsideRoot(root: string, resolved: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
-/**
- * Agent 私有工作区：<dataRoot>/agents/workspaces 及其子路径（见 ~/.project-pilot/agents/README.md；缺失时可自动创建）。
- * 用 POSIX 风格匹配相对路径，避免 Windows 下 path.sep 与 path.relative 混用导致误判、跳过 mkdir。
- */
-function isAgentsWorkspaceSubtree(dataRoot: string, resolved: string): boolean {
-  if (!isPathInsideRoot(dataRoot, resolved)) return false;
-  const rel = path.normalize(path.relative(dataRoot, resolved)).replace(/\\/g, '/');
-  return rel === 'agents/workspaces' || /^agents\/workspaces(\/|$)/.test(rel);
-}
-
 /** 是否为某一 Agent 的工作区根：agents/workspaces/<agentId>（不含更深子路径） */
 function isAgentWorkspaceAgentRoot(dataRoot: string, resolved: string): boolean {
   if (!isPathInsideRoot(dataRoot, resolved)) return false;
@@ -55,6 +45,35 @@ function isAgentWorkspaceAgentRoot(dataRoot: string, resolved: string): boolean 
     && parts[0] === 'agents'
     && parts[1] === 'workspaces'
     && parts[2].length > 0
+  );
+}
+
+/** 是否为某一项目的「工作资料」根：projects/workspaces/<projectKey> */
+function isProjectWorkMaterialsRoot(dataRoot: string, resolved: string): boolean {
+  if (!isPathInsideRoot(dataRoot, resolved)) return false;
+  const rel = path.normalize(path.relative(dataRoot, resolved)).replace(/\\/g, '/');
+  const parts = rel.split('/').filter(Boolean);
+  return (
+    parts.length === 3
+    && parts[0] === 'projects'
+    && parts[1] === 'workspaces'
+    && parts[2].length > 0
+  );
+}
+
+/** 数据根下相对路径（POSIX 风格），用于判断是否在可自动 mkdir 的托管目录下 */
+function dataRootRelativePath(dataRoot: string, resolved: string): string | null {
+  if (!isPathInsideRoot(dataRoot, resolved)) return null;
+  return path.normalize(path.relative(dataRoot, resolved)).replace(/\\/g, '/');
+}
+
+/** ENOENT 时是否应对 data 解析路径递归创建（agents/workspaces、projects/workspaces 子树） */
+function isManagedDataWorkspaceRel(rel: string): boolean {
+  return (
+    rel === 'agents/workspaces'
+    || rel === 'projects/workspaces'
+    || rel.startsWith('agents/workspaces/')
+    || rel.startsWith('projects/workspaces/')
   );
 }
 
@@ -102,9 +121,14 @@ app.get('/list-dir', async (c) => {
     } catch (statErr) {
       const code = (statErr as NodeJS.ErrnoException)?.code;
       const enoent = code === 'ENOENT';
-      if (enoent && resolveMode === 'data' && isAgentsWorkspaceSubtree(dataRoot, resolved)) {
-        await fs.mkdir(resolved, { recursive: true });
-        stat = await fs.stat(resolved);
+      if (enoent && resolveMode === 'data') {
+        const rel = dataRootRelativePath(dataRoot, resolved);
+        if (rel && isManagedDataWorkspaceRel(rel)) {
+          await fs.mkdir(resolved, { recursive: true });
+          stat = await fs.stat(resolved);
+        } else {
+          throw statErr;
+        }
       } else {
         throw statErr;
       }
@@ -116,6 +140,9 @@ app.get('/list-dir', async (c) => {
 
     // 与其它 Agent 工作区一致：根目录下默认有 data/（历史 UI 与 bash 白名单习惯）
     if (resolveMode === 'data' && isAgentWorkspaceAgentRoot(dataRoot, resolved)) {
+      await fs.mkdir(path.join(resolved, 'data'), { recursive: true });
+    }
+    if (resolveMode === 'data' && isProjectWorkMaterialsRoot(dataRoot, resolved)) {
       await fs.mkdir(path.join(resolved, 'data'), { recursive: true });
     }
 

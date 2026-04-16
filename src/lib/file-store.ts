@@ -23,6 +23,7 @@ import {
   buildDefaultPlaceholderProject,
   DEFAULT_PLACEHOLDER_PROJECT_KEY,
 } from '@/lib/default-project';
+import { getProjectWorkMaterialsRelativePath } from '@/lib/project-work-materials-path';
 
 /**
  * Strip UTF-8 BOM (byte order mark) and parse JSON.
@@ -880,6 +881,20 @@ export function getProjectPromptPath(projectKey: string): string {
   return path.join(DATA_DIR, 'prompts', 'projects', `${safe}.md`);
 }
 
+/** 全局条件规则：`prompts/global/rules/*.md`（Phase 3，见 design prompt-system-architecture） */
+export function getGlobalPromptRulesDir(): string {
+  return path.join(DATA_DIR, 'prompts', 'global', 'rules');
+}
+
+/** 项目条件规则：`prompts/projects/{key}/rules/*.md` */
+export function getProjectPromptRulesDir(projectKey: string): string {
+  const safe = projectKey.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safe || safe.length < 1 || safe.length > 100) {
+    throw new Error(`Invalid project key: ${projectKey}`);
+  }
+  return path.join(DATA_DIR, 'prompts', 'projects', safe, 'rules');
+}
+
 // ── Segmented Prompt 路径函数 ──
 // 每个 prompt (global / project) 可拆分为 segments 目录：
 //   {base}.d/_index.json  → 元数据索引
@@ -1267,6 +1282,23 @@ export function getAgentDataDir(): string {
 /** 某一 Agent 的私有工作区根目录 */
 export function getAgentDataPath(agentId: string): string {
   return path.join(getAgentDataDir(), safeAgentIdSegment(agentId));
+}
+
+// ── 注册项目「工作资料」空间（规范：projects/workspaces/<projectKey>/，对齐 agents/workspaces/<agentId>/）──
+
+/** 各项目工作资料父目录：projects/workspaces/ */
+export function getProjectWorkspacesDir(): string {
+  return path.join(DATA_DIR, 'projects', 'workspaces');
+}
+
+/** 重新导出，供仅引用 file-store 的服务端代码使用 */
+export { getProjectWorkMaterialsRelativePath } from '@/lib/project-work-materials-path';
+
+/** 某一项目工作资料根目录（绝对路径，供服务端/脚本使用） */
+export function getProjectWorkMaterialsPath(projectKey: string): string {
+  const rel = getProjectWorkMaterialsRelativePath(projectKey);
+  const parts = rel.split('/');
+  return path.join(DATA_DIR, ...parts);
 }
 
 export function getAgentDataFilePath(agentId: string, fileName: string): string {

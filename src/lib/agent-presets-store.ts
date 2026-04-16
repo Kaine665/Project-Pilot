@@ -4,7 +4,7 @@ import {
   writeJsonFile,
   ensureDataDirV2Migrated,
 } from '@/lib/file-store';
-import { isValidProjectKey } from '@/lib/security';
+import { isValidProjectKey } from '@/lib/security-validation';
 import type {
   AgentCapabilities,
   AgentPreset,

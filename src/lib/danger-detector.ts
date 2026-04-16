@@ -12,7 +12,7 @@
 
 import type { DangerLevel, DangerCategory, DangerDetectorSettings } from '@/types';
 import { DEFAULT_DANGER_SETTINGS } from '@/types';
-import { getDataDir, getAgentDataDir } from '@/lib/file-store';
+import { getDataDir, getAgentDataDir, getProjectWorkspacesDir } from '@/lib/file-store';
 
 interface DangerPattern {
   pattern: RegExp;
@@ -67,6 +67,7 @@ function detectDataDirWrite(command: string): { reason: string } | null {
   const normalized = command.replace(/\\/g, '/');
   const dataDirNormalized = getDataDir().replace(/\\/g, '/');
   const agentWorkspacesNormalized = getAgentDataDir().replace(/\\/g, '/');
+  const projectWorkspacesNormalized = getProjectWorkspacesDir().replace(/\\/g, '/');
 
   const referencesDataDir = normalized.includes(dataDirNormalized)
     || normalized.includes('.project-pilot/data')
@@ -74,8 +75,11 @@ function detectDataDirWrite(command: string): { reason: string } | null {
 
   if (!referencesDataDir) return null;
 
-  // 白名单：agents/workspaces 为 Agent 私有工作区，允许写入
+  // 白名单：agents/workspaces、projects/workspaces 为各自私有工作区，允许写入
   if (normalized.includes(agentWorkspacesNormalized)) {
+    return null;
+  }
+  if (normalized.includes(projectWorkspacesNormalized)) {
     return null;
   }
 

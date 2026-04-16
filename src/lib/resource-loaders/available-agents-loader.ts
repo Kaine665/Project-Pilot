@@ -1,5 +1,6 @@
 /**
- * AvailableAgentsLoader — 列出可委派的 PP Agent，并说明如何通过 Bash 调用 call-agent CLI。
+ * AvailableAgentsLoader — 可调用 Agent 目录 + call-agent CLI 用法（事实与命令）。
+ * 不包含团队协作原则（见 global-prompt）；二者分工见 `docs/design/prompt-system-architecture.md`。
  *
  * 该资源对**所有** Agent 注入（与 capabilities.subAgent 无关）。
  * `subAgent` 仅控制 Claude Code 的 Task / TaskOutput / TaskStop 工具。
@@ -63,14 +64,9 @@ export class AvailableAgentsLoader implements ResourceLoader {
 
     const shAppRoot = PP_APP_CODE_ROOT.replace(/\\/g, '/');
 
-    const md = `你可以通过 **Bash** 执行 \`call-agent\` CLI 调用以下 Agent 来协助完成子任务。
+    const md = `下列 Agent 可通过 **call-agent** CLI 委派。SDK **没有** \`Agent\` / \`InvokeAgent\` 等一键切换工具；委派须用 **Bash** 在下方 **PP 应用代码根**执行（与当前业务项目 \`cwd\` 通常不同）。未开启 Bash 时无法在终端委派，请用户在界面新建会话并选择目标 Agent。
 
-**重要**：
-- Claude Agent SDK **没有**名为 \`Agent\`、\`InvokeAgent\` 等「一键切换 Agent」的原生工具；若尝试调用会失败。
-- 委派方式：使用 **Bash** 工具，\`cd\` 到下方 **PP 应用代码根**（与当前会话 \`cwd\` 常为业务项目根目录**不是**同一目录），再运行 \`npx tsx src/lib/call-agent.ts ...\`。
-- 若当前 Agent **未开启 Bash**（\`capabilities.bash = false\`），无法执行上述命令，应请用户在界面中**新建会话并切换**到目标 Agent。
-
-**PP 应用代码根（用于 call-agent）**：\`${shAppRoot}\`
+**PP 应用代码根**：\`${shAppRoot}\`
 
 ${tableHeader}
 ${callable.map(toRow).join('\n')}

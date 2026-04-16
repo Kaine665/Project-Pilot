@@ -24,7 +24,10 @@ import { shouldApplyOpenAIFastMode } from '@/lib/openai-fast-mode';
 import { DEFAULT_OPENAI_REASONING_EFFORT, normalizeOpenAIReasoningEffort } from '@/lib/openai-reasoning-effort';
 import { getAppWorkingDir } from '@/lib/app-paths';
 import { buildSdkQueryOptions, buildCodexExecEnv, getEffectiveAuthMode, getProviderScopedModel, getSettings } from '@/lib/settings-manager';
+import { buildSystemLevelPrompt, type SystemLevelPromptInput } from '@/lib/system-level-prompt';
 import type { AgentEvent, AgentCapabilities, ProviderId } from '@/types';
+
+export type { SystemLevelPromptInput } from '@/lib/system-level-prompt';
 
 /** 运行时统一输入：正文为 UTF-8 字符串；多模态由 StreamOptions.images 传入 */
 export type AgentRunnerInput = string;
@@ -66,6 +69,11 @@ export interface AgentRunnerCreateOptions {
   fastModeOverride?: boolean;
   resumeSessionId?: string;
   cwd?: string;
+  /**
+   * Claude Agent SDK：`buildSystemLevelPrompt()` 的输入（平台级 systemPrompt）。
+   * OpenAI/Codex 路径当前不使用。
+   */
+  systemLevelInput?: SystemLevelPromptInput;
 }
 
 // ── Registry ─────────────────────────────────────────────────────────────────
@@ -157,6 +165,11 @@ async function createOpenAiCodexRunner(opts: AgentRunnerCreateOptions, cwd: stri
 }
 
 async function createClaudeAgentRunner(opts: AgentRunnerCreateOptions, cwd: string): Promise<IAgentRunner> {
+  if (!opts.systemLevelInput) {
+    throw new Error('[AgentRunner] Claude 路径需要 systemLevelInput（平台级 systemPrompt）');
+  }
+  const systemPrompt = await buildSystemLevelPrompt(opts.systemLevelInput);
+
   const sdkOpts = await buildSdkQueryOptions({
     capabilities: opts.capabilities,
     providerOverride: opts.provider,
@@ -164,6 +177,7 @@ async function createClaudeAgentRunner(opts: AgentRunnerCreateOptions, cwd: stri
     effortOverride: opts.effortOverride,
     resumeSessionId: opts.resumeSessionId,
     cwd,
+    systemPrompt,
   });
 
   // Diagnostic: log key SDK options

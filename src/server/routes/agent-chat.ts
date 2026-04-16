@@ -39,7 +39,7 @@ import {
 } from '@/lib/agent-chat-manager';
 import { normalizeOpenAIFastMode } from '@/lib/openai-fast-mode';
 import { OPENAI_REASONING_EFFORTS, normalizeOpenAIReasoningEffort } from '@/lib/openai-reasoning-effort';
-import { isValidProjectKey, isValidSessionId } from '@/lib/security';
+import { isValidProjectKey, isValidSessionId } from '@/lib/security-validation';
 import { PROVIDER_REGISTRY } from '@/lib/provider-registry';
 import { getModelContextWindow } from '@/lib/provider-registry';
 import { normalizeImageAttachments } from '@/lib/image-assets';

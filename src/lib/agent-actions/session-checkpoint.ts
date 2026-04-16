@@ -5,6 +5,7 @@
  * Injection method: resume button in the chat notification area
  */
 
+import { PROMPT_PRIORITY } from '@/lib/prompt-priorities';
 import type { AgentAction, ActionContext } from './types';
 import type { SessionCheckpoint } from '@/types/agent-chat';
 
@@ -45,7 +46,7 @@ export const sessionCheckpointAction: AgentAction<CheckpointTagData> = {
   id: 'session-checkpoint',
   resourceType: 'checkpoint-instructions',
   sectionTitle: '会话检查点',
-  priority: 85,
+  priority: PROMPT_PRIORITY.DOC_SAVE_OR_CHECKPOINT,
 
   instructions: `## 会话检查点（自动触发）
 

@@ -898,7 +898,10 @@
     },
     "repoWorkspace": {
       "title": "项目工作区",
-      "empty": "当前项目未设置本地路径。请在「项目」或 Flow 项目设置中为该项目填写磁盘路径。"
+      "empty": "未选择当前项目。请先在侧栏或项目管理中选中项目；「工作资料」目录由应用在数据根下自动分配（projects/workspaces/<项目Key>/）。",
+      "codeSection": "代码仓库",
+      "workSection": "工作资料",
+      "workFolderUnset": "工作资料目录由应用分配在数据根 projects/workspaces/ 下，首次打开时会自动创建。"
     },
     "projectWorkspace": {
       "title": "Agent 数据工作区",
