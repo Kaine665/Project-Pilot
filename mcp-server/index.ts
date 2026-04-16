@@ -3,7 +3,7 @@
  *
  * 通过 stdio 协议为 Cursor / Claude Code 等 MCP 客户端暴露 PP 核心数据。
  *
- * 能力域：Projects · Documents · Todos · Agents · Skills · Prompts（只读）
+ * 能力域：Projects · Documents · Todos · Agents · Skills · Prompts · 语义资源（pp.* 读写）
  *
  * 本地开发：`npm run mcp` 或 `npx tsx mcp-server/index.ts`（在仓库根、已 `npm install`）。
  * **Cursor 外部 MCP**：见仓库根 `.cursor/mcp.json` 与 `docs/cursor-mcp-project-pilot.md`
@@ -32,6 +32,7 @@ import { listAgents, getAgentById } from '../src/lib/agents-store';
 import { listAllSkills, readSkillFile } from '../src/lib/skill-store';
 import { readPromptFile } from '../src/lib/agent-prompt-store';
 import type { ProjectEntry, ProjectTechStack, TodoItem } from '../src/types';
+import { registerPpResourceTools } from './pp-resource-tools';
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -47,8 +48,10 @@ function jsonResult(data: unknown) {
 
 const server = new McpServer({
   name: 'project-pilot',
-  version: '0.2.0',
+  version: '0.3.0',
 });
+
+registerPpResourceTools(server);
 
 // ═══════════════════════════════════════════════════════════════════
 //  1. Projects

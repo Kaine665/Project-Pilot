@@ -5,8 +5,9 @@
  *   1. Segmented mode: {DATA_DIR}/prompts/global.d/ (if _index.json exists)
  *   2. Single file: {DATA_DIR}/prompts/global.md
  *   3. Builtin defaults: {DATA_DIR}/prompts/builtin/global.md（首次从安装种子复制，见 builtin-prompt-materialize）
+ *   4. 条件规则: {DATA_DIR}/prompts/global/rules/*.md（frontmatter，见 prompt-rule-files.ts）
  *
- * All missing → ok: false (silent skip).
+ * All missing → ok: false (unless 仅 rules 命中)。
  */
 
 import type { ResourceLoader, LoaderContext } from '../resource-loader';
@@ -15,42 +16,49 @@ import { readFile } from 'fs/promises';
 import { getGlobalPromptPath } from '../file-store';
 import { readBuiltinGlobalPrompt } from '../builtin-defaults';
 import { resolveSegmentedContent } from '../segmented-prompt-store';
+import { loadGlobalPromptRulesContent } from '../prompt-rule-files';
 
 export class GlobalPromptLoader implements ResourceLoader {
   readonly type = 'global-prompt' as const;
 
-  async resolve(ref: ResourceRef, _ctx: LoaderContext): Promise<ResolvedResource> {
-    // 1. Try segmented mode first
+  async resolve(ref: ResourceRef, ctx: LoaderContext): Promise<ResolvedResource> {
+    let base: string | undefined;
+    let usedSegmented = false;
+
     try {
       const segmented = await resolveSegmentedContent({ type: 'global' });
       if (segmented !== undefined) {
-        // In segmented mode — even empty string means "segmented but all disabled"
-        return { ref, content: segmented, ok: !!segmented };
+        base = segmented;
+        usedSegmented = true;
       }
     } catch {
-      // Segmented mode failed — fall through to single file
+      /* fall through */
     }
 
-    // 2. Try single .md file in user data directory
-    try {
-      const content = (await readFile(getGlobalPromptPath(), 'utf-8')).trim();
-      if (content) {
-        return { ref, content, ok: true };
+    if (!usedSegmented) {
+      try {
+        const c = (await readFile(getGlobalPromptPath(), 'utf-8')).trim();
+        if (c) base = c;
+      } catch {
+        /* fall through */
       }
-    } catch {
-      // File not found — fall through to defaults
     }
 
-    // 3. Fallback to builtin defaults
-    try {
-      const content = (await readBuiltinGlobalPrompt())?.trim();
-      if (content) {
-        return { ref, content, ok: true };
+    if (!usedSegmented && (base === undefined || base === '')) {
+      try {
+        const c = (await readBuiltinGlobalPrompt())?.trim();
+        if (c) base = c;
+      } catch {
+        /* fall through */
       }
-    } catch {
-      // Defaults not found either
     }
 
-    return { ref, content: '', ok: false };
+    const rules = await loadGlobalPromptRulesContent(ctx.promptGlobMatchPaths ?? []);
+    let merged = (base ?? '').trim();
+    if (rules) {
+      merged = merged ? `${merged}\n\n---\n\n${rules}` : rules;
+    }
+
+    return { ref, content: merged, ok: !!merged };
   }
 }

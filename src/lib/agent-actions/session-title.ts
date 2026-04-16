@@ -2,6 +2,7 @@
  * session-title action — AI generates a short session title in its first response.
  */
 
+import { PROMPT_PRIORITY } from '@/lib/prompt-priorities';
 import type { AgentAction, ActionContext } from './types';
 
 // ── Parsed tag data ──
@@ -16,7 +17,7 @@ export const sessionTitleAction: AgentAction<SessionTitleData> = {
   id: 'session-title',
   resourceType: 'session-title-instructions',
   sectionTitle: '会话标题',
-  priority: 90,
+  priority: PROMPT_PRIORITY.SESSION_TITLE_INSTRUCTIONS,
 
   // 标题现在由 session-title-generator.ts 异步生成，不再需要注入 prompt 指令。
   // 保留 parse/strip/execute 供向后兼容（旧 AI 回复中可能仍含标签）。

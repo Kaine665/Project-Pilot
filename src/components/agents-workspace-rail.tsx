@@ -28,6 +28,11 @@ export interface AgentsRailCapabilityItem {
 export interface AgentsWorkspaceRailProps {
   className?: string;
   projectRootPath?: string | null;
+  /**
+   * 数据根下相对路径：`projects/workspaces/<projectKey>`（与 `agents/workspaces/<id>` 一致，由应用分配，非用户自选磁盘路径）。
+   * 有当前项目 key 时传入；与 `projectRootPath` 并列展示。
+   */
+  projectWorkMaterialsRelativePath?: string | null;
   workspaceAgentDataPath: string | null | undefined;
   promptStackItems: PromptStackSeedItem[];
   promptStackKey: string;
@@ -84,6 +89,7 @@ function readDetailPanelsCollapsed(): [boolean, boolean, boolean] {
 export function AgentsWorkspaceRail({
   className,
   projectRootPath,
+  projectWorkMaterialsRelativePath,
   workspaceAgentDataPath,
   promptStackItems,
   promptStackKey,
@@ -384,25 +390,63 @@ export function AgentsWorkspaceRail({
 
   const renderActivePanel = () => {
     switch (activeTab) {
-      case 0:
-        return projectRootPath ? (
+      case 0: {
+        const hasCode = Boolean(projectRootPath?.trim());
+        const wm = projectWorkMaterialsRelativePath?.trim() ?? null;
+
+        if (!wm) {
+          return (
+            <div className="flex min-h-[72px] flex-1 items-center justify-center px-4 py-4 text-center text-[11px] leading-snug text-muted-foreground">
+              {t('repoWorkspace.empty')}
+            </div>
+          );
+        }
+
+        const workExplorer = (
+          <FolderExplorerPanel
+            key={`proj-wm:${wm}`}
+            embedded
+            hideFolderSummaryBar
+            lockToInitialDataPath
+            onClose={() => {}}
+            initialPath={wm}
+            initialResolveMode="data"
+          />
+        );
+
+        if (!hasCode) {
+          return (
+            <div
+              className="flex min-h-0 flex-1 flex-col overflow-hidden [overflow-anchor:none]"
+              data-rail-panel-body="project-root"
+            >
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{workExplorer}</div>
+            </div>
+          );
+        }
+
+        return (
           <div
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none]"
+            className="flex min-h-0 flex-1 flex-col overflow-hidden [overflow-anchor:none]"
             data-rail-panel-body="project-root"
           >
-            <FolderExplorerPanel
-              key={`proj:${projectRootPath}`}
-              embedded
-              hideFolderSummaryBar
-              onClose={() => {}}
-              initialPath={projectRootPath}
-            />
-          </div>
-        ) : (
-          <div className="flex min-h-[72px] flex-1 items-center justify-center px-4 py-4 text-center text-[11px] leading-snug text-muted-foreground">
-            {t('repoWorkspace.empty')}
+            <div className="flex min-h-0 min-h-[30%] flex-1 flex-col overflow-hidden border-b border-border/60">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                <FolderExplorerPanel
+                  key={`proj:${projectRootPath}`}
+                  embedded
+                  hideFolderSummaryBar
+                  onClose={() => {}}
+                  initialPath={projectRootPath!}
+                />
+              </div>
+            </div>
+            <div className="flex min-h-0 min-h-[30%] flex-1 flex-col overflow-hidden">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{workExplorer}</div>
+            </div>
           </div>
         );
+      }
       case 1:
         return renderDetailAgentDataBody();
       case 2:

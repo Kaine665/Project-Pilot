@@ -19,7 +19,7 @@ import {
   DEFAULT_PLACEHOLDER_PROJECT_KEY,
   isReservedDefaultProjectKey,
 } from '@/lib/default-project';
-import { isValidProjectKey } from '@/lib/security';
+import { isValidProjectKey } from '@/lib/security-validation';
 import type {
   AgentCapabilities,
   AgentPreset,

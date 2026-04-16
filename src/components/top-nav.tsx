@@ -2,7 +2,6 @@
 
 import type { CSSProperties } from 'react';
 import { useTranslations } from '@/client/i18n/use-translations';
-import { ProjectSwitcher } from '@/components/project-switcher';
 import { cn } from '@/lib/utils';
 
 export function TopNav({
@@ -30,12 +29,12 @@ export function TopNav({
 
   const electronChrome = titleBarInsetPx > 0;
 
-  // 三列 `1fr / auto / 1fr`：中间项目切换在顶栏几何居中，左右工具区宽度不等时也不偏移（Electron 无 WCO 顶栏同理）。
+  // 顶栏不再放置项目切换器（网页与桌面一致）；项目在各业务页内切换（如 Agents 侧栏）。
   // Electron 有 `titleBarOverlay` 时本组件通常不挂载；若挂载则勿在整段 header 上 `drag`（Windows 非客户区问题）。
   return (
     <header
       className={cn(
-        'relative grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 bg-white px-4 py-1 sm:px-6 dark:bg-zinc-950 sm:gap-3',
+        'relative flex shrink-0 items-center justify-between gap-2 bg-white px-4 py-1 sm:px-6 dark:bg-zinc-950 sm:gap-3',
         electronChrome
           ? 'border-zinc-200 dark:border-zinc-800'
           : 'border-b border-zinc-200 dark:border-zinc-800',
@@ -66,13 +65,7 @@ export function TopNav({
           <div className="h-8 w-8 shrink-0" aria-hidden />
         )}
       </div>
-      <div
-        className="relative z-10 flex min-w-0 max-w-[min(42vw,20rem)] shrink items-center justify-center justify-self-center px-1 sm:px-2"
-        style={noDragStyle}
-      >
-        <ProjectSwitcher />
-      </div>
-      <div className="relative z-10 flex min-w-0 items-center justify-end gap-3" style={noDragStyle}>
+      <div className="relative z-10 flex min-w-0 flex-1 items-center justify-end gap-3" style={noDragStyle}>
         {children}
       </div>
     </header>

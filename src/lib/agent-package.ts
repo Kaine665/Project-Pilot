@@ -13,6 +13,7 @@ import type { Agent, AgentsData, AgentCapabilities, DocEntry } from '@/types';
 import { DEFAULT_AGENT_CAPABILITIES } from '@/types';
 import type { AgentPackage, PackagedContext } from '@/types/agent-package';
 import type { ResourceRef } from '@/types/resource';
+import { PROMPT_PRIORITY } from '@/lib/prompt-priorities';
 import { promises as fs } from 'fs';
 import { invalidateAgentsCache } from '@/lib/agents-store';
 import { assertDocumentTextWritable } from '@/lib/document-text-write-guard';
@@ -122,9 +123,9 @@ export async function importAgent(
   }
 
   const defaultResources: ResourceRef[] = [
-    { type: 'system-prompt', id: agentId, priority: 0 },
-    { type: 'design-docs-index', id: '_all', priority: 25 },
-    { type: 'doc-save-instructions', id: '_static', priority: 85 },
+    { type: 'system-prompt', id: agentId, priority: PROMPT_PRIORITY.SYSTEM_PROMPT },
+    { type: 'design-docs-index', id: '_all', priority: PROMPT_PRIORITY.DESIGN_DOCS_INDEX },
+    { type: 'doc-save-instructions', id: '_static', priority: PROMPT_PRIORITY.DOC_SAVE_OR_CHECKPOINT },
   ];
 
   const agent: Agent = {

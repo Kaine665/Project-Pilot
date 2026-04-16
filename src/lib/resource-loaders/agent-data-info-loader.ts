@@ -1,7 +1,6 @@
 /**
- * AgentDataInfoLoader — 列出 Agent 私有工作区目录内已有文件（动态）。
- *
- * 路径约定与 **全局约束**（\`global-prompt\` / \`prompts/global.md\`）中的「Agent 数据工作区（磁盘约定）」一节一致。
+ * AgentDataInfoLoader — 列出 Agent 私有工作区目录路径与已有文件（动态）。
+ * 只输出事实（路径 + 文件表），不包含工具或操作策略（见 SDK systemPrompt）。
  *
  * ref.id = agentId（通常从 ctx.agentId 获取）。
  * 仅在 Agent 开启 dataStore 能力时才会注入此资源。
@@ -36,7 +35,6 @@ export class AgentDataInfoLoader implements ResourceLoader {
     }
 
     let md = `你的专属数据目录：\`${dataDir}\`\n`;
-    md += '你可以在此目录下自由读写文件（bash cat/echo/node 等），不会触发安全告警。\n';
 
     if (files.length > 0) {
       md += '\n已有文件：\n| 文件名 | 大小 |\n|--------|------|\n';

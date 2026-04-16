@@ -5,12 +5,13 @@
 
 import type { Agent } from '@/types';
 import type { ResourceRef } from '@/types/resource';
+import { PROMPT_PRIORITY } from '@/lib/prompt-priorities';
 
 /** 所有 Agent 提示词均注入：Bash + call-agent 可委派给其他 PP Agent（与 capabilities.subAgent 无关） */
 export const CALLABLE_AGENTS_RESOURCE_REF: ResourceRef = {
   type: 'available-agents',
   id: '_callable',
-  priority: 18,
+  priority: PROMPT_PRIORITY.CALLABLE_AGENTS,
   label: '可调用 Agent',
 };
 
@@ -18,11 +19,11 @@ export const CALLABLE_AGENTS_RESOURCE_REF: ResourceRef = {
  * Build a default ResourceRef[] from an Agent that has no `defaultResources`.
  *
  * Maps the legacy fields:
- *   agent.systemPrompt / fallback  → system-prompt ref (priority 0)
- *   design-docs-index              → always included (priority 25)
- *   available-agents               → always included (priority 18)
- *   todoRead capability            → todo-list ref (priority 40)
- *   doc-save-instructions          → always included (priority 85)
+ *   agent.systemPrompt / fallback  → system-prompt ref
+ *   design-docs-index              → always included
+ *   available-agents               → always included
+ *   todoRead capability            → todo-list ref
+ *   doc-save-instructions          → always included
  */
 export function migrateAgentToResources(agent: Agent): ResourceRef[] {
   const refs: ResourceRef[] = [];
@@ -31,7 +32,7 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
   refs.push({
     type: 'system-prompt',
     id: agent.id,
-    priority: 0,
+    priority: PROMPT_PRIORITY.SYSTEM_PROMPT,
     label: '系统提示词',
   });
 
@@ -39,7 +40,7 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
   refs.push({
     type: 'design-docs-index',
     id: '_all',
-    priority: 25,
+    priority: PROMPT_PRIORITY.DESIGN_DOCS_INDEX,
     label: '设计文档索引',
   });
 
@@ -47,7 +48,7 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
   refs.push({
     type: 'distiller-knowledge',
     id: '_project',
-    priority: 26,
+    priority: PROMPT_PRIORITY.DISTILLER_KNOWLEDGE,
     label: '产物 · 提炼知识摘要',
   });
 
@@ -55,7 +56,7 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
   refs.push({
     type: 'active-tasks',
     id: '_running',
-    priority: 22,
+    priority: PROMPT_PRIORITY.ACTIVE_TASKS,
     label: '并行执行看板',
   });
 
@@ -63,7 +64,7 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
   refs.push({
     type: 'shared-memory',
     id: '_shared',
-    priority: 23,
+    priority: PROMPT_PRIORITY.SHARED_MEMORY,
     label: 'Agent 共享记忆',
   });
 
@@ -74,7 +75,7 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
     refs.push({
       type: 'agent-data-info',
       id: agent.id,
-      priority: 28,
+      priority: PROMPT_PRIORITY.AGENT_DATA_INFO,
       label: 'Agent 私有数据',
     });
   }
@@ -84,7 +85,7 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
     refs.push({
       type: 'todo-list',
       id: 'pending',
-      priority: 40,
+      priority: PROMPT_PRIORITY.TODO_LIST_OR_CODE_CARD_INDEX,
       label: '待办事项',
     });
   }
@@ -93,7 +94,7 @@ export function migrateAgentToResources(agent: Agent): ResourceRef[] {
   refs.push({
     type: 'doc-save-instructions',
     id: '_static',
-    priority: 85,
+    priority: PROMPT_PRIORITY.DOC_SAVE_OR_CHECKPOINT,
     label: '设计文档保存指令',
   });
 
