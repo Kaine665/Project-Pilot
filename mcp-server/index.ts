@@ -28,10 +28,19 @@ import {
   documentToDocEntry,
 } from '../src/lib/documents-store';
 import { readTodosMerged, modifyTodosMerged } from '../src/lib/todo-file-store';
-import { listAgents, getAgentById } from '../src/lib/agents-store';
+import { createAgent, listAgents, getAgentById } from '../src/lib/agents-store';
 import { listAllSkills, readSkillFile } from '../src/lib/skill-store';
 import { readPromptFile } from '../src/lib/agent-prompt-store';
-import type { ProjectEntry, ProjectTechStack, TodoItem } from '../src/types';
+import { documentTextWriteErrorResponse } from '../src/lib/document-text-write-guard';
+import type {
+  ProjectEntry,
+  ProjectTechStack,
+  TodoItem,
+  AgentCapabilities,
+  ResourceRef,
+  ProviderId,
+} from '../src/types';
+import { DEFAULT_AGENT_CAPABILITIES } from '../src/types';
 import { registerPpResourceTools } from './pp-resource-tools';
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -344,6 +353,83 @@ server.tool(
       systemPromptPreview: systemPrompt?.slice(0, 500),
       systemPromptLength: systemPrompt?.length ?? 0,
     });
+  },
+);
+
+const agentCapabilitiesPartialSchema = z
+  .object({
+    bash: z.boolean().optional(),
+    fileAccess: z.boolean().optional(),
+    web: z.boolean().optional(),
+    subAgent: z.boolean().optional(),
+    skipReview: z.boolean().optional(),
+    todoRead: z.boolean().optional(),
+    exposePromptPath: z.boolean().optional(),
+    dataStore: z.boolean().optional(),
+  })
+  .optional();
+
+function mergeAgentCapabilities(partial?: z.infer<typeof agentCapabilitiesPartialSchema>): AgentCapabilities | undefined {
+  if (partial === undefined) return undefined;
+  return { ...DEFAULT_AGENT_CAPABILITIES, ...partial };
+}
+
+server.tool(
+  'create_agent',
+  'Create a new non-built-in agent. Same logic as POST /api/agents (agents-store createAgent). Use UTF-8 structured args to avoid shell encoding issues.',
+  {
+    name: z.string().min(1).describe('Display name (required)'),
+    projectKey: z.string().min(1).describe('Project key, e.g. _pp_inbox for general workspace (required)'),
+    description: z.string().optional().describe('Short description'),
+    systemPrompt: z.string().optional().describe('Initial system prompt; written to prompts/agents/<id>.md'),
+    icon: z.string().optional().describe('Lucide icon name'),
+    capabilities: agentCapabilitiesPartialSchema.describe(
+      'Optional capability flags; omitted keys default to app defaults (same merge idea as full AgentCapabilities)',
+    ),
+    requiredParams: z.array(z.string()).optional(),
+    contextIds: z.array(z.string()).optional(),
+    defaultResources: z
+      .array(z.record(z.string(), z.unknown()))
+      .optional()
+      .describe('ResourceRef[] as JSON objects'),
+    promptRefs: z.array(z.string()).optional(),
+    triggerHints: z.array(z.string()).optional(),
+    defaultProvider: z.string().optional(),
+    defaultModel: z.string().optional(),
+    defaultOpenAIReasoningEffort: z
+      .enum(['minimal', 'low', 'medium', 'high', 'xhigh'])
+      .nullable()
+      .optional(),
+    contextStrategy: z.enum(['additive', 'exclusive']).optional(),
+  },
+  async (input) => {
+    try {
+      const capabilities = mergeAgentCapabilities(input.capabilities);
+      const agent = await createAgent({
+        name: input.name.trim(),
+        projectKey: input.projectKey.trim(),
+        description: input.description,
+        systemPrompt: input.systemPrompt,
+        icon: input.icon,
+        capabilities,
+        requiredParams: input.requiredParams,
+        contextIds: input.contextIds,
+        defaultResources: input.defaultResources as ResourceRef[] | undefined,
+        promptRefs: input.promptRefs,
+        triggerHints: input.triggerHints,
+        defaultProvider: input.defaultProvider as ProviderId | undefined,
+        defaultModel: input.defaultModel,
+        defaultOpenAIReasoningEffort: input.defaultOpenAIReasoningEffort ?? undefined,
+        contextStrategy: input.contextStrategy,
+      });
+      return jsonResult({ ok: true, agent });
+    } catch (err) {
+      const enc = documentTextWriteErrorResponse(err);
+      if (enc) {
+        return jsonResult({ ok: false, error: enc.body.error, code: enc.body.code, issues: enc.body.issues });
+      }
+      return textResult(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    }
   },
 );
 
