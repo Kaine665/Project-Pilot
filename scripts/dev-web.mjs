@@ -16,7 +16,7 @@ const {
   allocateDevStackPorts,
   loadDevServerConfig,
   isDevStackReady,
-} = require(path.join(root, "config", "load-dev-server.cjs"));
+} = require(path.join(root, "src", "config", "load-dev-server.cjs"));
 
 const children = [];
 

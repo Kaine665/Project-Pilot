@@ -9,8 +9,12 @@ const DEV_PORTS_FILE = ".pp-dev-ports.json";
 /** 超过该时间未更新的端口文件视为过期，避免指向已退出的旧 dev 进程 */
 const DEV_PORTS_FILE_MAX_AGE_MS = 15 * 60 * 1000;
 
+function devServerJsonPath(projectRoot) {
+  return path.join(projectRoot, "src", "config", "dev-server.json");
+}
+
 /**
- * 开发态端口与 URL 的单一来源：config/dev-server.json
+ * 开发态端口与 URL 的单一来源：src/config/dev-server.json
  *
  * 环境变量覆盖（可选；**默认**优先级最高）：
  * - PROJECT_PILOT_CLIENT_PORT — Vite / Electron 加载页端口
@@ -45,7 +49,7 @@ function readDevPortsFileSync(projectRoot) {
 }
 
 function loadDevServerConfig(projectRoot) {
-  const jsonPath = path.join(projectRoot, "config", "dev-server.json");
+  const jsonPath = devServerJsonPath(projectRoot);
   const raw = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
 
   const fromFile = readDevPortsFileSync(projectRoot);
@@ -109,9 +113,10 @@ function probeUrl(url) {
 
 /** 约定：Vite 前端 + Hono API 均已可响应 */
 async function isDevStackReady(projectRoot) {
-  const jsonPath = path.join(projectRoot, "config", "dev-server.json");
+  const jsonPath = devServerJsonPath(projectRoot);
   const raw = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
   const fromFile = readDevPortsFileSync(projectRoot);
+
   if (fromFile) {
     const probeHost = raw.client.probeHost;
     const apiHost = raw.api.host;
@@ -134,7 +139,7 @@ async function isDevStackReady(projectRoot) {
  * 供 Vite / Hono / Electron 子进程及第二终端对齐。
  */
 async function allocateDevStackPorts(projectRoot) {
-  const jsonPath = path.join(projectRoot, "config", "dev-server.json");
+  const jsonPath = devServerJsonPath(projectRoot);
   const raw = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
 
   const preferredClient = parseInt(

@@ -3,7 +3,7 @@ import { i18nInitPromise } from './i18n/config';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
-import '../app/globals.css';
+import './app/globals.css';
 
 /* 全局兜底：任何未捕获的错误都写进 #root，而非白屏 */
 function showFatalOverlay(label: string, err: unknown) {

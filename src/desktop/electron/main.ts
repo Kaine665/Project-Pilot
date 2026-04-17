@@ -12,7 +12,7 @@ if (process.env.PROJECT_PILOT_DISABLE_GPU === '1') {
 
 const isDev = !!process.env.ELECTRON_DEV;
 const APP_ENTRY_PATH = '/workspace/projects';
-/** 本地 `npm run dev` / `electron-dev` 与 `config/dev-server.json` 一致；`loadDevConfig` 失败时的回退 */
+/** 本地 `npm run dev` / `electron-dev` 与 `packages/config/dev-server.json` 一致；`loadDevConfig` 失败时的回退 */
 const DEV_CLIENT_FALLBACK_PORT = 4000;
 /** 打包后内嵌 Hono 首选端口（与生产 bundle 约定一致；占用时由 `port-finder` 回退） */
 const PACKAGED_EMBEDDED_PORT = 4287;
@@ -22,7 +22,7 @@ let devMainLoadAttempts = 0;
 const DEV_MAIN_LOAD_MAX = 30;
 
 /** 仓库根目录（main 编译在 electron/dist 下） */
-const projectRoot = path.join(__dirname, '..', '..');
+const projectRoot = path.join(__dirname, '..', '..', '..', '..');
 
 /** 浏览器 OAuth 结束页可打开此 URL，将已运行的应用置前（须注册为协议客户端） */
 const OAUTH_RETURN_PROTOCOL = /^projectpilot:\/\/oauth\//i;
@@ -55,6 +55,8 @@ function loadDevConfig(): { clientPort: number; clientLoadOrigin: string } {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { loadDevServerConfig } = require(path.join(
       projectRoot,
+      'packages',
+      'packages',
       'config',
       'load-dev-server.cjs',
     )) as { loadDevServerConfig: (root: string) => { clientPort: number; clientLoadOrigin: string } };

@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
 const require = createRequire(import.meta.url);
 const { loadDevServerConfig, isDevStackReady, allocateDevStackPorts } = require(
-  path.join(root, "config", "load-dev-server.cjs"),
+  path.join(root, "src", "config", "load-dev-server.cjs"),
 );
 
 /**
@@ -96,7 +96,7 @@ function envForElectronChild(cfg) {
 function compileElectronMain() {
   try {
     const tscBin = path.join(root, "node_modules", ".bin", "tsc");
-    execSync(`"${tscBin}" -p electron/tsconfig.json`, {
+    execSync(`"${tscBin}" -p src/desktop/electron/tsconfig.json`, {
       cwd: root,
       stdio: "inherit",
       shell: true,

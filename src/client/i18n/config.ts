@@ -1,8 +1,8 @@
 import i18next from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
-import zhMessages from '../../../messages/zh.json';
-import enMessages from '../../../messages/en.json';
+import zhMessages from './messages/zh.json';
+import enMessages from './messages/en.json';
 
 /** 等 init（含语言检测）完成后再 render，避免首屏 t() 未就绪而回显整串键名。 */
 export const i18nInitPromise = Promise.resolve(
