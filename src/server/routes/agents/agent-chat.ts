@@ -635,7 +635,8 @@ app.get('/sessions', async (c) => {
     sessions = await listSessions(agentId);
   } else if (projectKey) {
     const all = await listAllSessions();
-    sessions = all.filter(s => s.projectKey === projectKey);
+    // 与 Agents 侧栏 project 过滤一致：无 projectKey 的会话视为全局/旧版落盘，仍应在当前项目下可见
+    sessions = all.filter(s => !s.projectKey || s.projectKey === projectKey);
   } else {
     sessions = await listAllSessions();
   }
