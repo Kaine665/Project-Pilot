@@ -509,7 +509,12 @@ export async function listSessions(agentId: string): Promise<Omit<AgentChatSessi
 export async function listSessionsByProject(agentId: string, projectKey: string): Promise<Omit<AgentChatSession, 'messages'>[]> {
   const data = await getIndexData();
   return data.sessions
-    .filter(s => s.agentId === agentId && s.projectKey === projectKey && !isEphemeralTestSession(s.id))
+    .filter(
+      s =>
+        s.agentId === agentId
+        && (!s.projectKey || s.projectKey === projectKey)
+        && !isEphemeralTestSession(s.id),
+    )
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 

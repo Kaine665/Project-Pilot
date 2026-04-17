@@ -6,12 +6,12 @@ name: Provider availability smoke
 on:
   pull_request:
     paths:
-      - 'src/lib/aggregate-models-live.ts'
+      - 'src/shared/lib/aggregate-models-live.ts'
       - 'src/server/routes/settings.ts'
-      - 'src/lib/settings-manager.ts'
+      - 'src/shared/lib/settings-manager.ts'
       - 'src/data/providers-registry.json'
-      - 'src/lib/provider-registry.ts'
-      - 'src/lib/model-health-check.ts'
+      - 'src/shared/lib/provider-registry.ts'
+      - 'src/shared/lib/model-health-check.ts'
       - 'scripts/provider-availability-smoke.ts'
       - 'provider-test.env.example'
 
