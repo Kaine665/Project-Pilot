@@ -163,11 +163,11 @@ app.route(api.recycleBin, lazyApiRoute(api.recycleBin, () => import('./routes/re
 app.route(api.upload, lazyApiRoute(api.upload, () => import('./routes/upload')));
 app.route(api.projects, lazyApiRoute(api.projects, () => import('./routes/projects')));
 app.route(api.aiDiscuss, lazyApiRoute(api.aiDiscuss, () => import('./routes/ai-discuss')));
-app.route(api.agentChat, lazyApiRoute(api.agentChat, () => import('./routes/agent-chat')));
+app.route(api.agentChat, lazyApiRoute(api.agentChat, () => import('./routes/agents/agent-chat')));
 app.route(api.schedules, lazyApiRoute(api.schedules, () => import('./routes/schedules')));
 app.route(api.eventTriggers, lazyApiRoute(api.eventTriggers, () => import('./routes/event-triggers')));
 app.route(api.community, lazyApiRoute(api.community, () => import('./routes/community')));
-app.route(api.agentInbox, lazyApiRoute(api.agentInbox, () => import('./routes/agent-inbox')));
+app.route(api.agentInbox, lazyApiRoute(api.agentInbox, () => import('./routes/agents/agent-inbox')));
 app.route(api.distiller, lazyApiRoute(api.distiller, () => import('./routes/distiller')));
 app.route(api.googleAuth, lazyApiRoute(api.googleAuth, () => import('./routes/google-auth')));
 /** 须挂在所有其它 `/api/...` 子树之后，否则会吞掉 `/api/auth/google` 等路径并 404 */
