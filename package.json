@@ -2,7 +2,7 @@
   "name": "project-pilot",
   "version": "0.1.5",
   "private": true,
-  "main": "electron/dist/main.js",
+  "main": "src/desktop/electron/dist/main.js",
   "scripts": {
     "bootstrap": "node scripts/bootstrap.mjs",
     "postinstall": "node scripts/ensure-postcss-alloc-lru.mjs",
@@ -13,13 +13,13 @@
     "build:client": "vite build",
     "build:server": "bun build src/server/index.ts --outfile=dist/server/index.js --target=node --minify --external unzipper && node scripts/copy-builtin-prompt-seeds.mjs",
     "lint": "eslint",
-    "mcp": "tsx mcp-server/index.ts",
+    "mcp": "tsx packages/mcp/index.ts",
     "demo:load": "node scripts/load-demo-data.js",
     "demo:load-en": "node scripts/load-demo-data.js en",
     "migrate:data": "node scripts/migrate-data.js",
     "migrate:layout": "tsx scripts/run-layout-migrations.ts",
     "electron:dev": "node scripts/electron-dev.mjs",
-    "electron:compile": "tsc -p electron/tsconfig.json",
+    "electron:compile": "tsc -p src/desktop/electron/tsconfig.json",
     "electron:build": "cross-env NODE_ENV=production npm run build && npm run electron:compile && electron-builder --win --publish never",
     "electron:build:win": "cross-env NODE_ENV=production npm run build && npm run electron:compile && electron-builder --win --publish never",
     "electron:build:mac": "cross-env NODE_ENV=production npm run build && npm run electron:compile && electron-builder --mac --publish never",
@@ -33,9 +33,9 @@
     "prepare:desktop-bundle": "node scripts/prepare-desktop-bundle.js",
     "preelectron:start": "npm run electron:compile",
     "electron:start": "electron .",
-    "site:dev": "npm run dev --prefix public-site",
-    "site:build": "npm run build --prefix public-site",
-    "site:preview": "npm run preview --prefix public-site"
+    "site:dev": "npm run dev --prefix sites/public-site",
+    "site:build": "npm run build --prefix sites/public-site",
+    "site:preview": "npm run preview --prefix sites/public-site"
   },
   "build": {
     "appId": "com.projectpilot.app",
@@ -45,11 +45,12 @@
       "output": "build"
     },
     "files": [
-      "electron/dist/**/*",
-      "electron/splash.html",
+      "src/desktop/electron/dist/**/*",
+      "src/desktop/electron/splash.html",
       "dist/**/*",
-      "config/dev-server.json",
-      "config/load-dev-server.cjs"
+      "src/config/dev-server.json",
+      "src/config/load-dev-server.cjs",
+      "src/config/find-available-port.cjs"
     ],
     "asarUnpack": [
       "dist/server/**/*",

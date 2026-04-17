@@ -89,3 +89,9 @@ provider-test.env
 
 # 竞品
 /竞品/
+
+# 本地工具缓存
+.minimax/
+
+# 误置于仓库根的完整副本目录（含 node_modules 等，勿提交）
+/test/

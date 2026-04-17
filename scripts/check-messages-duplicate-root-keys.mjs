@@ -11,7 +11,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
-const files = ['messages/zh.json', 'messages/en.json'];
+const files = ['src/client/i18n/messages/zh.json', 'src/client/i18n/messages/en.json'];
 
 function findDuplicateRootKeysByIndent(jsonText) {
   const lines = jsonText.split(/\r?\n/);

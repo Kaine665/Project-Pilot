@@ -13,7 +13,13 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
+    "baseUrl": ".",
     "paths": {
+      "@/app/*": ["./src/client/app/*"],
+      "@/hooks/*": ["./src/shared/hooks/*"],
+      "@/lib/*": ["./src/shared/lib/*"],
+      "@/types": ["./src/shared/types"],
+      "@/types/*": ["./src/shared/types/*"],
       "@/*": ["./src/*"]
     }
   },
@@ -23,5 +29,5 @@
     "src/**/*.d.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "elapp", "task-agent-original", "electron/dist"]
+  "exclude": ["node_modules", "elapp", "task-agent-original", "src/desktop/electron/dist", "sites", "packages"]
 }
