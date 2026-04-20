@@ -6,6 +6,7 @@
  */
 
 import { access } from 'fs/promises';
+import { resolveClaudeAgentSdkCliJsPath } from '@/lib/resolve-claude-agent-sdk-cli';
 import { getDataDir, getSettingsPath, readJsonFile, writeJsonFile } from '@/lib/file-store';
 import { getKimiCandidateBaseUrls, getProviderPreset } from '@/lib/provider-registry';
 import type { AgentCapabilities, AppSettings, ClaudeAuthMode, ClaudeSettings, CustomProviderConfig, ProviderCredential, ProviderId, ResolvedAiCredential } from '@/types';
@@ -634,6 +635,7 @@ export async function buildSdkQueryOptions(opts: {
     env: { ...env, ...(debugSdk ? { DEBUG_CLAUDE_AGENT_SDK: '1' } : {}) },
     model,
     cwd: opts.cwd,
+    pathToClaudeCodeExecutable: resolveClaudeAgentSdkCliJsPath(),
     executable,
     includePartialMessages: true,
     ...(supportsThinking ? { thinking: { type: 'adaptive' } } : {}),
