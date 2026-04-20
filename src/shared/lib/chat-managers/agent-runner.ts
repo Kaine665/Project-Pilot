@@ -20,6 +20,13 @@ import { randomBytes } from 'crypto';
 import { SdkEventAdapter } from '@/lib/sdk-event-adapter';
 import { CodexSdkEventAdapter } from '@/lib/codex-sdk-adapter';
 import { resolveCodexBinaryPath } from '@/lib/codex-cli';
+import {
+  isEnabled as isAgentLogEnabled,
+  logTurnStart,
+  logTurnEnd,
+  logToolUse,
+  logSdkMessage,
+} from '@/lib/agent-logger';
 import { shouldApplyOpenAIFastMode } from '@/lib/openai-fast-mode';
 import { DEFAULT_OPENAI_REASONING_EFFORT, normalizeOpenAIReasoningEffort } from '@/lib/openai-reasoning-effort';
 import { getAppWorkingDir } from '@/lib/app-paths';
@@ -39,6 +46,15 @@ export interface StreamOptions {
     mediaType: string;
     data: string; // base64
   }>;
+  /**
+   * 仅给开发者日志（agent-logger）用的关联上下文。
+   * 业务逻辑不应读取这些字段；为 undefined 时日志只丢失关联，不影响功能。
+   */
+  observability?: {
+    sessionId: string;
+    agentId?: string;
+    runId?: string;
+  };
 }
 
 // ── Public interface ─────────────────────────────────────────────────────────
@@ -161,7 +177,11 @@ async function createOpenAiCodexRunner(opts: AgentRunnerCreateOptions, cwd: stri
     ? codex.resumeThread(opts.resumeSessionId, threadOptions)
     : codex.startThread(threadOptions);
 
-  return new CodexAgentRunner(thread);
+  return new CodexAgentRunner(thread, {
+    provider: opts.provider,
+    model,
+    resumeSessionId: opts.resumeSessionId,
+  });
 }
 
 async function createClaudeAgentRunner(opts: AgentRunnerCreateOptions, cwd: string): Promise<IAgentRunner> {
@@ -185,26 +205,73 @@ async function createClaudeAgentRunner(opts: AgentRunnerCreateOptions, cwd: stri
   console.log(`[ClaudeRunner:create] model=${sdkOpts.model} cwd=${cwd} resume=${opts.resumeSessionId ?? 'none'} effort=${sdkOpts.effort} permissionMode=${sdkOpts.permissionMode}`);
   console.log(`[ClaudeRunner:create] env: BASE_URL=${diagEnv.ANTHROPIC_BASE_URL ?? '(unset)'} API_KEY_len=${diagEnv.ANTHROPIC_API_KEY?.length ?? 0} AUTH_TOKEN_len=${diagEnv.ANTHROPIC_AUTH_TOKEN?.length ?? 0} DISABLE_TRAFFIC=${diagEnv.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC ?? '(unset)'} TIMEOUT=${diagEnv.API_TIMEOUT_MS ?? '(unset)'}`);
 
-  return new ClaudeAgentRunner(sdkOpts);
+  return new ClaudeAgentRunner(sdkOpts, {
+    provider: opts.provider,
+    model: typeof sdkOpts?.model === 'string' ? sdkOpts.model : opts.model,
+    resumeSessionId: opts.resumeSessionId,
+  });
 }
 
 // ── Claude Agent SDK Runner ──────────────────────────────────────────────────
+
+interface RunnerLogMeta {
+  provider: ProviderId;
+  model?: string;
+  resumeSessionId?: string;
+}
 
 class ClaudeAgentRunner implements IAgentRunner {
   private _sdkQuery: SdkQuery | null = null;
   private _capturedSessionId: string | null = null;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(private readonly sdkOpts: any) {}
+  constructor(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private readonly sdkOpts: any,
+    private readonly logMeta: RunnerLogMeta,
+  ) {}
 
   async *stream(input: AgentRunnerInput, options?: StreamOptions): AsyncIterable<AgentEvent> {
     const adapter = new SdkEventAdapter();
     const images = options?.images;
+    const obs = options?.observability;
 
     console.log(`[ClaudeRunner] Creating SDK query, model=${this.sdkOpts?.model}, baseUrl=${this.sdkOpts?.env?.ANTHROPIC_BASE_URL ?? '(default)'}`);
     console.log(`[ClaudeRunner] sdkOpts keys: ${Object.keys(this.sdkOpts).join(', ')}`);
     console.log(`[ClaudeRunner] permissionMode=${this.sdkOpts?.permissionMode} allowDangerouslySkipPermissions=${this.sdkOpts?.allowDangerouslySkipPermissions} effort=${this.sdkOpts?.effort} maxTurns=${this.sdkOpts?.maxTurns} thinking=${JSON.stringify(this.sdkOpts?.thinking)} includePartialMessages=${this.sdkOpts?.includePartialMessages} hasStderr=${typeof this.sdkOpts?.stderr === 'function'} DEBUG_SDK=${this.sdkOpts?.env?.DEBUG_CLAUDE_AGENT_SDK}`);
     console.log(`[ClaudeRunner] promptLen=${input.length} promptPreview=${input.slice(0, 200).replace(/\n/g, '\\n')}`);
+
+    const turnStartedAt = Date.now();
+    let assistantText = '';
+    let finalInputTokens: number | undefined;
+    let finalOutputTokens: number | undefined;
+    let finalContextWindow: number | undefined;
+    let sdkMessageCount = 0;
+    let turnError: Error | null = null;
+
+    if (obs && isAgentLogEnabled('info')) {
+      logTurnStart({
+        sessionId: obs.sessionId,
+        agentId: obs.agentId,
+        runId: obs.runId,
+        provider: this.logMeta.provider,
+        model: this.logMeta.model,
+        resume: !!this.logMeta.resumeSessionId,
+        resumeSessionId: this.logMeta.resumeSessionId,
+        promptText: input,
+        images: images?.map((img) => ({
+          mediaType: img.mediaType,
+          bytes: typeof img.data === 'string' ? Math.floor((img.data.length * 3) / 4) : 0,
+        })),
+        sdkOptionsSummary: {
+          permissionMode: this.sdkOpts?.permissionMode,
+          effort: this.sdkOpts?.effort,
+          maxTurns: this.sdkOpts?.maxTurns,
+          includePartialMessages: this.sdkOpts?.includePartialMessages,
+          thinking: this.sdkOpts?.thinking,
+          baseUrl: this.sdkOpts?.env?.ANTHROPIC_BASE_URL,
+        },
+      });
+    }
 
     if (images && images.length > 0) {
       // Build multimodal prompt: images + text as content blocks inside SDKUserMessage
@@ -241,20 +308,86 @@ class ClaudeAgentRunner implements IAgentRunner {
       let msgCount = 0;
       for await (const msg of this._sdkQuery) {
         msgCount++;
+        sdkMessageCount = msgCount;
         if (msgCount <= 3) {
           console.log(`[ClaudeRunner] SDK msg #${msgCount}: type=${(msg as { type?: string }).type ?? 'unknown'}`);
         }
-        yield* adapter.adapt(msg);
+        if (obs && isAgentLogEnabled('debug')) {
+          const msgType = (msg as { type?: string }).type ?? 'unknown';
+          let preview: string | undefined;
+          try { preview = JSON.stringify(msg).slice(0, 400); } catch { /* ignore */ }
+          logSdkMessage({
+            sessionId: obs.sessionId,
+            runId: obs.runId,
+            msgIndex: msgCount,
+            msgType,
+            preview,
+          });
+        }
+        for (const ev of adapter.adapt(msg)) {
+          if (obs && isAgentLogEnabled('info')) {
+            try {
+              if (ev.type === 'text_delta' && typeof ev.text === 'string') {
+                assistantText += ev.text;
+              } else if (ev.type === 'token_usage') {
+                if (typeof ev.inputTokens === 'number' && ev.inputTokens > 0) finalInputTokens = ev.inputTokens;
+                if (typeof ev.outputTokens === 'number' && ev.outputTokens > 0) finalOutputTokens = ev.outputTokens;
+                if (typeof ev.contextWindow === 'number' && ev.contextWindow > 0) finalContextWindow = ev.contextWindow;
+              } else if (ev.type === 'tool_use_start') {
+                logToolUse({
+                  sessionId: obs.sessionId,
+                  runId: obs.runId,
+                  phase: 'start',
+                  toolId: ev.id,
+                  toolName: ev.toolName,
+                  inputJson: ev.input,
+                });
+              } else if (ev.type === 'tool_use_end') {
+                logToolUse({
+                  sessionId: obs.sessionId,
+                  runId: obs.runId,
+                  phase: 'end',
+                  toolId: ev.id,
+                  toolName: '',
+                  output: ev.output,
+                  status: ev.status,
+                });
+              }
+            } catch { /* logger 不能影响业务流 */ }
+          }
+          yield ev;
+        }
       }
       console.log(`[ClaudeRunner] SDK iteration complete, total msgs: ${msgCount}`);
     } catch (err) {
       console.error(`[ClaudeRunner] SDK stream error:`, err);
+      turnError = err instanceof Error ? err : new Error(String(err));
       throw err;
     } finally {
       if (adapter.sessionId) {
         this._capturedSessionId = adapter.sessionId;
       }
       this._sdkQuery = null;
+
+      if (obs && isAgentLogEnabled('info')) {
+        try {
+          logTurnEnd({
+            sessionId: obs.sessionId,
+            agentId: obs.agentId,
+            runId: obs.runId,
+            provider: this.logMeta.provider,
+            model: this.logMeta.model,
+            durationMs: Date.now() - turnStartedAt,
+            ok: !turnError,
+            assistantText: assistantText || undefined,
+            inputTokens: finalInputTokens,
+            outputTokens: finalOutputTokens,
+            contextWindow: finalContextWindow,
+            sdkMessageCount,
+            errorMessage: turnError?.message,
+          });
+        } catch { /* swallow */ }
+      }
     }
   }
 
@@ -274,10 +407,35 @@ class CodexAgentRunner implements IAgentRunner {
   private _abortController: AbortController | null = null;
   private _capturedSessionId: string | null = null;
 
-  constructor(private readonly thread: Thread) {}
+  constructor(
+    private readonly thread: Thread,
+    private readonly logMeta: RunnerLogMeta,
+  ) {}
 
   async *stream(input: AgentRunnerInput, options?: StreamOptions): AsyncIterable<AgentEvent> {
     const adapter = new CodexSdkEventAdapter();
+    const obs = options?.observability;
+    const turnStartedAt = Date.now();
+    let assistantText = '';
+    let sdkMessageCount = 0;
+    let turnError: Error | null = null;
+
+    if (obs && isAgentLogEnabled('info')) {
+      logTurnStart({
+        sessionId: obs.sessionId,
+        agentId: obs.agentId,
+        runId: obs.runId,
+        provider: this.logMeta.provider,
+        model: this.logMeta.model,
+        resume: !!this.logMeta.resumeSessionId,
+        resumeSessionId: this.logMeta.resumeSessionId,
+        promptText: input,
+        images: options?.images?.map((img) => ({
+          mediaType: img.mediaType,
+          bytes: typeof img.data === 'string' ? Math.floor((img.data.length * 3) / 4) : 0,
+        })),
+      });
+    }
 
     // Codex SDK uses local_image with file paths — write base64 images to temp files
     const tempPaths: string[] = [];
@@ -307,19 +465,76 @@ class CodexAgentRunner implements IAgentRunner {
       });
 
       for await (const ev of events) {
+        sdkMessageCount++;
+        if (obs && isAgentLogEnabled('debug')) {
+          let preview: string | undefined;
+          try { preview = JSON.stringify(ev).slice(0, 400); } catch { /* ignore */ }
+          logSdkMessage({
+            sessionId: obs.sessionId,
+            runId: obs.runId,
+            msgIndex: sdkMessageCount,
+            msgType: (ev as { type?: string }).type ?? 'unknown',
+            preview,
+          });
+        }
         const { events: chatEvents, sessionId } = adapter.adapt(ev);
         if (sessionId) this._capturedSessionId = sessionId;
-        yield* chatEvents;
+        for (const chatEv of chatEvents) {
+          if (obs && isAgentLogEnabled('info')) {
+            try {
+              if (chatEv.type === 'text_delta' && typeof chatEv.text === 'string') {
+                assistantText += chatEv.text;
+              } else if (chatEv.type === 'tool_use_start') {
+                logToolUse({
+                  sessionId: obs.sessionId,
+                  runId: obs.runId,
+                  phase: 'start',
+                  toolId: chatEv.id,
+                  toolName: chatEv.toolName,
+                  inputJson: chatEv.input,
+                });
+              } else if (chatEv.type === 'tool_use_end') {
+                logToolUse({
+                  sessionId: obs.sessionId,
+                  runId: obs.runId,
+                  phase: 'end',
+                  toolId: chatEv.id,
+                  toolName: '',
+                  output: chatEv.output,
+                  status: chatEv.status,
+                });
+              }
+            } catch { /* swallow */ }
+          }
+          yield chatEv;
+        }
       }
     } catch (err) {
       // AbortError 是正常中止，不向上传递
       if (err instanceof Error && err.name === 'AbortError') return;
+      turnError = err instanceof Error ? err : new Error(String(err));
       throw err;
     } finally {
       this._abortController = null;
       // Clean up temp image files
       for (const p of tempPaths) {
         unlink(p).catch(() => {});
+      }
+      if (obs && isAgentLogEnabled('info')) {
+        try {
+          logTurnEnd({
+            sessionId: obs.sessionId,
+            agentId: obs.agentId,
+            runId: obs.runId,
+            provider: this.logMeta.provider,
+            model: this.logMeta.model,
+            durationMs: Date.now() - turnStartedAt,
+            ok: !turnError,
+            assistantText: assistantText || undefined,
+            sdkMessageCount,
+            errorMessage: turnError?.message,
+          });
+        } catch { /* swallow */ }
       }
     }
   }

@@ -110,6 +110,13 @@
 - `--image` flag 对 `--resume` 模式同样有效（当前轮可带图，下一轮不重发）
 - 允许纯图无文字发送：API message 字段允许空字符串，但 message 和 images 不能同时为空
 
+### 开发者向 Agent 交互日志
+
+- 模块：`src/shared/lib/agent-logger.ts`；接入点：`agent-runner.ts`（Claude / Codex 两个 runner 内部）
+- **默认关闭**（`PP_AGENT_LOG=off`）；开 `info` 即落 `~/.project-pilot/logs/agent-YYYY-MM-DD.ndjson`，含 turn 起止 / 工具调用 / token 用量；`debug` 加 SDK message 级；`trace` 放宽截断
+- 设计原则：异步队列 + 截断 + 滚动；任何路径都不抛、不影响业务；不进 UI、不进备份
+- 详细：**[`docs/agent-logger.md`](docs/agent-logger.md)**
+
 ### 前端错误必须可见
 
 `agent-chat-panel.tsx` 所有错误路径（POST 失败、SSE 断连、stream error 事件）都必须通过 `setErrorMsg()` 暴露到 UI。绝不能只 `console.error`，否则用户看到的是"管家不理我"。
