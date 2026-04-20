@@ -812,7 +812,14 @@ class AgentChatManager {
 
     try {
       let eventCount = 0;
-      for await (const event of runner.stream(prompt, { images })) {
+      for await (const event of runner.stream(prompt, {
+        images,
+        observability: {
+          sessionId: run.sessionId,
+          agentId: run.agentId,
+          runId: run.runId,
+        },
+      })) {
         if (eventCount === 0) {
           clearTimeout(firstEventTimer);
           console.log(
